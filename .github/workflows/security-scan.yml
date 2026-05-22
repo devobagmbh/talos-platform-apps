@@ -1,0 +1,95 @@
+name: security-scan
+
+# Security-Scans über alle Sub-Layer:
+#   - trivy:    Vulnerability-Scan der referenzierten Container-Images + Helm-Charts
+#   - conftest: Rego-Policies gegen rendered Manifeste (policies/)
+#   - snyk:     Vulnerability-Scan der Helm-Charts (skipped wenn SNYK_TOKEN fehlt)
+#
+# CI-Konvention (siehe AGENTS.md): jeder Step ruft NUR task <name>, kein Inline.
+# Lokal reproduzierbar via `task scan` in der Devbox-Shell.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"  # Montags 04:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  trivy:
+    name: trivy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Render all sub-layers
+        run: devbox run -- task render
+
+      - name: Trivy scan rendered manifests
+        run: devbox run -- task scan:trivy
+
+      # Trivy-SARIF in den Security-Tab uploaden (nur main + schedule, nicht PR)
+      - name: Upload SARIF
+        if: github.event_name != 'pull_request' && always()
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13  # v4.35.1
+        with:
+          sarif_file: trivy-results.sarif
+
+  conftest:
+    name: conftest (Rego-Policies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Render all sub-layers
+        run: devbox run -- task render
+
+      - name: Conftest test
+        run: devbox run -- task scan:conftest
+
+      - name: Conftest verify (Policy-Selbsttests)
+        run: devbox run -- task scan:conftest-verify
+
+  snyk:
+    name: snyk
+    runs-on: ubuntu-latest
+    # Skipped wenn Token fehlt — kein Fail bei Forks / fresh setup
+    if: ${{ env.SNYK_TOKEN_AVAILABLE == 'true' }}
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      SNYK_TOKEN_AVAILABLE: ${{ secrets.SNYK_TOKEN != '' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Install snyk
+        run: devbox run -- snyk-install
+
+      - name: Snyk IaC scan
+        run: devbox run -- task scan:snyk
+
+      - name: Upload Snyk SARIF
+        if: github.event_name != 'pull_request' && always()
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13  # v4.35.1
+        with:
+          sarif_file: snyk-results.sarif
