@@ -1,0 +1,64 @@
+---
+# go-task Taskfile für talos-platform-apps.
+#
+# Stub — volle Render-/Sign-/Publish-Pipeline kommt in Issue #11.1 (#55).
+# Dieser Stub liefert nur das Minimum, damit pre-commit-Hooks und der
+# GHA-`task ci`-Step funktionieren.
+
+version: '3'
+
+vars:
+  RENDER_GLOB: 'sub-layers/*/rendered/*.yaml'
+
+tasks:
+  default:
+    desc: Liste verfügbarer Tasks
+    cmds:
+      - task --list
+
+  lint:
+    desc: Lint YAML + Markdown + rendered/ Manifests
+    cmds:
+      - yamllint -c .yamllint.yaml .
+      - |
+        # markdownlint nur über getrackte .md-Files, nicht über rendered/
+        files=$(git ls-files '*.md' | grep -vE '(^|/)rendered/' || true)
+        if [ -n "$files" ]; then
+          markdownlint --config .markdownlint.yaml $files
+        fi
+      - |
+        if compgen -G "{{.RENDER_GLOB}}" > /dev/null 2>&1; then
+          kubeconform -strict -summary {{.RENDER_GLOB}}
+        else
+          echo "(noch keine gerenderten Manifeste — kubeconform übersprungen)"
+        fi
+
+  ci:
+    desc: Lokale Reproduktion der GHA-Pipeline (lint + render + verify)
+    cmds:
+      - task: lint
+      # Voll-Pipeline folgt mit Issue #11.1 (#55) — render/push/sign/attest kommen hier rein.
+
+  render:
+    desc: 'Rendert Sub-Layer mit helm template (TODO: Issue #11.1 baut das aus)'
+    cmds:
+      - echo "TODO Issue #11.1 — Render-Target noch nicht implementiert"
+      - exit 1
+
+  push:
+    desc: 'oras push (TODO: Issue #11.1)'
+    cmds:
+      - echo "TODO Issue #11.1 — Push-Target noch nicht implementiert"
+      - exit 1
+
+  sign:
+    desc: 'cosign sign (TODO: Issue #11.1)'
+    cmds:
+      - echo "TODO Issue #11.1 — Sign-Target noch nicht implementiert"
+      - exit 1
+
+  attest:
+    desc: 'SBOM + SLSA-Provenance attestations (TODO: Issue #11.1)'
+    cmds:
+      - echo "TODO Issue #11.1 — Attest-Target noch nicht implementiert"
+      - exit 1

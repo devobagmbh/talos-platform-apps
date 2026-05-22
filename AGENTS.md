@@ -65,6 +65,24 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 
 **Niemals `make` verwenden** — die Konvention ist go-task.
 
+### pre-commit Framework
+
+Zusätzlich zum `task ci` greift das Python-basierte `pre-commit`-Framework als **automatischer Git-Hook**. Setup einmalig nach Clone:
+
+```bash
+pre-commit install --install-hooks
+```
+
+Hooks (`.pre-commit-config.yaml`):
+
+- **Inhalts-Hygiene**: trailing-whitespace, end-of-file-fixer, check-yaml, check-merge-conflict, large-file-check, private-key-detection
+- **Style**: `yamllint` (Config `.yamllint.yaml`), `markdownlint` (Config `.markdownlint.yaml`)
+- **Secrets**: `gitleaks` — scannt Diffs auf Secret-Patterns
+- **Commit-Message**: `conventional-pre-commit` validiert Conventional-Commit-Style auf `commit-msg`-Stage
+- **Custom**: `task lint` (Konvention Pipeline=Task-Caller), `no-makefile`, `no-rendered`
+
+Manuell volle Validierung: `pre-commit run --all-files`.
+
 ## Coding Style & Naming
 
 - **YAML**: 2-Space-Indent, keine Tabs, Block-Style bevorzugen
@@ -111,6 +129,7 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 - **Kein `.claude/` mit personalisierten Settings committen** — `settings.local.json` ist gitignored.
 - **OCI-Pfade hardcoded**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` — Renaming des Org-Pfads erfordert Coordination mit allen Konsumenten.
 - **cosign keyless mit GHA-OIDC**: Signing-Identity ist die Workflow-Identity. Keine Long-Lived-Keys committen.
+- **Kein `--no-verify`-Bypass**: weder bei `git commit` noch bei `git push`. pre-commit-Hooks und der `.claude/hooks/pre-commit`-Gate sind verbindlich. Wer Hooks bypassen muss, fixt stattdessen die Ursache.
 
 ## Sub-Layer-Konventionen
 

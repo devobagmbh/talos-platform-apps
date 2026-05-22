@@ -52,9 +52,12 @@ Die Dev-Umgebung läuft komplett über **Devbox** (Nix-basiert) + **direnv**. Da
 git clone git@github.com:devobagmbh/talos-platform-apps.git
 cd talos-platform-apps
 direnv allow
+pre-commit install --install-hooks
 ```
 
-`direnv allow` löst das `.envrc` aus, das Devbox aktiviert. Beim ersten Aufruf installiert Devbox alle Tools (`helm`, `kubectl`, `cosign`, `oras`, `syft`, `go-task`, `yq`, `jq`, `sops`, `age`) in einen reproduzierbaren Nix-Store. Folge-`cd`s in das Repo schalten die Umgebung automatisch um.
+`direnv allow` löst das `.envrc` aus, das Devbox aktiviert. Beim ersten Aufruf installiert Devbox alle Tools (`helm`, `kubectl`, `cosign`, `oras`, `syft`, `trivy`, `conftest`, `kubeconform`, `gitleaks`, `yamllint`, `markdownlint-cli`, `go-task`, `pre-commit`, `yq`, `jq`, `sops`, `age`) in einen reproduzierbaren Nix-Store. Folge-`cd`s in das Repo schalten die Umgebung automatisch um.
+
+`pre-commit install --install-hooks` registriert die Hooks aus `.pre-commit-config.yaml` als Git-Hook und lädt die Hook-Tools (gitleaks, yamllint, markdownlint, conventional-commit-check) vor. Pflicht — wer Hooks bypassed (`--no-verify`), verletzt die Hard Constraints aus `AGENTS.md`.
 
 ### Tools, die Devbox bereitstellt
 
@@ -62,7 +65,7 @@ Siehe `devbox.json`. Versionen werden bei Bedarf in `devbox.lock` gepinnt — Up
 
 ### Tasks (statt make)
 
-`go-task` ersetzt make. Aufgaben werden in `Taskfile.yml` deklariert (kommt in einer Folge-Iteration). Beispielhafte Targets:
+`go-task` ersetzt make. Aufgaben werden in `Taskfile.yml` deklariert. Beispielhafte Targets:
 
 ```bash
 task render -- monitoring         # rendert sub-layers/monitoring zu rendered/manifest.yaml

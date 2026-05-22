@@ -1,0 +1,33 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 200
+    level: warning
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+
+  comments-indentation: disable
+  document-start: disable
+
+  truthy:
+    check-keys: false  # GitHub Actions nutzt 'on:' als Key — false positive sonst
+
+  indentation:
+    indent-sequences: consistent
+    spaces: 2
+
+  braces:
+    max-spaces-inside: 1
+    level: warning
+
+  brackets:
+    max-spaces-inside: 1
+    level: warning
+
+ignore: |
+  sub-layers/*/rendered/
+  .devbox/
+  .direnv/
+  .claude/reviews/

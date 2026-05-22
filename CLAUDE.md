@@ -6,10 +6,19 @@
 
 Dieses Repo verfolgt den **mcp-server-Stil**: ein eigenes `.claude/`-Verzeichnis mit Subagents, Hooks und Settings. Anders als `talos-platform-base` (das auf das `kube-agent-harness`-Plugin wartet) liefern wir die Primitives in-tree, damit das Repo sofort autark ist.
 
-### Hooks
+### Hooks — drei Layer
 
-- `.claude/hooks/require-review.sh` — PreToolUse-Gate für `Bash`-Commits und `mcp__github__push_files`. Fail-closed: verhindert Commits ohne Review-Artefakte.
-- `.claude/hooks/pre-commit` — klassischer Git-Pre-Commit-Pfad (rendered/-Detection, conventional-commit-Pattern).
+Bewusste Tiefenstaffelung gegen verschiedene Klassen von Fehlern:
+
+| Layer | Datei | Was es prüft | Trigger |
+|---|---|---|---|
+| **L1 — Inhalts-Qualität** | `.pre-commit-config.yaml` (Python pre-commit framework) | YAML/Markdown-Style, Secret-Detection (gitleaks), Conventional-Commit-Format, `task lint`, no-Makefile, no-rendered | `git commit` (nach `pre-commit install`) |
+| **L2 — Review-Artefakte (Git-native)** | `.claude/hooks/pre-commit` | `.claude/reviews/<change-id>/review.md` mit Status `approved` oder erfüllte Eskalations-Artefakte; keine `senior-implementer`-Self-Review | `git commit` (nach `cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x …`) |
+| **L3 — Review-Artefakte (Claude-Code-Tool-Use)** | `.claude/hooks/require-review.sh` | Selbe Prüfung wie L2, vor jedem `Bash`-`git commit` und `mcp__github__push_files` aus Claude Code | PreToolUse-Hook gebunden in `.claude/settings.json` |
+
+L1 läuft IMMER (auch außerhalb von Claude Code, z. B. Terminal-Commits). L2 läuft auch außerhalb Claude Code, ist aber manuell zu installieren (im Devbox-Init-Hook wird darauf hingewiesen). L3 ist Claude-Code-spezifisch.
+
+**Wer was bypassen kann**: niemand. `--no-verify` bei `git commit` ist eine **Hard-Constraint-Verletzung** (siehe `AGENTS.md` § Hard Constraints).
 
 ### Subagents
 

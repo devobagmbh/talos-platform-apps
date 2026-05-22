@@ -1,0 +1,18 @@
+---
+# markdownlint-cli Config — pragmatische Regeln für die Devoba-Plattform-Doku.
+default: true
+
+# Line length deaktivieren — wir nutzen Tabellen + Mermaid-Diagramme.
+MD013: false
+
+# Mehrfache H2/H3 mit gleichem Text erlaubt (z. B. wiederkehrende Sub-Sections).
+MD024: false
+
+# Inline-HTML erlaubt (Mermaid-Code-Blöcke, ggf. <details>-Blöcke).
+MD033: false
+
+# Erste Zeile muss kein H1 sein (wir nutzen frontmatter teilweise).
+MD041: false
+
+# Code-Sprachen sind optional (Tabellen-Header lassen sich nicht immer typisieren).
+MD040: false

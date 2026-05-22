@@ -7,7 +7,14 @@
     "cosign@latest",
     "oras@latest",
     "syft@latest",
+    "trivy@latest",
+    "conftest@latest",
+    "kubeconform@latest",
+    "gitleaks@latest",
+    "yamllint@latest",
+    "markdownlint-cli@latest",
     "go-task@latest",
+    "pre-commit@latest",
     "yq@latest",
     "jq@latest",
     "sops@latest",
@@ -15,7 +22,8 @@
   ],
   "shell": {
     "init_hook": [
-      "echo 'talos-platform-apps devbox-shell aktiv — \"task --list\" für verfügbare Tasks'"
+      "echo 'talos-platform-apps devbox-shell aktiv — \"task --list\" für verfügbare Tasks'",
+      "if [ -f .pre-commit-config.yaml ] && [ ! -f .git/hooks/pre-commit ]; then echo 'Hinweis: pre-commit-Hooks noch nicht installiert. Ausführen: pre-commit install --install-hooks'; fi"
     ],
     "scripts": {}
   }

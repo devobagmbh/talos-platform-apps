@@ -1,0 +1,93 @@
+---
+# pre-commit Framework — Inhalts-Qualitäts-Hooks für talos-platform-apps.
+#
+# Setup nach erstem clone + devbox-Activation:
+#   pre-commit install --install-hooks
+#
+# Manuell für alle Files: `pre-commit run --all-files`
+#
+# Beachte: dieser Hook deckt Content-Qualität ab (YAML, Markdown,
+# Secret-Detection, Konvention "task lint"). Der Review-Artefakt-Gate
+# liegt in .claude/hooks/pre-commit (Git-native, defense-in-depth) +
+# .claude/hooks/require-review.sh (Claude-Code-PreToolUse).
+# Beide Layer koexistieren bewusst.
+
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^sub-layers/.+/rendered/'
+      - id: end-of-file-fixer
+        exclude: '^sub-layers/.+/rendered/'
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: '^sub-layers/.+/rendered/'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [-c=.yamllint.yaml]
+        exclude: '^sub-layers/.+/rendered/'
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.43.0
+    hooks:
+      - id: markdownlint
+        args: [--config=.markdownlint.yaml]
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - chore
+          - docs
+          - refactor
+          - test
+          - ci
+          - build
+          - perf
+          - revert
+
+  - repo: local
+    hooks:
+      # Konvention "Pipeline = Task-Caller" — Hooks rufen task-Targets,
+      # nicht Tools direkt. So bleibt der Pre-Commit-Lauf 1:1 reproduzierbar
+      # mit `task ci` / `task lint`.
+      - id: task-lint
+        name: task lint
+        entry: task lint
+        language: system
+        pass_filenames: false
+
+      - id: no-makefile
+        name: kein Makefile (Konvention go-task)
+        entry: bash -c 'if git diff --cached --name-only | grep -qE "(^|/)Makefile$"; then echo "BLOCKED: Makefile committed — Konvention ist go-task (Taskfile.yml)"; exit 1; fi'
+        language: system
+        pass_filenames: false
+
+      - id: no-rendered
+        name: rendered/-Output nicht committen
+        entry: bash -c 'if git diff --cached --name-only | grep -qE "^sub-layers/.+/rendered/"; then echo "BLOCKED: rendered/-Files dürfen nicht committed werden (siehe .gitignore)"; exit 1; fi'
+        language: system
+        pass_filenames: false
