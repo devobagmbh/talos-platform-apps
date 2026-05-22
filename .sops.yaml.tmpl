@@ -1,12 +1,12 @@
 # .sops.yaml — Template (Issue #3 blockiert finale Aktivierung)
 #
-# Sobald die vier age-Recipients aus Issue #3 (4-Key-SOPS) generiert sind,
-# diese Datei zu .sops.yaml umbenennen und die <TODO>-Slots durch die echten
-# Public-Keys ersetzen. Pattern matcht alle *.enc.yaml/*.enc.json-Dateien
-# unterhalb von sub-layers/, plus Top-Level .env.enc usw.
+# Sobald die fünf age-Recipients aus Issue #3 (5-Recipient-SOPS) generiert
+# sind, diese Datei zu .sops.yaml umbenennen und die <TODO>-Slots durch die
+# echten Public-Keys ersetzen. Pattern matcht alle *.enc.yaml/*.enc.json-
+# Dateien unterhalb von sub-layers/, plus Top-Level .env.enc usw.
 #
-# Reihenfolge der Recipients ist nicht semantisch — alle vier sind
-# gleichberechtigte Entschlüsseler.
+# 4 menschliche Recipients (M1, M2, GF, Safe) + 1 Service-Recipient (Seeder)
+# — alle gleichberechtigt im Sinne der Encryption-Reihenfolge.
 #
 # Doku: https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md
 
@@ -25,3 +25,9 @@ creation_rules:
       ,
       # Safe — ausgedruckter Air-Gap-Backup-Key
       # age1<TODO-fill-after-issue-3>
+      ,
+      # Seeder-Service — beim Stage-0-Init generiert, ermöglicht Crossplane-
+      # Workspace die automatische Decryption von Stage-1-Tofu-Variablen
+      # ohne menschlichen Key auf dem Seeder. Wird nach Seeder-Bootstrap
+      # hier eingetragen via Folge-PR.
+      # age1<TODO-fill-after-seeder-bootstrap>
