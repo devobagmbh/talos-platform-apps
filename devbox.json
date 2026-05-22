@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "packages": [
+    "helm@latest",
+    "kubectl@latest",
+    "kustomize@latest",
+    "cosign@latest",
+    "oras@latest",
+    "syft@latest",
+    "go-task@latest",
+    "yq@latest",
+    "jq@latest",
+    "sops@latest",
+    "age@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo 'talos-platform-apps devbox-shell aktiv — \"task --list\" für verfügbare Tasks'"
+    ],
+    "scripts": {}
+  }
+}

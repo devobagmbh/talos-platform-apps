@@ -1,0 +1,27 @@
+# .sops.yaml — Template (Issue #3 blockiert finale Aktivierung)
+#
+# Sobald die vier age-Recipients aus Issue #3 (4-Key-SOPS) generiert sind,
+# diese Datei zu .sops.yaml umbenennen und die <TODO>-Slots durch die echten
+# Public-Keys ersetzen. Pattern matcht alle *.enc.yaml/*.enc.json-Dateien
+# unterhalb von sub-layers/, plus Top-Level .env.enc usw.
+#
+# Reihenfolge der Recipients ist nicht semantisch — alle vier sind
+# gleichberechtigte Entschlüsseler.
+#
+# Doku: https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md
+
+creation_rules:
+  - path_regex: '\.enc\.(yaml|yml|json|env)$'
+    encrypted_regex: '^(data|stringData|password|token|key|secret|cert)$'
+    age: |-
+      # M1 — Maintainer 1 (Robert Schneider)
+      # age1<TODO-fill-after-issue-3>
+      ,
+      # M2 — Maintainer 2 (noch zu identifizieren)
+      # age1<TODO-fill-after-issue-3>
+      ,
+      # GF — Geschäftsführung
+      # age1<TODO-fill-after-issue-3>
+      ,
+      # Safe — ausgedruckter Air-Gap-Backup-Key
+      # age1<TODO-fill-after-issue-3>

@@ -1,0 +1,32 @@
+# Render-Output
+rendered/
+**/rendered/
+*.rendered.yaml
+
+# Helm-Chart-Caches
+charts/*.tgz
+**/charts/*.tgz
+.helmcache/
+
+# SBOM/Provenance-Artefakte (werden via OCI publiziert, nicht committed)
+*.cdx.json
+*.spdx.json
+*.intoto.jsonl
+
+# SOPS-Decryption-Tempfiles
+*.dec
+*.dec.yaml
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local-only Konfiguration
+.env
+
+# Devbox / direnv State
+.devbox/
+.direnv/
