@@ -36,3 +36,7 @@ charts/*.tgz
 .claude/.DS_Store
 .claude/reviews/
 .claude/worktrees/
+.claude/plans/
+
+# Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
+!.claude/reviews/.gitkeep

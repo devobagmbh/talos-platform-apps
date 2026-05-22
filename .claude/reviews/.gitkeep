@@ -1,0 +1,4 @@
+# Dieses Verzeichnis muss existieren, damit der require-review.sh-Hook
+# nicht fail-closed auf "no .claude/reviews/ directory found" wirft.
+# Konkrete Review-Artefakte (.claude/reviews/<change-id>/review*.md)
+# sind gitignored — bleiben lokal/in-PR-Lifetime.
