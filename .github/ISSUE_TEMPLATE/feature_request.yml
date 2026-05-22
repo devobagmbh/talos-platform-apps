@@ -1,0 +1,51 @@
+name: Feature Request
+description: Neues Sub-Layer-Feature, neuer Helm-Chart, Pipeline-Verbesserung, neue Konvention vorschlagen
+labels: ["type:feature"]
+body:
+  - type: dropdown
+    id: sub-layer
+    attributes:
+      label: Betroffener Sub-Layer (oder „neu")
+      options:
+        - automation
+        - databases
+        - dns
+        - lifecycle
+        - monitoring
+        - registry
+        - secrets
+        - storage-objects
+        - cross-cutting (Pipeline / Build / Tooling)
+        - new (neuer Sub-Layer)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem oder Anwendungsfall
+      description: "Was willst du erreichen?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Vorgeschlagene Lösung
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativen
+    validations:
+      required: false
+
+  - type: textarea
+    id: adr-impact
+    attributes:
+      label: ADR-Impact
+      description: "Wenn ein ADR in talos-platform-docs betroffen ist (z. B. 0009 Platform-Layer-Model, 0011 Secrets, 0015 Monitoring), bitte verlinken."
+    validations:
+      required: false

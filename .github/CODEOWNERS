@@ -1,0 +1,22 @@
+# Default-Owner für alles, was nicht spezifisch ist.
+*                                     @robertschneiderdevoba
+
+# Sub-Layer-Owner (initial M1; nach M2-Onboarding splittet sich das auf)
+/sub-layers/automation/               @robertschneiderdevoba
+/sub-layers/databases/                @robertschneiderdevoba
+/sub-layers/dns/                      @robertschneiderdevoba
+/sub-layers/lifecycle/                @robertschneiderdevoba
+/sub-layers/monitoring/               @robertschneiderdevoba
+/sub-layers/registry/                 @robertschneiderdevoba
+/sub-layers/secrets/                  @robertschneiderdevoba
+/sub-layers/storage-objects/          @robertschneiderdevoba
+
+# Pipeline-Hygiene + Plattform-Konventionen (zentral, immer M1)
+/.github/                             @robertschneiderdevoba
+/.claude/                             @robertschneiderdevoba
+/AGENTS.md                            @robertschneiderdevoba
+/CLAUDE.md                            @robertschneiderdevoba
+/Taskfile.yml                         @robertschneiderdevoba
+/devbox.json                          @robertschneiderdevoba
+/devbox.lock                          @robertschneiderdevoba
+/.sops.yaml*                          @robertschneiderdevoba

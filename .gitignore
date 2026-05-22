@@ -30,3 +30,9 @@ charts/*.tgz
 # Devbox / direnv State
 .devbox/
 .direnv/
+
+# Claude Code — personal/local
+.claude/settings.local.json
+.claude/.DS_Store
+.claude/reviews/
+.claude/worktrees/

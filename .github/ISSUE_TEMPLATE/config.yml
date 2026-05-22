@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security Vulnerabilities
+    url: https://github.com/devobagmbh/talos-platform-apps/security/advisories/new
+    about: Sicherheitslücken privat melden — keine öffentlichen Issues
+  - name: Architektur-Entscheidungen (ADRs)
+    url: https://github.com/devobagmbh/talos-platform-docs/tree/main/adr
+    about: Plattform-übergreifende Architektur-Entscheidungen leben in talos-platform-docs
+  - name: Day-Zero-Backlog
+    url: https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md
+    about: Gesamt-Backlog der Plattform (~60 Issues, Phasen 0–7)
