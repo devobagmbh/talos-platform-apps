@@ -76,6 +76,12 @@ task ci                           # lokale Reproduktion der GHA-Pipeline
 
 Die produktive Pipeline läuft auf **GitHub Actions** (Workflows unter `.github/workflows/`). Trigger: PRs (Render + Lint, kein Push) und Tag-Push `<sub-layer>-vX.Y.Z` (Render + OCI-Push + cosign-Sign + SBOM-/Provenance-Attest). cosign-Signing erfolgt keyless über die GHA-OIDC-Identity.
 
+**Drei verbindliche CI-Regeln** für dieses und alle weiteren Plattform-Repos:
+
+1. **Devbox-Cache aktiv**: Jeder Job nutzt `jetify-com/devbox-install-action` mit `enable-cache: true`. Tool-Versionen kommen ausschließlich aus `devbox.json`/`devbox.lock` — keine separaten `actions/setup-go`/`-helm`/`-kubectl`-Steps. Damit ist die CI-Umgebung byte-identisch zur Workstation und Builds sind nach dem ersten Lauf cache-warm.
+2. **Lokal reproduzierbar**: Jeder einzelne Task im `Taskfile.yml` läuft auf der Workstation 1:1 wie in CI. Vor `git push` wird die volle Pipeline lokal durchgespielt (`task ci`). Kein GHA-spezifischer Code in Tasks — Außenlogik (OIDC, Tag-Erkennung, Matrix) bleibt im Workflow.
+3. **Pipeline = dünner Task-Caller**: Workflow-Steps rufen ausschließlich `task <name>` auf. Keine Inline-`helm template`/`oras push`/`cosign sign`-Kommandos im YAML. Wer Pipeline-Verhalten ändern will, ändert den Task — Workflow-Diffs bleiben minimal und review-arm.
+
 ## Render-/Sign-/Publish-Workflow
 
 ```
