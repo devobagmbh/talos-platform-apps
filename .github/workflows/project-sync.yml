@@ -1,0 +1,169 @@
+name: project-sync
+
+# Fügt neue Issues automatisch zum Org-Project "DHQ Cluster" (#3) hinzu und
+# setzt das Komponente-Feld aus dem area:*-Label ab.
+#
+# Setup-Voraussetzung (einmalig pro Repo):
+#   1. Personal Access Token mit Scopes 'repo' + 'project' (Write) erzeugen.
+#   2. Als Repo-Secret PROJECT_TOKEN hinterlegen.
+#   3. Optional: Repo-Variable PROJECT_NUMBER auf 3 setzen (Default: 3).
+#
+# Der GITHUB_TOKEN reicht NICHT — Project-V2-API erfordert User-Scoped Token
+# oder GitHub-App. Wir nutzen PAT-Variante, weil noch keine Org-App existiert.
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: ${{ env.PROJECT_TOKEN != '' }}
+    env:
+      PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+      PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER || '3' }}
+      ORG_LOGIN: devobagmbh
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+          script: |
+            const projectNumber = parseInt(process.env.PROJECT_NUMBER, 10);
+            const orgLogin = process.env.ORG_LOGIN;
+            const issueNodeId = context.payload.issue.node_id;
+            const issueLabels = (context.payload.issue.labels || []).map(l => l.name);
+
+            // 1. Project + Field-Map abrufen
+            const projectData = await github.graphql(`
+              query($login: String!, $number: Int!) {
+                organization(login: $login) {
+                  projectV2(number: $number) {
+                    id
+                    fields(first: 30) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id name options { id name }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, { login: orgLogin, number: projectNumber });
+
+            const project = projectData.organization.projectV2;
+            if (!project) {
+              core.setFailed(`Project ${orgLogin}/${projectNumber} not found or PAT lacks read:project scope`);
+              return;
+            }
+
+            const fieldByName = {};
+            for (const f of project.fields.nodes) {
+              if (f && f.name) fieldByName[f.name] = f;
+            }
+
+            // 2. Item zum Project hinzufügen (idempotent — vorhandene werden ignoriert)
+            const addResult = await github.graphql(`
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                  item { id }
+                }
+              }
+            `, { projectId: project.id, contentId: issueNodeId });
+
+            const itemId = addResult.addProjectV2ItemById.item.id;
+            core.info(`Added/found project item: ${itemId}`);
+
+            // 3. Komponente aus area:*-Label ableiten und setzen
+            const areaToKomponente = {
+              "area:dns": "DNS",
+              "area:backup": "Backup-DR",
+              "area:dr": "Backup-DR",
+              "area:monitoring": "Monitoring",
+              "area:observability": "Monitoring",
+              "area:alerting": "Monitoring",
+              "area:identity": "Identity",
+              "area:rbac": "Identity",
+              "area:secrets": "Secrets",
+              "area:security": "Secrets",
+              "area:registry": "Registry",
+              "area:storage": "Storage",
+              "area:database": "Storage",
+              "area:workload": "Workload",
+              "area:virtualization": "Workload",
+              "area:network": "Networking",
+              "area:lifecycle": "Lifecycle",
+              "area:opentofu": "Lifecycle",
+              "area:layer-model": "Lifecycle",
+              "area:bootstrap": "Lifecycle",
+              "area:automation": "Automation",
+              "area:gitops": "Automation",
+              "area:repo": "Automation",
+              "area:hardware": "Hardware",
+              "area:seeder": "Cluster-Seeder",
+              "area:dhq": "Cluster-DHQ",
+              "area:operations": "Operations",
+              "area:onboarding": "Operations",
+              "area:overlays": "Operations",
+              "area:workstation": "Workstation",
+            };
+
+            let komponenteName = null;
+            for (const label of issueLabels) {
+              if (areaToKomponente[label]) {
+                komponenteName = areaToKomponente[label];
+                break;
+              }
+            }
+
+            if (komponenteName && fieldByName["Komponente"]) {
+              const opt = fieldByName["Komponente"].options.find(o => o.name === komponenteName);
+              if (opt) {
+                await github.graphql(`
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $projectId,
+                      itemId: $itemId,
+                      fieldId: $fieldId,
+                      value: { singleSelectOptionId: $optionId }
+                    }) {
+                      projectV2Item { id }
+                    }
+                  }
+                `, {
+                  projectId: project.id,
+                  itemId,
+                  fieldId: fieldByName["Komponente"].id,
+                  optionId: opt.id,
+                });
+                core.info(`Set Komponente = ${komponenteName}`);
+              }
+            }
+
+            // 4. Status auf Backlog setzen (nur bei opened)
+            if (context.payload.action === "opened" && fieldByName["Status"]) {
+              const backlog = fieldByName["Status"].options.find(o => o.name === "Backlog");
+              if (backlog) {
+                await github.graphql(`
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $projectId,
+                      itemId: $itemId,
+                      fieldId: $fieldId,
+                      value: { singleSelectOptionId: $optionId }
+                    }) {
+                      projectV2Item { id }
+                    }
+                  }
+                `, {
+                  projectId: project.id,
+                  itemId,
+                  fieldId: fieldByName["Status"].id,
+                  optionId: backlog.id,
+                });
+                core.info("Set Status = Backlog");
+              }
+            }

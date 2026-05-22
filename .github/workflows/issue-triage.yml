@@ -1,0 +1,72 @@
+name: issue-triage
+
+# Auto-Labeling neuer Issues anhand ihres Bodies:
+# - Sub-Layer-Dropdown im Issue-Template setzt das passende `area:*`-Label
+# - Pipeline-Stage-Dropdown setzt zusätzlich `area:gitops` oder ähnliches
+# - Wenn keine Heuristik greift, kommt `needs:triage` drauf — Maintainer-Trigger.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const body = context.payload.issue.body || '';
+            const issueNumber = context.payload.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const existing = (context.payload.issue.labels || []).map(l => l.name);
+
+            const labelsToAdd = [];
+
+            // Sub-Layer-Dropdown — aus dem bug_report/feature_request-Template.
+            // Format: "### Betroffener Sub-Layer\n\n<value>"
+            const subLayerMatch = body.match(/###\s*Betroffener Sub-Layer.*?\n+\s*(\S[^\n]*)/i);
+            if (subLayerMatch) {
+              const value = subLayerMatch[1].trim().toLowerCase();
+              const subLayerToLabel = {
+                "automation": "area:automation",
+                "databases": "area:database",
+                "dns": "area:dns",
+                "lifecycle": "area:lifecycle",
+                "monitoring": "area:monitoring",
+                "registry": "area:registry",
+                "secrets": "area:secrets",
+                "storage-objects": "area:storage",
+                "cross-cutting (pipeline / build / tooling)": "area:gitops",
+                "new (neuer sub-layer)": "area:layer-model",
+              };
+              const label = subLayerToLabel[value];
+              if (label && !existing.includes(label)) labelsToAdd.push(label);
+            }
+
+            // Pipeline-Stage (bug_report) — Heuristik für CI/Tooling-Bezug
+            if (/GHA-Pipeline|task ci|task render|OCI-Publish/i.test(body)) {
+              if (!existing.includes("area:gitops") && !labelsToAdd.includes("area:gitops")) {
+                labelsToAdd.push("area:gitops");
+              }
+            }
+
+            // Fallback: needs:triage wenn nichts heuristisch erkannt
+            if (labelsToAdd.length === 0 && existing.length === 0) {
+              labelsToAdd.push("needs:triage");
+            }
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: issueNumber, labels: labelsToAdd,
+              });
+              core.info(`Applied labels: ${labelsToAdd.join(", ")}`);
+            } else {
+              core.info("No additional labels to apply.");
+            }
