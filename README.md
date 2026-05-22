@@ -9,7 +9,7 @@
 [![Devbox](https://img.shields.io/badge/Devbox-Nix--based-31135a?style=flat-square)](https://www.jetify.com/devbox/)
 [![direnv](https://img.shields.io/badge/direnv-2.36%2B-FFD400?style=flat-square)](https://direnv.net/)
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
-[![TeamCity](https://img.shields.io/badge/TeamCity-CI-000000?style=flat-square&logo=teamcity)](https://www.jetbrains.com/teamcity/)
+[![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
 OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation`, `dns` und `monitoring`. Vorgerenderte Manifeste mit cosign-Signatur, SLSA-v1-Provenance und CycloneDX-SBOM. Konsumiert von Seeder und DHQ.
 
@@ -69,12 +69,12 @@ task render -- monitoring         # rendert sub-layers/monitoring zu rendered/ma
 task sign   -- monitoring v0.1.0  # cosign sign des publizierten OCI-Tags
 task attest -- monitoring v0.1.0  # SBOM + SLSA-Provenance als Attestations
 task publish -- monitoring v0.1.0 # render → push → sign → attest in einem Rutsch
-task ci                           # lokale Reproduktion des TeamCity-Pipelines
+task ci                           # lokale Reproduktion der GHA-Pipeline
 ```
 
 ### CI
 
-Die produktive Pipeline läuft auf **TeamCity** (`teamcity.devoba.de`, intern). Build-Konfigurationen folgen in einer eigenen Iteration und triggern bei Tag-Push (`<sub-layer>-vX.Y.Z`).
+Die produktive Pipeline läuft auf **GitHub Actions** (Workflows unter `.github/workflows/`). Trigger: PRs (Render + Lint, kein Push) und Tag-Push `<sub-layer>-vX.Y.Z` (Render + OCI-Push + cosign-Sign + SBOM-/Provenance-Attest). cosign-Signing erfolgt keyless über die GHA-OIDC-Identity.
 
 ## Render-/Sign-/Publish-Workflow
 
@@ -106,7 +106,7 @@ Pipeline-Implementierung folgt in einer separaten Iteration (Task aus Phase 2 de
 
 - **Sub-Layer-Versionierung**: SemVer pro Sub-Layer (`<sub-layer>-vMAJ.MIN.PATCH`). Jeder Sub-Layer hat einen unabhängigen Lifecycle.
 - **OCI-Pfade**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` als Manifest, gleicher Pfad für SBOM/Provenance-Attestations.
-- **Signing**: cosign keyless (OIDC via TeamCity-Build-Identity). Verifikation in Konsumenten-Clustern via Kyverno-ClusterPolicy `image-verify-platform-oci` (siehe [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22)).
+- **Signing**: cosign keyless (OIDC via GitHub-Actions-Workflow-Identity). Verifikation in Konsumenten-Clustern via Kyverno-ClusterPolicy `image-verify-platform-oci` (siehe [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22)).
 - **Werte-Trennung**: cluster-spezifische Helm-Values bleiben in den Konsumenten-Repos (`talos-seeder-cluster`, `talos-dhq-cluster`). Dieser Layer enthält Defaults und shared values.
 - **Sprache**: Deutsch in `README.md` und Doku. Code/Werte folgen Upstream-Konventionen (englisch).
 - **Tools**: alle dev-relevanten Binaries kommen aus Devbox — direktes `brew install <tool>` ist verboten, um Versions-Drift zu vermeiden.
