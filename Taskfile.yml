@@ -318,12 +318,16 @@ tasks:
   # --- Lokale Entwicklung: Kind + Local-Registry + ArgoCD ---
 
   local:up:
-    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + Cilium + Gateway-API + ArgoCD'
+    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + Gateway-API + Cilium + ArgoCD'
+    # WICHTIG: Gateway-API-CRDs müssen VOR Cilium installiert werden, sonst
+    # initialisiert der Cilium-Operator seinen Gateway-API-Controller nicht
+    # und es entsteht keine GatewayClass 'cilium' (Folge: Gateway hängt für
+    # immer in "Waiting for controller").
     cmds:
       - task: local:registry:up
       - task: local:cluster:up
-      - task: local:cilium:install
       - task: local:gateway-api:install
+      - task: local:cilium:install
       - task: local:cert-manager:install
       - task: local:certs
       - task: local:argo:install
