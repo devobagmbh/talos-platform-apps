@@ -22,6 +22,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ipxe
+
+  # K8s 1.32+ hat .status.terminatingReplicas in Deployment.status; Argos
+  # structured-merge-diff cached das alte OpenAPI-Schema und kann das Feld
+  # nicht typisieren → "field not declared in schema". Ignorieren ist sicher,
+  # weil status-Felder eh nicht durch Argo verwaltet werden.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+
   syncPolicy:
     automated:
       prune: true
@@ -29,3 +40,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - ServerSideDiff=true
