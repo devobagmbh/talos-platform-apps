@@ -1,0 +1,31 @@
+# Argo-Application für lifecycle/ipxe.
+# Sync-Wave 0: unabhängig — kann parallel zu crossplane laufen.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lifecycle-ipxe
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: lifecycle
+    platform.devoba.de/component: ipxe
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/lifecycle
+    chart: ipxe
+    targetRevision: ${TAG}
+    helm:
+      releaseName: ipxe
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ipxe
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

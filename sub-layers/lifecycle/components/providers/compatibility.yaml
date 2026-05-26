@@ -1,0 +1,14 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+  lifecycle/crossplane: ">=v0.1.0"  # Provider-CRD muss da sein
+
+provides:
+  - name: provider-terraform
+    apis:
+      - pkg.crossplane.io/Provider@v0.20.0
+  - name: provider-helm
+    apis:
+      - pkg.crossplane.io/Provider@v0.20.0
+  - name: provider-kubernetes
+    apis:
+      - pkg.crossplane.io/Provider@v0.18.0

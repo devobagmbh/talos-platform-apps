@@ -2,46 +2,44 @@
 
 Crossplane + Provider + iPXE-Server für Stage-1-Child-Cluster-Provisionierung.
 
+Der Sub-Layer ist eine organisatorische Klammer; **OCI-Distribution erfolgt pro Komponente** (ADR-0009). Jede Komponente hat ein eigenes Helm-Chart-Wrapper-OCI, eine eigene Argo-Application und einen eigenen Lifecycle.
+
 ## Komponenten
 
-| Komponente | Quelle | Funktion |
-|---|---|---|
-| Crossplane | Helm `crossplane-stable/crossplane` | Composite-Resource-Engine |
-| provider-terraform | Crossplane-Provider-Package | wrappt OpenTofu für Talos-Provisioning |
-| provider-helm | Crossplane-Provider-Package | bootstrappt Cilium/Linstor/Argo nach Cluster-Up |
-| provider-kubernetes | Crossplane-Provider-Package | post-bootstrap K8s-Manifeste |
-| iPXE-Server | OCI-Image + Helm-Chart oder eigenes Manifest | PXE-Boot-Server für DHQ-Nodes (statische Boot-Skripte aus Garage) |
-| XClusterDefinition + Composition | dieses Repo | `XCluster`-CRD und passende `Composition` für DHQ-Provisionierung |
+| Komponente | sync-wave | Inhalt | OCI |
+|---|---|---|---|
+| [`crossplane`](components/crossplane/) | 0 | Crossplane-Operator (Helm) — bringt CRDs | `oci://.../lifecycle/crossplane:vX.Y.Z` |
+| [`ipxe`](components/ipxe/) | 0 | iPXE-Server-Stub (Namespace + Labels, Inhalt in Issue #28) | `oci://.../lifecycle/ipxe:vX.Y.Z` |
+| [`providers`](components/providers/) | 10 | provider-terraform/-helm/-kubernetes (Provider-CRs) | `oci://.../lifecycle/providers:vX.Y.Z` |
+| [`compositions`](components/compositions/) | 20 | `XCluster`-XRD + Composition (3-Step-Pipeline) | `oci://.../lifecycle/compositions:vX.Y.Z` |
+
+Sync-Wave folgt der CRD-Bootstrap-Reihenfolge: Wave 0 erzeugt die Crossplane-CRDs, Wave 10 die Provider-CRs (brauchen `pkg.crossplane.io/Provider`), Wave 20 die XRD+Composition (brauchen aktive Provider).
 
 ## Konsumiert von
 
 - **Seeder** — exklusiv. DHQ-Provisionierung läuft vom Seeder aus.
 - **DHQ** — nein (DHQ provisioniert keine weiteren Cluster, vorerst).
 
-## Inhalt
-
-- `helm/crossplane.yaml` — Operator-Werte (Format: `metadata` mit `chart`/`repo`/`version`/`namespace` + `values`-Block, siehe Sub-Layer-Render-Konvention)
-- `helm/ipxe.yaml` — iPXE-Server-Stub (`metadata.inline: true` — Custom-Manifeste folgen mit Issue #28 in einem Konsumenten-Repo)
-- `manifests/providers.yaml` — `Provider`-CRs für terraform/helm/kubernetes (Versionen gepinnt)
-- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` für `XCluster` (Schema-Felder: clusterName, talosVersion, nodes, platformBaseTag, appsSubLayerPins)
-- `manifests/composition-xcluster.yaml` — `Composition` als 3-Step-Pipeline (Tofu-Workspace → Cilium → ArgoCD)
-- `compatibility.yaml` — `requires.talos-platform-base` + `provides`-Liste (Crossplane + Provider-Versionen)
-
 ## Render-Konvention
 
-Dieser Sub-Layer wird via `task render:one -- lifecycle` zu `rendered/manifest.yaml` gerendert. Die `helm/*.yaml`-Files haben ein zweiteiliges Schema:
+Jede Komponente wird via `task render:one -- lifecycle/<component>` zu `components/<component>/rendered/manifest.yaml` gerendert. Dann pro Komponente packaged + gepusht:
 
-```yaml
-metadata:
-  chart: crossplane                          # Helm-Chart-Name
-  repo: https://charts.crossplane.io/stable  # Helm-Repo-URL
-  version: 1.18.0                            # gepinnte Version
-  namespace: crossplane-system               # Ziel-Namespace
-values:
-  # ... Helm-Values, werden via helm template --values übergeben
+```bash
+task render:one -- lifecycle/crossplane
+task package    -- lifecycle/crossplane 0.1.0
+task push       -- lifecycle/crossplane 0.1.0
+# oder zusammen:
+task publish    -- lifecycle/crossplane v0.1.0
 ```
 
-Für Custom-Stubs ohne externen Chart: `metadata.inline: true` — der Renderer erzeugt dann ein Namespace-Skelett mit Labels statt eines Helm-Outputs.
+Sub-Layer-Level-Aggregat: `task render -- lifecycle` rendered alle Komponenten dieses Sub-Layers.
+
+Eingabe-Konvention pro Komponente:
+
+| Verzeichnis | Inhalt |
+|---|---|
+| `helm/*.yaml` | YAML mit `metadata.{chart,repo,version,namespace}` + `values` — oder `metadata.inline: true` für Custom-Stubs |
+| `manifests/*.yaml` | Raw-Manifeste, werden 1:1 konkateniert |
 
 ## Backlog-Issue
 
@@ -55,3 +53,4 @@ Vorgelagert: [#11 — OpenTofu-Modul `talos-cluster` schreiben](https://github.c
 - [ADR-0004 — Cluster-Lifecycle-Tooling (Crossplane + provider-terraform)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0004-cluster-lifecycle-tooling.md)
 - [ADR-0005 — Bare-Metal-PXE-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0005-bare-metal-pxe-strategy.md)
 - [ADR-0006 — TF-State-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
+- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) (Komponenten-OCI-Granularität)

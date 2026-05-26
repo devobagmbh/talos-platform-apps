@@ -35,10 +35,11 @@ values:
     medium: ""
     sizeLimit: 5Gi
 
-  # Composition-Revisions sind essentiell für GitOps-Reconciliation
+  # Composition-Revisions sind essentiell für GitOps-Reconciliation.
+  # EnvironmentConfigs wandern in Crossplane 1.18+ in function-environment-configs;
+  # das alte --enable-environment-configs ist removed und crasht den Pod.
   args:
     - --enable-composition-revisions
-    - --enable-environment-configs
 
   # Pro-active Reconcile-Intervall (Default: 1 Min)
   pollInterval: 1m

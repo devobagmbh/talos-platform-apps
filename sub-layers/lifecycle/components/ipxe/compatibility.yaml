@@ -1,0 +1,7 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+
+provides:
+  - name: ipxe-server
+    apis:
+      - ipxe-inline@1.0.0  # custom-Manifest, kein externer Helm-Chart

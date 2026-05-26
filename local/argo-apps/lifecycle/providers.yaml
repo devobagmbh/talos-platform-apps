@@ -1,0 +1,31 @@
+# Argo-Application für lifecycle/providers.
+# Sync-Wave 10: braucht die pkg.crossplane.io/Provider-CRD aus crossplane (Wave 0).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lifecycle-providers
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: lifecycle
+    platform.devoba.de/component: providers
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/lifecycle
+    chart: providers
+    targetRevision: ${TAG}
+    helm:
+      releaseName: providers
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

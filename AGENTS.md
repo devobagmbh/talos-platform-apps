@@ -7,9 +7,9 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 ## Repository Purpose
 
-`talos-platform-apps` bündelt **gemeinsam genutzte Plattform-Sub-Layer** der Devoba Talos-Plattform und publiziert sie als signierte OCI-Artefakte. Seeder- und DHQ-Cluster konsumieren diese Layer per Tag.
+`talos-platform-apps` bündelt **gemeinsam genutzte Plattform-Komponenten** der Devoba Talos-Plattform und publiziert sie als signierte OCI-Artefakte. Seeder- und DHQ-Cluster konsumieren diese Komponenten per Tag.
 
-Acht Sub-Layer: `automation`, `databases`, `dns`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects`.
+**Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Acht Sub-Layer als Klammer: `automation`, `databases`, `dns`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
 
 **NICHT** in diesem Repo:
 - Cluster-Identität (Node-IPs, Hostnamen, TLS-Cert-CNs)
@@ -30,12 +30,15 @@ talos-platform-apps/
 ├── .sops.yaml.tmpl                 — Recipient-Template; wird zu .sops.yaml nach Issue #3
 ├── .gitignore
 ├── Taskfile.yml                    — go-task Targets (Issue #11.1)
-├── sub-layers/<name>/
-│   ├── README.md                   — Komponenten, Konsumenten, ADR-Verweise
-│   ├── helm/                       — Helm-Values (Defaults; cluster-spezifisches in Konsumenten-Repos)
-│   ├── manifests/                  — Raw-Manifeste (CRs, NetPols, Bucket-Defs)
-│   ├── rendered/                   — gitignored, Output von helm template
-│   └── compatibility.yaml          — requires/provides (Issue #11.3)
+├── sub-layers/<sub-layer>/
+│   ├── README.md                   — Sub-Layer-Übersicht, Komponenten-Liste, ADR-Verweise
+│   ├── compatibility.yaml          — Sub-Layer-Aggregate (listet Komponenten)
+│   └── components/<component>/
+│       ├── README.md               — Komponenten-Beschreibung, sync-wave-Position, OCI-Pfad
+│       ├── compatibility.yaml      — requires/provides der Komponente
+│       ├── helm/*.yaml             — Helm-Chart-Referenz (chart/repo/version + values) ODER metadata.inline für Stubs
+│       ├── manifests/*.yaml        — Raw-Manifeste (CRs, NetPols, Bucket-Defs)
+│       └── rendered/               — gitignored, Output von helm template + manifest-Konkatenation
 ├── .claude/                        — Tool-Konfig für Claude Code
 │   ├── settings.json               — Permissions + Hook-Bindung
 │   ├── agents/                     — Subagent-Definitionen
@@ -54,14 +57,17 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 
 | Befehl | Zweck |
 |---|---|
-| `task lint` | `helm lint` + `kubeconform` über alle rendered/-Outputs |
-| `task render -- <sub-layer>` | `helm template` für einen Sub-Layer |
-| `task render` | render aller Sub-Layer (Matrix) |
-| `task push -- <sub-layer> <tag>` | `oras push ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` |
-| `task sign -- <sub-layer> <tag>` | `cosign sign --yes` |
-| `task attest -- <sub-layer> <tag>` | SBOM (syft → CycloneDX → cosign attest) + SLSA-Provenance |
-| `task publish -- <sub-layer> <tag>` | render → push → sign → attest in einem Rutsch |
-| `task ci` | **lokale Reproduktion der GHA-Pipeline** (alle Sub-Layer, Lint + Render, kein Push) |
+| `task lint` | YAML/Markdown-Lint über `sub-layers/`, `.github/`, `Taskfile.yml` |
+| `task lint:rendered` | `kubeconform` über alle Komponenten-`rendered/`-Outputs |
+| `task render:one -- <sub-layer>/<component>` | `helm template` für eine Komponente |
+| `task render:sublayer -- <sub-layer>` | rendert alle Komponenten eines Sub-Layers |
+| `task render` | render aller Komponenten aller Sub-Layer (Matrix) |
+| `task push -- <sub-layer>/<component> <tag>` | `helm push` nach `oci://.../<sub-layer>/<component>:<tag>` |
+| `task sign -- <sub-layer>/<component> <tag>` | `cosign sign --yes` (lokale Registries → skip) |
+| `task attest -- <sub-layer>/<component> <tag>` | SBOM (syft → CycloneDX → cosign attest) + SLSA-Provenance — Phase 2+ |
+| `task publish -- <sub-layer>/<component> <tag>` | render → package → push → sign in einem Rutsch |
+| `task publish:sublayer -- <sub-layer> <tag>` | publish aller Komponenten eines Sub-Layers mit gleichem Tag |
+| `task ci` | **lokale Reproduktion der GHA-Pipeline** (alle Komponenten, Lint + Render + Conftest, kein Push) |
 
 **Niemals `make` verwenden** — die Konvention ist go-task.
 
@@ -72,10 +78,10 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 ## Coding Style & Naming
 
 - **YAML**: 2-Space-Indent, keine Tabs, Block-Style bevorzugen
-- **Sub-Layer-Verzeichnisname == Sub-Layer-Identität**: `sub-layers/monitoring/` produziert OCI-Tag `monitoring-v<X.Y.Z>`
-- **README pro Sub-Layer**: Komponenten + Konsumenten + Backlog-Issue + ADR-Verweise (siehe bestehende READMEs als Vorlage)
+- **Verzeichnisname == Identität**: `sub-layers/lifecycle/components/crossplane/` produziert OCI-Pfad `<registry>/lifecycle/crossplane` mit Git-Tag-Pattern `lifecycle/crossplane-vX.Y.Z`
+- **README pro Sub-Layer UND pro Komponente**: Sub-Layer-README listet die Komponenten + sync-wave-Reihenfolge; Komponenten-README beschreibt Inhalt + OCI-Pfad + sync-wave + ADR-Verweise.
 - **Sprache**: Deutsch in `README.md`, `AGENTS.md` und Doku. Helm-Werte/Code folgen Upstream (englisch).
-- **Sub-Layer-Versionierung**: SemVer pro Sub-Layer (`<sub-layer>-vMAJ.MIN.PATCH`). Unabhängiger Lifecycle pro Sub-Layer.
+- **Versionierung pro Komponente**: SemVer (`<sub-layer>/<component>-vMAJ.MIN.PATCH`). Jede Komponente hat einen unabhängigen Lifecycle.
 
 ## Testing Guidelines
 
@@ -89,9 +95,9 @@ Dieses Repo hat keinen Live-Cluster. Validierung ist Render- und Policy-fokussie
 
 ## Commits & Pull Requests
 
-- **Conventional Commits** mit Sub-Layer-Scope: `feat(monitoring): …`, `fix(dns): …`, `chore(automation): …`, `docs: …`
+- **Conventional Commits** mit Sub-Layer- oder Komponenten-Scope: `feat(lifecycle): …`, `feat(lifecycle/crossplane): …`, `fix(dns): …`, `chore(automation): …`, `docs: …`
 - Ein Commit = eine logische Einheit. Render-Output (`rendered/`) niemals committen.
-- **Breaking-Change-Bumps**: ein neues Major-Tag (`<sub-layer>-v2.0.0`) erfordert einen `BREAKING CHANGE:`-Footer im Commit und einen Eintrag im Top-`CHANGELOG.md` (wenn vorhanden).
+- **Breaking-Change-Bumps**: ein neues Major-Tag (`<sub-layer>/<component>-v2.0.0`) erfordert einen `BREAKING CHANGE:`-Footer im Commit und einen Eintrag im Top-`CHANGELOG.md` (wenn vorhanden).
 - PR-Body: was geändert + warum + Validation-Steps (siehe `.github/PULL_REQUEST_TEMPLATE.md`).
 - PRs sollen **Subagent-Reviews** durchlaufen (siehe Multi-Agent-Coordination weiter unten). Der `require-review.sh`-Hook ist **bewusst inaktiv** (nicht in `settings.json` gebunden) bis M2 onboardet ist — bei 1 Maintainer wäre fail-closed Selbst-Sabotage. Hook-Skripte bleiben im Repo und werden reaktiviert sobald Multi-Maintainer-Workflow real wird.
 
@@ -113,22 +119,33 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 - **Kein Render-Output committen** — `rendered/` ist gitignored. Geprüft via `pre-commit`-Hook.
 - **Kein `.envrc.local`** ins Repo — direnv-Lokal-Overrides bleiben lokal.
 - **Kein `.claude/` mit personalisierten Settings committen** — `settings.local.json` ist gitignored.
-- **OCI-Pfade hardcoded**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` — Renaming des Org-Pfads erfordert Coordination mit allen Konsumenten.
+- **OCI-Pfade hardcoded**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>:<tag>` — Renaming des Org-Pfads erfordert Coordination mit allen Konsumenten.
 - **cosign keyless mit GHA-OIDC**: Signing-Identity ist die Workflow-Identity. Keine Long-Lived-Keys committen.
 
-## Sub-Layer-Konventionen
+## Sub-Layer- und Komponenten-Konventionen
 
-- **Ein Verzeichnis pro Sub-Layer** unter `sub-layers/<name>/`. Verzeichnisname == OCI-Artefakt-Name.
-- **Pro Sub-Layer**: `README.md` (Pflicht), `helm/` oder `manifests/` (Inhalt), `compatibility.yaml` (Pflicht ab Issue #11.3).
+- **Ein Verzeichnis pro Sub-Layer** unter `sub-layers/<name>/`, mit `components/<component>/` darunter pro OCI-Artefakt. Verzeichnisname == OCI-Pfad-Komponente.
+- **Pro Sub-Layer**: `README.md` (Pflicht, listet Komponenten + sync-wave-Reihenfolge), `compatibility.yaml` (Aggregate).
+- **Pro Komponente**: `README.md` (Pflicht: Inhalt + OCI-Pfad + sync-wave + ADR-Verweise), `compatibility.yaml` (Pflicht: requires/provides), `helm/` oder `manifests/` (Inhalt).
 - **Konsumenten-Trennung**: dieses Repo enthält Defaults und shared-Values. Cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in die Konsumenten-Repos.
-- **`compatibility.yaml`** deklariert die kompatible `talos-platform-base`-Version-Range:
+- **Argo-Application-Definitionen leben im Konsumenten-Cluster-Repo**, nicht hier. Pro Komponente eine `Application`-CR mit `argocd.argoproj.io/sync-wave`-Annotation. Für lokale End-to-End-Tests gibt es `local/argo-apps/<sub-layer>/<component>.yaml`-Templates im apps-Repo.
+- **`compatibility.yaml` pro Komponente** deklariert die Komponenten-Abhängigkeiten:
   ```yaml
   requires:
     talos-platform-base: ">=v0.4.0 <v1.0.0"
+    lifecycle/crossplane: ">=v0.1.0"   # andere Komponente desselben Repos
   provides:
-    - name: <sub-layer>
+    - name: <component>
       apis:
         - <chart-name>@<chart-version>
+  ```
+- **Sub-Layer-`compatibility.yaml`** ist ein Aggregate, das die Komponenten listet:
+  ```yaml
+  components:
+    - crossplane    # sync-wave 0
+    - ipxe          # sync-wave 0
+    - providers     # sync-wave 10
+    - compositions  # sync-wave 20
   ```
 
 ## Multi-Agent-Coordination

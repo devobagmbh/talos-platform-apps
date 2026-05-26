@@ -12,8 +12,18 @@ version: '3'
 silent: true
 
 vars:
-  SUB_LAYERS:
-    sh: ls sub-layers/
+  # Alle Komponenten als <sub-layer>/<component>-Liste, aus dem Verzeichnis-Baum
+  # gelesen. Komponente ist die OCI-Distribution-Unit (ADR-0009); Sub-Layer ist
+  # die organisatorische Klammer.
+  COMPONENTS:
+    sh: |
+      shopt -s nullglob
+      for sldir in sub-layers/*/; do
+        sl=$(basename "$sldir")
+        for cdir in "$sldir"components/*/; do
+          echo "$sl/$(basename "$cdir")"
+        done
+      done
 
 tasks:
   default:
@@ -23,78 +33,104 @@ tasks:
   # --- Render ---
 
   render:
-    desc: Rendert alle Sub-Layer in sub-layers/*/rendered/manifest.yaml
+    desc: Rendert alle Komponenten in sub-layers/*/components/*/rendered/manifest.yaml
     cmds:
-      - for: { var: SUB_LAYERS }
+      - for: { var: COMPONENTS }
         task: render:one
-        vars: { SUB_LAYER: '{{.ITEM}}' }
+        vars: { COMPONENT_ID: '{{.ITEM}}' }
 
   render:one:
-    desc: Rendert genau einen Sub-Layer
+    desc: 'Rendert eine Komponente: task render:one -- <sub-layer>/<component>'
     summary: |
-      Eingabe-Konvention pro Sub-Layer:
-        helm/*.yaml     — YAML mit metadata.{chart,repo,version,namespace} + values
-                          oder metadata.inline: true für Custom-Stubs
+      Komponente ist die OCI-Distribution-Unit. Pfad:
+        sub-layers/<sub-layer>/components/<component>/
+      Eingabe-Konvention:
+        helm/*.yaml      — YAML mit metadata.{chart,repo,version,namespace} + values
+                           oder metadata.inline: true für Custom-Stubs
         manifests/*.yaml — Raw-Manifeste, werden 1:1 konkateniert
-      Output: sub-layers/<name>/rendered/manifest.yaml
-    vars:
-      SUB_LAYER: '{{.SUB_LAYER | default .CLI_ARGS}}'
-      ROOT: 'sub-layers/{{.SUB_LAYER}}'
-      OUT: 'sub-layers/{{.SUB_LAYER}}/rendered/manifest.yaml'
-    preconditions:
-      - sh: test -d "{{.ROOT}}"
-        msg: "Sub-Layer {{.SUB_LAYER}} existiert nicht ({{.ROOT}})"
-    cmds:
-      - mkdir -p "$(dirname {{.OUT}})"
-      - ': > "{{.OUT}}"'
-      - echo "=== Render Sub-Layer  {{.SUB_LAYER}} ==="
-      - |
-        shopt -s nullglob
-        for vfile in {{.ROOT}}/helm/*.yaml; do
-          name=$(basename "$vfile" .yaml)
-          inline=$(yq -r '.metadata.inline // false' "$vfile")
+      Output:
+        sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
+    cmd: |
+      component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
+        echo "usage: task render:one -- <sub-layer>/<component>"
+        exit 1
+      fi
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
+      root="sub-layers/${sub_layer}/components/${component}"
+      out="${root}/rendered/manifest.yaml"
 
-          if [[ "$inline" == "true" ]]; then
-            namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
-            echo "  ↳ Inline-Stub  $name (ns=$namespace)"
-            {
-              echo "# Inline-Stub: $name (Sub-Layer: {{.SUB_LAYER}})"
-              echo "# Custom-Manifeste folgen im Sub-Layer-Inhalt-Issue."
-              echo "---"
-              echo "apiVersion: v1"
-              echo "kind: Namespace"
-              echo "metadata:"
-              echo "  name: $namespace"
-              echo "  labels:"
-              echo "    platform.devoba.de/sub-layer: {{.SUB_LAYER}}"
-              echo "    platform.devoba.de/component: $name"
-              echo "---"
-            } >> "{{.OUT}}"
-            continue
-          fi
+      if [ ! -d "$root" ]; then
+        echo "ERROR: Komponente ${component_id} existiert nicht (${root})"
+        exit 1
+      fi
 
-          chart=$(yq -r '.metadata.chart' "$vfile")
-          repo=$(yq -r '.metadata.repo' "$vfile")
-          version=$(yq -r '.metadata.version' "$vfile")
+      mkdir -p "$(dirname "$out")"
+      : > "$out"
+      echo "=== Render ${component_id} ==="
+
+      shopt -s nullglob
+      for vfile in "$root"/helm/*.yaml; do
+        name=$(basename "$vfile" .yaml)
+        inline=$(yq -r '.metadata.inline // false' "$vfile")
+
+        if [[ "$inline" == "true" ]]; then
           namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
+          echo "  ↳ Inline-Stub  $name (ns=$namespace)"
+          {
+            echo "# Inline-Stub: $name (Komponente: ${component_id})"
+            echo "# Custom-Manifeste folgen im Sub-Layer-Inhalt-Issue."
+            echo "---"
+            echo "apiVersion: v1"
+            echo "kind: Namespace"
+            echo "metadata:"
+            echo "  name: $namespace"
+            echo "  labels:"
+            echo "    platform.devoba.de/sub-layer: ${sub_layer}"
+            echo "    platform.devoba.de/component: ${component}"
+            echo "---"
+          } >> "$out"
+          continue
+        fi
 
-          echo "  ↳ Helm-Render   $name (chart=$chart version=$version)"
-          vals_tmp=$(mktemp)
-          yq '.values' "$vfile" > "$vals_tmp"
-          helm template "$name" "$chart" \
-            --repo "$repo" --version "$version" \
-            --namespace "$namespace" \
-            --values "$vals_tmp" >> "{{.OUT}}"
-          echo "---" >> "{{.OUT}}"
-          rm -f "$vals_tmp"
-        done
+        chart=$(yq -r '.metadata.chart' "$vfile")
+        repo=$(yq -r '.metadata.repo' "$vfile")
+        version=$(yq -r '.metadata.version' "$vfile")
+        namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
 
-        for mfile in {{.ROOT}}/manifests/*.yaml; do
-          echo "  ↳ Raw-Manifest  $(basename "$mfile")"
-          cat "$mfile" >> "{{.OUT}}"
-          echo "---" >> "{{.OUT}}"
-        done
-      - echo "  → $(wc -l < {{.OUT}}) Zeilen geschrieben nach {{.OUT}}"
+        echo "  ↳ Helm-Render   $name (chart=$chart version=$version)"
+        vals_tmp=$(mktemp)
+        yq '.values' "$vfile" > "$vals_tmp"
+        helm template "$name" "$chart" \
+          --repo "$repo" --version "$version" \
+          --namespace "$namespace" \
+          --values "$vals_tmp" >> "$out"
+        echo "---" >> "$out"
+        rm -f "$vals_tmp"
+      done
+
+      for mfile in "$root"/manifests/*.yaml; do
+        echo "  ↳ Raw-Manifest  $(basename "$mfile")"
+        cat "$mfile" >> "$out"
+        echo "---" >> "$out"
+      done
+      echo "  → $(wc -l < "$out") Zeilen → ${out}"
+
+  render:sublayer:
+    desc: 'Rendert alle Komponenten eines Sub-Layers: task render:sublayer -- <sub-layer>'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task render:sublayer -- <sub-layer>}"
+      sldir="sub-layers/${sub_layer}/components"
+      if [ ! -d "$sldir" ]; then
+        echo "ERROR: ${sldir} existiert nicht"
+        exit 1
+      fi
+      for cdir in "$sldir"/*/; do
+        component=$(basename "$cdir")
+        task render:one -- "${sub_layer}/${component}"
+      done
 
   # --- Lint ---
 
@@ -105,9 +141,9 @@ tasks:
       - markdownlint --config .markdownlint.yaml '**/*.md' --ignore .devbox --ignore .direnv
 
   lint:rendered:
-    desc: kubeconform gegen alle rendered/-Manifeste
+    desc: kubeconform gegen alle Komponenten-rendered/-Manifeste
     cmd: |
-      find sub-layers/*/rendered -name '*.yaml' -print0 2>/dev/null | \
+      find sub-layers -path '*/components/*/rendered/*.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
   # --- Security-Scans (Issue #11.8) ---
@@ -125,23 +161,31 @@ tasks:
         fi
 
   scan:trivy:
-    desc: Trivy-Scan über rendered/-Manifeste, SARIF-Output
+    desc: Trivy-Scan über alle Komponenten-rendered/-Manifeste, SARIF-Output
     deps: [render]
     cmd: |
-      trivy fs sub-layers/*/rendered/ \
+      # Trivy braucht mehrere Pfade als Args; expandieren via shell
+      shopt -s nullglob
+      dirs=(sub-layers/*/components/*/rendered/)
+      if [ ${#dirs[@]} -eq 0 ]; then
+        echo "Keine rendered/-Verzeichnisse — nichts zu scannen"
+        : > trivy-results.sarif
+        exit 0
+      fi
+      trivy fs "${dirs[@]}" \
         --format sarif \
         --output trivy-results.sarif
 
   scan:conftest:
-    desc: Conftest-Policies aus policies/ gegen rendered/-Manifeste
+    desc: Conftest-Policies aus policies/ gegen alle Komponenten-rendered/-Manifeste
     deps: [render]
     cmd: |
-      files=$(find sub-layers -path '*/rendered/manifest.yaml' -size +0 -type f)
+      files=$(find sub-layers -path '*/components/*/rendered/manifest.yaml' -size +0 -type f)
       if [ -z "$files" ]; then
         echo "Keine nicht-leeren rendered/manifest.yaml gefunden — nichts zu prüfen"
         exit 0
       fi
-      echo "Conftest gegen $(echo "$files" | wc -l | tr -d ' ') Sub-Layer-Manifeste:"
+      echo "Conftest gegen $(echo "$files" | wc -l | tr -d ' ') Komponenten-Manifeste:"
       echo "$files" | sed 's/^/  - /'
       echo ""
       conftest test --policy policies/ --all-namespaces $files
@@ -159,24 +203,24 @@ tasks:
   # --- Publish-Targets ---
 
   package:
-    desc: 'baut Helm-Chart-Wrapper aus rendered/manifest.yaml: task package -- <sub-layer> <tag>'
+    desc: 'baut Helm-Chart-Wrapper: task package -- <sub-layer>/<component> <tag>'
     summary: |
-      Verpackt sub-layers/<sub-layer>/rendered/manifest.yaml in einen
-      schlanken Helm-Chart-Wrapper (Chart.yaml + templates/manifest.yaml).
-      Tag wird zur Chart-Version. Pre-rendered bleibt strikt — Templates
-      sind statische YAML, kein Templating-Variable-Auflösen mehr.
+      Verpackt sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
+      in einen Helm-Chart-Wrapper (Chart.yaml + templates/manifest.yaml).
+      Chart-Name = Komponente. Tag wird zur Chart-Version.
 
-      Output: sub-layers/<sub-layer>/rendered/chart/<sub-layer>-<tag>.tgz
+      Output: sub-layers/<sub-layer>/components/<component>/rendered/<component>-<tag>.tgz
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task package -- <sub-layer> <tag>}"
-      tag="${2:?usage: task package -- <sub-layer> <tag>}"
-      # Helm-Chart-Version muss SemVer ohne "v"-Präfix sein
+      component_id="${1:?usage: task package -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task package -- <sub-layer>/<component> <tag>}"
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
       chart_version="${tag#v}"
 
-      root="sub-layers/${sub_layer}"
+      root="sub-layers/${sub_layer}/components/${component}"
       manifest="${root}/rendered/manifest.yaml"
-      test -s "$manifest" || { echo "ERROR: $manifest fehlt oder ist leer — vorher task render:one -- $sub_layer"; exit 1; }
+      test -s "$manifest" || { echo "ERROR: $manifest fehlt — vorher task render:one -- ${component_id}"; exit 1; }
 
       wrapper="${root}/rendered/chart"
       rm -rf "$wrapper"
@@ -184,67 +228,68 @@ tasks:
 
       cat > "$wrapper/Chart.yaml" <<EOF
       apiVersion: v2
-      name: ${sub_layer}
-      description: Pre-rendered Devoba-Platform-Sub-Layer ${sub_layer}
+      name: ${component}
+      description: Pre-rendered Devoba-Platform-Komponente ${component_id}
       type: application
       version: ${chart_version}
       appVersion: "${chart_version}"
       annotations:
         platform.devoba.de/sub-layer: ${sub_layer}
+        platform.devoba.de/component: ${component}
         platform.devoba.de/pre-rendered: "true"
       EOF
 
       cp "$manifest" "$wrapper/templates/manifest.yaml"
 
       helm package "$wrapper" --destination "${root}/rendered/"
-      echo "✓ Packaged: ${root}/rendered/${sub_layer}-${chart_version}.tgz"
+      echo "✓ Packaged: ${root}/rendered/${component}-${chart_version}.tgz"
 
   push:
-    desc: 'helm push eines Sub-Layer-Charts: task push -- <sub-layer> <tag>'
+    desc: 'helm push einer Komponente: task push -- <sub-layer>/<component> <tag>'
     summary: |
       Pusht das via "task package" gebaute Helm-Chart als OCI-Artefakt nach
-      OCI_REGISTRY (Default: ghcr.io/devobagmbh/talos-platform-apps).
+      OCI_REGISTRY/<sub-layer>/<component>:<tag>.
+
+      Default OCI_REGISTRY: ghcr.io/devobagmbh/talos-platform-apps
 
       Voraussetzungen:
-        - rendered + packaged (via task package -- <sub-layer> <tag>)
+        - rendered + packaged
         - helm registry login OCI_REGISTRY
-          (lokal: echo $GITHUB_TOKEN | helm registry login ghcr.io -u <user> --password-stdin)
 
-      Beispiel: task push -- lifecycle v0.0.0-dev
+      Beispiel: task push -- lifecycle/crossplane v0.1.0
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task push -- <sub-layer> <tag>}"
-      tag="${2:?usage: task push -- <sub-layer> <tag>}"
+      component_id="${1:?usage: task push -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task push -- <sub-layer>/<component> <tag>}"
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
       chart_version="${tag#v}"
 
-      pkg="sub-layers/${sub_layer}/rendered/${sub_layer}-${chart_version}.tgz"
-      test -s "$pkg" || { echo "ERROR: $pkg fehlt — vorher task package -- $sub_layer $tag"; exit 1; }
+      pkg="sub-layers/${sub_layer}/components/${component}/rendered/${component}-${chart_version}.tgz"
+      test -s "$pkg" || { echo "ERROR: $pkg fehlt — vorher task package -- ${component_id} $tag"; exit 1; }
 
-      echo "Pushing $pkg → oci://{{.OCI_REGISTRY}}/${sub_layer}"
-      helm push "$pkg" "oci://{{.OCI_REGISTRY}}"
-      echo "✓ Pushed: oci://{{.OCI_REGISTRY}}/${sub_layer}:${chart_version}"
+      target="oci://{{.OCI_REGISTRY}}/${sub_layer}"
+      echo "Pushing $pkg → ${target}/${component}"
+      helm push "$pkg" "$target"
+      echo "✓ Pushed: ${target}/${component}:${chart_version}"
 
   sign:
-    desc: 'cosign sign keyless: task sign -- <sub-layer> <tag>'
+    desc: 'cosign sign keyless: task sign -- <sub-layer>/<component> <tag>'
     summary: |
-      Signiert das Helm-OCI-Artefakt unter <ref> via cosign keyless.
-      Lokal-Setup (Registry ohne OIDC-Backing) überspringt cosign.
-
-      In CI: GHA-OIDC-Token (permissions: id-token: write) →
-        Fulcio-Cert → Rekor-Log-Eintrag → cosign-Signature im OCI-Tag.
-
-      Lokal: kein cosign — die lokale Registry hat kein Trust-Backing,
-      Argo-CD im Kind verifiziert ohnehin nicht. cosign nur in CI.
+      Signiert das Helm-OCI-Artefakt via cosign keyless.
+      Lokal-Setup (localhost/kind-registry) überspringt cosign.
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task sign -- <sub-layer> <tag>}"
-      tag="${2:?usage: task sign -- <sub-layer> <tag>}"
+      component_id="${1:?usage: task sign -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task sign -- <sub-layer>/<component> <tag>}"
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
       chart_version="${tag#v}"
-      ref="{{.OCI_REGISTRY}}/${sub_layer}:${chart_version}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${chart_version}"
       if [[ "{{.OCI_REGISTRY}}" == *"localhost"* ]] || [[ "{{.OCI_REGISTRY}}" == *"kind-registry"* ]]; then
         echo "Lokale Registry erkannt — cosign übersprungen"
         exit 0
@@ -261,31 +306,49 @@ tasks:
       echo "Konsumenten existieren oder Audit-Anforderung greift."
 
   publish:
-    desc: 'render → package → push → sign: task publish -- <sub-layer> <tag>'
+    desc: 'render → package → push → sign einer Komponente: task publish -- <sub-layer>/<component> <tag>'
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task publish -- <sub-layer> <tag>}"
-      tag="${2:?usage: task publish -- <sub-layer> <tag>}"
-      task render:one -- "$sub_layer"
-      task package    -- "$sub_layer" "$tag"
-      task push       -- "$sub_layer" "$tag"
-      task sign       -- "$sub_layer" "$tag"
-      echo "✓ Published $sub_layer:$tag"
+      component_id="${1:?usage: task publish -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task publish -- <sub-layer>/<component> <tag>}"
+      task render:one -- "$component_id"
+      task package    -- "$component_id" "$tag"
+      task push       -- "$component_id" "$tag"
+      task sign       -- "$component_id" "$tag"
+      echo "✓ Published ${component_id}:${tag}"
+
+  publish:sublayer:
+    desc: 'render + push aller Komponenten eines Sub-Layers mit gleichem Tag: task publish:sublayer -- <sub-layer> <tag>'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task publish:sublayer -- <sub-layer> <tag>}"
+      tag="${2:?usage: task publish:sublayer -- <sub-layer> <tag>}"
+      sldir="sub-layers/${sub_layer}/components"
+      if [ ! -d "$sldir" ]; then
+        echo "ERROR: ${sldir} existiert nicht"
+        exit 1
+      fi
+      for cdir in "$sldir"/*/; do
+        component=$(basename "$cdir")
+        task publish -- "${sub_layer}/${component}" "$tag"
+      done
 
   verify:
-    desc: 'cosign verify gegen einen veröffentlichten OCI-Tag: task verify -- <sub-layer> <tag>'
+    desc: 'cosign verify einer Komponente: task verify -- <sub-layer>/<component> <tag>'
     summary: |
       Verifiziert die cosign-Keyless-Signature. Erwartete Identity:
-        https://github.com/devobagmbh/talos-platform-apps/.github/workflows/oci-publish.yml@refs/tags/<sub-layer>-<tag>
+        https://github.com/devobagmbh/talos-platform-apps/.github/workflows/oci-publish.yml@refs/tags/<sub-layer>/<component>-<tag>
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task verify -- <sub-layer> <tag>}"
-      tag="${2:?usage: task verify -- <sub-layer> <tag>}"
-      ref="{{.OCI_REGISTRY}}/${sub_layer}:${tag}"
+      component_id="${1:?usage: task verify -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task verify -- <sub-layer>/<component> <tag>}"
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${tag}"
       cosign verify "$ref" \
-        --certificate-identity-regexp "^https://github\.com/devobagmbh/talos-platform-apps/\.github/workflows/oci-publish\.yml@refs/tags/${sub_layer}-.*$" \
+        --certificate-identity-regexp "^https://github\.com/devobagmbh/talos-platform-apps/\.github/workflows/oci-publish\.yml@refs/tags/${sub_layer}/${component}-.*$" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
@@ -304,7 +367,7 @@ tasks:
   clean:
     desc: rendered/-Output und Scan-Artefakte entfernen
     cmds:
-      - rm -rf sub-layers/*/rendered
+      - find sub-layers -path '*/components/*/rendered' -type d -exec rm -rf {} +
       - rm -f trivy-results.sarif snyk-results.sarif
 
   pre-commit-install:
@@ -620,50 +683,78 @@ tasks:
       echo ""
 
   local:publish:
-    desc: 'render + package + push zur lokalen Registry: task local:publish -- <sub-layer> <tag>'
+    desc: 'render + package + push einer Komponente zur lokalen Registry: task local:publish -- <sub-layer>/<component> <tag>'
     summary: |
-      Pusht an oci://localhost:5001/talos-platform-apps (Workstation-View, direkt
-      an den kind-registry-Container mit mkcert-TLS — SAN: localhost). Argo CD
-      im Cluster pullt dasselbe Artefakt intra-cluster über
-      kind-registry.registry.svc.cluster.local:5000 (gleicher Container, gleicher
-      mkcert-Cert mit anderem SAN — eine Container-Identity, zwei Hostnamen).
+      Pusht an oci://localhost:5001/talos-platform-apps/<sub-layer>/<component>:<tag>
+      (Workstation-View, mkcert-TLS via SAN 'localhost'). Argo CD im Cluster
+      pullt dasselbe Artefakt intra-cluster über
+      kind-registry.registry.svc.cluster.local:5000/talos-platform-apps/<sub-layer>/<component>:<tag>
+      (gleicher Container, gleicher mkcert-Cert mit anderem SAN).
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task local:publish -- <sub-layer> <tag>}"
-      tag="${2:?usage: task local:publish -- <sub-layer> <tag>}"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$sub_layer"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$sub_layer" "$tag"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$sub_layer" "$tag"
-      echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${sub_layer}:${tag#v}"
+      component_id="${1:?usage: task local:publish -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task local:publish -- <sub-layer>/<component> <tag>}"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$component_id" "$tag"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$component_id" "$tag"
+      echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${component_id}:${tag#v}"
+
+  local:publish:sublayer:
+    desc: 'Alle Komponenten eines Sub-Layers lokal publishen: task local:publish:sublayer -- <sub-layer> <tag>'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task local:publish:sublayer -- <sub-layer> <tag>}"
+      tag="${2:?usage: task local:publish:sublayer -- <sub-layer> <tag>}"
+      sldir="sub-layers/${sub_layer}/components"
+      if [ ! -d "$sldir" ]; then
+        echo "ERROR: ${sldir} existiert nicht"
+        exit 1
+      fi
+      for cdir in "$sldir"/*/; do
+        component=$(basename "$cdir")
+        task local:publish -- "${sub_layer}/${component}" "$tag"
+      done
 
   local:apply:
-    desc: 'Argo-Application aus local/argo-app-template.yaml im Kind anwenden: task local:apply -- <sub-layer> <tag> [<namespace>]'
-    # repoURL ohne oci://-Präfix: Argo matched die App ans registrierte
-    # Repository (configs.repositories.kind-registry-local in argocd-values.yaml),
-    # was den OCI-Code-Pfad in Argos Helm-Aufruf aktiviert. Mit oci://-Schema
-    # würde Argo 'helm pull --repo oci://...' versuchen, was Helm 3.x deprecated.
+    desc: 'Argo-Apps eines Sub-Layers im Kind anwenden: task local:apply -- <sub-layer> <tag>'
+    summary: |
+      Sucht local/argo-apps/<sub-layer>/*.yaml und applied jede Datei mit
+      envsubst-Substitution für ${TAG} und ${REGISTRY}. Pro Komponente eine
+      eigene Argo-Application mit fester sync-wave-Annotation im Template.
+
+      ${REGISTRY} = kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+                    (Cluster-Pull-Pfad, intra-cluster TLS via mkcert-SAN).
     cmd: |
       set -- {{.CLI_ARGS}}
-      sub_layer="${1:?usage: task local:apply -- <sub-layer> <tag> [<namespace>]}"
-      tag="${2:?usage: task local:apply -- <sub-layer> <tag> [<namespace>]}"
-      namespace="${3:-default}"
+      sub_layer="${1:?usage: task local:apply -- <sub-layer> <tag>}"
+      tag="${2:?usage: task local:apply -- <sub-layer> <tag>}"
       chart_version="${tag#v}"
+      apps_dir="local/argo-apps/${sub_layer}"
 
-      SUB_LAYER="$sub_layer" \
+      if [ ! -d "$apps_dir" ]; then
+        echo "ERROR: ${apps_dir} existiert nicht"
+        exit 1
+      fi
+
+      shopt -s nullglob
+      for tmpl in "$apps_dir"/*.yaml; do
+        component=$(basename "$tmpl" .yaml)
         TAG="$chart_version" \
-        REGISTRY="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps" \
-        NAMESPACE="$namespace" \
-        envsubst < local/argo-app-template.yaml | kubectl apply -f -
-
-      echo "✓ Argo-Application angelegt: ${sub_layer}-local (chart=${sub_layer}:${chart_version}, ns=${namespace})"
-      echo "  Status: kubectl -n argocd get application ${sub_layer}-local -o jsonpath='{.status.sync.status}'"
+          REGISTRY="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps" \
+          envsubst < "$tmpl" | kubectl apply -f -
+        echo "  ✓ ${sub_layer}/${component} → Argo-App '${sub_layer}-${component}'"
+      done
+      echo "✓ Sub-Layer ${sub_layer} angelegt (Tag ${chart_version})"
+      echo "  Sync-Status: kubectl -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
 
   local:remove:
-    desc: 'Argo-Application + deployte Ressourcen entfernen: task local:remove -- <sub-layer>'
+    desc: 'Alle Argo-Apps eines Sub-Layers entfernen: task local:remove -- <sub-layer>'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:remove -- <sub-layer>}"
-      kubectl -n argocd delete application "${sub_layer}-local" --wait=true || true
+      kubectl -n argocd delete application \
+        -l platform.devoba.de/sub-layer="$sub_layer",platform.devoba.de/local-test=true \
+        --wait=true || true
 
   local:status:
     desc: 'Überblick: Cluster + Argo + Applications'

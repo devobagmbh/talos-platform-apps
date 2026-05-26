@@ -2,13 +2,15 @@ name: oci-publish
 
 # Render + Lint + Scan auf PR; render + push + sign auf Tag-Push.
 #
-# Tag-Pattern: <sub-layer>-vX.Y.Z (z. B. lifecycle-v0.1.0, monitoring-v0.3.1)
-# Der Workflow extrahiert den Sub-Layer-Namen aus dem Tag und publiziert
-# genau diesen einen Sub-Layer als signiertes OCI-Artefakt.
+# Tag-Pattern: <sub-layer>/<component>-vX.Y.Z
+#   z. B. lifecycle/crossplane-v0.1.0, monitoring/loki-v0.3.1
+# Komponente ist die OCI-Distribution-Unit (ADR-0009); Sub-Layer ist die
+# organisatorische Klammer. Der Workflow extrahiert beide aus dem Tag und
+# publiziert genau diese eine Komponente als signiertes OCI-Artefakt.
 #
 # Konvention (AGENTS.md § CI-Konventionen):
 #   1. Devbox-Cache aktiv (jetify-com/devbox-install-action)
-#   2. Lokal reproduzierbar via `task ci` und `task publish -- <sub-layer> <tag>`
+#   2. Lokal reproduzierbar via `task ci` und `task publish -- <sub-layer>/<component> <tag>`
 #   3. Pipeline = dünner Task-Caller — Steps rufen ausschließlich `task <name>`
 
 on:
@@ -16,14 +18,14 @@ on:
     branches: [main]
   push:
     tags:
-      - 'automation-v*'
-      - 'databases-v*'
-      - 'dns-v*'
-      - 'lifecycle-v*'
-      - 'monitoring-v*'
-      - 'registry-v*'
-      - 'secrets-v*'
-      - 'storage-objects-v*'
+      - 'automation/*-v*'
+      - 'databases/*-v*'
+      - 'dns/*-v*'
+      - 'lifecycle/*-v*'
+      - 'monitoring/*-v*'
+      - 'registry/*-v*'
+      - 'secrets/*-v*'
+      - 'storage-objects/*-v*'
 
 permissions:
   contents: read
@@ -64,18 +66,18 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sub-Layer und Tag aus refs/tags ableiten
+      - name: Komponenten-ID und Tag aus refs/tags ableiten
         id: parse
         run: |
-          # tag ist z. B. "lifecycle-v0.1.0"
+          # tag ist z. B. "lifecycle/crossplane-v0.1.0"
           full="${GITHUB_REF_NAME}"
-          # Sub-Layer = alles vor dem letzten "-v"
-          sub_layer="${full%-v*}"
-          # Version-Tag = "v" + Rest (z. B. v0.1.0)
+          # Komponenten-ID = alles vor dem letzten "-v" (z. B. "lifecycle/crossplane")
+          component_id="${full%-v*}"
+          # Version-Tag = "v" + Rest (z. B. "v0.1.0")
           version="v${full##*-v}"
-          echo "sub_layer=$sub_layer" >> "$GITHUB_OUTPUT"
-          echo "version=$version"     >> "$GITHUB_OUTPUT"
-          echo "Tag '$full' → sub_layer='$sub_layer', version='$version'"
+          echo "component_id=$component_id" >> "$GITHUB_OUTPUT"
+          echo "version=$version"           >> "$GITHUB_OUTPUT"
+          echo "Tag '$full' → component_id='$component_id', version='$version'"
 
       - name: Lokale CI-Pipeline (lint + render + conftest)
         run: devbox run -- task ci
@@ -89,11 +91,11 @@ jobs:
       - name: task publish (render + push + sign keyless)
         run: |
           devbox run -- task publish -- \
-            "${{ steps.parse.outputs.sub_layer }}" \
+            "${{ steps.parse.outputs.component_id }}" \
             "${{ steps.parse.outputs.version }}"
 
       - name: Verifikation (cosign verify)
         run: |
           devbox run -- task verify -- \
-            "${{ steps.parse.outputs.sub_layer }}" \
+            "${{ steps.parse.outputs.component_id }}" \
             "${{ steps.parse.outputs.version }}"
