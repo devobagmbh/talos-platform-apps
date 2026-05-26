@@ -20,11 +20,28 @@ Crossplane + Provider + iPXE-Server für Stage-1-Child-Cluster-Provisionierung.
 
 ## Inhalt
 
-- `helm/crossplane.yaml` — Operator-Werte
-- `manifests/providers.yaml` — `Provider`-CRs für terraform/helm/kubernetes
-- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` für `XCluster`
-- `manifests/composition-xcluster.yaml` — `Composition`, die Tofu-Workspace + Helm-Releases + K8s-Objects orchestriert
-- `helm/ipxe.yaml` — iPXE-Server-Werte (Boot-Skript-Quelle, NIC-Whitelist, Service-Typ)
+- `helm/crossplane.yaml` — Operator-Werte (Format: `metadata` mit `chart`/`repo`/`version`/`namespace` + `values`-Block, siehe Sub-Layer-Render-Konvention)
+- `helm/ipxe.yaml` — iPXE-Server-Stub (`metadata.inline: true` — Custom-Manifeste folgen mit Issue #28 in einem Konsumenten-Repo)
+- `manifests/providers.yaml` — `Provider`-CRs für terraform/helm/kubernetes (Versionen gepinnt)
+- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` für `XCluster` (Schema-Felder: clusterName, talosVersion, nodes, platformBaseTag, appsSubLayerPins)
+- `manifests/composition-xcluster.yaml` — `Composition` als 3-Step-Pipeline (Tofu-Workspace → Cilium → ArgoCD)
+- `compatibility.yaml` — `requires.talos-platform-base` + `provides`-Liste (Crossplane + Provider-Versionen)
+
+## Render-Konvention
+
+Dieser Sub-Layer wird via `task render:one -- lifecycle` zu `rendered/manifest.yaml` gerendert. Die `helm/*.yaml`-Files haben ein zweiteiliges Schema:
+
+```yaml
+metadata:
+  chart: crossplane                          # Helm-Chart-Name
+  repo: https://charts.crossplane.io/stable  # Helm-Repo-URL
+  version: 1.18.0                            # gepinnte Version
+  namespace: crossplane-system               # Ziel-Namespace
+values:
+  # ... Helm-Values, werden via helm template --values übergeben
+```
+
+Für Custom-Stubs ohne externen Chart: `metadata.inline: true` — der Renderer erzeugt dann ein Namespace-Skelett mit Labels statt eines Helm-Outputs.
 
 ## Backlog-Issue
 

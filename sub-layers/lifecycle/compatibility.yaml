@@ -1,0 +1,22 @@
+# compatibility.yaml — Sub-Layer-Kompatibilitäts-Manifest
+# Issue #11.3 — definiert das Konsumenten-Vertrags-API.
+#
+# requires: welche talos-platform-base-Version dieser Sub-Layer mindestens braucht
+# provides: welche Helm-Charts + Versionen dieser Sub-Layer bündelt
+
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+
+provides:
+  - name: crossplane
+    apis:
+      - crossplane@1.18.0
+      - provider-terraform@v0.20.0
+      - provider-helm@v0.20.0
+      - provider-kubernetes@v0.18.0
+  - name: ipxe-server
+    apis:
+      - ipxe-inline@1.0.0  # custom-Manifest, kein externer Helm-Chart
+  - name: xcluster-api
+    apis:
+      - platform.devoba.de/XCluster@v1alpha1

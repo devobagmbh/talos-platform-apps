@@ -1,0 +1,33 @@
+# iPXE-Server — minimaler PXE-Boot-Server auf dem Seeder.
+# Liefert iPXE-Boot-Skripte für DHQ-Nodes. Boot-Targets (Talos-Image,
+# Kernel-Parameter, Machine-Config-URL) werden cluster-spezifisch in
+# Layer 3 (talos-seeder-cluster/) gesetzt.
+#
+# Wir nutzen keinen "iPXE-Helm-Chart" — stattdessen ein schlankes
+# Custom-Deployment, das ein iPXE-Image bedient und Boot-Konfigs aus einem
+# ConfigMap zieht. Cluster-Helm-Source wird als embedded Manifest erzeugt
+# (kein Chart-Pull aus Repo).
+
+metadata:
+  inline: true  # kein externer Chart; Render erzeugt Manifeste direkt aus values
+  namespace: ipxe
+
+values:
+  image:
+    repository: ghcr.io/ipxe/ipxe
+    tag: latest  # TODO Phase-1-Acceptance: konkrete Version pinnen (Bobby's no_latest_image_tag)
+  replicas: 1
+  service:
+    type: LoadBalancer
+    annotations:
+      cilium.io/lb-ipam-pool: seeder
+    port: 8080
+  # Boot-Targets werden via ConfigMap aus Layer 3 (Konsumenten-Repo) gemounted.
+  # Hier nur Mount-Pfad-Default:
+  configMount:
+    configMapName: ipxe-boot-scripts  # erstellt im Konsumenten-Repo
+    mountPath: /var/lib/ipxe/scripts
+
+# HINWEIS: dieser Sub-Layer-Stub erzeugt initial nur einen ConfigMap-Placeholder.
+# Volle iPXE-Server-Manifeste folgen mit Sub-Issue #28 (Seeder-iPXE-Setup,
+# siehe day-zero-backlog).

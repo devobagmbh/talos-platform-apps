@@ -1,0 +1,85 @@
+# CompositeResourceDefinition für XCluster — das API, mit dem ein
+# Konsumenten-Repo einen Child-Cluster claimt (z. B. DHQ).
+#
+# Schema-Felder sind bewusst minimal in Phase 1. Erweiterungen
+# (NodeGroups, GPU-Affinity, Custom-CNI-Settings) folgen mit Phase 2+
+# Use-Cases.
+
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xclusters.platform.devoba.de
+spec:
+  group: platform.devoba.de
+  names:
+    kind: XCluster
+    plural: xclusters
+  claimNames:
+    kind: Cluster
+    plural: clusters
+  defaultCompositionRef:
+    name: xcluster-talos
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                clusterName:
+                  type: string
+                  description: "Name des Child-Clusters (z. B. dhq)"
+                talosVersion:
+                  type: string
+                  description: "Talos-Linux-Version (z. B. v1.13.0)"
+                kubernetesVersion:
+                  type: string
+                  description: "Kubernetes-Version (z. B. v1.36.0)"
+                nodes:
+                  type: array
+                  description: "Liste der Bare-Metal-Node-Specs"
+                  items:
+                    type: object
+                    properties:
+                      hostname:
+                        type: string
+                      ip:
+                        type: string
+                      role:
+                        type: string
+                        enum: [controlplane, worker]
+                    required: [hostname, ip, role]
+                platformBaseTag:
+                  type: string
+                  description: "Welcher talos-platform-base-OCI-Tag konsumiert wird"
+                appsSubLayerPins:
+                  type: object
+                  description: "Map sub-layer-name → OCI-Tag (z. B. monitoring: v0.3.1)"
+                  additionalProperties:
+                    type: string
+              required: [clusterName, talosVersion, nodes, platformBaseTag]
+            status:
+              type: object
+              properties:
+                kubeconfigSecretRef:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                talosconfigSecretRef:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object

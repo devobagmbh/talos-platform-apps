@@ -1,0 +1,185 @@
+# Taskfile für talos-platform-apps
+# https://taskfile.dev
+#
+# Konvention (siehe AGENTS.md § CI-Konventionen): Pipeline ist Task-Caller.
+# GHA-Workflows rufen ausschließlich `task <name>`; alle Logik wohnt hier.
+
+version: '3'
+
+vars:
+  SUB_LAYERS:
+    sh: ls sub-layers/
+
+tasks:
+  default:
+    desc: Liste verfügbare Targets
+    cmd: task --list
+
+  # --- Render ---
+
+  render:
+    desc: Rendert alle Sub-Layer in sub-layers/*/rendered/manifest.yaml
+    cmds:
+      - for: { var: SUB_LAYERS }
+        task: render:one
+        vars: { SUB_LAYER: '{{.ITEM}}' }
+
+  render:one:
+    desc: Rendert genau einen Sub-Layer
+    summary: |
+      Eingabe-Konvention pro Sub-Layer:
+        helm/*.yaml     — YAML mit metadata.{chart,repo,version,namespace} + values
+                          oder metadata.inline: true für Custom-Stubs
+        manifests/*.yaml — Raw-Manifeste, werden 1:1 konkateniert
+      Output: sub-layers/<name>/rendered/manifest.yaml
+    vars:
+      SUB_LAYER: '{{.SUB_LAYER | default .CLI_ARGS}}'
+      ROOT: 'sub-layers/{{.SUB_LAYER}}'
+      OUT: 'sub-layers/{{.SUB_LAYER}}/rendered/manifest.yaml'
+    preconditions:
+      - sh: test -d "{{.ROOT}}"
+        msg: "Sub-Layer {{.SUB_LAYER}} existiert nicht ({{.ROOT}})"
+    cmds:
+      - mkdir -p "$(dirname {{.OUT}})"
+      - ': > "{{.OUT}}"'
+      - echo "=== Render Sub-Layer  {{.SUB_LAYER}} ==="
+      - |
+        shopt -s nullglob
+        for vfile in {{.ROOT}}/helm/*.yaml; do
+          name=$(basename "$vfile" .yaml)
+          inline=$(yq -r '.metadata.inline // false' "$vfile")
+
+          if [[ "$inline" == "true" ]]; then
+            namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
+            echo "  ↳ Inline-Stub  $name (ns=$namespace)"
+            {
+              echo "# Inline-Stub: $name (Sub-Layer: {{.SUB_LAYER}})"
+              echo "# Custom-Manifeste folgen im Sub-Layer-Inhalt-Issue."
+              echo "---"
+              echo "apiVersion: v1"
+              echo "kind: Namespace"
+              echo "metadata:"
+              echo "  name: $namespace"
+              echo "  labels:"
+              echo "    platform.devoba.de/sub-layer: {{.SUB_LAYER}}"
+              echo "    platform.devoba.de/component: $name"
+              echo "---"
+            } >> "{{.OUT}}"
+            continue
+          fi
+
+          chart=$(yq -r '.metadata.chart' "$vfile")
+          repo=$(yq -r '.metadata.repo' "$vfile")
+          version=$(yq -r '.metadata.version' "$vfile")
+          namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
+
+          echo "  ↳ Helm-Render   $name (chart=$chart version=$version)"
+          vals_tmp=$(mktemp)
+          yq '.values' "$vfile" > "$vals_tmp"
+          helm template "$name" "$chart" \
+            --repo "$repo" --version "$version" \
+            --namespace "$namespace" \
+            --values "$vals_tmp" >> "{{.OUT}}"
+          echo "---" >> "{{.OUT}}"
+          rm -f "$vals_tmp"
+        done
+
+        for mfile in {{.ROOT}}/manifests/*.yaml; do
+          echo "  ↳ Raw-Manifest  $(basename "$mfile")"
+          cat "$mfile" >> "{{.OUT}}"
+          echo "---" >> "{{.OUT}}"
+        done
+      - echo "  → $(wc -l < {{.OUT}}) Zeilen geschrieben nach {{.OUT}}"
+
+  # --- Lint ---
+
+  lint:
+    desc: YAML- und Markdown-Lint
+    cmds:
+      - yamllint -c .yamllint.yaml sub-layers/ Taskfile.yml .github/
+      - markdownlint --config .markdownlint.yaml '**/*.md' --ignore .devbox --ignore .direnv
+
+  lint:rendered:
+    desc: kubeconform gegen alle rendered/-Manifeste
+    cmd: |
+      find sub-layers/*/rendered -name '*.yaml' -print0 2>/dev/null | \
+        xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
+
+  # --- Security-Scans (Issue #11.8) ---
+
+  scan:
+    desc: alle Security-Scans (trivy + conftest + optional snyk)
+    cmds:
+      - task: scan:trivy
+      - task: scan:conftest
+      - |
+        if [[ -n "${SNYK_TOKEN:-}" ]]; then
+          task scan:snyk
+        else
+          echo "SNYK_TOKEN nicht gesetzt — snyk skipped"
+        fi
+
+  scan:trivy:
+    desc: Trivy-Scan über rendered/-Manifeste, SARIF-Output
+    deps: [render]
+    cmd: |
+      trivy fs sub-layers/*/rendered/ \
+        --format sarif \
+        --output trivy-results.sarif
+
+  scan:conftest:
+    desc: Conftest-Policies aus policies/ gegen rendered/-Manifeste
+    deps: [render]
+    cmd: conftest test sub-layers/*/rendered/ --policy policies/
+
+  scan:conftest-verify:
+    desc: Conftest-Policy-Selbsttests (testdata/-Korpus)
+    cmd: conftest verify --policy policies/
+
+  scan:snyk:
+    desc: Snyk IaC-Scan (braucht SNYK_TOKEN)
+    cmd: |
+      snyk iac test sub-layers/ \
+        --sarif-file-output=snyk-results.sarif
+
+  # --- Publish-Targets — werden in Schritt 2 mit oci-publish.yml implementiert ---
+
+  push:
+    desc: 'oras push eines Sub-Layers (TODO Schritt 2 — Issue #56 / #11.2)'
+    cmd: echo "TODO Schritt 2 — Issue #56"
+  sign:
+    desc: cosign sign keyless (TODO Schritt 2)
+    cmd: echo "TODO Schritt 2"
+  attest:
+    desc: 'SBOM + SLSA-Attestations (vertagt nach Phase 2 — ADR-0009)'
+    cmd: echo "Vertagt nach Phase 2"
+  publish:
+    desc: render → push → sign (TODO Schritt 2)
+    cmd: echo "TODO Schritt 2"
+
+  # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
+
+  ci:
+    desc: Lokale Reproduktion der GHA-Pipeline (lint + render + scan:conftest)
+    cmds:
+      - task: lint
+      - task: render
+      - task: lint:rendered
+      - task: scan:conftest-verify
+      - task: scan:conftest
+
+  # --- Housekeeping ---
+
+  clean:
+    desc: rendered/-Output und Scan-Artefakte entfernen
+    cmds:
+      - rm -rf sub-layers/*/rendered
+      - rm -f trivy-results.sarif snyk-results.sarif
+
+  pre-commit-install:
+    desc: pre-commit-Framework-Hooks installieren (.git/hooks/pre-commit)
+    cmd: pre-commit install --install-hooks
+
+  devbox-info:
+    desc: Devbox-Tool-Versionen anzeigen
+    cmd: devbox info

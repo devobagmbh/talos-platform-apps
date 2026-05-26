@@ -1,0 +1,120 @@
+# Composition für XCluster — orchestriert Tofu + Helm + K8s Provider-
+# Resources in deklarativer Reihenfolge, um aus einem XCluster-Claim
+# einen lauffähigen Child-Cluster zu machen.
+#
+# Phase-1-Scope (Minimal-läuft): Composition-Skelett mit den drei
+# Hauptphasen (Tofu-Workspace → Cilium-Bootstrap → Argo-Bootstrap).
+# Konkrete Workspace-Module-URLs, Helm-Repo-URLs und Argo-App-of-Apps-
+# Pfade kommen aus dem XCluster-Claim (spec-Felder).
+#
+# Bei Vollausbau (Phase 2+) kommen weitere Schritte dazu: Linstor-CRs,
+# Vault-PKI-Bootstrap, Prometheus-Scrape-Discovery, etc.
+
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xcluster-talos
+  labels:
+    provider: talos-on-bare-metal
+spec:
+  compositeTypeRef:
+    apiVersion: platform.devoba.de/v1alpha1
+    kind: XCluster
+
+  mode: Pipeline
+  pipeline:
+    # --- Schritt 1: Tofu-Workspace für Talos-Cluster-Provisionierung ---
+    - step: tofu-talos-cluster
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: talos-workspace
+            base:
+              apiVersion: tf.upbound.io/v1beta1
+              kind: Workspace
+              spec:
+                forProvider:
+                  source: Remote
+                  # source-Pfad wird per patches gesetzt aus XCluster-spec
+                  module: ""  # patched
+                  vars: []  # patched aus spec.nodes + spec.talosVersion
+                providerConfigRef:
+                  name: terraform-default  # ProviderConfig kommt aus Layer 3
+            patches:
+              - fromFieldPath: spec.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string:
+                      fmt: "talos-%s"
+              - fromFieldPath: spec.platformBaseTag
+                toFieldPath: spec.forProvider.module
+                transforms:
+                  - type: string
+                    string:
+                      fmt: "git::https://github.com/devobagmbh/talos-seeder-cluster.git//stage-1/modules/talos-cluster?ref=%s"
+
+    # --- Schritt 2: Cilium-Bootstrap nach Cluster-Up ---
+    - step: helm-cilium-bootstrap
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: cilium-release
+            base:
+              apiVersion: helm.crossplane.io/v1beta1
+              kind: Release
+              spec:
+                forProvider:
+                  namespace: kube-system
+                  chart:
+                    name: cilium
+                    repository: https://helm.cilium.io
+                    version: 1.19.3  # TODO Phase-1-Acceptance: pinnen, Source-Allow-Liste (apps/helm_chart_source_official)
+                providerConfigRef:
+                  name: ""  # patched — zeigt auf kubeconfig-Secret aus Schritt 1
+            patches:
+              - fromFieldPath: spec.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      fmt: "helm-%s"
+
+    # --- Schritt 3: Argo-CD-Bootstrap + App-of-Apps ---
+    - step: helm-argocd-bootstrap
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: argocd-release
+            base:
+              apiVersion: helm.crossplane.io/v1beta1
+              kind: Release
+              spec:
+                forProvider:
+                  namespace: argocd
+                  chart:
+                    name: argo-cd
+                    repository: https://argoproj.github.io/argo-helm
+                    version: 7.7.0  # TODO Phase-1-Acceptance: pinnen
+                providerConfigRef:
+                  name: ""  # patched
+            patches:
+              - fromFieldPath: spec.clusterName
+                toFieldPath: spec.providerConfigRef.name
+                transforms:
+                  - type: string
+                    string:
+                      fmt: "helm-%s"
+
+# Die XCluster-Composition ist intentional schlank — sie bringt den
+# Child-Cluster auf den Punkt, an dem Argo-CD den Rest übernimmt
+# (App-of-Apps zieht talos-platform-apps Sub-Layer-OCIs).

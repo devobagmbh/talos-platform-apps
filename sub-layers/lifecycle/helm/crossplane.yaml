@@ -1,0 +1,44 @@
+# Crossplane-Operator — Layer-2-Default-Values für talos-platform-apps.
+#
+# Cluster-spezifisches (Replicas, Resource-Limits-Tuning, Provider-Pakete-
+# Pinning) lebt im Konsumenten-Repo (talos-seeder-cluster, Layer 3).
+# Diese Datei ist Helm-Values-Default für den Modulkatalog.
+
+metadata:
+  chart: crossplane
+  repo: https://charts.crossplane.io/stable
+  version: 1.18.0  # Stand 2026; vor Push verifizieren via `helm search repo crossplane-stable`
+  namespace: crossplane-system
+
+values:
+  replicas: 1
+
+  # Metrics-Endpoint für Prometheus
+  metrics:
+    enabled: true
+
+  # Ressourcen — bewusst konservativ; Konsumenten-Repo kann erhöhen
+  resourcesCrossplane:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  # RBAC-Manager bleibt enabled für Composition-Authoring
+  rbacManager:
+    deploy: true
+    replicas: 1
+
+  # Provider-Cache — wichtig für Air-Gap / Seeder-Harbor-Pull-Through
+  packageCache:
+    medium: ""
+    sizeLimit: 5Gi
+
+  # Composition-Revisions sind essentiell für GitOps-Reconciliation
+  args:
+    - --enable-composition-revisions
+    - --enable-environment-configs
+
+  # Pro-active Reconcile-Intervall (Default: 1 Min)
+  pollInterval: 1m

@@ -1,0 +1,40 @@
+# Crossplane Provider-Packages — installiert vom Crossplane-Operator nach
+# dessen Bootstrap. Pinning ist Pflicht (ADR-0009 § no_latest_image_tag).
+#
+# Versionen Stand 2026; vor Push via `crossplane package list` oder
+# upbound-Marketplace verifizieren.
+
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-terraform
+spec:
+  package: xpkg.upbound.io/upbound/provider-terraform:v0.20.0
+  # Stage-1-Cluster-Provisionierung läuft via provider-terraform gegen
+  # das talos-cluster-Tofu-Modul (talos-seeder-cluster/stage-1/modules/talos-cluster).
+  # Provider akzeptiert SOPS-encrypted-Inputs via carlpett/sops Tofu-Provider.
+
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-helm
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-helm:v0.20.0
+  # Bootstrappt Cilium/Linstor/Argo nach Cluster-Up.
+
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-kubernetes
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
+  # Appliziert App-of-Apps + RBAC-Manifeste nach Argo-Install.
+
+---
+# Provider-Configs (mit Cluster-Identität) leben in Layer 3 (talos-seeder-cluster).
+# Beispielsweise muss provider-terraform ein ProviderConfig haben, das auf
+# die Seeder-Garage-S3-Credentials zeigt. Diese Cluster-spezifischen
+# Bindings gehören NICHT in den Modulkatalog.
