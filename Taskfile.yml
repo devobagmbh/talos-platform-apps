@@ -144,7 +144,7 @@ tasks:
       echo "Conftest gegen $(echo "$files" | wc -l | tr -d ' ') Sub-Layer-Manifeste:"
       echo "$files" | sed 's/^/  - /'
       echo ""
-      conftest test --policy policies/ $files
+      conftest test --policy policies/ --all-namespaces $files
 
   scan:conftest-verify:
     desc: Conftest-Policy-Selbsttests (testdata/-Korpus)
