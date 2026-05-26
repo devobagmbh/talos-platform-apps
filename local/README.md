@@ -82,7 +82,7 @@ Prod-konformer Kind-Cluster für lokales Sub-Layer-Testing: gleiche CNI- und Ing
 
 ## Voraussetzungen
 
-- Devbox-Shell aktiv (`direnv allow` im Repo-Root), damit `kind`, `helm`, `kubectl`, `cilium`, `cert-manager`, `mkcert`, `argocd`, `kubectx`, `gettext` (envsubst), `yq` im PATH sind.
+- **Devbox-Shell aktiv** für das Repo, damit `kind`, `helm`, `kubectl`, `mkcert`, `argocd`, `kubectx`, `envsubst`, `yq` im PATH sind. Einmalig: `direnv allow` im Repo-Root (oder explizit `devbox shell`). Ein globales `devbox global` reicht **nicht** — `mkcert` ist nur im Repo-Profile gepinnt. `task local:up` startet mit einem Preflight-Check, der genau diese Tools verifiziert und sonst mit klarem Hinweis abbricht.
 - Docker Desktop (oder Colima/Orbstack) läuft. Auf Mac wird der Cilium-Gateway-Service per **NodePort + extraPortMappings** angebunden — LB-IPAM-VIPs sind über das Docker-NAT nicht routbar.
 - Ports `80` und `443` auf der Workstation frei (keine andere lokale HTTP/HTTPS-Dienste binden sie).
 
@@ -149,6 +149,12 @@ Argo zieht das Helm-Chart-Wrapper-OCI über Service-DNS (kein Gateway-Roundtrip)
 ## Iteration und Cleanup
 
 ```bash
+# Cluster + Registry pausieren (Container stoppen, State bleibt)
+task local:stop
+
+# Pausierten Cluster wieder hochfahren — alle Workloads kommen automatisch zurück
+task local:start
+
 # Single-App entfernen, Cluster bleibt
 task local:remove -- lifecycle
 
@@ -162,7 +168,15 @@ task local:argo:uninstall && task local:argo:install
 task local:down
 ```
 
-`task local:down` löscht das Kind-Cluster und stoppt `kind-registry`. Die mkcert-CA bleibt im System-Trust (Re-Install ist idempotent).
+| Task | Was passiert | State |
+|---|---|---|
+| `local:stop` | `docker stop` der beiden Container | bleibt — beim Start sind alle Workloads wieder da |
+| `local:start` | `docker start` + wartet auf K8s-API-Readiness | restored aus Container-FS |
+| `local:down` | `kind delete cluster` + `docker rm` der Registry | **alles weg** — nächster `local:up` ist fresh |
+
+`local:stop`/`local:start` ist der Standard-Pfad für Laptop-Suspend oder mehrtägige Pausen ohne Re-Install. **Nicht für State-Reset benutzen** — wenn der Cluster in einen inkonsistenten Zustand gerät (z. B. CrashLoopBackOff-Pods, fehlende ClusterRoles), ist `local:down && local:up` der zuverlässige Reset, weil `kind create cluster` idempotent ist und bestehende Cluster nicht neu bootstrappt.
+
+Die mkcert-CA bleibt nach `local:down` im System-Trust (Re-Install ist idempotent).
 
 ## Troubleshooting
 

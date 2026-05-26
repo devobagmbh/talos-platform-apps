@@ -317,6 +317,24 @@ tasks:
 
   # --- Lokale Entwicklung: Kind + Local-Registry + ArgoCD ---
 
+  local:preflight:
+    desc: 'Prüft dass alle Tools im PATH sind (sonst hilfreicher Hinweis)'
+    cmd: |
+      missing=""
+      for t in docker kind kubectl helm mkcert envsubst yq; do
+        command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
+      done
+      if [ -n "$missing" ]; then
+        echo "ERROR: folgende Tools fehlen im PATH:$missing"
+        echo ""
+        echo "Vermutlich ist die Devbox-Shell für dieses Repo nicht aktiv."
+        echo "Fix:"
+        echo "  direnv allow            # einmalig, lädt Repo-Devbox-PATH bei cd"
+        echo "  oder"
+        echo "  devbox shell            # explizite Shell mit Repo-Tools"
+        exit 1
+      fi
+
   local:up:
     desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + Gateway-API + Cilium + ArgoCD'
     # WICHTIG: Gateway-API-CRDs müssen VOR Cilium installiert werden, sonst
@@ -324,6 +342,7 @@ tasks:
     # und es entsteht keine GatewayClass 'cilium' (Folge: Gateway hängt für
     # immer in "Waiting for controller").
     cmds:
+      - task: local:preflight
       - task: local:registry:up
       - task: local:cluster:up
       - task: local:gateway-api:install
@@ -347,6 +366,49 @@ tasks:
     cmds:
       - kind delete cluster --name talos-platform-apps || true
       - task: local:registry:down
+
+  local:stop:
+    desc: 'Cluster + Registry pausieren (Container stoppen, State bleibt)'
+    # Im Gegensatz zu local:down wird hier nichts gelöscht — beim nächsten
+    # local:start sind alle Workloads + Daten wieder da. Sinnvoll für
+    # Laptop-Suspend oder mehrtägige Pausen ohne Re-Install.
+    cmd: |
+      for c in talos-platform-apps-control-plane kind-registry; do
+        if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c" 2>/dev/null)" = "true" ]; then
+          docker stop "$c" >/dev/null
+          echo "✓ $c gestoppt"
+        else
+          echo "  $c läuft nicht (skip)"
+        fi
+      done
+
+  local:start:
+    desc: 'Pausierten Cluster + Registry wieder starten'
+    # Erwartet, dass local:up schon einmal lief — startet nur die bestehenden
+    # Container neu. Wartet bis die K8s-API antwortet, damit Folge-Tasks
+    # (kubectl, helm) nicht in Race-Conditions laufen.
+    cmd: |
+      for c in kind-registry talos-platform-apps-control-plane; do
+        if ! docker inspect "$c" >/dev/null 2>&1; then
+          echo "ERROR: Container '$c' existiert nicht — task local:up?"
+          exit 1
+        fi
+        if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c")" = "true" ]; then
+          echo "  $c läuft bereits"
+        else
+          docker start "$c" >/dev/null
+          echo "✓ $c gestartet"
+        fi
+      done
+      kubectx kind-talos-platform-apps >/dev/null 2>&1 || true
+      echo "warte bis K8s-API antwortet..."
+      for i in $(seq 1 60); do
+        if kubectl get --raw='/readyz' >/dev/null 2>&1; then
+          echo "✓ K8s-API ready"
+          break
+        fi
+        sleep 2
+      done
 
   local:registry:up:
     desc: 'Lokale Docker-Registry auf localhost:5001 starten (idempotent)'
@@ -408,14 +470,15 @@ tasks:
 
   local:certs:
     desc: 'mkcert-Root-CA ins System-Trust + als Cluster-Secret + ClusterIssuer'
+    # Cluster-Secret + ClusterIssuer werden idempotent neu generiert; das
+    # CA-Material wird direkt aus dem mkcert-CAROOT gelesen (kein lokales
+    # Zwischen-Kopieren — vermeidet Permission-Issues beim zweiten Lauf,
+    # weil mkcert seine Keys mit 0600 schreibt).
     cmd: |
       mkcert -install
       caroot=$(mkcert -CAROOT)
-      mkdir -p .mkcert
-      cp "$caroot/rootCA.pem"     .mkcert/
-      cp "$caroot/rootCA-key.pem" .mkcert/
       kubectl create secret tls mkcert-ca \
-        --cert=.mkcert/rootCA.pem --key=.mkcert/rootCA-key.pem \
+        --cert="$caroot/rootCA.pem" --key="$caroot/rootCA-key.pem" \
         -n cert-manager \
         --dry-run=client -o yaml | kubectl apply -f -
       kubectl apply -f local/mkcert-cluster-issuer.yaml
