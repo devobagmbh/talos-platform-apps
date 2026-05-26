@@ -1,0 +1,44 @@
+# Cilium-Helm-Values für lokales Kind-Setup (prod-konform).
+# Kind-spezifische Settings werden im Taskfile als --set-Flags ergänzt
+# (k8sServiceHost ist die IP des Control-Plane-Containers).
+
+# kube-proxy-Ersatz — Cilium übernimmt ClusterIP/NodePort/LoadBalancer
+kubeProxyReplacement: true
+
+# CNI im Kind via Kubernetes-IPAM
+ipam:
+  mode: kubernetes
+
+# eBPF-basiertes NodePort + HostPort + ExternalIPs
+nodePort:
+  enabled: true
+hostPort:
+  enabled: true
+externalIPs:
+  enabled: true
+
+# Gateway-API als Ingress-Pattern (ADR-0014)
+gatewayAPI:
+  enabled: true
+  # NodePort-Mode: Cilium-Gateway-Service kommt als NodePort statt LoadBalancer.
+  # NodePort 30443/30080 ist via kind-extraPortMappings auf Host 443/80 gemapped.
+  # Detail-Patch erfolgt nach Apply im Taskfile (task local:gateway:apply).
+
+# eBPF-Host-Routing für Performance + L7-Policy-Support
+bpf:
+  masquerade: true
+
+# Operator schlank
+operator:
+  replicas: 1
+
+# Hubble (eBPF-Observability) — lokal nützlich für Debugging
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+
+# Cilium-LB-IPAM + L2-Announcements für späteren Wechsel auf LoadBalancer-Mode.
+# Aktuell ungenutzt; siehe local/cilium-l2-pool.yaml für Aktivierung.
+l2announcements:
+  enabled: true

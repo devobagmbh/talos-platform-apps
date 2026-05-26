@@ -1,7 +1,8 @@
-# ArgoCD-Helm-Values für lokales Kind-Setup.
-# Headless im Sinne von "kein Dex/Notifications/ApplicationSet/HA".
-# UI ist via Traefik-Ingress auf argocd.localhost.direct erreichbar
-# (mkcert-CA als Trust-Anker, automatisch vom System-Trust gesehen).
+# ArgoCD-Helm-Values für lokales Kind-Setup (prod-konform).
+# Kein Ingress, kein Dex/Notifications/ApplicationSet/HA.
+# Exposure läuft über Gateway-API: Gateway 'localhost-direct' + HTTPRoute
+# 'argocd' (siehe local/gateway.yaml, local/argocd-route.yaml).
+# UI ist auf https://argocd.localhost.direct erreichbar.
 
 global:
   domain: argocd.localhost.direct
@@ -10,23 +11,17 @@ server:
   service:
     type: ClusterIP
 
+  # Ingress aus — Gateway-API übernimmt
   ingress:
-    enabled: true
-    controller: generic
-    ingressClassName: traefik
-    annotations:
-      cert-manager.io/cluster-issuer: mkcert-ca
-      traefik.ingress.kubernetes.io/router.tls: "true"
-      traefik.ingress.kubernetes.io/router.entrypoints: websecure
-    hostname: argocd.localhost.direct
-    tls: true
+    enabled: false
 
+  # Argo macht intern TLS (für gRPC-Client). Gateway terminiert Front-TLS.
   extraArgs:
-    - --insecure  # interne TLS-Logik aus (Traefik macht TLS-Termination)
+    - --insecure
 
   replicas: 1
 
-# Headless — kein OIDC, kein Notifications, kein ApplicationSet
+# Headless
 dex:
   enabled: false
 notifications:

@@ -1,20 +1,19 @@
-# Kind-Cluster für lokale Sub-Layer-Entwicklung.
-# Single-Node, mit containerd-Patch für die lokale OCI-Registry auf
-# localhost:5001 (Helm-Charts gehen via helm push dorthin und werden
-# von ArgoCD intra-cluster über "kind-registry:5000" gepullt).
+# Kind-Cluster für lokale Sub-Layer-Entwicklung — prod-konform (Cilium-CNI +
+# Gateway-API, wie DHQ-Cluster laut ADR-0014 + ADR-0009).
 #
-# Setup-Flow: task local:up
-#   1. lokale Registry-Container starten (registry:2 auf :5001)
-#   2. Kind-Cluster erstellen
-#   3. Registry-Container ins kind-Docker-Netzwerk verbinden
-#   4. local-registry-hosting ConfigMap (KEP-1755)
-#   5. mkcert-CA + cert-manager + ClusterIssuer
-#   6. Traefik als Ingress-Controller (HTTP 80, HTTPS 443)
-#   7. ArgoCD via Helm, exposed über argocd.localhost.direct
+# - kindnet deaktiviert: Cilium übernimmt CNI
+# - kube-proxy deaktiviert: Cilium übernimmt via kubeProxyReplacement
+# - extraPortMappings 30080→80, 30443→443: Cilium-Gateway-Service ist NodePort,
+#   Kind reicht Host-Ports auf den Container durch
+# - Containerd-Patch für die lokale OCI-Registry localhost:5001
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: talos-platform-apps
+
+networking:
+  disableDefaultCNI: true   # kindnet aus
+  kubeProxyMode: none       # kube-proxy aus
 
 containerdConfigPatches:
   - |-
@@ -30,11 +29,11 @@ nodes:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
     extraPortMappings:
-      # Traefik Web (HTTP) — *.localhost.direct → 127.0.0.1:80 → 30080
+      # Host 80 → Container 30080 → Cilium-Gateway-NodePort (HTTP)
       - containerPort: 30080
         hostPort: 80
         protocol: TCP
-      # Traefik Websecure (HTTPS) — *.localhost.direct → 127.0.0.1:443 → 30443
+      # Host 443 → Container 30443 → Cilium-Gateway-NodePort (HTTPS)
       - containerPort: 30443
         hostPort: 443
         protocol: TCP

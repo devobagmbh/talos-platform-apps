@@ -1,0 +1,54 @@
+# Gateway-API Gateway für lokales Ingress-Routing.
+# Cilium erstellt für dieses Gateway einen Service, den der Taskfile
+# nach Apply auf NodePort 30080/30443 patcht — Kind reicht 80/443 vom
+# Host darauf durch.
+#
+# *.localhost.direct resolved zu 127.0.0.1 (DNS-Provider).
+# TLS-Cert wird per cert-manager mit dem mkcert-CA-ClusterIssuer
+# ausgestellt; Secret 'gateway-localhost-direct-tls' im selben NS.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: localhost-direct
+  namespace: gateway
+spec:
+  gatewayClassName: cilium
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: "*.localhost.direct"
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.localhost.direct"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: gateway-localhost-direct-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+# Wildcard-Certificate für *.localhost.direct via mkcert-CA
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gateway-localhost-direct-tls
+  namespace: gateway
+spec:
+  secretName: gateway-localhost-direct-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: mkcert-ca
+  commonName: "*.localhost.direct"
+  dnsNames:
+    - "*.localhost.direct"
+    - "localhost.direct"
+  duration: 2160h    # 90 Tage
+  renewBefore: 360h  # 15 Tage vor Ablauf erneuern
