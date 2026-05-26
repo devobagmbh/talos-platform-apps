@@ -158,16 +158,57 @@ tasks:
 
   # --- Publish-Targets ---
 
-  push:
-    desc: 'oras push eines Sub-Layers: task push -- <sub-layer> <tag>'
+  package:
+    desc: 'baut Helm-Chart-Wrapper aus rendered/manifest.yaml: task package -- <sub-layer> <tag>'
     summary: |
-      Pusht sub-layers/<sub-layer>/rendered/manifest.yaml als signiertes
-      OCI-Artefakt nach ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>.
+      Verpackt sub-layers/<sub-layer>/rendered/manifest.yaml in einen
+      schlanken Helm-Chart-Wrapper (Chart.yaml + templates/manifest.yaml).
+      Tag wird zur Chart-Version. Pre-rendered bleibt strikt — Templates
+      sind statische YAML, kein Templating-Variable-Auflösen mehr.
+
+      Output: sub-layers/<sub-layer>/rendered/chart/<sub-layer>-<tag>.tgz
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task package -- <sub-layer> <tag>}"
+      tag="${2:?usage: task package -- <sub-layer> <tag>}"
+      # Helm-Chart-Version muss SemVer ohne "v"-Präfix sein
+      chart_version="${tag#v}"
+
+      root="sub-layers/${sub_layer}"
+      manifest="${root}/rendered/manifest.yaml"
+      test -s "$manifest" || { echo "ERROR: $manifest fehlt oder ist leer — vorher task render:one -- $sub_layer"; exit 1; }
+
+      wrapper="${root}/rendered/chart"
+      rm -rf "$wrapper"
+      mkdir -p "$wrapper/templates"
+
+      cat > "$wrapper/Chart.yaml" <<EOF
+      apiVersion: v2
+      name: ${sub_layer}
+      description: Pre-rendered Devoba-Platform-Sub-Layer ${sub_layer}
+      type: application
+      version: ${chart_version}
+      appVersion: "${chart_version}"
+      annotations:
+        platform.devoba.de/sub-layer: ${sub_layer}
+        platform.devoba.de/pre-rendered: "true"
+      EOF
+
+      cp "$manifest" "$wrapper/templates/manifest.yaml"
+
+      helm package "$wrapper" --destination "${root}/rendered/"
+      echo "✓ Packaged: ${root}/rendered/${sub_layer}-${chart_version}.tgz"
+
+  push:
+    desc: 'helm push eines Sub-Layer-Charts: task push -- <sub-layer> <tag>'
+    summary: |
+      Pusht das via "task package" gebaute Helm-Chart als OCI-Artefakt nach
+      OCI_REGISTRY (Default: ghcr.io/devobagmbh/talos-platform-apps).
 
       Voraussetzungen:
-        - manifest.yaml gerendert (via task render:one -- <sub-layer>)
-        - oras gegen ghcr authentifiziert
-          (lokal: oras login ghcr.io -u <user> --password-stdin; in CI via GHA-Token)
+        - rendered + packaged (via task package -- <sub-layer> <tag>)
+        - helm registry login OCI_REGISTRY
+          (lokal: echo $GITHUB_TOKEN | helm registry login ghcr.io -u <user> --password-stdin)
 
       Beispiel: task push -- lifecycle v0.0.0-dev
     vars:
@@ -176,33 +217,38 @@ tasks:
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task push -- <sub-layer> <tag>}"
       tag="${2:?usage: task push -- <sub-layer> <tag>}"
-      ref="{{.OCI_REGISTRY}}/${sub_layer}:${tag}"
-      manifest="sub-layers/${sub_layer}/rendered/manifest.yaml"
-      test -s "$manifest" || { echo "ERROR: $manifest fehlt oder ist leer — vorher task render:one -- $sub_layer"; exit 1; }
-      echo "Pushing $manifest → $ref"
-      oras push "$ref" \
-        --artifact-type application/vnd.devoba.platform-app.v1+yaml \
-        "${manifest}:application/yaml"
-      echo "✓ Pushed: $ref"
+      chart_version="${tag#v}"
+
+      pkg="sub-layers/${sub_layer}/rendered/${sub_layer}-${chart_version}.tgz"
+      test -s "$pkg" || { echo "ERROR: $pkg fehlt — vorher task package -- $sub_layer $tag"; exit 1; }
+
+      echo "Pushing $pkg → oci://{{.OCI_REGISTRY}}/${sub_layer}"
+      helm push "$pkg" "oci://{{.OCI_REGISTRY}}"
+      echo "✓ Pushed: oci://{{.OCI_REGISTRY}}/${sub_layer}:${chart_version}"
 
   sign:
     desc: 'cosign sign keyless: task sign -- <sub-layer> <tag>'
     summary: |
-      Signiert das OCI-Artefakt unter <ref> via cosign keyless.
+      Signiert das Helm-OCI-Artefakt unter <ref> via cosign keyless.
+      Lokal-Setup (Registry ohne OIDC-Backing) überspringt cosign.
 
       In CI: GHA-OIDC-Token (permissions: id-token: write) →
         Fulcio-Cert → Rekor-Log-Eintrag → cosign-Signature im OCI-Tag.
 
-      Lokal (selten): cosign sign verlangt interaktiven Browser-OIDC-Flow.
-      Bei Phase 1 ausschließlich aus CI signiert; lokal nur für Tests
-      mit COSIGN_EXPERIMENTAL=1.
+      Lokal: kein cosign — die lokale Registry hat kein Trust-Backing,
+      Argo-CD im Kind verifiziert ohnehin nicht. cosign nur in CI.
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task sign -- <sub-layer> <tag>}"
       tag="${2:?usage: task sign -- <sub-layer> <tag>}"
-      ref="{{.OCI_REGISTRY}}/${sub_layer}:${tag}"
+      chart_version="${tag#v}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}:${chart_version}"
+      if [[ "{{.OCI_REGISTRY}}" == *"localhost"* ]] || [[ "{{.OCI_REGISTRY}}" == *"kind-registry"* ]]; then
+        echo "Lokale Registry erkannt — cosign übersprungen"
+        exit 0
+      fi
       echo "Signing $ref (keyless)"
       cosign sign --yes "$ref"
       echo "✓ Signed: $ref"
@@ -215,14 +261,15 @@ tasks:
       echo "Konsumenten existieren oder Audit-Anforderung greift."
 
   publish:
-    desc: 'render → push → sign: task publish -- <sub-layer> <tag>'
+    desc: 'render → package → push → sign: task publish -- <sub-layer> <tag>'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task publish -- <sub-layer> <tag>}"
       tag="${2:?usage: task publish -- <sub-layer> <tag>}"
       task render:one -- "$sub_layer"
-      task push     -- "$sub_layer" "$tag"
-      task sign     -- "$sub_layer" "$tag"
+      task package    -- "$sub_layer" "$tag"
+      task push       -- "$sub_layer" "$tag"
+      task sign       -- "$sub_layer" "$tag"
       echo "✓ Published $sub_layer:$tag"
 
   verify:
@@ -267,3 +314,151 @@ tasks:
   devbox-info:
     desc: Devbox-Tool-Versionen anzeigen
     cmd: devbox info
+
+  # --- Lokale Entwicklung: Kind + Local-Registry + ArgoCD ---
+
+  local:up:
+    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + ArgoCD'
+    cmds:
+      - task: local:registry:up
+      - task: local:cluster:up
+      - task: local:argo:install
+      - |
+        echo ""
+        echo "✓ Lokales Setup bereit."
+        echo "  Argo-UI:        task local:argo:ui  (→ https://localhost:8080)"
+        echo "  Argo-Admin-Pw:  task local:argo:password"
+        echo "  Lokal pushen:   task local:publish -- <sub-layer> <tag>"
+
+  local:down:
+    desc: 'Alles abreißen: Cluster + Registry + Mkcert-Daten'
+    cmds:
+      - kind delete cluster --name talos-platform-apps || true
+      - task: local:registry:down
+
+  local:registry:up:
+    desc: 'Lokale Docker-Registry auf localhost:5001 starten (idempotent)'
+    cmd: |
+      if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' kind-registry 2>/dev/null)" = "true" ]; then
+        echo "✓ kind-registry läuft bereits"
+      else
+        docker rm -f kind-registry >/dev/null 2>&1 || true
+        docker run -d --restart=always -p 127.0.0.1:5001:5000 --name kind-registry registry:2
+        echo "✓ kind-registry gestartet (localhost:5001)"
+      fi
+
+  local:registry:down:
+    desc: 'Lokale Registry stoppen + entfernen'
+    cmd: docker rm -f kind-registry || true
+
+  local:cluster:up:
+    desc: 'Kind-Cluster erstellen und mit lokaler Registry verbinden'
+    cmds:
+      - kind create cluster --name talos-platform-apps --config local/kind-config.yaml || true
+      - kubectx kind-talos-platform-apps
+      - |
+        # Containerd-Config-Patches pro Node anbringen — local-registry@kind-registry:5000
+        for node in $(kind get nodes --name talos-platform-apps); do
+          docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
+          docker exec "$node" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml <<EOF
+        [host."http://kind-registry:5000"]
+        EOF'
+        done
+      - |
+        # Registry-Container ins kind-Docker-Netzwerk verbinden (idempotent)
+        if [ "$(docker inspect -f='{{`{{json .NetworkSettings.Networks.kind}}`}}' kind-registry)" = 'null' ]; then
+          docker network connect "kind" kind-registry
+        fi
+      - |
+        # ConfigMap nach KEP-1755 (local-registry-hosting)
+        kubectl apply -f - <<'EOF'
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: local-registry-hosting
+          namespace: kube-public
+        data:
+          localRegistryHosting.v1: |
+            host: "localhost:5001"
+            help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+        EOF
+
+  local:argo:install:
+    desc: 'ArgoCD via Helm im Kind installieren (headless)'
+    cmd: |
+      helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+      helm repo update argo
+      helm upgrade --install argocd argo/argo-cd \
+        --namespace argocd --create-namespace \
+        --version 7.7.0 \
+        --values local/argocd-values.yaml \
+        --wait --timeout 5m
+
+  local:argo:uninstall:
+    desc: 'ArgoCD entfernen (Cluster bleibt)'
+    cmd: helm uninstall argocd --namespace argocd || true
+
+  local:argo:ui:
+    desc: 'Port-Forward der Argo-UI auf https://localhost:8080'
+    cmd: |
+      echo "Argo-UI auf https://localhost:8080 — strg+c zum Beenden"
+      echo "Login: admin / $(task local:argo:password --silent)"
+      kubectl -n argocd port-forward svc/argocd-server 8080:443
+
+  local:argo:password:
+    desc: 'Initial-Admin-Passwort von ArgoCD ausgeben'
+    cmd: |
+      kubectl -n argocd get secret argocd-initial-admin-secret \
+        -o jsonpath='{.data.password}' | base64 -d
+      echo ""
+
+  local:publish:
+    desc: 'render + package + push zur lokalen Registry: task local:publish -- <sub-layer> <tag>'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task local:publish -- <sub-layer> <tag>}"
+      tag="${2:?usage: task local:publish -- <sub-layer> <tag>}"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$sub_layer"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$sub_layer" "$tag"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$sub_layer" "$tag"
+      echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${sub_layer}:${tag#v}"
+
+  local:apply:
+    desc: 'Argo-Application aus local/argo-app-template.yaml im Kind anwenden: task local:apply -- <sub-layer> <tag> [<namespace>]'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task local:apply -- <sub-layer> <tag> [<namespace>]}"
+      tag="${2:?usage: task local:apply -- <sub-layer> <tag> [<namespace>]}"
+      namespace="${3:-default}"
+      chart_version="${tag#v}"
+
+      SUB_LAYER="$sub_layer" \
+        TAG="$chart_version" \
+        REGISTRY="kind-registry:5000/talos-platform-apps" \
+        NAMESPACE="$namespace" \
+        envsubst < local/argo-app-template.yaml | kubectl apply -f -
+
+      echo "✓ Argo-Application angelegt: ${sub_layer}-local (chart=${sub_layer}:${chart_version}, ns=${namespace})"
+      echo "  Status: kubectl -n argocd get application ${sub_layer}-local -o jsonpath='{.status.sync.status}'"
+
+  local:remove:
+    desc: 'Argo-Application + deployte Ressourcen entfernen: task local:remove -- <sub-layer>'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task local:remove -- <sub-layer>}"
+      kubectl -n argocd delete application "${sub_layer}-local" --wait=true || true
+
+  local:status:
+    desc: 'Überblick: Cluster + Argo + Applications'
+    cmd: |
+      echo "=== Kind-Cluster ==="
+      kind get clusters | grep talos-platform-apps || echo "  (nicht da)"
+      echo ""
+      echo "=== Lokale Registry ==="
+      docker ps --filter name=kind-registry --format 'table {{`{{.Names}}\t{{.Status}}\t{{.Ports}}`}}'
+      echo ""
+      echo "=== Argo-Status ==="
+      kubectl -n argocd get pods 2>/dev/null || echo "  (ArgoCD nicht installiert)"
+      echo ""
+      echo "=== Lokale Argo-Applications ==="
+      kubectl -n argocd get applications -l platform.devoba.de/local-test=true 2>/dev/null || true

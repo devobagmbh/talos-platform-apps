@@ -1,0 +1,32 @@
+# Kind-Cluster für lokale Sub-Layer-Entwicklung.
+# Single-Node, mit Containerd-Patch für die lokale OCI-Registry auf
+# localhost:5001 (Helm-Charts gehen via helm push dorthin und werden
+# von ArgoCD intra-cluster über "kind-registry:5000" gepullt).
+#
+# Setup-Flow: task local:up
+#   1. lokale Registry-Container starten (registry:2 auf :5001)
+#   2. dieses Kind-Cluster erstellen
+#   3. Registry-Container ins kind-Docker-Netzwerk verbinden
+#   4. local-registry-hosting ConfigMap (KEP-1755) anwenden
+#   5. ArgoCD via Helm installieren
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: talos-platform-apps
+
+containerdConfigPatches:
+  # Containerd in Kind kennt die lokale Registry über localhost:5001
+  # (host -> Kind-Netzwerk via Port-Mapping)
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # ArgoCD-UI (NodePort wenn benötigt). Default: nur per port-forward.
+      # - containerPort: 30080
+      #   hostPort: 8080
+      #   protocol: TCP
+
+      # Lokale Registry-Mirror-Konfig wird per ConfigMap (KEP-1755) angekündigt.

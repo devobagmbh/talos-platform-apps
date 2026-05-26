@@ -1,0 +1,45 @@
+# ArgoCD-Helm-Values für lokales Kind-Setup.
+# Headless: kein Ingress, kein Dex, keine HA. Zugriff via port-forward
+# (task local:argo:ui).
+
+global:
+  domain: argocd.local
+
+# UI-Server schlank — kein Ingress, kein TLS-Setup im Local-Cluster
+server:
+  ingress:
+    enabled: false
+  service:
+    type: ClusterIP
+  extraArgs:
+    - --insecure  # keine Selbst-TLS-Logik intern
+  replicas: 1
+
+# Headless — kein OIDC, kein Notifications, kein ApplicationSet
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false
+
+# Single-Instance Redis/Repo-Server reicht lokal
+redis:
+  enabled: true
+redis-ha:
+  enabled: false
+repoServer:
+  replicas: 1
+controller:
+  replicas: 1
+
+# Erlaubt Argo, Helm-OCI-Charts aus der lokalen Registry zu pullen.
+# Argo-CD versteht oci://... in source.helm.repoURL.
+configs:
+  params:
+    server.disable.auth: false  # initial admin pw bleibt, port-forward + kubectl secret get
+    server.insecure: true
+  cm:
+    # Lokale Registry als bekannten Helm-OCI-Repo eintragen
+    # (optional; Argo erlaubt anonym auch ohne Eintrag).
+    helm.repositories: ""

@@ -18,7 +18,11 @@
     "yq@latest",
     "jq@latest",
     "sops@latest",
-    "age@latest"
+    "age@latest",
+    "kind@latest",
+    "argocd@latest",
+    "kubectx@latest",
+    "gettext@latest"
   ],
   "shell": {
     "init_hook": [

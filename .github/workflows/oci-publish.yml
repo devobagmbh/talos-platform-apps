@@ -80,9 +80,9 @@ jobs:
       - name: Lokale CI-Pipeline (lint + render + conftest)
         run: devbox run -- task ci
 
-      - name: oras + cosign gegen GHCR authentifizieren
+      - name: helm + cosign gegen GHCR authentifizieren
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- oras login ghcr.io \
+          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- helm registry login ghcr.io \
             --username "${{ github.actor }}" \
             --password-stdin
 
