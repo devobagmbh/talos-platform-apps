@@ -156,20 +156,90 @@ tasks:
       snyk iac test sub-layers/ \
         --sarif-file-output=snyk-results.sarif
 
-  # --- Publish-Targets — werden in Schritt 2 mit oci-publish.yml implementiert ---
+  # --- Publish-Targets ---
 
   push:
-    desc: 'oras push eines Sub-Layers (TODO Schritt 2 — Issue #56 / #11.2)'
-    cmd: echo "TODO Schritt 2 — Issue #56"
+    desc: 'oras push eines Sub-Layers: task push -- <sub-layer> <tag>'
+    summary: |
+      Pusht sub-layers/<sub-layer>/rendered/manifest.yaml als signiertes
+      OCI-Artefakt nach ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>.
+
+      Voraussetzungen:
+        - manifest.yaml gerendert (via task render:one -- <sub-layer>)
+        - oras gegen ghcr authentifiziert
+          (lokal: oras login ghcr.io -u <user> --password-stdin; in CI via GHA-Token)
+
+      Beispiel: task push -- lifecycle v0.0.0-dev
+    vars:
+      OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task push -- <sub-layer> <tag>}"
+      tag="${2:?usage: task push -- <sub-layer> <tag>}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}:${tag}"
+      manifest="sub-layers/${sub_layer}/rendered/manifest.yaml"
+      test -s "$manifest" || { echo "ERROR: $manifest fehlt oder ist leer — vorher task render:one -- $sub_layer"; exit 1; }
+      echo "Pushing $manifest → $ref"
+      oras push "$ref" \
+        --artifact-type application/vnd.devoba.platform-app.v1+yaml \
+        "${manifest}:application/yaml"
+      echo "✓ Pushed: $ref"
+
   sign:
-    desc: cosign sign keyless (TODO Schritt 2)
-    cmd: echo "TODO Schritt 2"
+    desc: 'cosign sign keyless: task sign -- <sub-layer> <tag>'
+    summary: |
+      Signiert das OCI-Artefakt unter <ref> via cosign keyless.
+
+      In CI: GHA-OIDC-Token (permissions: id-token: write) →
+        Fulcio-Cert → Rekor-Log-Eintrag → cosign-Signature im OCI-Tag.
+
+      Lokal (selten): cosign sign verlangt interaktiven Browser-OIDC-Flow.
+      Bei Phase 1 ausschließlich aus CI signiert; lokal nur für Tests
+      mit COSIGN_EXPERIMENTAL=1.
+    vars:
+      OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task sign -- <sub-layer> <tag>}"
+      tag="${2:?usage: task sign -- <sub-layer> <tag>}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}:${tag}"
+      echo "Signing $ref (keyless)"
+      cosign sign --yes "$ref"
+      echo "✓ Signed: $ref"
+
   attest:
-    desc: 'SBOM + SLSA-Attestations (vertagt nach Phase 2 — ADR-0009)'
-    cmd: echo "Vertagt nach Phase 2"
+    desc: 'SBOM + SLSA-Attestations (vertagt nach Phase 2 — ADR-0009 § Phase-1-Scope)'
+    cmd: |
+      echo "Vertagt nach Phase 2+ (ADR-0009 § Phase-1-Scope)."
+      echo "SLSA-v1-Provenance + CycloneDX-SBOM werden aktiviert, sobald externe"
+      echo "Konsumenten existieren oder Audit-Anforderung greift."
+
   publish:
-    desc: render → push → sign (TODO Schritt 2)
-    cmd: echo "TODO Schritt 2"
+    desc: 'render → push → sign: task publish -- <sub-layer> <tag>'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task publish -- <sub-layer> <tag>}"
+      tag="${2:?usage: task publish -- <sub-layer> <tag>}"
+      task render:one -- "$sub_layer"
+      task push     -- "$sub_layer" "$tag"
+      task sign     -- "$sub_layer" "$tag"
+      echo "✓ Published $sub_layer:$tag"
+
+  verify:
+    desc: 'cosign verify gegen einen veröffentlichten OCI-Tag: task verify -- <sub-layer> <tag>'
+    summary: |
+      Verifiziert die cosign-Keyless-Signature. Erwartete Identity:
+        https://github.com/devobagmbh/talos-platform-apps/.github/workflows/oci-publish.yml@refs/tags/<sub-layer>-<tag>
+    vars:
+      OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      sub_layer="${1:?usage: task verify -- <sub-layer> <tag>}"
+      tag="${2:?usage: task verify -- <sub-layer> <tag>}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}:${tag}"
+      cosign verify "$ref" \
+        --certificate-identity-regexp "^https://github\.com/devobagmbh/talos-platform-apps/\.github/workflows/oci-publish\.yml@refs/tags/${sub_layer}-.*$" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 

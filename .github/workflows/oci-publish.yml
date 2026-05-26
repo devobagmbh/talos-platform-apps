@@ -1,0 +1,99 @@
+name: oci-publish
+
+# Render + Lint + Scan auf PR; render + push + sign auf Tag-Push.
+#
+# Tag-Pattern: <sub-layer>-vX.Y.Z (z. B. lifecycle-v0.1.0, monitoring-v0.3.1)
+# Der Workflow extrahiert den Sub-Layer-Namen aus dem Tag und publiziert
+# genau diesen einen Sub-Layer als signiertes OCI-Artefakt.
+#
+# Konvention (AGENTS.md § CI-Konventionen):
+#   1. Devbox-Cache aktiv (jetify-com/devbox-install-action)
+#   2. Lokal reproduzierbar via `task ci` und `task publish -- <sub-layer> <tag>`
+#   3. Pipeline = dünner Task-Caller — Steps rufen ausschließlich `task <name>`
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    tags:
+      - 'automation-v*'
+      - 'databases-v*'
+      - 'dns-v*'
+      - 'lifecycle-v*'
+      - 'monitoring-v*'
+      - 'registry-v*'
+      - 'secrets-v*'
+      - 'storage-objects-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------
+  # PR-Trigger: nur Lint + Render + Conftest. Kein Push, kein Sign.
+  # --------------------------------------------------------------------
+  ci:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Lokale CI-Pipeline reproduzieren
+        run: devbox run -- task ci
+
+  # --------------------------------------------------------------------
+  # Tag-Push: render + push + sign für den getaggten Sub-Layer.
+  # --------------------------------------------------------------------
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # GHCR push
+      id-token: write   # cosign keyless OIDC
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Sub-Layer und Tag aus refs/tags ableiten
+        id: parse
+        run: |
+          # tag ist z. B. "lifecycle-v0.1.0"
+          full="${GITHUB_REF_NAME}"
+          # Sub-Layer = alles vor dem letzten "-v"
+          sub_layer="${full%-v*}"
+          # Version-Tag = "v" + Rest (z. B. v0.1.0)
+          version="v${full##*-v}"
+          echo "sub_layer=$sub_layer" >> "$GITHUB_OUTPUT"
+          echo "version=$version"     >> "$GITHUB_OUTPUT"
+          echo "Tag '$full' → sub_layer='$sub_layer', version='$version'"
+
+      - name: Lokale CI-Pipeline (lint + render + conftest)
+        run: devbox run -- task ci
+
+      - name: oras + cosign gegen GHCR authentifizieren
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- oras login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: task publish (render + push + sign keyless)
+        run: |
+          devbox run -- task publish -- \
+            "${{ steps.parse.outputs.sub_layer }}" \
+            "${{ steps.parse.outputs.version }}"
+
+      - name: Verifikation (cosign verify)
+        run: |
+          devbox run -- task verify -- \
+            "${{ steps.parse.outputs.sub_layer }}" \
+            "${{ steps.parse.outputs.version }}"
