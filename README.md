@@ -2,10 +2,16 @@
 
 [![Talos Linux](https://img.shields.io/badge/Talos%20Linux-1.13.0-ff7300?style=flat-square)](https://www.talos.dev/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.36.0-326ce5?style=flat-square&logo=kubernetes)](https://kubernetes.io/)
+[![Cilium](https://img.shields.io/badge/Cilium-1.19.3-F8C517?style=flat-square&logo=cilium)](https://cilium.io/)
+[![Gateway API](https://img.shields.io/badge/Gateway%20API-v1.2-326CE5?style=flat-square&logo=kubernetes)](https://gateway-api.sigs.k8s.io/)
 [![Helm](https://img.shields.io/badge/Helm-v3-0F1689?style=flat-square&logo=helm)](https://helm.sh/)
 [![cosign](https://img.shields.io/badge/cosign-2.4%2B-2E7D9A?style=flat-square&logo=sigstore)](https://github.com/sigstore/cosign)
 [![ORAS](https://img.shields.io/badge/ORAS-1.2%2B-1E3F66?style=flat-square)](https://oras.land/)
-[![syft](https://img.shields.io/badge/syft-SBOM-9059F6?style=flat-square)](https://github.com/anchore/syft)
+[![Conftest](https://img.shields.io/badge/Conftest-OPA%20Rego-7D4698?style=flat-square&logo=openpolicyagent)](https://www.conftest.dev/)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-7.7-EF7B4D?style=flat-square&logo=argo)](https://argo-cd.readthedocs.io/)
+[![cert-manager](https://img.shields.io/badge/cert--manager-1.17-0A6E32?style=flat-square)](https://cert-manager.io/)
+[![kind](https://img.shields.io/badge/kind-local%20K8s-326CE5?style=flat-square&logo=kubernetes)](https://kind.sigs.k8s.io/)
+[![mkcert](https://img.shields.io/badge/mkcert-Local%20TLS-1F305F?style=flat-square)](https://github.com/FiloSottile/mkcert)
 [![Devbox](https://img.shields.io/badge/Devbox-Nix--based-31135a?style=flat-square)](https://www.jetify.com/devbox/)
 [![direnv](https://img.shields.io/badge/direnv-2.36%2B-FFD400?style=flat-square)](https://direnv.net/)
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
@@ -71,6 +77,20 @@ task attest -- monitoring v0.1.0  # SBOM + SLSA-Provenance als Attestations
 task publish -- monitoring v0.1.0 # render → push → sign → attest in einem Rutsch
 task ci                           # lokale Reproduktion der GHA-Pipeline
 ```
+
+### Lokales Live-Testing (Kind + ArgoCD)
+
+Für End-to-End-Tests einzelner Sub-Layer (Render → OCI-Push → Argo-Sync → Apply) gibt es einen prod-konformen Kind-Cluster mit Cilium-CNI, Gateway-API und einer lokalen OCI-Registry hinter `registry.localhost.direct` (mkcert-TLS):
+
+```bash
+task local:up                                  # Cluster + Cilium + Gateway + ArgoCD + Registry-Bridge
+task local:publish -- lifecycle 0.0.0-dev      # Sub-Layer in die lokale Registry pushen
+task local:apply   -- lifecycle 0.0.0-dev crossplane-system  # Argo-Application anlegen
+task local:argo:ui                             # https://argocd.localhost.direct öffnen
+task local:down                                # alles abreißen
+```
+
+Vollständige Architektur, Endpoints, Komponentendetails und Troubleshooting: [`local/README.md`](local/README.md).
 
 ### CI
 
