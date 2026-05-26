@@ -65,6 +65,10 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 
 **Niemals `make` verwenden** — die Konvention ist go-task.
 
+**Taskfile-Konventionen**:
+- `silent: true` global — Commands echoen sich nicht selbst
+- **Logik wohnt im Taskfile**, nicht in externen `scripts/`-Bash-Files. Auch komplexer Bash-Code wird inline in `cmds:` umgesetzt (Multi-Line `|`). Externe Scripts würden die „Pipeline = Task-Caller"-Konvention untergraben (Pipeline → Task → Script wäre eine Stufe zu tief).
+
 ## Coding Style & Naming
 
 - **YAML**: 2-Space-Indent, keine Tabs, Block-Style bevorzugen

@@ -6,6 +6,11 @@
 
 version: '3'
 
+# Konvention: Tasks sind silent. Commands echoen sich nicht selbst —
+# nur die Commands geben Output an die Konsole. Ausnahmen via `silent: false`
+# explizit am Task.
+silent: true
+
 vars:
   SUB_LAYERS:
     sh: ls sub-layers/
