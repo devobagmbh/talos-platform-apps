@@ -42,3 +42,48 @@ controller:
 configs:
   params:
     server.insecure: true
+
+  # OCI-Helm-Repo registrieren. Argos interne helm-Aufruf-Logik schaltet
+  # nur dann auf den OCI-Code-Pfad (statt 'helm pull --repo oci://...'),
+  # wenn ein Repository mit enableOCI=true existiert. Wird beim
+  # helm install automatisch als argocd.argoproj.io/secret-type=repository
+  # Secret erzeugt — kein manueller Apply-Step.
+  repositories:
+    kind-registry-local:
+      url: kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+      type: helm
+      enableOCI: "true"
+      name: kind-registry-local
+
+# argocd-repo-server muss die mkcert-CA trusten, damit Helm-OCI-Pulls gegen
+# https://kind-registry.registry.svc.cluster.local:5000 validieren. Wir mergen
+# die mkcert-CA an das System-CA-Bundle und overmounten /etc/ssl/certs/ca-certificates.crt.
+# Der InitContainer nutzt das Argo-Image selbst, damit das System-Bundle identisch
+# zum Runtime-Container ist.
+repoServer:
+  volumes:
+    - name: mkcert-ca
+      configMap:
+        name: mkcert-ca
+    - name: ca-bundle
+      emptyDir: {}
+  initContainers:
+    - name: append-mkcert-ca
+      image: quay.io/argoproj/argocd:v2.13.0
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          cp /etc/ssl/certs/ca-certificates.crt /shared/ca-certificates.crt
+          cat /mkcert/ca.crt >> /shared/ca-certificates.crt
+          echo "✓ mkcert-CA ins CA-Bundle aufgenommen ($(wc -l < /shared/ca-certificates.crt) Zeilen)"
+      volumeMounts:
+        - name: mkcert-ca
+          mountPath: /mkcert
+        - name: ca-bundle
+          mountPath: /shared
+  volumeMounts:
+    - name: ca-bundle
+      mountPath: /etc/ssl/certs/ca-certificates.crt
+      subPath: ca-certificates.crt

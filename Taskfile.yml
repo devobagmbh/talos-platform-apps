@@ -357,8 +357,8 @@ tasks:
         echo "✓ Lokales Setup bereit."
         echo "  Argo-UI:       https://argocd.localhost.direct"
         echo "  Argo-Admin-Pw: task local:argo:password"
-        echo "  Registry:      https://registry.localhost.direct (Workstation)"
-        echo "                 kind-registry.registry.svc.cluster.local:5000 (Cluster)"
+        echo "  Registry:      https://localhost:5001 (Workstation, mkcert-TLS)"
+        echo "                 kind-registry.registry.svc.cluster.local:5000 (Cluster, mkcert-TLS)"
         echo "  Lokal pushen:  task local:publish -- <sub-layer> <tag>"
 
   local:down:
@@ -411,14 +411,36 @@ tasks:
       done
 
   local:registry:up:
-    desc: 'Lokale Docker-Registry auf localhost:5001 starten (idempotent)'
+    desc: 'Lokale Docker-Registry auf localhost:5001 mit mkcert-TLS starten (idempotent)'
+    # Container terminiert TLS selbst — gleicher mkcert-Cert für Workstation
+    # (SAN: localhost, 127.0.0.1) und Cluster (SAN: kind-registry.registry.svc.cluster.local).
+    # Damit kann Argo intra-cluster die Cert-Chain validieren ohne --plain-http /
+    # insecure-Flags. mkcert -install ist idempotent.
     cmd: |
+      mkcert -install >/dev/null 2>&1
+      mkdir -p .mkcert-registry
+      if [ ! -f .mkcert-registry/kind-registry-cert.pem ]; then
+        cd .mkcert-registry
+        mkcert -cert-file kind-registry-cert.pem -key-file kind-registry-key.pem \
+          localhost 127.0.0.1 \
+          kind-registry kind-registry.registry kind-registry.registry.svc \
+          kind-registry.registry.svc.cluster.local >/dev/null
+        chmod 644 kind-registry-key.pem
+        cd ..
+        echo "✓ mkcert-Cert für kind-registry generiert"
+      fi
       if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' kind-registry 2>/dev/null)" = "true" ]; then
         echo "✓ kind-registry läuft bereits"
       else
         docker rm -f kind-registry >/dev/null 2>&1 || true
-        docker run -d --restart=always -p 127.0.0.1:5001:5000 --name kind-registry registry:2
-        echo "✓ kind-registry gestartet (localhost:5001)"
+        docker run -d --restart=always \
+          -p 127.0.0.1:5001:5000 \
+          -v "$PWD/.mkcert-registry:/certs:ro" \
+          -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/kind-registry-cert.pem \
+          -e REGISTRY_HTTP_TLS_KEY=/certs/kind-registry-key.pem \
+          --name kind-registry \
+          registry:2 >/dev/null
+        echo "✓ kind-registry gestartet (https://localhost:5001, TLS via mkcert)"
       fi
 
   local:registry:down:
@@ -431,11 +453,15 @@ tasks:
       - kind create cluster --name talos-platform-apps --config local/kind-config.yaml || true
       - kubectx kind-talos-platform-apps
       - |
-        # Containerd-Config-Patches pro Node anbringen — local-registry@kind-registry:5000
+        # Containerd-Hostpatches pro Node:
+        # localhost:5001 → https://kind-registry:5000 mit mkcert-TLS.
+        # skip_verify=true: containerd hat das mkcert-CA nicht — okay weil intra-kind-Docker-Netz.
         for node in $(kind get nodes --name talos-platform-apps); do
           docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
           docker exec "$node" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml <<EOF
-        [host."http://kind-registry:5000"]
+        [host."https://kind-registry:5000"]
+          capabilities = ["pull", "resolve"]
+          skip_verify = true
         EOF'
         done
       - |
@@ -469,11 +495,14 @@ tasks:
         --wait --timeout 5m
 
   local:certs:
-    desc: 'mkcert-Root-CA ins System-Trust + als Cluster-Secret + ClusterIssuer'
-    # Cluster-Secret + ClusterIssuer werden idempotent neu generiert; das
-    # CA-Material wird direkt aus dem mkcert-CAROOT gelesen (kein lokales
-    # Zwischen-Kopieren — vermeidet Permission-Issues beim zweiten Lauf,
-    # weil mkcert seine Keys mit 0600 schreibt).
+    desc: 'mkcert-Root-CA ins System-Trust + Cluster-Secret + ConfigMap + ClusterIssuer'
+    # Drei Targets für die CA:
+    #   1. cert-manager-NS als TLS-Secret → ClusterIssuer für *.localhost.direct
+    #   2. argocd-NS als ConfigMap → initContainer mountet die CA und appended sie
+    #      an /etc/ssl/certs/ca-certificates.crt im argocd-repo-server-Pod,
+    #      damit Helm-OCI-Pulls gegen kind-registry-TLS validieren.
+    # Material kommt direkt aus $(mkcert -CAROOT) (kein lokales Zwischen-File,
+    # vermeidet Permission-Issues beim zweiten Lauf — mkcert speichert mit 0600).
     cmd: |
       mkcert -install
       caroot=$(mkcert -CAROOT)
@@ -481,8 +510,13 @@ tasks:
         --cert="$caroot/rootCA.pem" --key="$caroot/rootCA-key.pem" \
         -n cert-manager \
         --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create configmap mkcert-ca \
+        --from-file=ca.crt="$caroot/rootCA.pem" \
+        -n argocd \
+        --dry-run=client -o yaml | kubectl apply -f -
       kubectl apply -f local/mkcert-cluster-issuer.yaml
-      echo "✓ mkcert-CA als ClusterIssuer 'mkcert-ca' bereit"
+      echo "✓ mkcert-CA als ClusterIssuer + im argocd-NS bereit"
 
   local:cilium:install:
     desc: 'Cilium als CNI installieren (kubeProxyReplacement, Gateway-API enabled)'
@@ -546,7 +580,13 @@ tasks:
       echo "✓ Gateway + ArgoCD-HTTPRoute angewendet"
 
   local:registry:bridge:
-    desc: 'kind-registry-Container als Cluster-Service exposen (registry.localhost.direct)'
+    desc: 'kind-registry-Container als Cluster-Service exposen (Service+EndpointSlice)'
+    # Bridge ist Service+EndpointSlice ohne Selector im 'registry'-NS,
+    # statische Container-IP aus 'docker container inspect'. Damit ist der
+    # kind-registry-Container intra-cluster über die Service-DNS
+    # kind-registry.registry.svc.cluster.local:5000 erreichbar.
+    # TLS terminiert der Container selbst (mkcert-Cert mit Service-DNS-SAN),
+    # KEINE Gateway-HTTPRoute mehr — direkter Pfad ohne Re-Encrypt.
     cmd: |
       kind_registry_ip=$(docker container inspect kind-registry \
         --format '{{`{{ .NetworkSettings.Networks.kind.IPAddress }}`}}')
@@ -556,10 +596,9 @@ tasks:
       fi
       echo "kind-registry-Container IP: $kind_registry_ip"
       KIND_REGISTRY_IP="$kind_registry_ip" envsubst < local/registry-bridge.yaml | kubectl apply -f -
-      kubectl apply -f local/registry-route.yaml
       echo "✓ Registry-Bridge angewendet"
-      echo "  Workstation-Push:  oci://registry.localhost.direct/talos-platform-apps"
-      echo "  Cluster-internal:  oci://kind-registry.registry.svc.cluster.local:5000/talos-platform-apps"
+      echo "  Workstation-Push:  oci://localhost:5001/talos-platform-apps (mkcert-TLS, SAN: localhost)"
+      echo "  Cluster-Pull:      kind-registry.registry.svc.cluster.local:5000/talos-platform-apps (mkcert-TLS, SAN: Service-DNS)"
 
   local:argo:uninstall:
     desc: 'ArgoCD entfernen (Cluster bleibt)'
@@ -583,23 +622,26 @@ tasks:
   local:publish:
     desc: 'render + package + push zur lokalen Registry: task local:publish -- <sub-layer> <tag>'
     summary: |
-      Pusht an oci://registry.localhost.direct/talos-platform-apps (Workstation-View,
-      über Gateway mit mkcert-TLS). Argo CD im Cluster pullt das gleiche Artefakt
-      intra-cluster über kind-registry.registry.svc.cluster.local:5000.
-
-      Voraussetzung: helm registry login registry.localhost.direct
-      (mkcert-CA ist im System-Trust, keine Auth nötig — registry:2 anonym).
+      Pusht an oci://localhost:5001/talos-platform-apps (Workstation-View, direkt
+      an den kind-registry-Container mit mkcert-TLS — SAN: localhost). Argo CD
+      im Cluster pullt dasselbe Artefakt intra-cluster über
+      kind-registry.registry.svc.cluster.local:5000 (gleicher Container, gleicher
+      mkcert-Cert mit anderem SAN — eine Container-Identity, zwei Hostnamen).
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:publish -- <sub-layer> <tag>}"
       tag="${2:?usage: task local:publish -- <sub-layer> <tag>}"
-      OCI_REGISTRY=registry.localhost.direct/talos-platform-apps task render:one -- "$sub_layer"
-      OCI_REGISTRY=registry.localhost.direct/talos-platform-apps task package    -- "$sub_layer" "$tag"
-      OCI_REGISTRY=registry.localhost.direct/talos-platform-apps task push       -- "$sub_layer" "$tag"
-      echo "✓ Lokal publiziert: oci://registry.localhost.direct/talos-platform-apps/${sub_layer}:${tag#v}"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$sub_layer"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$sub_layer" "$tag"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$sub_layer" "$tag"
+      echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${sub_layer}:${tag#v}"
 
   local:apply:
     desc: 'Argo-Application aus local/argo-app-template.yaml im Kind anwenden: task local:apply -- <sub-layer> <tag> [<namespace>]'
+    # repoURL ohne oci://-Präfix: Argo matched die App ans registrierte
+    # Repository (configs.repositories.kind-registry-local in argocd-values.yaml),
+    # was den OCI-Code-Pfad in Argos Helm-Aufruf aktiviert. Mit oci://-Schema
+    # würde Argo 'helm pull --repo oci://...' versuchen, was Helm 3.x deprecated.
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:apply -- <sub-layer> <tag> [<namespace>]}"

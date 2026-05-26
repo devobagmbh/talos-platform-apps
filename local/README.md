@@ -17,68 +17,59 @@ Prod-konformer Kind-Cluster für lokales Sub-Layer-Testing: gleiche CNI- und Ing
 - **Identisch mit Prod, wo es zählt**: Cilium statt kindnet, Gateway-API statt Ingress, kube-proxy abgeschaltet, ArgoCD als Pull-basierter Apply-Mechanismus. Was im Kind funktioniert, funktioniert auch auf Talos.
 - **Keine `localhost`-Hostnames**: alles läuft über `*.localhost.direct` (öffentliche DNS-Wildcard auf `127.0.0.1`) mit mkcert-Wildcard-Zertifikat. Damit verhalten sich Argo, Helm-OCI-Client und Browser exakt wie gegen einen echten Cluster.
 - **Bootstrap ohne Henne-Ei**: der OCI-Backing-Store ist ein eigener Docker-Container (`kind-registry`), nicht ein Pod im Cluster. Damit existiert die Registry **bevor** das Cluster lebt, und Argo kann beim ersten Sync Artefakte ziehen.
-- **Workstation- vs. Cluster-View** auf dieselbe Registry: per Gateway als `registry.localhost.direct` (für `helm push`), intern als Service-DNS `kind-registry.registry.svc.cluster.local:5000` (für Argo).
+- **TLS durchgängig, vom Container bis Argo**: der `kind-registry`-Container terminiert TLS selbst mit einem mkcert-Cert, das **beide** SANs trägt — `localhost` für die Workstation und `kind-registry.registry.svc.cluster.local` für intra-cluster-Pulls. Keine HTTP-Bypasses, keine Insecure-Flags. Argo trustet die mkcert-CA über einen InitContainer im `argocd-repo-server`, der die CA ans System-CA-Bundle anhängt.
 
 ## Architektur
 
 ```
 ┌──────────────────────────── Workstation ─────────────────────────────┐
 │                                                                      │
-│  Browser ───────► https://argocd.localhost.direct ─┐                 │
-│  Browser ───────► https://registry.localhost.direct │ DNS → 127.0.0.1│
-│  helm push  ────► oci://registry.localhost.direct ──┤                │
-│                                                     │                │
-│                                  Host-Port 443/80   │                │
-└──────────────────────────────────────────│──────────┼────────────────┘
-                                           ▼          ▼
-                       ┌──────────────────────────────────────────┐
-                       │  kind-Container (control-plane)          │
-                       │  extraPortMappings 30080→80 / 30443→443  │
-                       │                                          │
-                       │  ┌──── Cilium-Gateway-Service ─────┐    │
-                       │  │  NodePort 30080 / 30443         │    │
-                       │  │  GatewayClass: cilium           │    │
-                       │  └────┬────────────────────────────┘    │
-                       │       │                                  │
-                       │       │  TLS terminate (mkcert-Wildcard) │
-                       │       ▼                                  │
-                       │  ┌─────────────────────────────────┐    │
-                       │  │  HTTPRoutes                     │    │
-                       │  │   • argocd.localhost.direct ──► argocd-server (NS: argocd)
-                       │  │   • registry.localhost.direct ► kind-registry  (NS: registry)
-                       │  └─────────────────────────────────┘    │
-                       │       │                                  │
-                       │       │  intra-cluster Pull:             │
-                       │       │  kind-registry.registry.svc      │
-                       │       │  .cluster.local:5000             │
-                       │       │  (Service + EndpointSlice ohne   │
-                       │       │   Selector, statische Docker-IP) │
-                       │       ▼                                  │
-                       └──┬────────────────────────────────────┬──┘
-                          │       docker-Netzwerk "kind"       │
-                          │                                    │
-                          ▼                                    │
-                ┌─────────────────────┐                        │
-                │  kind-registry      │ ◄──────────────────────┘
-                │  (Docker-Container) │
-                │  127.0.0.1:5001     │   (Workstation-direkter
-                │  registry:2 anonym  │    Fallback ohne Gateway)
-                └─────────────────────┘
+│  Browser ───────► https://argocd.localhost.direct                    │
+│                   (Cilium-Gateway, mkcert-Wildcard)                  │
+│                                                                      │
+│  helm push  ────► https://localhost:5001/talos-platform-apps         │
+│                   (direkt am Container, mkcert-Cert SAN: localhost)  │
+│                                                                      │
+└──────────────────────────────│───────────────────────────│───────────┘
+                               │ Host-Port 443             │ Host-Port 5001
+                               ▼                           ▼
+                ┌──────────────────────────────┐    ┌────────────────────┐
+                │  kind-Container              │    │  kind-registry     │
+                │  (control-plane)             │    │  (Docker-Container)│
+                │                              │    │  registry:2 + TLS  │
+                │  Cilium-Gateway-NodePort     │    │  /certs (volume)   │
+                │  30443 → Gateway-API         │    └────────┬───────────┘
+                │   └─► HTTPRoute argocd       │             │
+                │       └─► argocd-server      │             │ docker-Netz "kind"
+                │                              │             │ via Service+EndpointSlice
+                │  CoreDNS                     │             │
+                │   └─► kind-registry.         │◄────────────┘
+                │       registry.svc           │  Cluster-Pull (Argo):
+                │       .cluster.local         │  https://kind-registry.registry
+                │                              │  .svc.cluster.local:5000
+                │  argocd-repo-server          │  (mkcert-Cert SAN: Service-DNS)
+                │   • InitContainer hängt      │
+                │     mkcert-CA ans System-    │
+                │     CA-Bundle                │
+                │   • Helm-OCI-Pull validiert  │
+                │     Cert-Chain               │
+                └──────────────────────────────┘
 ```
+
+**Eine Container-Identity, zwei Hostnamen, eine mkcert-CA als Trust-Anchor.** Workstation und Cluster sprechen denselben Container an, jeder über seinen eigenen Hostname-SAN. Die mkcert-CA liegt im System-Trust der Workstation (durch `mkcert -install`) und im argocd-repo-server-Pod (durch InitContainer + ConfigMap `mkcert-ca` im `argocd`-NS).
 
 ## Komponenten und Manifeste
 
 | Datei | Zweck |
 |---|---|
-| [`kind-config.yaml`](kind-config.yaml) | Kind-Spec: `disableDefaultCNI: true`, `kubeProxyMode: none`, containerd-Patch für `localhost:5001`, `extraPortMappings 30080→80` / `30443→443` |
+| [`kind-config.yaml`](kind-config.yaml) | Kind-Spec: `disableDefaultCNI: true`, `kubeProxyMode: none`, containerd-Patch `localhost:5001 → https://kind-registry:5000` (`skip_verify=true` für intra-kind-Pod-Pulls), `extraPortMappings 30080→80` / `30443→443` |
 | [`cilium-values.yaml`](cilium-values.yaml) | Helm-Werte: `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, Hubble + Relay, `l2announcements.enabled` für künftiges LB-IPAM |
-| [`mkcert-cluster-issuer.yaml`](mkcert-cluster-issuer.yaml) | `ClusterIssuer mkcert-ca` für cert-manager (CA-Material aus `~/.local/share/mkcert/`) |
-| [`gateway.yaml`](gateway.yaml) | Gateway `localhost-direct` mit HTTP- und HTTPS-Listener für `*.localhost.direct` + Wildcard-`Certificate` |
-| [`argocd-values.yaml`](argocd-values.yaml) | Headless ArgoCD: Service `ClusterIP`, kein Ingress, `--insecure` (Gateway terminiert), Dex/Notifications/ApplicationSet aus |
+| [`mkcert-cluster-issuer.yaml`](mkcert-cluster-issuer.yaml) | `ClusterIssuer mkcert-ca` für cert-manager (CA aus `$(mkcert -CAROOT)`) |
+| [`gateway.yaml`](gateway.yaml) | Gateway `localhost-direct` mit HTTP- und HTTPS-Listener für `*.localhost.direct` + Wildcard-`Certificate` (terminiert TLS für **ArgoCD-UI** — Registry-Push geht direkt am Gateway vorbei) |
+| [`argocd-values.yaml`](argocd-values.yaml) | Headless ArgoCD: Service `ClusterIP`, kein Ingress, `--insecure` (Gateway terminiert), Dex/Notifications/ApplicationSet aus. **InitContainer** appended `mkcert-ca` ans System-CA-Bundle des repo-servers. **`configs.repositories.kind-registry-local`** registriert das OCI-Helm-Repo, damit Argo den OCI-Code-Pfad nutzt. |
 | [`argocd-route.yaml`](argocd-route.yaml) | `HTTPRoute argocd` → `argocd-server:443` auf `argocd.localhost.direct` |
-| [`registry-bridge.yaml`](registry-bridge.yaml) | Namespace `registry` + Service `kind-registry` + manueller `EndpointSlice` mit `${KIND_REGISTRY_IP}` (per `envsubst` aus `docker container inspect`) |
-| [`registry-route.yaml`](registry-route.yaml) | `HTTPRoute registry` → `kind-registry:5000` auf `registry.localhost.direct` |
-| [`argo-app-template.yaml`](argo-app-template.yaml) | Argo-`Application`-Template mit Platzhaltern `${SUB_LAYER}`, `${TAG}`, `${REGISTRY}`, `${NAMESPACE}` |
+| [`registry-bridge.yaml`](registry-bridge.yaml) | Namespace `registry` + Service `kind-registry` + manueller `EndpointSlice` mit `${KIND_REGISTRY_IP}` (per `envsubst` aus `docker container inspect`) — keine HTTPRoute mehr, Container spricht TLS direkt |
+| [`argo-app-template.yaml`](argo-app-template.yaml) | Argo-`Application`-Template mit Platzhaltern `${SUB_LAYER}`, `${TAG}`, `${REGISTRY}`, `${NAMESPACE}`. `repoURL` ohne `oci://`-Schema, damit Argo das registrierte Helm-OCI-Repo matched |
 
 ## Voraussetzungen
 
@@ -110,22 +101,20 @@ Am Ende stehen folgende Endpoints:
 
 | Endpoint | Adresse | Verwendung |
 |---|---|---|
-| Argo-UI | `https://argocd.localhost.direct` | Browser-Login (Passwort: `task local:argo:password`) |
-| Registry-Push (Workstation) | `oci://registry.localhost.direct/talos-platform-apps` | `helm push`, `oras push` von der Workstation |
-| Registry-Pull (Cluster intern) | `oci://kind-registry.registry.svc.cluster.local:5000/talos-platform-apps` | Argo-`Application.source.repoURL` |
-| Registry-Direct-Push (Fallback) | `oci://localhost:5001/talos-platform-apps` | Wenn Gateway nicht läuft; ohne TLS |
+| Argo-UI | `https://argocd.localhost.direct` | Browser-Login (Passwort: `task local:argo:password`) — TLS via Cilium-Gateway + mkcert-Wildcard |
+| Registry-Push (Workstation) | `oci://localhost:5001/talos-platform-apps` | `helm push` von der Workstation — TLS direkt am Container, mkcert-Cert SAN: `localhost` |
+| Registry-Pull (Cluster) | `kind-registry.registry.svc.cluster.local:5000/talos-platform-apps` | Argo-`Application.source.repoURL` (ohne `oci://`-Schema) — TLS direkt am Container, mkcert-Cert SAN: Service-DNS |
 
 ## Push-/Apply-Workflow für Sub-Layer
 
 ```bash
-# Einmalig: Helm gegen die lokale Registry einloggen.
-# registry:2 läuft anonym — leere Credentials sind okay.
-helm registry login registry.localhost.direct --username '' --password ''
-
-# Sub-Layer rendern, paketieren und in die lokale Registry pushen
+# Sub-Layer rendern, paketieren und in die lokale Registry pushen.
+# registry:2 läuft anonym — kein helm registry login nötig. TLS validiert
+# automatisch gegen mkcert-CA im System-Trust (durch 'mkcert -install').
 task local:publish -- lifecycle 0.0.0-dev
 
-# Argo-Application im Cluster anlegen (Argo pullt intra-cluster via Service-DNS)
+# Argo-Application im Cluster anlegen (Argo pullt intra-cluster via Service-DNS,
+# matched ans registrierte kind-registry-local OCI-Helm-Repo).
 task local:apply -- lifecycle 0.0.0-dev crossplane-system
 
 # Sync-Status prüfen
@@ -189,8 +178,11 @@ Cilium erzeugt den Service **erst nach Apply des Gateways**. Der Task pollt bis 
 **Browser zeigt „nicht vertraut" trotz mkcert**.
 mkcert-CA wird beim `task local:certs`-Schritt via `mkcert -install` in den System-Trust gelegt. Wenn das den Browser-Trust-Store nicht trifft (Firefox auf Linux hat einen eigenen): `~/.local/share/mkcert/rootCA.pem` manuell als CA importieren.
 
-**`helm push registry.localhost.direct` schlägt mit TLS-Fehler fehl**.
-`mkcert -install` hat den Trust nicht für den Helm-Binary übernommen — passiert auf Linux, wenn Devbox-`helm` nicht den System-CA-Bundle nutzt. Workaround: `SSL_CERT_FILE=$(mkcert -CAROOT)/rootCA.pem helm push …` oder direkter Push gegen `oci://localhost:5001/…` (kein TLS, Fallback).
+**`helm push localhost:5001` schlägt mit TLS-Fehler fehl**.
+`mkcert -install` hat den Trust nicht für den Helm-Binary übernommen — passiert auf Linux, wenn Devbox-`helm` nicht den System-CA-Bundle nutzt. Workaround: `SSL_CERT_FILE=$(mkcert -CAROOT)/rootCA.pem helm push …`.
+
+**Argo `SyncFailed: object required` oder `not a valid chart repository`**.
+Das `kind-registry-local`-Repository ist nicht registriert oder nicht erkannt. Check: `kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=repository`. Wenn fehlt: `helm upgrade argocd ... --values local/argocd-values.yaml` neu ziehen (das Repo kommt aus `configs.repositories` der Values). Wenn da, aber Argo matched nicht: `argo-app-template.yaml` darf **kein `oci://`-Schema** in `repoURL` haben — sonst geht Argo den deprecated `--repo oci://...`-Pfad.
 
 **Argo-Application zeigt `Unknown`-Status**.
 Argo kann das Artefakt nicht pullen. Check der Service-DNS: `kubectl -n registry get endpointslice kind-registry -o yaml` muss eine `addresses:`-Liste mit der Docker-IP zeigen. Wenn leer: `task local:registry:bridge` erneut (envsubst hatte keinen `${KIND_REGISTRY_IP}` aufgelöst — `envsubst` aus dem `gettext`-Paket muss im PATH sein).

@@ -43,3 +43,4 @@ charts/*.tgz
 
 # Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
 !.claude/reviews/.gitkeep
+.mkcert-registry/
