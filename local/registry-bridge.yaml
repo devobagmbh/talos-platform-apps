@@ -1,0 +1,45 @@
+# Bridge: importiert den kind-registry-Docker-Container ins Cluster.
+# Der Docker-Container 'kind-registry' (siehe task local:registry:up) ist
+# als externer Endpoint hier abgebildet. Service-DNS ist
+# kind-registry.registry.svc.cluster.local:5000.
+#
+# Die IP-Platzhalter ${KIND_REGISTRY_IP} werden vom Taskfile
+# (task local:registry:bridge) per envsubst ersetzt — IP des kind-registry-
+# Containers im kind-Docker-Netz, ermittelt via 'docker container inspect'.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry
+  labels:
+    platform.devoba.de/component: kind-registry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kind-registry
+  namespace: registry
+spec:
+  ports:
+    - name: registry
+      port: 5000
+      targetPort: 5000
+      protocol: TCP
+---
+# Manuelle Endpoints (kein Selector → keine Pod-Discovery, nur statischer Eintrag)
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: kind-registry
+  namespace: registry
+  labels:
+    kubernetes.io/service-name: kind-registry
+addressType: IPv4
+endpoints:
+  - addresses:
+      - ${KIND_REGISTRY_IP}
+ports:
+  - name: registry
+    port: 5000
+    protocol: TCP

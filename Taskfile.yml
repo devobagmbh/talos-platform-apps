@@ -328,11 +328,14 @@ tasks:
       - task: local:certs
       - task: local:argo:install
       - task: local:gateway:apply
+      - task: local:registry:bridge
       - |
         echo ""
         echo "✓ Lokales Setup bereit."
         echo "  Argo-UI:       https://argocd.localhost.direct"
         echo "  Argo-Admin-Pw: task local:argo:password"
+        echo "  Registry:      https://registry.localhost.direct (Workstation)"
+        echo "                 kind-registry.registry.svc.cluster.local:5000 (Cluster)"
         echo "  Lokal pushen:  task local:publish -- <sub-layer> <tag>"
 
   local:down:
@@ -452,7 +455,7 @@ tasks:
         --wait --timeout 5m
 
   local:gateway:apply:
-    desc: 'Gateway + HTTPRoute apply + Cilium-Gateway-Service auf NodePort patchen'
+    desc: 'Gateway + HTTPRoutes apply + Cilium-Gateway-Service auf NodePort patchen'
     cmd: |
       kubectl create namespace gateway --dry-run=client -o yaml | kubectl apply -f -
       kubectl apply -f local/gateway.yaml
@@ -473,8 +476,23 @@ tasks:
         }
       }'
       kubectl apply -f local/argocd-route.yaml
-      echo "✓ Gateway + HTTPRoute angewendet"
-      echo "  Cilium-Gateway-Service: NodePort (30080→Host:80, 30443→Host:443)"
+      echo "✓ Gateway + ArgoCD-HTTPRoute angewendet"
+
+  local:registry:bridge:
+    desc: 'kind-registry-Container als Cluster-Service exposen (registry.localhost.direct)'
+    cmd: |
+      kind_registry_ip=$(docker container inspect kind-registry \
+        --format '{{`{{ .NetworkSettings.Networks.kind.IPAddress }}`}}')
+      if [ -z "$kind_registry_ip" ]; then
+        echo "ERROR: kind-registry-Container nicht im kind-Netzwerk — task local:cluster:up?"
+        exit 1
+      fi
+      echo "kind-registry-Container IP: $kind_registry_ip"
+      KIND_REGISTRY_IP="$kind_registry_ip" envsubst < local/registry-bridge.yaml | kubectl apply -f -
+      kubectl apply -f local/registry-route.yaml
+      echo "✓ Registry-Bridge angewendet"
+      echo "  Workstation-Push:  oci://registry.localhost.direct/talos-platform-apps"
+      echo "  Cluster-internal:  oci://kind-registry.registry.svc.cluster.local:5000/talos-platform-apps"
 
   local:argo:uninstall:
     desc: 'ArgoCD entfernen (Cluster bleibt)'
@@ -497,14 +515,21 @@ tasks:
 
   local:publish:
     desc: 'render + package + push zur lokalen Registry: task local:publish -- <sub-layer> <tag>'
+    summary: |
+      Pusht an oci://registry.localhost.direct/talos-platform-apps (Workstation-View,
+      über Gateway mit mkcert-TLS). Argo CD im Cluster pullt das gleiche Artefakt
+      intra-cluster über kind-registry.registry.svc.cluster.local:5000.
+
+      Voraussetzung: helm registry login registry.localhost.direct
+      (mkcert-CA ist im System-Trust, keine Auth nötig — registry:2 anonym).
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:publish -- <sub-layer> <tag>}"
       tag="${2:?usage: task local:publish -- <sub-layer> <tag>}"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$sub_layer"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$sub_layer" "$tag"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$sub_layer" "$tag"
-      echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${sub_layer}:${tag#v}"
+      OCI_REGISTRY=registry.localhost.direct/talos-platform-apps task render:one -- "$sub_layer"
+      OCI_REGISTRY=registry.localhost.direct/talos-platform-apps task package    -- "$sub_layer" "$tag"
+      OCI_REGISTRY=registry.localhost.direct/talos-platform-apps task push       -- "$sub_layer" "$tag"
+      echo "✓ Lokal publiziert: oci://registry.localhost.direct/talos-platform-apps/${sub_layer}:${tag#v}"
 
   local:apply:
     desc: 'Argo-Application aus local/argo-app-template.yaml im Kind anwenden: task local:apply -- <sub-layer> <tag> [<namespace>]'
@@ -517,7 +542,7 @@ tasks:
 
       SUB_LAYER="$sub_layer" \
         TAG="$chart_version" \
-        REGISTRY="kind-registry:5000/talos-platform-apps" \
+        REGISTRY="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps" \
         NAMESPACE="$namespace" \
         envsubst < local/argo-app-template.yaml | kubectl apply -f -
 

@@ -1,0 +1,30 @@
+# HTTPRoute leitet registry.localhost.direct an den Cluster-Service der
+# kind-registry-Bridge. Gateway terminiert TLS (mkcert-CA-Wildcard für
+# *.localhost.direct, siehe local/gateway.yaml).
+#
+# Workstation-Push:
+#   helm push <chart>.tgz oci://registry.localhost.direct/talos-platform-apps
+#
+# Argo-Pull intra-cluster bevorzugt Service-DNS (HTTP):
+#   oci://kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  parentRefs:
+    - name: localhost-direct
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - registry.localhost.direct
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: kind-registry
+          port: 5000
