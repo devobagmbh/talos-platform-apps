@@ -25,20 +25,22 @@ Dieses Repo bündelt **gemeinsam genutzte Plattform-Komponenten** (Helm-Charts +
 
 Begründung: deterministische, reviewbare Deployment-Artefakte mit kryptografischer Supply-Chain-Verifikation. Cluster-Update = Tag-Bump in der Konsumenten-Konfiguration. Siehe [ADR-0009](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md).
 
-## Sub-Layer-Übersicht
+## Sub-Layer- und Komponenten-Übersicht
 
-| Sub-Layer | Inhalt | Konsumiert von | Backlog-Issue |
+OCI-Distribution erfolgt **pro Komponente** (ADR-0009 Revision 2026-05-26). Sub-Layer bleibt als Verzeichnis-Klammer und Tag-Namespace.
+
+| Sub-Layer | Komponenten | Konsumiert von | Backlog-Issue |
 |---|---|---|---|
-| [`automation`](sub-layers/automation/) | Renovate + Velero | DHQ (Renovate), beide (Velero) | #16 |
-| [`databases`](sub-layers/databases/) | CNPG-Operator | beide | #15 |
-| [`dns`](sub-layers/dns/) | PowerDNS-Auth + External-DNS + cert-manager-DNS01-Issuer | DHQ (Phase 6) | #16a |
-| [`lifecycle`](sub-layers/lifecycle/) | Crossplane + Provider + iPXE | Seeder | #12 |
-| [`monitoring`](sub-layers/monitoring/) | LGTM-A (Loki + Grafana + Tempo + Mimir + Alloy + kube-prometheus-stack operator-only) | beide | #17 |
-| [`registry`](sub-layers/registry/) | Harbor | beide | #14 |
-| [`secrets`](sub-layers/secrets/) | ESO + Vault Config-Templates | beide | #15a |
-| [`storage-objects`](sub-layers/storage-objects/) | Garage | beide (Seeder + DHQ je eigene Instance, DS720+ als Backup-Ziel) | #13 |
+| [`automation`](sub-layers/automation/) | renovate, velero | DHQ (Renovate), beide (Velero) | #16 |
+| [`databases`](sub-layers/databases/) | cnpg | beide | #15 |
+| [`dns`](sub-layers/dns/) | powerdns, powerdns-admin, external-dns, clusterissuer-rfc2136 | DHQ (Phase 6) | #16a |
+| [`lifecycle`](sub-layers/lifecycle/) | crossplane, ipxe, providers, compositions | Seeder | #12 |
+| [`monitoring`](sub-layers/monitoring/) | kube-prometheus-stack, loki, mimir, tempo, alloy, grafana | beide | #17 |
+| [`registry`](sub-layers/registry/) | harbor | beide | #14 |
+| [`secrets`](sub-layers/secrets/) | external-secrets, clustersecretstore-defaults | beide | #15a |
+| [`storage-objects`](sub-layers/storage-objects/) | garage, garage-buckets | beide (Seeder + DHQ je eigene Instance, DS720+ als Backup-Ziel) | #13 |
 
-Pro Sub-Layer existiert ein eigenes `README.md` mit Detail-Inhalt und Verweisen auf die entscheidenden ADRs.
+Pro Sub-Layer existiert ein `README.md` mit Komponenten-Tabelle inkl. sync-wave-Reihenfolge. Pro Komponente ein eigenes `README.md` + `compatibility.yaml` mit `requires`-Block (Komponenten-Dependencies inkl. Cross-Sub-Layer wie `databases/cnpg` für Harbor).
 
 ## Local Setup
 

@@ -1,0 +1,6 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+
+provides:
+  - name: renovate
+    apis: []  # wird mit Issue #16 befüllt

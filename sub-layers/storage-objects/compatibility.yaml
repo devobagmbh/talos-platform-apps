@@ -1,0 +1,3 @@
+components:
+  - garage           # sync-wave 0  — Operator + StatefulSet
+  - garage-buckets   # sync-wave 10 — Bucket-Definitionen + Access-Keys via ESO

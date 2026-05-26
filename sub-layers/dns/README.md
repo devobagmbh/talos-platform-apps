@@ -2,27 +2,23 @@
 
 PowerDNS-Auth + External-DNS + cert-manager-DNS01-Issuer für die `dhq.devoba.de`-Zone.
 
+OCI-Distribution pro Komponente (ADR-0009).
+
 ## Komponenten
 
-| Komponente | Quelle | Funktion |
-|---|---|---|
-| PowerDNS-Auth | Helm `powerdns/pdns` (oder custom) | autoritativer DNS-Server für `dhq.devoba.de`, Master für DS720+-Slave-AXFR |
-| PowerDNS-Admin | Helm community-chart | Web-UI zur Zone-Verwaltung |
-| External-DNS | Helm `kubernetes-sigs/external-dns` | Watcher für `HTTPRoute`/`Gateway`-Ressourcen → PowerDNS-API-Updates |
-| cert-manager-DNS01-Issuer | Manifest | `ClusterIssuer` mit RFC2136-Solver gegen PowerDNS für TLS-Cert-Issuance |
+| Komponente | sync-wave | Quelle | OCI |
+|---|---|---|---|
+| [`powerdns`](components/powerdns/) | 0 | Helm `powerdns/pdns` + CNPG-`Cluster` | `oci://.../dns/powerdns:vX.Y.Z` |
+| [`powerdns-admin`](components/powerdns-admin/) | 10 | Helm community-chart, OIDC via Dex | `oci://.../dns/powerdns-admin:vX.Y.Z` |
+| [`external-dns`](components/external-dns/) | 10 | Helm `kubernetes-sigs/external-dns`, RFC2136 | `oci://.../dns/external-dns:vX.Y.Z` |
+| [`clusterissuer-rfc2136`](components/clusterissuer-rfc2136/) | 20 | Manifest, cert-manager-`ClusterIssuer` | `oci://.../dns/clusterissuer-rfc2136:vX.Y.Z` |
+
+Sync-Reihenfolge: PowerDNS (Wave 0) bringt API + DB → Admin/External-DNS (Wave 10) lesen/schreiben → ClusterIssuer (Wave 20) braucht beides + TSIG-Secret aus Vault via ESO.
 
 ## Konsumiert von
 
-- **Seeder** — nein. Seeder hat keinen autoritativen DNS-Bedarf (DS720+ ist Primary für `seeder.devoba.de`).
-- **DHQ** — ja, ab Phase 6 (siehe [Issue #38a](https://github.com/devobagmbh/talos-platform-docs/issues/?q=Phase-6+DHQ-PowerDNS+deploy)).
-
-## Inhalt
-
-- `helm/powerdns.yaml` — Auth-Server-Konfig (CNPG-DB-Backend, AXFR-allow-from DS720+, TSIG-Keys, API-Token via ESO)
-- `helm/external-dns.yaml` — RFC2136-Provider-Konfig (TSIG-Key über ESO aus Vault)
-- `helm/powerdns-admin.yaml` — Web-UI-Werte, OIDC via Dex
-- `manifests/clusterissuer-rfc2136.yaml` — cert-manager-Issuer-Setup mit TSIG-Secret-Referenz
-- `manifests/postgres-cluster.yaml` — `CNPG.Cluster` für PowerDNS-Backend
+- **Seeder** — nein (DS720+ ist Primary für `seeder.devoba.de`)
+- **DHQ** — ja, ab Phase 6 ([Issue #38a](https://github.com/devobagmbh/talos-platform-docs/issues/?q=Phase-6+DHQ-PowerDNS+deploy))
 
 ## Backlog-Issue
 
@@ -30,6 +26,7 @@ PowerDNS-Auth + External-DNS + cert-manager-DNS01-Issuer für die `dhq.devoba.de
 
 ## Verwandte ADRs
 
-- [ADR-0017 — External-DNS-Strategy (DHQ-PowerDNS Master, DS720+ Slave)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0017-external-dns-strategy.md)
+- [ADR-0017 — External-DNS-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0017-external-dns-strategy.md)
 - [ADR-0011 — Secrets-Management (TSIG-Key-Verteilung über Vault+ESO)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
-- [ADR-0014 — Load-Balancer-Strategy (Gateway-API-VIPs)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-load-balancer-strategy.md)
+- [ADR-0014 — Load-Balancer-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-load-balancer-strategy.md)
+- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

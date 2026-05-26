@@ -1,0 +1,6 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+
+provides:
+  - name: kube-prometheus-stack
+    apis: []  # wird mit Issue #17 befüllt — bringt monitoring.coreos.com-CRDs

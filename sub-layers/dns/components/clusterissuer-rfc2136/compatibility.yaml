@@ -1,0 +1,7 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+  dns/powerdns: ">=v0.1.0"            # DNS01-Solver-Target
+
+provides:
+  - name: clusterissuer-rfc2136
+    apis: []  # wird mit Issue #16a befüllt

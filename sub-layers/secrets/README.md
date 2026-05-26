@@ -6,28 +6,25 @@ External-Secrets-Operator (ESO) als Sync-Mechanismus zwischen Vault (Layer 3, cl
 
 Dieser Sub-Layer ist **Schicht 2 (Modulkatalog)** und enthält ausschließlich den ESO-Operator + ESO-Defaults. **Vault-Cluster-Instance, Policies und KV-Pfade leben in Schicht 3 (`talos-dhq-cluster`)**, nicht hier. Damit bleibt der Modulkatalog frei von cluster-Identität und Vault-Konsumenten-Spezifika.
 
-Siehe [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md) für die vollständige Two-Lane-Begründung (SOPS = Cluster-Maintenance, Vault = Workload-Secrets).
+Siehe [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md) für die Two-Lane-Begründung (SOPS = Cluster-Maintenance, Vault = Workload-Secrets).
 
 ## Komponenten
 
-| Komponente | Quelle | Funktion |
-|---|---|---|
-| ESO | Helm `external-secrets/external-secrets` | `ExternalSecret`/`ClusterSecretStore`-CRDs — synct Secrets aus Vault in K8s-Secrets |
-| ClusterSecretStore-Defaults | dieses Repo | Boilerplate für `vault-local` (DHQ) und `vault-dhq-remote` (Seeder); konkrete Vault-Endpoints werden in Layer 3 überschrieben |
+| Komponente | sync-wave | Quelle | OCI |
+|---|---|---|---|
+| [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` | `oci://.../secrets/external-secrets:vX.Y.Z` |
+| [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate-Manifeste | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
 
-**Nicht in diesem Sub-Layer**: Vault-Helm-Release, Vault-Policies, Vault-KV-Strukturen, Vault-Auth-Method-Config. Diese gehören in das Konsumenten-Repo (`talos-dhq-cluster/secrets/`, Layer 3).
+Wave 0 bringt die CRDs (`ExternalSecret`, `ClusterSecretStore`). Wave 10 die default `ClusterSecretStore`-Resources `vault-local` (DHQ) und `vault-dhq-remote` (Seeder); konkrete Vault-Endpoints werden in Layer 3 überschrieben.
+
+**Nicht in diesem Sub-Layer**: Vault-Helm-Release, Vault-Policies, Vault-KV-Strukturen, Vault-Auth-Method-Config.
 
 ## Konsumiert von
 
-- **Seeder** — ESO + `ClusterSecretStore: vault-dhq-remote` (cross-cluster zu DHQ-Vault via AppRole/JWT-Auth). Für Seeder-Workloads, die Vault-Secrets brauchen (z. B. Cross-AM-Webhook-BasicAuth).
-- **DHQ** — ESO + `ClusterSecretStore: vault-local` (lokale Vault-Cluster via Kubernetes-Auth-Backend).
+- **Seeder** — `external-secrets` + cross-cluster `ClusterSecretStore: vault-dhq-remote` (AppRole/JWT-Auth zu DHQ-Vault)
+- **DHQ** — `external-secrets` + lokaler `ClusterSecretStore: vault-local` (Kubernetes-Auth)
 
-Stage-0-Seeder-Bootstrap nutzt **kein** ESO — nur SOPS (siehe ADR-0011, Cluster-Maintenance-Lane).
-
-## Inhalt
-
-- `helm/external-secrets.yaml` — Operator-Werte (Defaults, Service-Account, RBAC)
-- `manifests/clustersecretstore-defaults.yaml` — Boilerplate für `vault-local` und `vault-dhq-remote`; konkrete Endpoints + Auth-Refs werden im Konsumenten-Repo überschrieben
+Stage-0-Seeder-Bootstrap nutzt **kein** ESO — nur SOPS (siehe ADR-0011).
 
 ## Backlog-Issues
 
@@ -36,5 +33,6 @@ Stage-0-Seeder-Bootstrap nutzt **kein** ESO — nur SOPS (siehe ADR-0011, Cluste
 
 ## Verwandte ADRs
 
-- [ADR-0011 — Secrets-Management (5-Recipient-SOPS + Layer-3-Vault)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
+- [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
 - [ADR-0010 — Identity-Provider (Vault-OIDC-Auth via Dex)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
+- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

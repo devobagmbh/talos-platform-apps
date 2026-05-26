@@ -1,0 +1,5 @@
+components:
+  - powerdns                # sync-wave 0  — Auth-Server + CNPG-Backend
+  - powerdns-admin          # sync-wave 10 — Web-UI, braucht powerdns-API
+  - external-dns            # sync-wave 10 — braucht powerdns-API
+  - clusterissuer-rfc2136   # sync-wave 20 — braucht TSIG-Secret aus powerdns

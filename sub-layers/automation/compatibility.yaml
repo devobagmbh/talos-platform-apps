@@ -1,0 +1,4 @@
+# Sub-Layer-Aggregate (Komponenten haben eigene compatibility.yaml).
+components:
+  - renovate   # sync-wave 0
+  - velero     # sync-wave 0

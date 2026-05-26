@@ -1,0 +1,9 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+  monitoring/loki: ">=v0.1.0"
+  monitoring/mimir: ">=v0.1.0"
+  monitoring/tempo: ">=v0.1.0"
+
+provides:
+  - name: grafana
+    apis: []  # wird mit Issue #17 befüllt

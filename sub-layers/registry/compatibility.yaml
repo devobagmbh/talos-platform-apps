@@ -1,0 +1,2 @@
+components:
+  - harbor   # sync-wave 0 — bringt Trivy als Subchart mit

@@ -1,0 +1,7 @@
+components:
+  - kube-prometheus-stack   # sync-wave 0  — Operator + CRDs (ServiceMonitor, PrometheusRule, AlertmanagerConfig)
+  - loki                    # sync-wave 10 — braucht Garage-Bucket
+  - mimir                   # sync-wave 10 — braucht Garage-Bucket
+  - tempo                   # sync-wave 10 — braucht Garage-Bucket
+  - alloy                   # sync-wave 20 — braucht Loki/Mimir/Tempo-Endpoints
+  - grafana                 # sync-wave 20 — Datasources zeigen auf Loki/Mimir/Tempo

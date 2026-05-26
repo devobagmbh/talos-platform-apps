@@ -1,24 +1,22 @@
 # Sub-Layer `automation`
 
-Renovate (Dependency-Updates) und Velero (Cluster-Backup) als OCI-Sub-Layer.
+Renovate (Dependency-Updates) und Velero (Cluster-Backup).
+
+OCI-Distribution pro Komponente (ADR-0009).
 
 ## Komponenten
 
-| Komponente | Quelle | Funktion |
-|---|---|---|
-| Renovate | self-hosted, Helm `renovatebot/renovate` | scannt `talos-*-cluster` und `talos-platform-apps` auf neue Upstream-Tags und öffnet PRs |
-| Velero | Helm `vmware-tanzu/velero` mit Restic | Backup von K8s-Ressourcen und PVCs nach DS720+-Garage (S3) |
+| Komponente | sync-wave | Quelle | OCI |
+|---|---|---|---|
+| [`renovate`](components/renovate/) | 0 | Helm `renovatebot/renovate` | `oci://.../automation/renovate:vX.Y.Z` |
+| [`velero`](components/velero/) | 0 | Helm `vmware-tanzu/velero` mit Restic | `oci://.../automation/velero:vX.Y.Z` |
+
+Beide parallel — keine Inter-Komponenten-Abhängigkeit.
 
 ## Konsumiert von
 
-- **Seeder** — nur Velero (Backups von tf-state, ArgoCD-Config, Harbor)
-- **DHQ** — Renovate (überwacht die Devoba-Plattform-Repos) und Velero
-
-## Inhalt
-
-- `helm/` — Werte-Files je Komponente (Defaults, cluster-spezifisches in den Konsumenten-Repos)
-- `manifests/` — ggf. zusätzliche `Schedule`-/`ConfigMap`-/`Policy`-Resources (Velero-Backup-Schedules, Renovate-Config-Presets)
-- `rendered/` — Output von `helm template`, gitignored, wird in CI gerendert und per `oras push` als OCI publiziert
+- **Seeder** — nur `velero`
+- **DHQ** — beide
 
 ## Backlog-Issue
 

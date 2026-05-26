@@ -2,26 +2,22 @@
 
 Harbor als Container-/OCI-Registry mit Pull-Through-Cache und OCI-Artefakt-Support.
 
+OCI-Distribution pro Komponente (ADR-0009).
+
 ## Komponenten
 
-| Komponente | Quelle | Funktion |
-|---|---|---|
-| Harbor | Helm `harbor/harbor` | Container-Registry + Pull-Through-Cache + OCI-Artefakt-Store (Helm-Charts, cosign, SBOMs, CNAB) |
-| Trivy-Scanner | als Harbor-Sub-Chart | Vulnerability-Scanning für Images im Cluster |
+| Komponente | sync-wave | Quelle | OCI |
+|---|---|---|---|
+| [`harbor`](components/harbor/) | 0 | Helm `harbor/harbor` (inkl. Trivy-Subchart) | `oci://.../registry/harbor:vX.Y.Z` |
+
+Cross-Sub-Layer-Abhängigkeiten: braucht `databases/cnpg` (Postgres) und `storage-objects/garage` (S3-Bucket).
 
 ## Konsumiert von
 
-- **Seeder** — als Pull-Through-Cache vor GHCR/Docker-Hub. Verkürzt PXE-Boots, reduziert Outbound-Traffic, ermöglicht Air-Gap-Phasen.
-- **DHQ** — als eigener Workload-Registry für interne Devoba-Apps + Mirror-Cache.
+- **Seeder** — als Pull-Through-Cache vor GHCR/Docker-Hub
+- **DHQ** — als eigener Workload-Registry
 
-Beide Cluster betreiben Harbor unabhängig (eigene Postgres, eigener Garage-Bucket-Store). Konsistenz zwischen den beiden ist nicht garantiert — DHQ-Harbor kann auf Seeder-Harbor als upstream-Proxy zeigen, falls Bandbreite zum Internet eingeschränkt ist.
-
-## Inhalt
-
-- `helm/harbor.yaml` — Werte (Postgres via CNPG, Storage via Garage S3, OIDC via Dex)
-- `manifests/postgres-cluster.yaml` — `CNPG.Cluster` für Harbor-DB
-- `manifests/garage-bucket.yaml` — Bucket-Definition (oder Verweis ins `storage-objects`-Sub-Layer)
-- `manifests/oidc-config.yaml` — OIDC-Provider-Connector zu Dex
+Beide Cluster betreiben Harbor unabhängig.
 
 ## Backlog-Issues
 
@@ -31,5 +27,6 @@ Beide Cluster betreiben Harbor unabhängig (eigene Postgres, eigener Garage-Buck
 
 ## Verwandte ADRs
 
-- [ADR-0012 — Platform-Registry-Proxy (Harbor auf Seeder)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
-- [ADR-0013 — In-Cluster-Registry (Harbor auf beiden Clustern)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
+- [ADR-0012 — Platform-Registry-Proxy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
+- [ADR-0013 — In-Cluster-Registry](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
+- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

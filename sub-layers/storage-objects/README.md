@@ -2,34 +2,32 @@
 
 Garage als S3-kompatibler Object-Store für tf-state, iPXE-Images, LGTM-A-Backends, Velero-Source und App-Buckets.
 
+OCI-Distribution pro Komponente (ADR-0009).
+
 ## Komponenten
 
-| Komponente | Quelle | Funktion |
-|---|---|---|
-| Garage | Helm `deuxfleurs/garage` (oder custom-chart) | S3-kompatibler Object-Store, ZFS-Block-Storage via Linstor |
-| Garage-Bucket-Manager | dieses Repo | `Bucket`-CR-Definitionen + Access-Key-Generierung via ESO/Vault |
+| Komponente | sync-wave | Quelle | OCI |
+|---|---|---|---|
+| [`garage`](components/garage/) | 0 | Helm `deuxfleurs/garage` (oder custom) | `oci://.../storage-objects/garage:vX.Y.Z` |
+| [`garage-buckets`](components/garage-buckets/) | 10 | Bucket-CRs + ESO-Access-Key-Sync | `oci://.../storage-objects/garage-buckets:vX.Y.Z` |
+
+Wave 0 stellt den S3-Endpoint, Wave 10 die Bucket-Definitionen (Bucket + Access-Key via ESO aus Vault).
 
 ## Konsumiert von
 
-- **Seeder** — Single-Node-Garage-Cluster. Buckets: `tf-state` (Stage-1-State), `ipxe` (Talos-Images), `velero-source-seeder` (Backup-Output, von Velero auf DS720+ ge-rsynct).
-- **DHQ** — Multi-Node-Garage-Cluster über 3 Nodes. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-dhq`, App-spezifische Buckets.
-- **DS720+** — Separates Garage-Cluster (Docker-Container auf NAS, KEIN Mitglied von Seeder- oder DHQ-Cluster). Zweck: Tier-2-Backup-Ziel. Buckets: `velero-seeder`, `velero-dhq`. Backup-Invariante: Ziel ≠ Quelle.
-
-## Inhalt
-
-- `helm/garage.yaml` — Defaults (Replication-Faktor, Compaction-Schedule, Listener)
-- `manifests/buckets/<name>.yaml` — pro Bucket: Definition + Access-Key-Generation (via ESO + Vault-Engine `kv-v2`)
-- `manifests/cnpg-not-required.md` — Hinweis: Garage hat keine externe DB, eigener Metadata-Store
-- `scripts/restic-init.sh` — Helfer für Velero-Restic-Repo-Initialisierung in den DS720+-Buckets
+- **Seeder** — Single-Node-Cluster. Buckets: `tf-state`, `ipxe`, `velero-source-seeder`
+- **DHQ** — 3-Node-Cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-dhq`, App-spezifische Buckets
+- **DS720+** — separates Garage-Cluster (Docker-Container auf NAS, KEIN Mitglied der K8s-Cluster). Tier-2-Backup-Ziel mit Buckets `velero-seeder`, `velero-dhq`. Backup-Invariante: Ziel ≠ Quelle.
 
 ## Backlog-Issue
 
 [#13 — Sub-Layer `storage-objects/`: Garage](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+storage-objects)
 
-Verwandt: [#1 ✓ — S3-Backup-Ziel-Entscheidung (DS720+/Garage in Docker)](https://github.com/devobagmbh/talos-platform-docs/issues/1), [#7.5 — DS720+-Container-Setup](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DS720%2B), [#40 — Tier-1/2-Backup-Pfade-Validierung](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Backup-Pfade).
+Verwandt: [#7.5 — DS720+-Container-Setup](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DS720%2B), [#40 — Tier-1/2-Backup-Pfade-Validierung](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Backup-Pfade)
 
 ## Verwandte ADRs
 
 - [ADR-0007 — Platform-Object-Store (Garage gewählt)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
 - [ADR-0008 — Backup-Strategy (DS720+/Garage als Tier-2)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
-- [ADR-0006 — TF-State-Management (Garage als Stage-1-Backend)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
+- [ADR-0006 — TF-State-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
+- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

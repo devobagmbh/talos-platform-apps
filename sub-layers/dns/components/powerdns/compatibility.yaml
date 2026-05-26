@@ -1,0 +1,7 @@
+requires:
+  talos-platform-base: ">=v0.4.0 <v1.0.0"
+  databases/cnpg: ">=v0.1.0"          # Postgres-Backend
+
+provides:
+  - name: powerdns
+    apis: []  # wird mit Issue #16a befüllt
