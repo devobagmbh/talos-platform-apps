@@ -135,7 +135,16 @@ tasks:
   scan:conftest:
     desc: Conftest-Policies aus policies/ gegen rendered/-Manifeste
     deps: [render]
-    cmd: conftest test sub-layers/*/rendered/ --policy policies/
+    cmd: |
+      files=$(find sub-layers -path '*/rendered/manifest.yaml' -size +0 -type f)
+      if [ -z "$files" ]; then
+        echo "Keine nicht-leeren rendered/manifest.yaml gefunden — nichts zu prüfen"
+        exit 0
+      fi
+      echo "Conftest gegen $(echo "$files" | wc -l | tr -d ' ') Sub-Layer-Manifeste:"
+      echo "$files" | sed 's/^/  - /'
+      echo ""
+      conftest test --policy policies/ $files
 
   scan:conftest-verify:
     desc: Conftest-Policy-Selbsttests (testdata/-Korpus)
