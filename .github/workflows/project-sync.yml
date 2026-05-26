@@ -21,13 +21,24 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    if: ${{ env.PROJECT_TOKEN != '' }}
     env:
-      PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
       PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER || '3' }}
       ORG_LOGIN: devobagmbh
     steps:
-      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+      # Early-Skip wenn Repo-Secret PROJECT_TOKEN fehlt (Step-Level if: kann
+      # secrets/env auswerten, Job-Level if: kann das nicht zuverlässig).
+      - name: Check PROJECT_TOKEN
+        id: token
+        run: |
+          if [ -z "${{ secrets.PROJECT_TOKEN }}" ]; then
+            echo "PROJECT_TOKEN nicht gesetzt — skip Project-Sync"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.token.outputs.skip == 'false'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
         with:
           github-token: ${{ secrets.PROJECT_TOKEN }}
           script: |

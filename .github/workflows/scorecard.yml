@@ -3,6 +3,12 @@ name: OpenSSF Scorecard
 # Wöchentlicher Security-Scorecard-Lauf. Misst Repo-Hygiene gegen
 # bewährte Supply-Chain-Security-Praktiken. Ergebnisse landen in der
 # GitHub-Security-Tab als SARIF + bei der OSSF-Scorecard-API.
+#
+# Hinweis: Scorecard ist für PUBLIC-Repos ausgelegt — publish_results
+# und Default-GITHUB_TOKEN haben auf private Repos keinen Zugriff
+# (git fetch antwortet mit "Repository not found"). Der Job wird daher
+# automatisch übersprungen solange das Repo private ist und läuft
+# wieder los, sobald es public gestellt wird.
 
 on:
   push:
@@ -15,9 +21,11 @@ permissions: read-all
 jobs:
   scorecard:
     runs-on: ubuntu-latest
+    if: ${{ github.event.repository.private == false }}
     permissions:
-      security-events: write
-      id-token: write
+      contents: read         # actions/checkout gegen das eigene Repo
+      security-events: write # SARIF-Upload
+      id-token: write        # OIDC für publish_results
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
         with:
