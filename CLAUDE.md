@@ -6,41 +6,30 @@
 
 Dieses Repo verfolgt den **mcp-server-Stil**: ein eigenes `.claude/`-Verzeichnis mit Subagents, Hooks und Settings. Anders als `talos-platform-base` (das auf das `kube-agent-harness`-Plugin wartet) liefern wir die Primitives in-tree, damit das Repo sofort autark ist.
 
-### Hooks — drei Layer
+### Hooks
 
-Bewusste Tiefenstaffelung gegen verschiedene Klassen von Fehlern:
+- `.claude/hooks/require-review.sh` — PreToolUse-Gate für `Bash`-Commits. **Aktuell inaktiv** (nicht in `settings.json` gebunden). Hintergrund: bei 1 Maintainer wäre fail-closed Selbst-Sabotage (Bobby's Bus-Faktor-Kritik, 2026-05-26). Skript bleibt im Repo; Reaktivierung sobald M2 onboardet ist.
+- `.claude/hooks/pre-commit` — klassischer Git-Pre-Commit-Pfad (rendered/-Detection, conventional-commit-Pattern). Ebenfalls dormant.
 
-| Layer | Datei | Was es prüft | Trigger |
-|---|---|---|---|
-| **L1 — Inhalts-Qualität** | `.pre-commit-config.yaml` (Python pre-commit framework) | YAML/Markdown-Style, Secret-Detection (gitleaks), Conventional-Commit-Format, `task lint`, no-Makefile, no-rendered | `git commit` (nach `pre-commit install`) |
-| **L2 — Review-Artefakte (Git-native)** | `.claude/hooks/pre-commit` | `.claude/reviews/<change-id>/review.md` mit Status `approved` oder erfüllte Eskalations-Artefakte; keine `senior-implementer`-Self-Review | `git commit` (nach `cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x …`) |
-| **L3 — Review-Artefakte (Claude-Code-Tool-Use)** | `.claude/hooks/require-review.sh` | Selbe Prüfung wie L2, vor jedem `Bash`-`git commit` und `mcp__github__push_files` aus Claude Code | PreToolUse-Hook gebunden in `.claude/settings.json` |
+### Subagents — reduziert auf 5 Rollen
 
-L1 läuft IMMER (auch außerhalb von Claude Code, z. B. Terminal-Commits). L2 läuft auch außerhalb Claude Code, ist aber manuell zu installieren (im Devbox-Init-Hook wird darauf hingewiesen). L3 ist Claude-Code-spezifisch.
-
-**Wer was bypassen kann**: niemand. `--no-verify` bei `git commit` ist eine **Hard-Constraint-Verletzung** (siehe `AGENTS.md` § Hard Constraints).
-
-### Subagents
-
-Tiered-Review-Modell, adaptiert aus `talos-mcp-server`. Implementer und Reviewer sind immer verschiedene Agents — Self-Review ist verboten.
+Tiered-Review-Modell, adaptiert aus `talos-mcp-server`. Auf **5 Rollen reduziert (2026-05-26)** — bei 1 Maintainer ist ein 9-Rollen-Apparat Theater. Reaktivierung der vollen Hierarchie sobald M2 da ist.
 
 Verfügbar in `.claude/agents/`:
 
 - `senior-implementer` — schreibt Code/Manifeste/Helm-Values; hat write+edit+bash
-- `senior-plan-reviewer` — reviewt Plans vor Implementierung
-- `staff-reviewer` — Primary Gate vor Commits
-- `principal-architect-reviewer` — Architektur-Konsistenz, ADR-Alignment
-- `security-reviewer` — Vault/SOPS/cosign/SBOM/RBAC-Themen
+- `staff-reviewer` — Primary Gate vor Commits, triagiert ggf. an Spezialisten
+- `security-reviewer` — Vault/SOPS/cosign/SBOM/RBAC/Policies
 - `operational-safety-reviewer` — Bootstrap-Ordnung, DR-Risiken, Backup-Pfade
-- `provenance-reviewer` — cosign-Identity, SLSA-Provenance, OCI-Push-Hygiene
-- `compatibility-reviewer` — `compatibility.yaml`-Korrektheit, Konsumenten-Impact
 - `researcher` — Recherche im base/anderen Repos, Findings-Synthese
+
+Aus dem Git-Verlauf bei M2-Onboarding zurückzuholen: `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer`.
 
 ### Settings
 
 `.claude/settings.json` enthält:
 - **Permissions-Allowlist** — reduziert Permission-Prompts (Bash, Read, Edit, Write, Glob, Grep, Agent + ausgewählte `mcp__github__*`-Tools).
-- **Hook-Bindung** — PreToolUse-Hook für `Bash` und Push-Tools auf `require-review.sh`.
+- **Keine Hook-Bindungen aktiv** — siehe „Hooks"-Sektion oben.
 
 ### Context Architecture
 

@@ -65,24 +65,6 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 
 **Niemals `make` verwenden** — die Konvention ist go-task.
 
-### pre-commit Framework
-
-Zusätzlich zum `task ci` greift das Python-basierte `pre-commit`-Framework als **automatischer Git-Hook**. Setup einmalig nach Clone:
-
-```bash
-pre-commit install --install-hooks
-```
-
-Hooks (`.pre-commit-config.yaml`):
-
-- **Inhalts-Hygiene**: trailing-whitespace, end-of-file-fixer, check-yaml, check-merge-conflict, large-file-check, private-key-detection
-- **Style**: `yamllint` (Config `.yamllint.yaml`), `markdownlint` (Config `.markdownlint.yaml`)
-- **Secrets**: `gitleaks` — scannt Diffs auf Secret-Patterns
-- **Commit-Message**: `conventional-pre-commit` validiert Conventional-Commit-Style auf `commit-msg`-Stage
-- **Custom**: `task lint` (Konvention Pipeline=Task-Caller), `no-makefile`, `no-rendered`
-
-Manuell volle Validierung: `pre-commit run --all-files`.
-
 ## Coding Style & Naming
 
 - **YAML**: 2-Space-Indent, keine Tabs, Block-Style bevorzugen
@@ -107,7 +89,7 @@ Dieses Repo hat keinen Live-Cluster. Validierung ist Render- und Policy-fokussie
 - Ein Commit = eine logische Einheit. Render-Output (`rendered/`) niemals committen.
 - **Breaking-Change-Bumps**: ein neues Major-Tag (`<sub-layer>-v2.0.0`) erfordert einen `BREAKING CHANGE:`-Footer im Commit und einen Eintrag im Top-`CHANGELOG.md` (wenn vorhanden).
 - PR-Body: was geändert + warum + Validation-Steps (siehe `.github/PULL_REQUEST_TEMPLATE.md`).
-- PRs brauchen **Subagent-Reviews** (siehe Multi-Agent-Coordination weiter unten); der `require-review.sh`-Hook verhindert Direkt-Commits ohne Review-Artefakte.
+- PRs sollen **Subagent-Reviews** durchlaufen (siehe Multi-Agent-Coordination weiter unten). Der `require-review.sh`-Hook ist **bewusst inaktiv** (nicht in `settings.json` gebunden) bis M2 onboardet ist — bei 1 Maintainer wäre fail-closed Selbst-Sabotage. Hook-Skripte bleiben im Repo und werden reaktiviert sobald Multi-Maintainer-Workflow real wird.
 
 ## CI-Konventionen (verbindlich)
 
@@ -129,7 +111,6 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 - **Kein `.claude/` mit personalisierten Settings committen** — `settings.local.json` ist gitignored.
 - **OCI-Pfade hardcoded**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` — Renaming des Org-Pfads erfordert Coordination mit allen Konsumenten.
 - **cosign keyless mit GHA-OIDC**: Signing-Identity ist die Workflow-Identity. Keine Long-Lived-Keys committen.
-- **Kein `--no-verify`-Bypass**: weder bei `git commit` noch bei `git push`. pre-commit-Hooks und der `.claude/hooks/pre-commit`-Gate sind verbindlich. Wer Hooks bypassen muss, fixt stattdessen die Ursache.
 
 ## Sub-Layer-Konventionen
 
@@ -148,21 +129,17 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
 ## Multi-Agent-Coordination
 
-`.claude/agents/` listet spezialisierte Subagenten. Workflow:
+`.claude/agents/` listet spezialisierte Subagenten. Reduziert auf **5 Rollen** (2026-05-26, Bobby's Bus-Faktor-Kritik) — bei 1 Maintainer ist eine differenzierte 9-Rollen-Hierarchie Self-Review-Theater. Bei M2-Onboarding kommen `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer` und `compatibility-reviewer` aus dem Git-Verlauf zurück.
 
 | Phase | Agent | Output |
 |---|---|---|
-| Planung | `senior-plan-reviewer` | Plan reviewt, Risiken markiert |
 | Recherche (optional) | `researcher` | Findings + Quellen |
 | Implementierung | `senior-implementer` | Code-Diff |
-| Security-Review | `security-reviewer` | Findings |
-| Operational-Safety | `operational-safety-reviewer` | Findings |
-| Provenance-Review (bei Pipeline/Signing-Themen) | `provenance-reviewer` | Findings |
-| Compatibility-Review (bei `compatibility.yaml`-Edits) | `compatibility-reviewer` | Findings |
-| Architektur-Review | `principal-architect-reviewer` | Findings |
-| **Gate** | `staff-reviewer` | Approve oder Block |
+| Security-Review (Vault/SOPS/cosign/RBAC/Policies) | `security-reviewer` | Findings |
+| Operational-Safety (Bootstrap/DR/Backup) | `operational-safety-reviewer` | Findings |
+| **Gate** (Triage + Approve oder Block) | `staff-reviewer` | Approve oder Block |
 
-**Niemals Self-Review** — Implementierer und Reviewer sind immer verschiedene Agents. Der `require-review.sh`-Hook prüft Review-Artefakte vor jedem Push.
+**Self-Review ist auch bei 1 Maintainer unerwünscht, aber nicht hart blockiert** — Wechsel des Agent-Hut ist ein Anti-Drift-Mechanismus, kein Vier-Augen-Prinzip-Ersatz. Sobald M2 da ist, wird der `require-review.sh`-Hook reaktiviert und das volle 9-Agent-Modell zurückgeholt.
 
 ## Validation Checklist
 
