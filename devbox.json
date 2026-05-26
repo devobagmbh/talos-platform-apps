@@ -22,7 +22,8 @@
     "kind@latest",
     "argocd@latest",
     "kubectx@latest",
-    "gettext@latest"
+    "gettext@latest",
+    "mkcert@latest"
   ],
   "shell": {
     "init_hook": [

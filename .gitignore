@@ -27,6 +27,9 @@ charts/*.tgz
 # Local-only Konfiguration
 .env
 
+# Lokales Dev-Setup (mkcert-CA-Kopien, lokale Cluster-Daten)
+.mkcert/
+
 # Devbox / direnv State
 .devbox/
 .direnv/

@@ -318,17 +318,20 @@ tasks:
   # --- Lokale Entwicklung: Kind + Local-Registry + ArgoCD ---
 
   local:up:
-    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + ArgoCD'
+    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + cert-manager + Traefik + ArgoCD'
     cmds:
       - task: local:registry:up
       - task: local:cluster:up
+      - task: local:cert-manager:install
+      - task: local:certs
+      - task: local:traefik:install
       - task: local:argo:install
       - |
         echo ""
         echo "✓ Lokales Setup bereit."
-        echo "  Argo-UI:        task local:argo:ui  (→ https://localhost:8080)"
-        echo "  Argo-Admin-Pw:  task local:argo:password"
-        echo "  Lokal pushen:   task local:publish -- <sub-layer> <tag>"
+        echo "  Argo-UI:       https://argocd.localhost.direct"
+        echo "  Argo-Admin-Pw: task local:argo:password"
+        echo "  Lokal pushen:  task local:publish -- <sub-layer> <tag>"
 
   local:down:
     desc: 'Alles abreißen: Cluster + Registry + Mkcert-Daten'
@@ -383,8 +386,42 @@ tasks:
             help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
         EOF
 
+  local:cert-manager:install:
+    desc: 'cert-manager via Helm installieren (CRDs inline)'
+    cmd: |
+      helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
+      helm repo update jetstack
+      helm upgrade --install cert-manager jetstack/cert-manager \
+        --namespace cert-manager --create-namespace \
+        --version v1.17.0 \
+        --set crds.enabled=true \
+        --wait --timeout 5m
+
+  local:certs:
+    desc: 'mkcert-Root-CA ins System-Trust + als Cluster-Secret + ClusterIssuer'
+    cmd: |
+      mkcert -install
+      caroot=$(mkcert -CAROOT)
+      mkdir -p .mkcert
+      cp "$caroot/rootCA.pem"     .mkcert/
+      cp "$caroot/rootCA-key.pem" .mkcert/
+      kubectl create secret tls mkcert-ca \
+        --cert=.mkcert/rootCA.pem --key=.mkcert/rootCA-key.pem \
+        -n cert-manager \
+        --dry-run=client -o yaml | kubectl apply -f -
+      kubectl apply -f local/mkcert-cluster-issuer.yaml
+      echo "✓ mkcert-CA als ClusterIssuer 'mkcert-ca' bereit"
+
+  local:traefik:install:
+    desc: 'Traefik als Ingress-Controller installieren (Ports 80/443)'
+    cmd: |
+      helm upgrade --install traefik oci://ghcr.io/traefik/helm/traefik \
+        --namespace traefik --create-namespace \
+        --values local/traefik-values.yaml \
+        --wait --timeout 5m
+
   local:argo:install:
-    desc: 'ArgoCD via Helm im Kind installieren (headless)'
+    desc: 'ArgoCD via Helm im Kind installieren (Ingress auf argocd.localhost.direct)'
     cmd: |
       helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
       helm repo update argo
@@ -399,11 +436,12 @@ tasks:
     cmd: helm uninstall argocd --namespace argocd || true
 
   local:argo:ui:
-    desc: 'Port-Forward der Argo-UI auf https://localhost:8080'
+    desc: 'Argo-UI öffnen (falls Browser nicht automatisch startet: https://argocd.localhost.direct)'
     cmd: |
-      echo "Argo-UI auf https://localhost:8080 — strg+c zum Beenden"
-      echo "Login: admin / $(task local:argo:password --silent)"
-      kubectl -n argocd port-forward svc/argocd-server 8080:443
+      pw=$(task local:argo:password --silent)
+      echo "Argo-UI: https://argocd.localhost.direct"
+      echo "Login:   admin / $pw"
+      command -v open >/dev/null && open https://argocd.localhost.direct || true
 
   local:argo:password:
     desc: 'Initial-Admin-Passwort von ArgoCD ausgeben'

@@ -1,18 +1,29 @@
 # ArgoCD-Helm-Values für lokales Kind-Setup.
-# Headless: kein Ingress, kein Dex, keine HA. Zugriff via port-forward
-# (task local:argo:ui).
+# Headless im Sinne von "kein Dex/Notifications/ApplicationSet/HA".
+# UI ist via Traefik-Ingress auf argocd.localhost.direct erreichbar
+# (mkcert-CA als Trust-Anker, automatisch vom System-Trust gesehen).
 
 global:
-  domain: argocd.local
+  domain: argocd.localhost.direct
 
-# UI-Server schlank — kein Ingress, kein TLS-Setup im Local-Cluster
 server:
-  ingress:
-    enabled: false
   service:
     type: ClusterIP
+
+  ingress:
+    enabled: true
+    controller: generic
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: mkcert-ca
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    hostname: argocd.localhost.direct
+    tls: true
+
   extraArgs:
-    - --insecure  # keine Selbst-TLS-Logik intern
+    - --insecure  # interne TLS-Logik aus (Traefik macht TLS-Termination)
+
   replicas: 1
 
 # Headless — kein OIDC, kein Notifications, kein ApplicationSet
@@ -33,13 +44,6 @@ repoServer:
 controller:
   replicas: 1
 
-# Erlaubt Argo, Helm-OCI-Charts aus der lokalen Registry zu pullen.
-# Argo-CD versteht oci://... in source.helm.repoURL.
 configs:
   params:
-    server.disable.auth: false  # initial admin pw bleibt, port-forward + kubectl secret get
     server.insecure: true
-  cm:
-    # Lokale Registry als bekannten Helm-OCI-Repo eintragen
-    # (optional; Argo erlaubt anonym auch ohne Eintrag).
-    helm.repositories: ""

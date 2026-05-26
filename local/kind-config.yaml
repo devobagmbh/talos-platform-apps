@@ -1,32 +1,40 @@
 # Kind-Cluster für lokale Sub-Layer-Entwicklung.
-# Single-Node, mit Containerd-Patch für die lokale OCI-Registry auf
+# Single-Node, mit containerd-Patch für die lokale OCI-Registry auf
 # localhost:5001 (Helm-Charts gehen via helm push dorthin und werden
 # von ArgoCD intra-cluster über "kind-registry:5000" gepullt).
 #
 # Setup-Flow: task local:up
 #   1. lokale Registry-Container starten (registry:2 auf :5001)
-#   2. dieses Kind-Cluster erstellen
+#   2. Kind-Cluster erstellen
 #   3. Registry-Container ins kind-Docker-Netzwerk verbinden
-#   4. local-registry-hosting ConfigMap (KEP-1755) anwenden
-#   5. ArgoCD via Helm installieren
+#   4. local-registry-hosting ConfigMap (KEP-1755)
+#   5. mkcert-CA + cert-manager + ClusterIssuer
+#   6. Traefik als Ingress-Controller (HTTP 80, HTTPS 443)
+#   7. ArgoCD via Helm, exposed über argocd.localhost.direct
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: talos-platform-apps
 
 containerdConfigPatches:
-  # Containerd in Kind kennt die lokale Registry über localhost:5001
-  # (host -> Kind-Netzwerk via Port-Mapping)
   - |-
     [plugins."io.containerd.grpc.v1.cri".registry]
       config_path = "/etc/containerd/certs.d"
 
 nodes:
   - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
     extraPortMappings:
-      # ArgoCD-UI (NodePort wenn benötigt). Default: nur per port-forward.
-      # - containerPort: 30080
-      #   hostPort: 8080
-      #   protocol: TCP
-
-      # Lokale Registry-Mirror-Konfig wird per ConfigMap (KEP-1755) angekündigt.
+      # Traefik Web (HTTP) — *.localhost.direct → 127.0.0.1:80 → 30080
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP
+      # Traefik Websecure (HTTPS) — *.localhost.direct → 127.0.0.1:443 → 30443
+      - containerPort: 30443
+        hostPort: 443
+        protocol: TCP

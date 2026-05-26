@@ -1,0 +1,37 @@
+# Traefik als Ingress-Controller im Kind.
+# NodePorts 30080/30443 ↔ Host-Ports 80/443 (siehe kind-config.yaml).
+
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+service:
+  type: NodePort
+
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    nodePort: 30443
+
+# Schlanker Default — kein Dashboard, kein Pilot, kein Hub
+providers:
+  kubernetesIngress:
+    enabled: true
+  kubernetesGateway:
+    enabled: false  # Cilium-Gateway-API ist Prod-Pattern, lokal reicht Ingress
+
+# Sicheres Default — Ingress muss explicit TLS-konfig haben
+globalArguments:
+  - "--global.sendanonymoususage=false"
+
+logs:
+  general:
+    level: INFO
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
