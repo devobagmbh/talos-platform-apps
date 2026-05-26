@@ -4,11 +4,12 @@
 #   Container-Images müssen explizit gepinnt sein — kein `:latest`-Tag,
 #   kein impliziter Default-Tag. Begründung: Reproduzierbare Rollouts,
 #   keine stille Drift bei Image-Pull.
-# severity: high
-# scope: rule
-# related_resources:
-#   - https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md
-#   - https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md
+# scope: package
+# custom:
+#   severity: high
+#   related_resources:
+#     - https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md
+#     - https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md
 package base.no_latest_image_tag
 
 import rego.v1
