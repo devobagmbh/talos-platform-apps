@@ -2,6 +2,16 @@
 
 Rego-Policies, die gegen alle gerenderten Sub-Layer-Manifeste laufen. Aufruf via `task scan` lokal (Devbox-Shell) oder als CI-Job im `security-scan.yml`-Workflow.
 
+## Was bedeutet PNI v2?
+
+Mehrere Policies im `platform/`-Verzeichnis setzen das **Platform Network Interface (PNI) v2 Capability-First Contract** durch. PNI v2 stammt aus dem Upstream-Repo [`talos-platform-base`](https://github.com/Nosmoht/talos-platform-base/blob/main/AGENTS.md#platform-network-interface-pni--v2-capability-first-contract) und ist die zentrale Konvention für Producer-/Consumer-Netzwerkbeziehungen im Cluster:
+
+- **Capability statt Tool-Name**: `CiliumClusterwideNetworkPolicy` (CCNP) referenziert eine Capability (`capability-provider.cnpg-postgres`) statt einen Tool-Namen (`app.kubernetes.io/name: cnpg`). Tool-Swap (z. B. Postgres durch CockroachDB) ist dann ein Label-Move auf dem Producer-Pod, kein CCNP-Edit.
+- **Reserved Labels namespace-anchored**: `platform.io/provide.<cap>` darf nur auf Namespaces gesetzt werden, die durch Base-RBAC dazu autorisiert sind. `platform.io/capability-provider.<cap>` auf einem Pod ist nur valide, wenn der Namespace die passende `provide.*`-Label trägt.
+- **Instanced Capabilities**: Capabilities mit mehreren möglichen Instanzen (`cnpg-postgres`, `vault-secrets`, `redis-managed`, `rabbitmq-managed`, `kafka-managed`, `s3-object`) brauchen einen `.<inst>`-Suffix beim Konsumieren (`consume.cnpg-postgres.atlantis-db`), damit klar ist welche Instanz gemeint ist.
+
+Die drei `platform/`-Policies hier (`capability_selectors`, `instanced_suffix_required`, `network_default_deny_egress`) erzwingen diese Konvention für jeden Sub-Layer-Manifest-Output **bevor** das OCI-Artefakt publiziert wird. Konsumenten-Cluster sehen damit nur PNI-konforme Manifeste.
+
 ## Rolle im Policy-Stack
 
 Diese Repo nutzt **Conftest in CI + Kyverno im Cluster** mit getrennten Rollen. Siehe [ADR-0018 Policy-Stack](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md) für die vollständige Begründung.
