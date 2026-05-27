@@ -348,7 +348,9 @@ tasks:
       tag="${2:?usage: task verify -- <sub-layer>/<component> <tag>}"
       sub_layer="${component_id%/*}"
       component="${component_id#*/}"
-      ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${tag}"
+      # OCI-Tag ist die Chart-Version ohne v-Präfix (wie push/sign), nicht der Git-Tag
+      chart_version="${tag#v}"
+      ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${chart_version}"
       cosign verify "$ref" \
         --certificate-identity-regexp "^https://github\.com/devobagmbh/talos-platform-apps/\.github/workflows/oci-publish\.yml@refs/tags/${sub_layer}/${component}-.*$" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com
