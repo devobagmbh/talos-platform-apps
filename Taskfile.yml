@@ -163,18 +163,15 @@ tasks:
         fi
 
   scan:trivy:
-    desc: Trivy-Scan über alle Komponenten-rendered/-Manifeste, SARIF-Output
+    desc: Trivy-Misconfig-Scan über sub-layers/, SARIF-Output
     deps: [render]
+    # trivy fs akzeptiert nur EIN Target — daher das gesamte sub-layers/-Verzeichnis
+    # rekursiv scannen (statt 22 rendered-Dirs einzeln, was mit 'multiple targets
+    # cannot be specified' scheitert). Erfasst rendered/manifest.yaml + Quell-Manifeste;
+    # READMEs/compatibility.yaml werden vom Misconfig-Scanner ignoriert.
     cmd: |
-      # Trivy braucht mehrere Pfade als Args; expandieren via shell
-      shopt -s nullglob
-      dirs=(sub-layers/*/components/*/rendered/)
-      if [ ${#dirs[@]} -eq 0 ]; then
-        echo "Keine rendered/-Verzeichnisse — nichts zu scannen"
-        : > trivy-results.sarif
-        exit 0
-      fi
-      trivy fs "${dirs[@]}" \
+      trivy fs sub-layers/ \
+        --scanners misconfig,secret \
         --format sarif \
         --output trivy-results.sarif
 
