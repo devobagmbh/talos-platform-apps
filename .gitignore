@@ -13,6 +13,10 @@ charts/*.tgz
 *.spdx.json
 *.intoto.jsonl
 
+# Scan-Artefakte (von scan:trivy / scan:snyk, lokal generiert)
+trivy-results.sarif
+snyk-results.sarif
+
 # SOPS-Decryption-Tempfiles
 *.dec
 *.dec.yaml
