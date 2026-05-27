@@ -43,9 +43,14 @@ jobs:
       - name: Trivy scan rendered manifests
         run: devbox run -- task scan:trivy
 
-      # Trivy-SARIF in den Security-Tab uploaden (nur main + schedule, nicht PR)
+      # Trivy-SARIF in den Security-Tab uploaden — nur auf public Repos.
+      # Code-Scanning / SARIF-Upload braucht bei PRIVATEN Repos GitHub Advanced
+      # Security (kostenpflichtig); ohne GHAS antwortet der Upload mit
+      # "Resource not accessible by integration". Solange das Repo private ist,
+      # bleiben die Trivy-Findings im Job-Log sichtbar, aber ohne Security-Tab-Upload.
+      # Sobald das Repo public wird, läuft der Upload automatisch.
       - name: Upload SARIF
-        if: github.event_name != 'pull_request' && always()
+        if: github.event_name != 'pull_request' && github.event.repository.private == false
         uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13  # v4.35.1
         with:
           sarif_file: trivy-results.sarif
