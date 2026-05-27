@@ -140,6 +140,7 @@ Spiegel der Defense-in-Depth-Policies + Kyverno-only Features. Leben in `sub-lay
 ### Test-Disziplin
 
 Pro Policy: `<rule_name>_test.rego` (Conftest) bzw. `<policy>-test.yaml` (Kyverno) mit Mindestabdeckung:
+
 - 1 valid-Manifest (passes)
 - 1 invalid-Manifest (denies, mit erwarteter Fehler-Message)
 
@@ -148,6 +149,7 @@ Die 4 doppelten Policies haben **gemeinsame `testdata/`** unter `policies/testda
 ### Sub-Issue-Aufteilung von #11.8
 
 Vollausbau erfordert Strukturierung. Vorschlag: aus #11.8 werden Sub-Sub-Issues, gebündelt nach Verzeichnis:
+
 - `#11.8.1` — `policies/base/` (15 Policies, ein PR-Bündel mit shared testdata)
 - `#11.8.2` — `policies/apps/` (3 Policies, separates Bündel)
 - `#11.8.3` — `policies/platform/` (3 Policies, eng mit PNI v2, separates Bündel)

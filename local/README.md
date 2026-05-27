@@ -189,6 +189,7 @@ Argo kann das Artefakt nicht pullen. Check der Service-DNS: `kubectl -n registry
 
 **`registry.localhost.direct` lässt sich nicht auflösen**.
 `localhost.direct` ist eine öffentliche Wildcard-DNS-Zone, die alles auf `127.0.0.1` resolved. Wenn Resolution fehlschlägt: DNS-Cache flushen (`sudo dscacheutil -flushcache` auf Mac) oder VPN/DNS-Filter prüfen. Notfalls `/etc/hosts`:
+
 ```
 127.0.0.1  argocd.localhost.direct registry.localhost.direct
 ```

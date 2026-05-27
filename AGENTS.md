@@ -12,6 +12,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 **Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Acht Sub-Layer als Klammer: `automation`, `databases`, `dns`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
 
 **NICHT** in diesem Repo:
+
 - Cluster-Identität (Node-IPs, Hostnamen, TLS-Cert-CNs)
 - Echte Secrets (Vault-Tokens, age-Keys, Passwords)
 - Cluster-spezifische Helm-Overrides (gehören in `talos-seeder-cluster` und `talos-dhq-cluster`)
@@ -72,6 +73,7 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 **Niemals `make` verwenden** — die Konvention ist go-task.
 
 **Taskfile-Konventionen**:
+
 - `silent: true` global — Commands echoen sich nicht selbst
 - **Logik wohnt im Taskfile**, nicht in externen `scripts/`-Bash-Files. Auch komplexer Bash-Code wird inline in `cmds:` umgesetzt (Multi-Line `|`). Externe Scripts würden die „Pipeline = Task-Caller"-Konvention untergraben (Pipeline → Task → Script wäre eine Stufe zu tief).
 
@@ -130,6 +132,7 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 - **Konsumenten-Trennung**: dieses Repo enthält Defaults und shared-Values. Cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in die Konsumenten-Repos.
 - **Argo-Application-Definitionen leben im Konsumenten-Cluster-Repo**, nicht hier. Pro Komponente eine `Application`-CR mit `argocd.argoproj.io/sync-wave`-Annotation. Für lokale End-to-End-Tests gibt es `local/argo-apps/<sub-layer>/<component>.yaml`-Templates im apps-Repo.
 - **`compatibility.yaml` pro Komponente** deklariert die Komponenten-Abhängigkeiten:
+
   ```yaml
   requires:
     talos-platform-base: ">=v0.4.0 <v1.0.0"
@@ -139,7 +142,9 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
       apis:
         - <chart-name>@<chart-version>
   ```
+
 - **Sub-Layer-`compatibility.yaml`** ist ein Aggregate, das die Komponenten listet:
+
   ```yaml
   components:
     - crossplane    # sync-wave 0

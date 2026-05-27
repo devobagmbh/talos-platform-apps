@@ -141,9 +141,11 @@ tasks:
       - markdownlint --config .markdownlint.yaml '**/*.md' --ignore .devbox --ignore .direnv
 
   lint:rendered:
-    desc: kubeconform gegen alle Komponenten-rendered/-Manifeste
+    desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
+    # Nur das gerenderte Roh-Manifest, nicht das gepackte rendered/chart/
+    # (Chart.yaml ist Helm-Metadaten, kein K8s-Resource → kubeconform-Error).
     cmd: |
-      find sub-layers -path '*/components/*/rendered/*.yaml' -print0 2>/dev/null | \
+      find sub-layers -path '*/components/*/rendered/manifest.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
   # --- Security-Scans (Issue #11.8) ---

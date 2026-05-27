@@ -28,6 +28,7 @@ Aus dem Git-Verlauf bei M2-Onboarding zurückzuholen: `senior-plan-reviewer`, `p
 ### Settings
 
 `.claude/settings.json` enthält:
+
 - **Permissions-Allowlist** — reduziert Permission-Prompts (Bash, Read, Edit, Write, Glob, Grep, Agent + ausgewählte `mcp__github__*`-Tools).
 - **Keine Hook-Bindungen aktiv** — siehe „Hooks"-Sektion oben.
 

@@ -28,6 +28,7 @@ rules:
 
 ignore: |
   sub-layers/*/rendered/
+  sub-layers/*/components/*/rendered/
   .devbox/
   .direnv/
   .claude/reviews/

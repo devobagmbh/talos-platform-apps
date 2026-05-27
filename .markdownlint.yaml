@@ -16,3 +16,7 @@ MD041: false
 
 # Code-Sprachen sind optional (Tabellen-Header lassen sich nicht immer typisieren).
 MD040: false
+
+# Tabellen-Pipe-Spacing (table-column-style) — neue markdownlint-Regel ab v0.38.
+# Rein kosmetisch; unsere Tabellen nutzen kompakte |---|-Separatoren bewusst.
+MD060: false
