@@ -56,6 +56,15 @@ spec:
                 platformBaseTag:
                   type: string
                   description: "Welcher talos-platform-base-OCI-Tag konsumiert wird"
+                tofuModuleSource:
+                  type: string
+                  description: >-
+                    Tofu-Modul-Source-URL für die Cluster-Provisionierung, vom
+                    Konsumenten-Repo (talos-seeder-cluster) gesetzt — z. B.
+                    'git::https://github.com/Nosmoht/talos-platform-base.git//tofu/modules/talos-cluster?ref=vX.Y.Z'.
+                    Dieses Repo (talos-platform-apps) kennt die konkrete Source
+                    bewusst NICHT; die Verdrahtung von base + apps macht erst
+                    das Seeder-Repo.
                 appsSubLayerPins:
                   type: object
                   description: "Map sub-layer-name → OCI-Tag (z. B. monitoring: v0.3.1)"

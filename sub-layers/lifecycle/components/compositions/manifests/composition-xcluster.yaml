@@ -50,12 +50,12 @@ spec:
                   - type: string
                     string:
                       fmt: "talos-%s"
-              - fromFieldPath: spec.platformBaseTag
+              # Modul-Source kommt aus dem XCluster-Claim (spec.tofuModuleSource),
+              # gesetzt vom Konsumenten-Repo (talos-seeder-cluster). Dieses Repo
+              # kennt die konkrete base-/Modul-URL bewusst NICHT — apps und base
+              # werden erst im Seeder-Repo verdrahtet.
+              - fromFieldPath: spec.tofuModuleSource
                 toFieldPath: spec.forProvider.module
-                transforms:
-                  - type: string
-                    string:
-                      fmt: "git::https://github.com/devobagmbh/talos-seeder-cluster.git//stage-1/modules/talos-cluster?ref=%s"
 
     # --- Schritt 2: Cilium-Bootstrap nach Cluster-Up ---
     - step: helm-cilium-bootstrap
