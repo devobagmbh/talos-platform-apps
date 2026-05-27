@@ -84,7 +84,13 @@ jobs:
 
       - name: helm + cosign gegen GHCR authentifizieren
         run: |
+          # helm schreibt in ~/.config/helm/registry, cosign liest
+          # ~/.docker/config.json — beide Logins nötig, sonst scheitert
+          # cosign sign mit "UNAUTHORIZED" beim Pull-Scope des Artefakts.
           echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- cosign login ghcr.io \
             --username "${{ github.actor }}" \
             --password-stdin
 
