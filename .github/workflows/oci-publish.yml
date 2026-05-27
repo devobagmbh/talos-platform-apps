@@ -20,7 +20,6 @@ on:
     tags:
       - 'automation/*-v*'
       - 'databases/*-v*'
-      - 'dns/*-v*'
       - 'lifecycle/*-v*'
       - 'monitoring/*-v*'
       - 'registry/*-v*'

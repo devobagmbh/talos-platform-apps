@@ -17,7 +17,7 @@
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation`, `dns` und `monitoring`. Vorgerenderte Manifeste mit cosign-Signatur, SLSA-v1-Provenance und CycloneDX-SBOM. Konsumiert von Seeder und DHQ.
+OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation` und `monitoring`. Vorgerenderte Manifeste mit cosign-Signatur, SLSA-v1-Provenance und CycloneDX-SBOM. Konsumiert von Seeder und DHQ.
 
 ## Zweck
 
@@ -33,7 +33,6 @@ OCI-Distribution erfolgt **pro Komponente** (ADR-0009 Revision 2026-05-26). Sub-
 |---|---|---|---|
 | [`automation`](sub-layers/automation/) | renovate, velero | DHQ (Renovate), beide (Velero) | #16 |
 | [`databases`](sub-layers/databases/) | cnpg | beide | #15 |
-| [`dns`](sub-layers/dns/) | powerdns, powerdns-admin, external-dns, clusterissuer-rfc2136 | DHQ (Phase 6) | #16a |
 | [`lifecycle`](sub-layers/lifecycle/) | crossplane, ipxe, providers, compositions | Seeder | #12 |
 | [`monitoring`](sub-layers/monitoring/) | kube-prometheus-stack, loki, mimir, tempo, alloy, grafana | beide | #17 |
 | [`registry`](sub-layers/registry/) | harbor | beide | #14 |
@@ -150,4 +149,3 @@ Pipeline-Implementierung folgt in einer separaten Iteration (Task aus Phase 2 de
 - [ADR-0012 — Platform-Registry-Proxy (Harbor)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
 - [ADR-0013 — In-Cluster-Registry (Harbor auf beiden Clustern)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
 - [ADR-0015 — Monitoring-Architektur (LGTM-A)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
-- [ADR-0017 — External-DNS-Strategie](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0017-external-dns-strategy.md)

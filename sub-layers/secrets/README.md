@@ -14,8 +14,9 @@ Siehe [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform
 |---|---|---|---|
 | [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` | `oci://.../secrets/external-secrets:vX.Y.Z` |
 | [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate-Manifeste | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
+| [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA-`ClusterIssuer`, CA-Key via ESO aus Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |
 
-Wave 0 bringt die CRDs (`ExternalSecret`, `ClusterSecretStore`). Wave 10 die default `ClusterSecretStore`-Resources `vault-local` (DHQ) und `vault-dhq-remote` (Seeder); konkrete Vault-Endpoints werden in Layer 3 überschrieben.
+Wave 0 bringt die CRDs (`ExternalSecret`, `ClusterSecretStore`). Wave 10 die default `ClusterSecretStore`-Resources `vault-local` (DHQ) und `vault-dhq-remote` (Seeder); konkrete Vault-Endpoints werden in Layer 3 überschrieben. Wave 20 den CA-`ClusterIssuer`, der TLS-Leaf-Certs für `*.dhq.devoba.de` aus der Devoba-eigenen CA signiert (CA-Root via Jamf in den Client-Trust ausgerollt; Planungsupdate 2026-05-27 — ersetzt den entfallenen `dns`-Sub-Layer mit ACME-DNS01).
 
 **Nicht in diesem Sub-Layer**: Vault-Helm-Release, Vault-Policies, Vault-KV-Strukturen, Vault-Auth-Method-Config.
 

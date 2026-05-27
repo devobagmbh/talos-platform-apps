@@ -9,7 +9,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 `talos-platform-apps` bündelt **gemeinsam genutzte Plattform-Komponenten** der Devoba Talos-Plattform und publiziert sie als signierte OCI-Artefakte. Seeder- und DHQ-Cluster konsumieren diese Komponenten per Tag.
 
-**Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Acht Sub-Layer als Klammer: `automation`, `databases`, `dns`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
+**Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Sieben Sub-Layer als Klammer: `automation`, `databases`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
 
 **NICHT** in diesem Repo:
 
@@ -97,7 +97,7 @@ Dieses Repo hat keinen Live-Cluster. Validierung ist Render- und Policy-fokussie
 
 ## Commits & Pull Requests
 
-- **Conventional Commits** mit Sub-Layer- oder Komponenten-Scope: `feat(lifecycle): …`, `feat(lifecycle/crossplane): …`, `fix(dns): …`, `chore(automation): …`, `docs: …`
+- **Conventional Commits** mit Sub-Layer- oder Komponenten-Scope: `feat(lifecycle): …`, `feat(lifecycle/crossplane): …`, `fix(secrets): …`, `chore(automation): …`, `docs: …`
 - Ein Commit = eine logische Einheit. Render-Output (`rendered/`) niemals committen.
 - **Breaking-Change-Bumps**: ein neues Major-Tag (`<sub-layer>/<component>-v2.0.0`) erfordert einen `BREAKING CHANGE:`-Footer im Commit und einen Eintrag im Top-`CHANGELOG.md` (wenn vorhanden).
 - PR-Body: was geändert + warum + Validation-Steps (siehe `.github/PULL_REQUEST_TEMPLATE.md`).
