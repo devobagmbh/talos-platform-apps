@@ -7,7 +7,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 ## Repository Purpose
 
-`talos-platform-apps` bündelt **gemeinsam genutzte Plattform-Komponenten** der Devoba Talos-Plattform und publiziert sie als signierte OCI-Artefakte. Seeder- und DHQ-Cluster konsumieren diese Komponenten per Tag.
+`talos-platform-apps` ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform. **Alles, was nicht Substrat ist** (nicht in `talos-platform-base`), lebt hier und wird als signierte OCI-Artefakte publiziert. Consumer-Cluster-Repos (Seeder, DHQ) **bedienen sich aus dem Katalog** — sie referenzieren per Tag genau die Komponenten, die sie brauchen. Arbeitsteilung: **Base = Substrat (Talos + Cilium + ArgoCD + cert-approver), Apps = Katalog (alles Übrige), Consumer = Komposition.**
 
 **Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Sieben Sub-Layer als Klammer: `automation`, `databases`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
 
