@@ -1,0 +1,172 @@
+# Capability-Index — der zentrale Capability-Katalog von talos-platform-apps.
+#
+# Modell: talos-platform-docs ADR-0021 (Capability-Layer-Modell).
+#   Capability = stabile Schnittstelle · Tool = austauschbare Implementierung.
+#   swap_class quantifiziert die Austausch-Kosten:
+#     drop-in           — gleicher Vertrag, kein Datenumzug
+#     label-move        — Tausch = Label-Verschiebung am Producer-Pod
+#     data-migration    — Tausch erfordert Datenumzug
+#     rewrite-required  — tool-spezifische CRs müssen neu geschrieben werden
+#     consumer-change   — Consumer muss seine Referenz anpassen
+#
+# Layer A dieses dreischichtigen Modells. Layer B (PNI Network-Trust) lebt als
+# Spec in talos-platform-base AGENTS §PNI + Enforcement docs#65; Layer C
+# (Hardware-Features) bleibt im base-Substrat.
+#
+# Transitions-Hinweis: bis zur base-Phase-3-Ablation (Step 3) bleibt
+# talos-platform-base/docs/platform-capability-index.yaml die Upstream-Quelle
+# der vollständigen 36-Capability-Definitionen. Diese Datei ist der nach apps
+# migrierte Katalog-Ausschnitt für die Capabilities, die apps-Komponenten
+# tatsächlich bereitstellen.
+#
+# Schema + Nutzung in compatibility.yaml: siehe catalog/README.md.
+
+capabilities:
+  # — Datenbanken —————————————————————————————————————————————
+  - id: cnpg-postgres
+    name: Managed-PostgreSQL (instanced)
+    domain: databases
+    instanced: true
+    implementations:
+      - {name: cloudnative-pg, status: active, swap_class: data-migration}
+      - {name: stackgres, status: considered, swap_class: data-migration}
+      - {name: zalando-pg, status: considered, swap_class: data-migration}
+
+  # — Object-Store ————————————————————————————————————————————
+  - id: s3-object
+    name: S3-kompatibler Object-Store (instanced)
+    domain: storage-objects
+    instanced: true
+    implementations:
+      - {name: garage, status: active, swap_class: drop-in}
+      - {name: minio-operator, status: considered, swap_class: drop-in}
+      - {name: external-s3, status: considered, swap_class: drop-in}
+
+  # — Observability: Metrics ——————————————————————————————————
+  - id: metrics-scrape
+    name: Prometheus-Format-Metrics-Scrape
+    domain: observability
+    implementations:
+      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}
+      - {name: grafana-alloy, status: active, swap_class: drop-in}
+      - {name: victoria-metrics-agent, status: considered, swap_class: drop-in}
+  - id: metrics-storage
+    name: Zeitreihen-Speicher für Metrics
+    domain: observability
+    implementations:
+      - {name: kube-prometheus-stack, status: active, swap_class: data-migration}
+      - {name: mimir, status: active, swap_class: data-migration}
+      - {name: victoria-metrics, status: considered, swap_class: data-migration}
+      - {name: thanos, status: considered, swap_class: data-migration}
+  - id: metrics-query
+    name: PromQL-Query-Endpoint
+    domain: observability
+    implementations:
+      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}
+      - {name: thanos-query, status: considered, swap_class: drop-in}
+
+  # — Observability: Logs —————————————————————————————————————
+  - id: logs-collect
+    name: Log-Collector
+    domain: observability
+    implementations:
+      - {name: alloy, status: active, swap_class: label-move}
+      - {name: fluent-bit, status: considered, swap_class: label-move}
+      - {name: vector, status: considered, swap_class: label-move}
+  - id: logs-storage
+    name: Log-Speicher
+    domain: observability
+    implementations:
+      - {name: loki, status: active, swap_class: data-migration}
+      - {name: victoria-logs, status: considered, swap_class: data-migration}
+  - id: logs-query
+    name: Log-Query-Endpoint (LogQL)
+    domain: observability
+    implementations:
+      - {name: loki, status: active, swap_class: drop-in}
+      - {name: victoria-logs, status: considered, swap_class: drop-in}
+
+  # — Observability: Traces ———————————————————————————————————
+  - id: traces-collect
+    name: Trace-Collector (OTLP)
+    domain: observability
+    implementations:
+      - {name: alloy, status: active, swap_class: label-move}
+      - {name: otelcol, status: considered, swap_class: label-move}
+  - id: traces-storage
+    name: Trace-Speicher
+    domain: observability
+    implementations:
+      - {name: tempo, status: active, swap_class: data-migration}
+      - {name: jaeger, status: considered, swap_class: data-migration}
+  - id: traces-query
+    name: Trace-Query-Endpoint
+    domain: observability
+    implementations:
+      - {name: tempo, status: active, swap_class: drop-in}
+      - {name: jaeger, status: considered, swap_class: drop-in}
+
+  # — Observability: Dashboards + Alerting ————————————————————
+  - id: dashboards
+    name: Dashboard-/Visualisierungs-Frontend
+    domain: observability
+    implementations:
+      - {name: grafana, status: active, swap_class: label-move}
+      - {name: perses, status: considered, swap_class: label-move}
+  - id: alert-routing
+    name: Alert-Routing / Notification
+    domain: observability
+    implementations:
+      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}  # Alertmanager
+      - {name: grafana-oncall, status: considered, swap_class: drop-in}
+
+  # — Secrets / PKI ———————————————————————————————————————————
+  - id: secret-sync
+    name: External-Secret-Sync in den Cluster
+    domain: secrets
+    implementations:
+      - {name: external-secrets, status: active, swap_class: rewrite-required}
+      - {name: sealed-secrets, status: considered, swap_class: rewrite-required}
+  - id: tls-issuance
+    name: TLS-Zertifikats-Ausstellung
+    domain: secrets
+    implementations:
+      - {name: cert-manager, status: active, swap_class: label-move}  # via ca-clusterissuer
+      - {name: vault-pki, status: considered, swap_class: rewrite-required}
+
+  # — Lifecycle ———————————————————————————————————————————————
+  - id: cluster-provisioning
+    name: Deklaratives Cluster-Provisioning
+    domain: lifecycle
+    implementations:
+      - {name: crossplane, status: active, swap_class: rewrite-required}  # + compositions (XCluster)
+
+  # — Proposed: kein base-Äquivalent, Vertrag noch zu definieren ——
+  # Diese Capabilities haben heute kein Pendant im base-Index. Sie werden
+  # benötigt, damit die übrigen apps-Komponenten capability-first werden.
+  # Status proposed = Vertrag (Schnittstelle, Provider/Consumer-Semantik,
+  # swap_class) ist noch zu definieren, NICHT erraten. Je ein Folge-Issue.
+  - id: oci-registry
+    name: In-Cluster-OCI-/Container-Registry
+    domain: registry
+    status: proposed
+    implementations:
+      - {name: harbor, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+  - id: backup
+    name: Cluster-/Volume-Backup
+    domain: automation
+    status: proposed
+    implementations:
+      - {name: velero, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+  - id: dependency-automation
+    name: Dependency-Update-Automation
+    domain: automation
+    status: proposed
+    implementations:
+      - {name: renovate, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+  - id: bare-metal-boot
+    name: Bare-Metal-Boot / PXE
+    domain: lifecycle
+    status: proposed
+    implementations:
+      - {name: ipxe, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen

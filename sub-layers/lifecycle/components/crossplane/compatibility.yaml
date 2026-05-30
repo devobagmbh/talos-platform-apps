@@ -1,7 +1,8 @@
 requires:
   talos-platform-base: ">=v0.4.0 <v1.0.0"
-
 provides:
   - name: crossplane
     apis:
       - crossplane@1.18.0
+    capabilities:
+      - {id: cluster-provisioning, swap_class: rewrite-required}
