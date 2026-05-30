@@ -11,8 +11,12 @@ derselben Capability, kein Consumer-Rewrite.
 
 ## Dateien
 
-- [`capability-index.yaml`](capability-index.yaml) — Registry aller Capabilities,
-  die apps-Komponenten bereitstellen, je mit Implementierungen und `swap_class`.
+- [`capability-index.yaml`](capability-index.yaml) — Registry des vollständigen
+  Layer-A-Tool-Capability-Satzes der Plattform, je mit Implementierungen und
+  `swap_class`. Implementierungen sind teils apps-Komponenten, teils consumer-/
+  hardware-deployt; die Definition lebt zentral hier, das Tool deployt der
+  jeweilige Owner. Nicht enthalten (bleiben base): Substrat-Capabilities
+  (`gitops-engine`, `csr-approval`) und Layer-B-network-primitives.
 
 ## `swap_class` — Austausch-Kosten
 
@@ -60,5 +64,5 @@ Regeln:
   Labels + CCNP-Selektoren; Spec in talos-platform-base AGENTS §PNI, Enforcement docs#65).
   Gleicher Begriff „Capability", zwei Achsen — siehe ADR-0021.
 - Bis zur base-Phase-3-Ablation bleibt `talos-platform-base/docs/platform-capability-index.yaml`
-  die Upstream-Quelle der vollständigen Definitionen; diese Registry ist der
-  migrierte apps-Ausschnitt.
+  die Upstream-Quelle; danach ist diese Registry autoritativ für Layer A. base
+  behält nur die Substrat- und network-primitive-Einträge.
