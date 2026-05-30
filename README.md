@@ -21,7 +21,7 @@ OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `regis
 
 ## Zweck
 
-Dieses Repo bündelt **gemeinsam genutzte Plattform-Komponenten** (Helm-Charts + Werte + ggf. Custom-Manifeste), rendert sie zu fertigen Manifesten und publiziert sie als signierte OCI-Artefakte. Seeder- und DHQ-Cluster konsumieren diese Layer per Tag (Argo `targetRevision`), nicht per Helm-Render zur Apply-Zeit.
+Dieses Repo ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform: **alles, was nicht Substrat ist** (nicht in `talos-platform-base` gehört), lebt hier als eigenständig versionierte, signierte OCI-Artefakte — Helm-Charts + Werte + ggf. Custom-Manifeste, in CI zu fertigen Manifesten vorgerendert. **Consumer-Cluster-Repos bedienen sich aus dem Katalog**, indem sie genau die OCI-Komponenten referenzieren, die sie brauchen (per Tag / Argo `targetRevision`, nicht per Helm-Render zur Apply-Zeit). Arbeitsteilung: **Base = Substrat, Apps = Katalog, Consumer = Komposition** — was nicht Substrat ist, gehört in den Katalog, nie in die Base.
 
 Begründung: deterministische, reviewbare Deployment-Artefakte mit kryptografischer Supply-Chain-Verifikation. Cluster-Update = Tag-Bump in der Konsumenten-Konfiguration. Siehe [ADR-0009](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md).
 
