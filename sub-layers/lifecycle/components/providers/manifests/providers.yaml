@@ -1,40 +1,69 @@
-# Crossplane Provider-Packages — installiert vom Crossplane-Operator nach
-# dessen Bootstrap. Pinning ist Pflicht (ADR-0009 § no_latest_image_tag).
+# Crossplane Provider-Packages + Composition-Functions — installiert vom
+# Crossplane-Operator nach dessen Bootstrap. Pinning ist Pflicht
+# (ADR-0009 § no_latest_image_tag).
 #
 # Versionen Stand 2026; vor Push via `crossplane package list` oder
 # upbound-Marketplace verifizieren.
 
 ---
+# Provider — provider-terraform. Stage-1-Cluster-Lifecycle läuft hierüber
+# gegen das talos-cluster-Tofu-Modul aus talos-platform-base (Source-URL
+# wird Konsumenten-seitig im XCluster-Claim gesetzt, siehe
+# talos-platform-docs ADR-0022).
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-terraform
 spec:
   package: xpkg.upbound.io/upbound/provider-terraform:v0.20.0
-  # Stage-1-Cluster-Provisionierung läuft via provider-terraform gegen
-  # das talos-cluster-Tofu-Modul (talos-seeder-cluster/stage-1/modules/talos-cluster).
-  # Provider akzeptiert SOPS-encrypted-Inputs via carlpett/sops Tofu-Provider.
 
 ---
+# Provider — provider-helm. Konsumenten-Repos nutzen den für ad-hoc-Helm-
+# Releases (z. B. Tooling, das nicht über Argo läuft). Die XCluster-
+# Composition selbst nutzt ihn NICHT — Cluster-Bootstrap-Apps kommen über
+# den base-Substrate-Pfad + Argo, nicht aus der Composition (ADR-0022).
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-helm
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-helm:v0.20.0
-  # Bootstrappt Cilium/Linstor/Argo nach Cluster-Up.
 
 ---
+# Provider — provider-kubernetes. Generic K8s-Object-Apply gegen
+# beliebige Cluster (Connection-Secret-driven). Im XCluster-Pfad
+# optional, hauptsächlich für Konsumenten-Use-Cases.
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-kubernetes
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
-  # Appliziert App-of-Apps + RBAC-Manifeste nach Argo-Install.
 
 ---
-# Provider-Configs (mit Cluster-Identität) leben in Layer 3 (talos-seeder-cluster).
-# Beispielsweise muss provider-terraform ein ProviderConfig haben, das auf
-# die Seeder-Garage-S3-Credentials zeigt. Diese Cluster-spezifischen
-# Bindings gehören NICHT in den Modulkatalog.
+# Composition-Function — function-extra-resources. Erlaubt der
+# XCluster-Composition, die referenzierte cluster-config-ConfigMap
+# zur Render-Zeit zu laden (Function-Pipeline-Modus, ADR-0022 §
+# Composition-Pipeline).
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-extra-resources
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-extra-resources:v0.0.6
+
+---
+# Composition-Function — function-go-templating. Parst den
+# cluster.yaml-Inhalt aus der ConfigMap und rendert daraus
+# Workspace.spec.forProvider.{module, vars}.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-go-templating
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-go-templating:v0.10.0
+
+---
+# ProviderConfigs (mit Cluster-Identität: Garage-S3-Endpoint, Credentials)
+# leben Konsumenten-seitig in talos-seeder-cluster/stage-1/providerconfigs/.
+# Dieser Modulkatalog kennt die konkreten Endpoints und Credentials NICHT.

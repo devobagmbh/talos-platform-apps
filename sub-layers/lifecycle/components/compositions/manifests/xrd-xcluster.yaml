@@ -1,9 +1,13 @@
-# CompositeResourceDefinition für XCluster — das API, mit dem ein
-# Konsumenten-Repo einen Child-Cluster claimt (z. B. DHQ).
+# CompositeResourceDefinition für XCluster — die plattform-interne API,
+# über die ein Konsumenten-Repo einen Talos-Cluster (Seeder oder Child,
+# z. B. DHQ) als deklarative Resource claimt.
 #
-# Schema-Felder sind bewusst minimal in Phase 1. Erweiterungen
-# (NodeGroups, GPU-Affinity, Custom-CNI-Settings) folgen mit Phase 2+
-# Use-Cases.
+# Bewusst kleines, stabiles Schema (talos-platform-docs ADR-0022):
+# der cluster.yaml-Inhalt wird NICHT ins XRD gespiegelt, sondern liegt
+# als ConfigMap im Cluster und wird per spec.configMapRef referenziert.
+# Damit ist das XRD entkoppelt von base-Schema-Bumps — Schema-Drift
+# wird einmal im Composition-Template (function-go-templating)
+# behandelt, nicht im XRD-Schema.
 
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
@@ -30,52 +34,90 @@ spec:
             spec:
               type: object
               properties:
-                clusterName:
-                  type: string
-                  description: "Name des Child-Clusters (z. B. dhq)"
-                talosVersion:
-                  type: string
-                  description: "Talos-Linux-Version (z. B. v1.13.0)"
-                kubernetesVersion:
-                  type: string
-                  description: "Kubernetes-Version (z. B. v1.36.0)"
-                nodes:
-                  type: array
-                  description: "Liste der Bare-Metal-Node-Specs"
-                  items:
-                    type: object
-                    properties:
-                      hostname:
-                        type: string
-                      ip:
-                        type: string
-                      role:
-                        type: string
-                        enum: [controlplane, worker]
-                    required: [hostname, ip, role]
+
+                # Die cluster.yaml-Inhalt-ConfigMap wird NICHT explizit
+                # referenziert. Konvention: der Konsumenten-Repo legt die
+                # ConfigMap unter dem Namespace `crossplane-system` ab und
+                # trägt das Label `platform.devoba.de/cluster: <claim-name>`
+                # damit die Composition (function-extra-resources mit Label-
+                # Selector) sie findet. Damit fällt ein konfigMapRef-Feld
+                # weg — die Cluster-Identität ist über den Claim-Namen
+                # eindeutig.
+
                 platformBaseTag:
                   type: string
-                  description: "Welcher talos-platform-base-OCI-Tag konsumiert wird"
+                  description: >-
+                    talos-platform-base-OCI-Tag, gegen den dieser Cluster
+                    läuft. Informativ + bestimmt die Default-tofu-Modul-
+                    Version, falls tofuModuleSource leer ist.
+
                 tofuModuleSource:
                   type: string
                   description: >-
-                    Tofu-Modul-Source-URL für die Cluster-Provisionierung, vom
-                    Konsumenten-Repo (talos-seeder-cluster) gesetzt — z. B.
-                    'git::https://github.com/Nosmoht/talos-platform-base.git//tofu/modules/talos-cluster?ref=vX.Y.Z'.
-                    Dieses Repo (talos-platform-apps) kennt die konkrete Source
-                    bewusst NICHT; die Verdrahtung von base + apps macht erst
-                    das Seeder-Repo.
+                    Tofu-Modul-Source-URL für die Cluster-Provisionierung.
+                    Vom Konsumenten-Repo gesetzt (z. B.
+                    'oci://ghcr.io/nosmoht/talos-platform-base/talos-cluster?tag=v0.6.0'
+                    oder
+                    'git::https://github.com/Nosmoht/talos-platform-base.git//tofu/modules/talos-cluster?ref=v0.6.0').
+                    Dieses Repo (talos-platform-apps) kennt die konkrete
+                    Source bewusst NICHT — die Verdrahtung base ↔ apps
+                    macht erst das Cluster-Repo.
+
                 appsSubLayerPins:
                   type: object
-                  description: "Map sub-layer-name → OCI-Tag (z. B. monitoring: v0.3.1)"
+                  description: >-
+                    Map sub-layer-name → OCI-Tag (z. B.
+                    monitoring/kube-prometheus-stack: v0.3.1). Rein
+                    informativ — wird nicht von der Composition gerendert.
+                    Die Argo-Application-Manifeste im Cluster-Repo
+                    referenzieren die Tags direkt.
                   additionalProperties:
                     type: string
-              required: [clusterName, talosVersion, nodes, platformBaseTag]
+
+                s3StateBackend:
+                  type: object
+                  description: >-
+                    Garage-S3-Backend für den Tofu-Workspace-State
+                    (ADR-0006 Rev. 2026-05-27, ADR-0022). Liegt auf dem
+                    DS720+ außerhalb des Cluster-Lifecycles — vermeidet
+                    Bootstrap-Chicken-Egg.
+                  properties:
+                    endpoint:
+                      type: string
+                      description: "S3-Endpoint-URL (Garage)"
+                    bucket:
+                      type: string
+                      description: "Bucket-Name für die tfstate-Objekte"
+                    region:
+                      type: string
+                      default: "garage"
+                      description: "S3-Region — Garage akzeptiert beliebige Werte"
+                    credentialsSecretRef:
+                      type: object
+                      description: >-
+                        Referenz auf das Secret mit
+                        AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY.
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                      required: [name, namespace]
+                  required: [endpoint, bucket, credentialsSecretRef]
+
+              required:
+                - platformBaseTag
+                - tofuModuleSource
+                - s3StateBackend
+
             status:
               type: object
               properties:
                 kubeconfigSecretRef:
                   type: object
+                  description: >-
+                    Connection-Secret-Ref auf das vom Workspace ausgegebene
+                    kubeconfig-Secret.
                   properties:
                     name:
                       type: string
@@ -83,6 +125,9 @@ spec:
                       type: string
                 talosconfigSecretRef:
                   type: object
+                  description: >-
+                    Connection-Secret-Ref auf das vom Workspace ausgegebene
+                    talosconfig-Secret.
                   properties:
                     name:
                       type: string
