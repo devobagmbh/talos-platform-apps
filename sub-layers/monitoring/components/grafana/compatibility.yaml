@@ -3,7 +3,8 @@ requires:
   monitoring/loki: ">=v0.1.0"
   monitoring/mimir: ">=v0.1.0"
   monitoring/tempo: ">=v0.1.0"
-
 provides:
   - name: grafana
-    apis: []  # wird mit Issue #17 befüllt
+    apis: [] # wird mit Issue #17 befüllt
+    capabilities:
+      - {id: dashboards, swap_class: label-move}

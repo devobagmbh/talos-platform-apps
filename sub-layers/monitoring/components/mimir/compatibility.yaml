@@ -1,7 +1,8 @@
 requires:
   talos-platform-base: ">=v0.4.0 <v1.0.0"
-  storage-objects/garage: ">=v0.1.0"  # S3-Backend für Blocks
-
+  storage-objects/garage: ">=v0.1.0" # S3-Backend für Blocks
 provides:
   - name: mimir
-    apis: []  # wird mit Issue #17 befüllt
+    apis: [] # wird mit Issue #17 befüllt
+    capabilities:
+      - {id: metrics-storage, swap_class: data-migration}

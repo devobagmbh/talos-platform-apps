@@ -1,7 +1,9 @@
 requires:
   talos-platform-base: ">=v0.4.0 <v1.0.0"
-  storage-objects/garage: ">=v0.1.0"  # S3-Backend für Chunks
-
+  storage-objects/garage: ">=v0.1.0" # S3-Backend für Chunks
 provides:
   - name: loki
-    apis: []  # wird mit Issue #17 befüllt
+    apis: [] # wird mit Issue #17 befüllt
+    capabilities:
+      - {id: logs-storage, swap_class: data-migration}
+      - {id: logs-query, swap_class: drop-in}
