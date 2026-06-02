@@ -1,0 +1,15 @@
+# Customization Contract (ADR-0023). Der iPXE-Server liefert eine Default-
+# Boot-Script-ConfigMap (Stub); der Konsument MUSS sie mit dem echten
+# Talos-Boot-Skript (Image-URL, Kernel-Args, machine-config-URL) überschreiben.
+# Klasse-A-Wert (Plain, kein Secret).
+schema_version: "1"
+component: lifecycle/ipxe
+cluster_agnostic: false
+sync_wave: "0"
+required:
+  configmap_keys:
+    - boot.ipxe
+  secret_keys: []
+provided_refs:
+  configmap: ipxe-boot-scripts
+external_dependencies: []
