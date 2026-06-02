@@ -415,14 +415,21 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (lint + render + contract + scan:conftest)
+    desc: Lokale Reproduktion der GHA-Pipeline (lint + render + scan:conftest)
     cmds:
       - task: lint
       - task: render
       - task: lint:rendered
-      - task: validate:contract
       - task: scan:conftest-verify
       - task: scan:conftest
+
+  # Hinweis: validate:contract ist BEWUSST NICHT Teil von `ci`. Der
+  # Customization-Contract wird graduell pro Komponente eingeführt
+  # (ADR-0023) — solange die Mehrheit der Komponenten noch keinen Contract
+  # trägt, wäre ein CI-weites Gate die falsche Kopplung: ein einzelner
+  # unfertiger/kaputter Contract würde die ganze Render-/Lint-Pipeline
+  # blockieren. Stattdessen separater, gezielter Aufruf (+ eigener CI-Job
+  # contract-validate.yml, der nur Komponenten MIT Contract prüft).
 
   # --- Housekeeping ---
 
