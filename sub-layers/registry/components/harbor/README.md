@@ -1,8 +1,19 @@
 # Komponente `registry/harbor`
 
-Harbor (Helm `harbor/harbor`) — Container-Registry + Pull-Through-Cache + OCI-Artefakt-Store (Helm-Charts, cosign, SBOMs, CNAB). Inkl. Trivy-Scanner als Subchart. Postgres via CNPG, Storage via Garage S3, OIDC via Dex.
+Harbor (Helm `harbor/harbor` 1.19.1, appVersion 2.15.1) — Container-Registry + Pull-Through-Cache + OCI-Artefakt-Store. Inkl. Trivy-Scanner.
 
-**Skelett** — Implementation in Issues [#14](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+registry), [#27](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-Harbor), [#33](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Office-Lab-Harbor).
+## Render-Profil (Tag 1: Seeder-Pull-Through-Cache)
+
+Das aktuell gerenderte Profil ist für den **Seeder** ausgelegt (Single-Node, eine Platte, kein Linstor):
+
+- **Storage: ephemeral** (`persistence.enabled: false`) — für einen Cache vertretbar, baut sich neu auf.
+- **DB + Redis: eingebettet** (`type: internal`) — kein CNPG, kein Garage-S3 (garage obsolet).
+- **Exposure: clusterIP**, TLS extern am Cilium-Gateway (Gateway-API-only Hard-Constraint, kein Ingress).
+- **Auth: db_auth** (admin) — OIDC via Dex wird nachgereicht.
+- **Secrets** (ADR-0023): admin-Passwort + `secretKey` via `existingSecret: harbor-runtime-secret` (Konsument liefert via SOPS). Interne Service-Secrets generiert Harbor (Rotation bei ephemeral Cache unkritisch).
+- **externalURL**: Platzhalter `https://REPLACE-ME.harbor.invalid` → Konsument patcht via Kustomize (Klasse-A-Strukturwert).
+
+Das persistente **office-lab-Harbor-Profil** (PVC/CNPG + stabile interne Secrets via Vault) bekommt einen eigenen Render. Customization-Vertrag: [`customization.yaml`](customization.yaml).
 
 ## Sync-Wave
 
@@ -17,7 +28,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/registry/harbor:vX.Y.Z
 ## Konsumiert von
 
 - **Seeder** — als Pull-Through-Cache vor GHCR/Docker-Hub
-- **Office-Lab** — als eigener Workload-Registry für interne Devoba-Apps
+- **office-lab** — als eigener Workload-Registry für interne Devoba-Apps
 
 Beide Cluster betreiben Harbor unabhängig (eigene Postgres, eigener Garage-Bucket-Store).
 

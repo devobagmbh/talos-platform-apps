@@ -1,0 +1,20 @@
+# Customization Contract (ADR-0023) — Seeder-Pull-Through-Cache-Profil.
+# Der Konsument liefert harbor-runtime-secret (via SOPS, da Vault noch nicht
+# läuft) mit zwei Keys; externalURL ist ein strukturwerts-Kustomize-Patch
+# (siehe Hinweis unten), KEIN envFrom-Wert — daher nicht in configmap_keys.
+schema_version: "1"
+component: registry/harbor
+cluster_agnostic: false
+sync_wave: "0"
+required:
+  configmap_keys: []
+  secret_keys:
+    - HARBOR_ADMIN_PASSWORD   # Harbor-Admin-Login
+    - secretKey               # 16-Zeichen-Encryption-Key (DB-at-rest)
+provided_refs:
+  secret: harbor-runtime-secret
+external_dependencies: []
+# HINWEIS structural-patch (nicht maschinengeprüft): der Konsument MUSS
+# spec.externalURL via Kustomize patchen — das gerenderte Manifest trägt den
+# Platzhalter https://REPLACE-ME.harbor.invalid in der harbor-core-ConfigMap
+# (EXT_ENDPOINT). externalURL ist Render-Zeit-strukturell, kein envFrom-Wert.

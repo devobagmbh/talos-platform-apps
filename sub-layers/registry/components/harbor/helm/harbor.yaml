@@ -1,0 +1,71 @@
+# Harbor — Container-Registry + Pull-Through-Cache (ADR-0012/0013).
+# Render-Input für `task render:one -- registry/harbor`.
+#
+# Tag-1-Profil: Seeder-Pull-Through-Cache, Single-Node, EINE Platte, kein
+# Linstor → Storage EPHEMERAL (persistence.enabled=false, emptyDir). Für einen
+# Cache vertretbar — er baut sich neu auf. Für den persistenten office-lab-Harbor wird
+# ein eigenes Profil mit PVC + stabilen internen Secrets gerendert.
+#
+# Consumer-Side Value Layering (ADR-0023):
+#   - admin-Passwort + globaler secretKey → existingSecret `harbor-runtime-secret`
+#     (Klasse B). Der Konsument liefert es via SOPS (Vault läuft noch nicht).
+#   - externalURL → Platzhalter; der Konsument patcht ihn via Kustomize
+#     (Klasse A, strukturell — Harbor backt EXT_ENDPOINT in die core-ConfigMap).
+#   - interne Service-Secrets (core/xsrf/jobservice/registry-http) lässt Harbor
+#     generieren. Toleriert für den ephemeral Cache (Rotation bei Re-Render
+#     unkritisch, da kein persistenter State). Der office-lab-Harbor stabilisiert sie
+#     via SOPS/Vault-existingSecret.
+
+metadata:
+  chart: harbor
+  repo: https://helm.goharbor.io
+  version: 1.19.1            # appVersion 2.15.1 — vor Tag verifizieren
+  namespace: harbor
+
+values:
+  # --- Exposure: clusterIP (Gateway-API-only Hard-Constraint, KEIN Ingress) ---
+  # TLS terminiert extern am Cilium-Gateway (cert-manager, eigene CA, ADR-0019);
+  # Harbor-intern plain HTTP.
+  expose:
+    type: clusterIP
+    tls:
+      enabled: false
+    clusterIP:
+      name: harbor
+      ports:
+        httpPort: 80
+
+  # externalURL — PLATZHALTER. Konsument patcht ihn via Kustomize auf die echte
+  # Cluster-URL (z. B. https://harbor.seeder.devoba.de). Strukturell, kein env.
+  externalURL: https://REPLACE-ME.harbor.invalid
+
+  # --- Storage: ephemeral (Single-Node, eine Platte, kein Linstor) ---
+  persistence:
+    enabled: false
+
+  # --- Eingebettete Backends (kein CNPG, kein Garage-S3) ---
+  database:
+    type: internal
+  redis:
+    type: internal
+
+  # --- Secrets (ADR-0023 Klasse B) ---
+  # admin-Passwort: Konsument liefert harbor-runtime-secret.HARBOR_ADMIN_PASSWORD
+  existingSecretAdminPassword: harbor-runtime-secret
+  existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+  # globaler 16-Zeichen-Encryption-Key: Konsument liefert harbor-runtime-secret.secretKey
+  existingSecretSecretKey: harbor-runtime-secret
+
+  # --- Trivy-Scanner: an, aber ephemeral (vuln-DB lädt bei Restart neu) ---
+  trivy:
+    enabled: true
+
+  # --- Schlanke Single-Node-Defaults ---
+  portal:
+    replicas: 1
+  core:
+    replicas: 1
+  jobservice:
+    replicas: 1
+  registry:
+    replicas: 1
