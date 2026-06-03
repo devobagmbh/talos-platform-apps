@@ -1,10 +1,10 @@
-# iPXE-Server: schlanker HTTP-Server für statische iPXE-Boot-Skripte und
-# -Binaries (.ipxe / .efi / .kpxe). Wird vom DHCP-Boot-Pfad der Office-Lab-Nodes
-# als Next-Boot-URL referenziert, liefert die Talos-Initial-Boot-Konfig
-# (Kernel-Cmdline → machine-config-URL).
+# iPXE server: slim HTTP server for static iPXE boot scripts and binaries
+# (.ipxe / .efi / .kpxe). Referenced as the next-boot URL by the DHCP boot path
+# of the Office-Lab nodes; serves the Talos initial boot config (kernel cmdline
+# → machine-config URL).
 #
-# Skript-Inhalt kommt aus einer ConfigMap, die das Konsumenten-Repo
-# (talos-seeder-cluster, Layer 3) befüllt. Hier nur die Schale.
+# Script content comes from a ConfigMap the consumer repo (talos-seeder-cluster,
+# Layer 3) fills in. This is just the shell.
 
 ---
 apiVersion: v1
@@ -23,9 +23,9 @@ metadata:
   namespace: ipxe
 
 ---
-# Default-ConfigMap mit Platzhalter-Skript. Der Konsumenten-Cluster
-# (talos-seeder-cluster) überschreibt diese ConfigMap mit den echten
-# Boot-Skripten (Talos-Image-URL, Kernel-Args, machine-config-URL).
+# Default ConfigMap with a placeholder script. The consumer cluster
+# (talos-seeder-cluster) overrides this ConfigMap with the real boot scripts
+# (Talos image URL, kernel args, machine-config URL).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -36,10 +36,10 @@ metadata:
 data:
   boot.ipxe: |
     #!ipxe
-    # Default-Skelett. Wird im Konsumenten-Repo überschrieben.
-    echo iPXE-Server bereit, aber kein cluster-spezifisches Boot-Skript hinterlegt.
-    echo Konsumenten-Repo muss ConfigMap ipxe/ipxe-boot-scripts mit
-    echo gueltigem boot.ipxe befuellen.
+    # Default skeleton. Overridden in the consumer repo.
+    echo iPXE server ready, but no cluster-specific boot script configured.
+    echo The consumer repo must fill ConfigMap ipxe/ipxe-boot-scripts with a
+    echo valid boot.ipxe.
     exit 1
 
 ---
@@ -69,15 +69,15 @@ spec:
           type: RuntimeDefault
       containers:
         - name: http
-          # nginx als HTTP-Server für statische iPXE-Assets. Alpine-Variante
-          # ist klein und Talos-konform (kein systemd, keine Privilege-Escalation).
+          # nginx as the HTTP server for static iPXE assets. The Alpine variant
+          # is small and Talos-friendly (no systemd, no privilege escalation).
           image: nginx:1.27-alpine
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
           securityContext:
-            runAsUser: 101  # nginx-user im Alpine-Image
+            runAsUser: 101  # nginx user in the Alpine image
             runAsGroup: 101
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -124,8 +124,8 @@ spec:
           emptyDir: {}
 
 ---
-# Eigene nginx-Konfig statt der Default-Site auf Port 80 — der Container
-# läuft non-root, kann also Port 80 nicht binden. Listen auf 8080.
+# Custom nginx config instead of the default site on port 80 — the container
+# runs non-root and therefore cannot bind port 80. Listens on 8080.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -137,7 +137,7 @@ data:
       listen 8080 default_server;
       root /usr/share/nginx/html;
       autoindex on;
-      # iPXE-Skripte müssen text/plain ausliefern; nginx Default für .ipxe ist application/octet-stream
+      # iPXE scripts must be served as text/plain; nginx default for .ipxe is application/octet-stream
       types {
         text/plain ipxe;
       }
@@ -150,8 +150,8 @@ metadata:
   name: ipxe
   namespace: ipxe
   annotations:
-    # Cilium-LB-IPAM weist eine IP aus dem 'seeder'-Pool zu (CiliumLoadBalancerIPPool
-    # liegt im Konsumenten-Repo, weil cluster-spezifisches IP-Layout).
+    # Cilium LB-IPAM assigns an IP from the 'seeder' pool (the
+    # CiliumLoadBalancerIPPool lives in the consumer repo — cluster-specific IP layout).
     io.cilium/lb-ipam-pool: seeder
   labels:
     app.kubernetes.io/name: ipxe
