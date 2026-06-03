@@ -1,6 +1,6 @@
-# Customization Contract (ADR-0023). XRD + Composition sind cluster-agnostisch
-# (das Template selbst). Die Cluster-Identität kommt zur Laufzeit aus der vom
-# Konsumenten gelieferten cluster-config-ConfigMap (ADR-0022), nicht hier.
+# Customization Contract (ADR-0023). XRD + Composition are cluster-agnostic
+# (the template itself). Cluster identity comes at runtime from the XCluster
+# claim spec authored by the consumer (child repo), not from here.
 schema_version: "1"
 component: lifecycle/compositions
 cluster_agnostic: true

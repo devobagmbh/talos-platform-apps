@@ -1,21 +1,20 @@
-# Composition für XCluster — provisioniert einen Child-Cluster über EINEN
-# tofu-Workspace (provider-terraform) gegen das base-talos-cluster-Modul.
+# Composition for XCluster — provisions a child cluster via ONE tofu Workspace
+# (provider-terraform) against the base talos-cluster module.
 #
-# Tofu-only (geändert 2026-06-03): Cilium + ArgoCD kommen NICHT mehr als
-# nachgelagerte helm.crossplane.io/Release, sondern als Talos-inlineManifest
-# beim Cluster-Bootstrap selbst — talos-platform-base v0.7.0 liefert ArgoCD via
-# `deploy_argocd` (PR #102) und Cilium via Recipe (KPS-Stil). Der base-Health-
-# Gate (`data.talos_cluster_health`) wartet ohnehin auf Nodes=Ready (= CNI da),
-# bevor `tofu apply` zurückkehrt. Ein separater Helm-Schritt wäre damit
-# redundant UND würde gegen den Health-Gate laufen. Sobald das Child oben ist,
-# übernimmt dessen EIGENE (inlineManifest-)ArgoCD die GitOps-Reconciliation aus
-# dem Child-Repo. Crossplanes Rolle endet beim lauffähigen, self-bootstrapping
-# Cluster.
+# Tofu-only (changed 2026-06-03): Cilium + ArgoCD no longer arrive as a
+# downstream helm.crossplane.io/Release, but as a Talos inlineManifest at the
+# cluster bootstrap itself — talos-platform-base v0.7.0 delivers ArgoCD via
+# `deploy_argocd` (PR #102) and Cilium via Recipe (KPS style). The base health
+# gate (`data.talos_cluster_health`) already waits for nodes=Ready (= CNI up)
+# before `tofu apply` returns. A separate Helm step would therefore be redundant
+# AND would race the health gate. Once the child is up, its OWN
+# (inlineManifest) ArgoCD takes over GitOps reconciliation from the child repo.
+# Crossplane's role ends at a running, self-bootstrapping cluster.
 #
-# Cluster-Identität (Node-IPs, Versionen, Klassen) kommt aus dem XCluster-Claim
-# (spec-Felder, vom Child-Repo authored) und wird auf die tf.Workspace-varmap
-# gemappt. Die konkrete base-Modul-Source kennt dieses Repo NICHT — sie kommt
-# als spec.tofuModuleSource aus dem Konsumenten (Seeder/Child-Repo).
+# Cluster identity (node IPs, versions, classes) comes from the XCluster claim
+# (spec fields, authored by the child repo) and is mapped onto the tf.Workspace
+# varmap. This repo does NOT know the concrete base module source — it arrives as
+# spec.tofuModuleSource from the consumer (seeder/child repo).
 
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -28,13 +27,13 @@ spec:
     apiVersion: platform.devoba.de/v1alpha1
     kind: XCluster
 
-  # Outputs des Workspace (kubeconfig/talosconfig) landen im Connection-Secret
-  # des XCluster und werden ins Status-kubeconfigSecretRef projiziert.
+  # Workspace outputs (kubeconfig/talosconfig) land in the XCluster connection
+  # secret and are projected into status.kubeconfigSecretRef.
   writeConnectionSecretsToNamespace: crossplane-system
 
   mode: Pipeline
   pipeline:
-    # --- Schritt 1: tofu-Workspace = der gesamte Cluster-Lifecycle ---
+    # --- Step 1: tofu Workspace = the entire cluster lifecycle ---
     - step: provision-talos-cluster
       functionRef:
         name: function-patch-and-transform
@@ -49,18 +48,18 @@ spec:
               spec:
                 forProvider:
                   source: Remote
-                  module: ""  # patched aus spec.tofuModuleSource
-                  # Strukturierte Cluster-Definition als tfvars. varmap nimmt
-                  # beliebige Objekte/Arrays (nodes[], classes{}) — anders als
-                  # `vars` (nur flache Strings). Gemappt aus dem XCluster-spec.
+                  module: ""  # patched from spec.tofuModuleSource
+                  # Structured cluster definition as tfvars. varmap takes
+                  # arbitrary objects/arrays (nodes[], classes{}) — unlike
+                  # `vars` (flat strings only). Mapped from the XCluster spec.
                   varmap:
                     cluster_name: ""  # patched
                   enableTerraformCLILogging: true
-                # ProviderConfig (Garage-S3-Backend + SOPS_AGE_KEY-env fürs
-                # Entschlüsseln der Child-tofu-SOPS-Inputs) liefert Layer 3.
+                # ProviderConfig (Garage S3 backend + SOPS_AGE_KEY env for
+                # decrypting the child tofu SOPS inputs) is supplied by Layer 3.
                 providerConfigRef:
                   name: terraform-default
-                # kubeconfig + talosconfig (Modul-Outputs) → Connection-Secret.
+                # kubeconfig + talosconfig (module outputs) → connection secret.
                 writeConnectionSecretToRef:
                   namespace: crossplane-system
                   name: ""  # patched: <clusterName>-cluster-conn
@@ -83,7 +82,7 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.tofuModuleSource
                 toFieldPath: spec.forProvider.module
-              # --- tfvars-Mapping (1:1 base-talos-cluster-Variablen) ---
+              # --- tfvars mapping (1:1 base talos-cluster variables) ---
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.talosVersion
                 toFieldPath: spec.forProvider.varmap.talos_version
@@ -96,14 +95,14 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterEndpoint
                 toFieldPath: spec.forProvider.varmap.cluster_endpoint
-              # Strukturierte Werte: ganze Arrays/Maps werden kopiert.
+              # Structured values: whole arrays/maps are copied.
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.nodes
                 toFieldPath: spec.forProvider.varmap.nodes
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.classes
                 toFieldPath: spec.forProvider.varmap.classes
-              # Status: Connection-Secret-Referenz zurück ins XCluster.
+              # Status: connection-secret reference back into the XCluster.
               - type: ToCompositeFieldPath
                 fromFieldPath: spec.writeConnectionSecretToRef.name
                 toFieldPath: status.kubeconfigSecretRef.name
@@ -118,11 +117,11 @@ spec:
                 name: talosconfig
                 fromConnectionSecretKey: talosconfig
 
-    # --- Schritt 2: Ready-Status ableiten (Workspace Ready → XCluster Ready) ---
+    # --- Step 2: derive Ready status (Workspace Ready → XCluster Ready) ---
     - step: ready
       functionRef:
         name: function-auto-ready
 
-# Die Composition ist bewusst schlank: sie bringt den Child-Cluster auf den
-# Punkt, an dem dessen eigene (base-inlineManifest-)ArgoCD den Rest übernimmt
-# (App-of-Apps zieht die talos-platform-apps-Sub-Layer-OCIs aus dem Child-Repo).
+# The Composition is deliberately slim: it brings the child cluster to the point
+# where its own (base-inlineManifest) ArgoCD takes over the rest (the app-of-apps
+# pulls the talos-platform-apps sub-layer OCIs from the child repo).

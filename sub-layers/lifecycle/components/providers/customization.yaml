@@ -1,5 +1,5 @@
-# Customization Contract (ADR-0023). Provider-/Function-Pakete sind
-# cluster-agnostisch (gepinnte Paket-Refs). ProviderConfigs liefert der Konsument.
+# Customization Contract (ADR-0023). Provider/function packages are
+# cluster-agnostic (pinned package refs). ProviderConfigs are supplied by the consumer.
 schema_version: "1"
 component: lifecycle/providers
 cluster_agnostic: true

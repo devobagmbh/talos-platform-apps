@@ -1,8 +1,8 @@
-# Crossplane Provider-Packages — installiert vom Crossplane-Operator nach
-# dessen Bootstrap. Pinning ist Pflicht (ADR-0009 § no_latest_image_tag).
+# Crossplane provider packages — installed by the Crossplane operator after its
+# bootstrap. Pinning is mandatory (ADR-0009 § no_latest_image_tag).
 #
-# Versionen Stand 2026; vor Push via `crossplane package list` oder
-# upbound-Marketplace verifizieren.
+# Versions as of 2026; verify before push via `crossplane package list` or the
+# Upbound marketplace.
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -11,9 +11,9 @@ metadata:
   name: provider-terraform
 spec:
   package: xpkg.upbound.io/upbound/provider-terraform:v0.20.0
-  # Stage-1-Cluster-Provisionierung läuft via provider-terraform gegen
-  # das talos-cluster-Tofu-Modul (talos-seeder-cluster/stage-1/modules/talos-cluster).
-  # Provider akzeptiert SOPS-encrypted-Inputs via carlpett/sops Tofu-Provider.
+  # Stage-1 cluster provisioning runs via provider-terraform against the
+  # talos-cluster tofu module (talos-seeder-cluster/stage-1).
+  # The provider accepts SOPS-encrypted inputs via the carlpett/sops tofu provider.
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -22,30 +22,30 @@ metadata:
   name: provider-kubernetes
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
-  # Optional/Post-Provisioning: appliziert ggf. Bootstrap-Objekte ins Child
-  # (z. B. ArgoCD-Repo-Credential), FALLS das Child-tofu-root sie nicht schon
-  # als Talos-inlineManifest mitbringt. Der CNI- (Cilium) + ArgoCD-Bootstrap
-  # selbst läuft NICHT mehr hier, sondern als base-inlineManifest beim
-  # Child-tofu-apply (talos-platform-base v0.7.0 deploy_argocd + Cilium-Recipe).
+  # Optional/post-provisioning: may apply bootstrap objects into the child
+  # (e.g. ArgoCD repo credential) IF the child tofu root doesn't already bring
+  # them as a Talos inlineManifest. The CNI (Cilium) + ArgoCD bootstrap itself
+  # no longer runs here, but as a base inlineManifest at the child tofu apply
+  # (talos-platform-base v0.7.0 deploy_argocd + Cilium recipe).
 
-# provider-helm wurde ENTFERNT: Cilium/ArgoCD kommen nicht mehr als
-# nachgelagerte helm.crossplane.io/Release, sondern als Talos-inlineManifest
-# beim Cluster-Bootstrap (base liefert ArgoCD via deploy_argocd, Cilium via
-# Recipe). Die xcluster-Composition ist dadurch ein reiner tofu-Workspace.
+# provider-helm was REMOVED: Cilium/ArgoCD no longer arrive as a downstream
+# helm.crossplane.io/Release, but as a Talos inlineManifest at cluster bootstrap
+# (base delivers ArgoCD via deploy_argocd, Cilium via Recipe). The xcluster
+# Composition is therefore a pure tofu Workspace.
 
 ---
-# Composition-Functions — PFLICHT für Pipeline-Mode-Compositions (Crossplane
-# 1.18). Die xcluster-Composition läuft `mode: Pipeline` und referenziert diese
-# Functions via functionRef; ohne installierte Function-Pakete bleibt jeder
-# XCluster-Claim im Reconcile hängen. Versionen Stand 2026; vor Push verifizieren.
+# Composition functions — MANDATORY for Pipeline-mode Compositions (Crossplane
+# 1.18). The xcluster Composition runs `mode: Pipeline` and references these
+# functions via functionRef; without the function packages installed every
+# XCluster claim stalls in reconcile. Versions as of 2026; verify before push.
 apiVersion: pkg.crossplane.io/v1
 kind: Function
 metadata:
   name: function-patch-and-transform
 spec:
   package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.8.2
-  # Mappt XCluster-spec-Felder (clusterName, nodes, classes, …) auf die
-  # tf.Workspace-varmap (siehe composition-xcluster.yaml).
+  # Maps XCluster spec fields (clusterName, nodes, classes, …) onto the
+  # tf.Workspace varmap (see composition-xcluster.yaml).
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -54,11 +54,11 @@ metadata:
   name: function-auto-ready
 spec:
   package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.4.2
-  # Leitet den Ready-Status des XCluster aus den Composed Resources ab
-  # (Workspace Ready → XCluster Ready). Letzter Pipeline-Schritt.
+  # Derives the XCluster Ready status from the composed resources
+  # (Workspace Ready → XCluster Ready). Last pipeline step.
 
 ---
-# Provider-Configs (mit Cluster-Identität) leben in Layer 3 (talos-seeder-cluster):
-# ein terraform-ProviderConfig mit Garage-S3-Backend-Config + SOPS_AGE_KEY-env
-# (damit das Child-tofu-root seine SOPS-Inputs entschlüsseln kann). Diese
-# cluster-spezifischen Bindings gehören NICHT in den Modulkatalog.
+# ProviderConfigs (carrying cluster identity) live in Layer 3 (talos-seeder-cluster):
+# a terraform ProviderConfig with Garage S3 backend config + SOPS_AGE_KEY env
+# (so the child tofu root can decrypt its SOPS inputs). These cluster-specific
+# bindings do NOT belong in the module catalog.

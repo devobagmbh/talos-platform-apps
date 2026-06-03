@@ -1,12 +1,11 @@
-# CompositeResourceDefinition für XCluster — das API, mit dem ein
-# Konsumenten-Repo (Child-Repo, z. B. talos-office-lab-cluster) einen
-# Child-Cluster claimt.
+# CompositeResourceDefinition for XCluster — the API a consumer repo (child
+# repo, e.g. talos-office-lab-cluster) uses to claim a child cluster.
 #
-# Das spec-Schema spiegelt 1:1 den Variablen-Contract des base-talos-cluster-
-# Moduls (talos-platform-base v0.7.0): controlplane/worker-Rollen, Hardware-
-# Spezialisierung via `class` (→ classes-Map mit architecture/extensions/
-# overlay/config_patches). Die Composition mappt diese Felder auf die
-# tf.Workspace-varmap.
+# The spec schema mirrors 1:1 the variable contract of the base talos-cluster
+# module (talos-platform-base v0.7.0): controlplane/worker roles, hardware
+# specialisation via `class` (→ classes map with architecture/extensions/
+# overlay/config_patches). The Composition maps these fields onto the
+# tf.Workspace varmap.
 
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
@@ -35,22 +34,22 @@ spec:
               properties:
                 clusterName:
                   type: string
-                  description: "Name des Child-Clusters (z. B. office-lab) → var.cluster_name"
+                  description: "Child cluster name (e.g. office-lab) → var.cluster_name"
                 clusterEndpoint:
                   type: string
-                  description: "Kubernetes-API-Endpoint/VIP, https://…:6443 → var.cluster_endpoint"
+                  description: "Kubernetes API endpoint/VIP, https://…:6443 → var.cluster_endpoint"
                 talosVersion:
                   type: string
-                  description: "Talos-Schema-Pin (Bootstrap-fix) → var.talos_version, z. B. v1.13.0"
+                  description: "Talos schema pin (fixed at bootstrap) → var.talos_version, e.g. v1.13.0"
                 talosInstallVersion:
                   type: string
-                  description: "Talos-Installer-Version (OS-Pin, optional) → var.talos_install_version"
+                  description: "Talos installer version (OS pin, optional) → var.talos_install_version"
                 kubernetesVersion:
                   type: string
-                  description: "Kubernetes-Version → var.kubernetes_version, z. B. v1.36.0"
+                  description: "Kubernetes version → var.kubernetes_version, e.g. v1.36.0"
                 nodes:
                   type: array
-                  description: "Bare-Metal-Nodes → var.nodes (jeder bereits im Talos-Maintenance-Mode)"
+                  description: "Bare-metal nodes → var.nodes (each already in Talos maintenance mode)"
                   items:
                     type: object
                     properties:
@@ -63,18 +62,18 @@ spec:
                         enum: [controlplane, worker]
                       class:
                         type: string
-                        description: "Hardware-Klasse (Key in classes), default 'standard'"
+                        description: "Hardware class (key in classes), defaults to 'standard'"
                       config_patches:
                         type: array
-                        description: "Per-Node Machine-Config-Patches (YAML-Strings)"
+                        description: "Per-node machine-config patches (YAML strings)"
                         items:
                           type: string
                     required: [hostname, ip, role]
                 classes:
                   type: object
                   description: >-
-                    Per-Klasse Image-Factory- + Patch-Profil → var.classes. Key =
-                    Klassenname (matcht node.class). Pflicht-Key 'standard'.
+                    Per-class Image-Factory + patch profile → var.classes. Key =
+                    class name (matches node.class). The 'standard' key is mandatory.
                   additionalProperties:
                     type: object
                     properties:
@@ -100,20 +99,20 @@ spec:
                           type: string
                 platformBaseTag:
                   type: string
-                  description: "Welcher talos-platform-base-OCI-Tag konsumiert wird"
+                  description: "Which talos-platform-base OCI tag is consumed"
                 tofuModuleSource:
                   type: string
                   description: >-
-                    Tofu-Modul/Root-Source-URL für die Cluster-Provisionierung, vom
-                    Konsumenten-Repo gesetzt — z. B.
+                    Tofu module/root source URL for cluster provisioning, set by
+                    the consumer repo — e.g.
                     'git::https://github.com/devobagmbh/talos-office-lab-cluster.git//stage-1?ref=main'.
-                    Dieses Repo (talos-platform-apps) kennt die konkrete Source
-                    bewusst NICHT; die Verdrahtung von base + apps macht erst das
-                    Child-/Seeder-Repo. ArgoCD + Cilium liefert das Root als
-                    base-inlineManifest (deploy_argocd) — daher tofu-only.
+                    This repo (talos-platform-apps) deliberately does NOT know the
+                    concrete source; wiring base + apps is the child/seeder repo's
+                    job. The root delivers ArgoCD + Cilium as a base inlineManifest
+                    (deploy_argocd) — hence tofu-only.
                 appsSubLayerPins:
                   type: object
-                  description: "Map sub-layer-name → OCI-Tag (z. B. monitoring: v0.3.1)"
+                  description: "Map sub-layer-name → OCI tag (e.g. monitoring: v0.3.1)"
                   additionalProperties:
                     type: string
               required: [clusterName, clusterEndpoint, talosVersion, kubernetesVersion, nodes, classes, tofuModuleSource]

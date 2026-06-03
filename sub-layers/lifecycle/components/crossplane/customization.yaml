@@ -1,6 +1,6 @@
-# Customization Contract (ADR-0023). Crossplane-Operator ist cluster-agnostisch
-# — keine cluster-spezifischen Werte. ProviderConfigs (mit Cluster-Identität)
-# liefert das Konsumenten-Repo separat (talos-seeder-cluster/crossplane/providerconfigs/).
+# Customization Contract (ADR-0023). The Crossplane operator is cluster-agnostic
+# — no cluster-specific values. ProviderConfigs (carrying cluster identity) are
+# supplied separately by the consumer repo (talos-seeder-cluster/crossplane/providerconfigs/).
 schema_version: "1"
 component: lifecycle/crossplane
 cluster_agnostic: true
