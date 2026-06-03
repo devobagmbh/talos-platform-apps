@@ -19,22 +19,46 @@ spec:
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
-  name: provider-helm
-spec:
-  package: xpkg.upbound.io/crossplane-contrib/provider-helm:v0.20.0
-  # Bootstrappt Cilium/Linstor/Argo nach Cluster-Up.
-
----
-apiVersion: pkg.crossplane.io/v1
-kind: Provider
-metadata:
   name: provider-kubernetes
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
-  # Appliziert App-of-Apps + RBAC-Manifeste nach Argo-Install.
+  # Optional/Post-Provisioning: appliziert ggf. Bootstrap-Objekte ins Child
+  # (z. B. ArgoCD-Repo-Credential), FALLS das Child-tofu-root sie nicht schon
+  # als Talos-inlineManifest mitbringt. Der CNI- (Cilium) + ArgoCD-Bootstrap
+  # selbst läuft NICHT mehr hier, sondern als base-inlineManifest beim
+  # Child-tofu-apply (talos-platform-base v0.7.0 deploy_argocd + Cilium-Recipe).
+
+# provider-helm wurde ENTFERNT: Cilium/ArgoCD kommen nicht mehr als
+# nachgelagerte helm.crossplane.io/Release, sondern als Talos-inlineManifest
+# beim Cluster-Bootstrap (base liefert ArgoCD via deploy_argocd, Cilium via
+# Recipe). Die xcluster-Composition ist dadurch ein reiner tofu-Workspace.
 
 ---
-# Provider-Configs (mit Cluster-Identität) leben in Layer 3 (talos-seeder-cluster).
-# Beispielsweise muss provider-terraform ein ProviderConfig haben, das auf
-# die Seeder-Garage-S3-Credentials zeigt. Diese Cluster-spezifischen
-# Bindings gehören NICHT in den Modulkatalog.
+# Composition-Functions — PFLICHT für Pipeline-Mode-Compositions (Crossplane
+# 1.18). Die xcluster-Composition läuft `mode: Pipeline` und referenziert diese
+# Functions via functionRef; ohne installierte Function-Pakete bleibt jeder
+# XCluster-Claim im Reconcile hängen. Versionen Stand 2026; vor Push verifizieren.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.8.2
+  # Mappt XCluster-spec-Felder (clusterName, nodes, classes, …) auf die
+  # tf.Workspace-varmap (siehe composition-xcluster.yaml).
+
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-auto-ready
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.4.2
+  # Leitet den Ready-Status des XCluster aus den Composed Resources ab
+  # (Workspace Ready → XCluster Ready). Letzter Pipeline-Schritt.
+
+---
+# Provider-Configs (mit Cluster-Identität) leben in Layer 3 (talos-seeder-cluster):
+# ein terraform-ProviderConfig mit Garage-S3-Backend-Config + SOPS_AGE_KEY-env
+# (damit das Child-tofu-root seine SOPS-Inputs entschlüsseln kann). Diese
+# cluster-spezifischen Bindings gehören NICHT in den Modulkatalog.

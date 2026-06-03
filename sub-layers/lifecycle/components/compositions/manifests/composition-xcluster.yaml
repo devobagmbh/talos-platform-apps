@@ -1,14 +1,21 @@
-# Composition für XCluster — orchestriert Tofu + Helm + K8s Provider-
-# Resources in deklarativer Reihenfolge, um aus einem XCluster-Claim
-# einen lauffähigen Child-Cluster zu machen.
+# Composition für XCluster — provisioniert einen Child-Cluster über EINEN
+# tofu-Workspace (provider-terraform) gegen das base-talos-cluster-Modul.
 #
-# Phase-1-Scope (Minimal-läuft): Composition-Skelett mit den drei
-# Hauptphasen (Tofu-Workspace → Cilium-Bootstrap → Argo-Bootstrap).
-# Konkrete Workspace-Module-URLs, Helm-Repo-URLs und Argo-App-of-Apps-
-# Pfade kommen aus dem XCluster-Claim (spec-Felder).
+# Tofu-only (geändert 2026-06-03): Cilium + ArgoCD kommen NICHT mehr als
+# nachgelagerte helm.crossplane.io/Release, sondern als Talos-inlineManifest
+# beim Cluster-Bootstrap selbst — talos-platform-base v0.7.0 liefert ArgoCD via
+# `deploy_argocd` (PR #102) und Cilium via Recipe (KPS-Stil). Der base-Health-
+# Gate (`data.talos_cluster_health`) wartet ohnehin auf Nodes=Ready (= CNI da),
+# bevor `tofu apply` zurückkehrt. Ein separater Helm-Schritt wäre damit
+# redundant UND würde gegen den Health-Gate laufen. Sobald das Child oben ist,
+# übernimmt dessen EIGENE (inlineManifest-)ArgoCD die GitOps-Reconciliation aus
+# dem Child-Repo. Crossplanes Rolle endet beim lauffähigen, self-bootstrapping
+# Cluster.
 #
-# Bei Vollausbau (Phase 2+) kommen weitere Schritte dazu: Linstor-CRs,
-# Vault-PKI-Bootstrap, Prometheus-Scrape-Discovery, etc.
+# Cluster-Identität (Node-IPs, Versionen, Klassen) kommt aus dem XCluster-Claim
+# (spec-Felder, vom Child-Repo authored) und wird auf die tf.Workspace-varmap
+# gemappt. Die konkrete base-Modul-Source kennt dieses Repo NICHT — sie kommt
+# als spec.tofuModuleSource aus dem Konsumenten (Seeder/Child-Repo).
 
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -21,10 +28,14 @@ spec:
     apiVersion: platform.devoba.de/v1alpha1
     kind: XCluster
 
+  # Outputs des Workspace (kubeconfig/talosconfig) landen im Connection-Secret
+  # des XCluster und werden ins Status-kubeconfigSecretRef projiziert.
+  writeConnectionSecretsToNamespace: crossplane-system
+
   mode: Pipeline
   pipeline:
-    # --- Schritt 1: Tofu-Workspace für Talos-Cluster-Provisionierung ---
-    - step: tofu-talos-cluster
+    # --- Schritt 1: tofu-Workspace = der gesamte Cluster-Lifecycle ---
+    - step: provision-talos-cluster
       functionRef:
         name: function-patch-and-transform
       input:
@@ -38,83 +49,80 @@ spec:
               spec:
                 forProvider:
                   source: Remote
-                  # source-Pfad wird per patches gesetzt aus XCluster-spec
-                  module: ""  # patched
-                  vars: []  # patched aus spec.nodes + spec.talosVersion
+                  module: ""  # patched aus spec.tofuModuleSource
+                  # Strukturierte Cluster-Definition als tfvars. varmap nimmt
+                  # beliebige Objekte/Arrays (nodes[], classes{}) — anders als
+                  # `vars` (nur flache Strings). Gemappt aus dem XCluster-spec.
+                  varmap:
+                    cluster_name: ""  # patched
+                  enableTerraformCLILogging: true
+                # ProviderConfig (Garage-S3-Backend + SOPS_AGE_KEY-env fürs
+                # Entschlüsseln der Child-tofu-SOPS-Inputs) liefert Layer 3.
                 providerConfigRef:
-                  name: terraform-default  # ProviderConfig kommt aus Layer 3
+                  name: terraform-default
+                # kubeconfig + talosconfig (Modul-Outputs) → Connection-Secret.
+                writeConnectionSecretToRef:
+                  namespace: crossplane-system
+                  name: ""  # patched: <clusterName>-cluster-conn
             patches:
-              - fromFieldPath: spec.clusterName
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
                 toFieldPath: metadata.name
                 transforms:
                   - type: string
-                    string:
-                      fmt: "talos-%s"
-              # Modul-Source kommt aus dem XCluster-Claim (spec.tofuModuleSource),
-              # gesetzt vom Konsumenten-Repo (talos-seeder-cluster). Dieses Repo
-              # kennt die konkrete base-/Modul-URL bewusst NICHT — apps und base
-              # werden erst im Seeder-Repo verdrahtet.
-              - fromFieldPath: spec.tofuModuleSource
+                    string: { fmt: "talos-%s" }
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.varmap.cluster_name
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.writeConnectionSecretToRef.name
+                transforms:
+                  - type: string
+                    string: { fmt: "%s-cluster-conn" }
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.tofuModuleSource
                 toFieldPath: spec.forProvider.module
+              # --- tfvars-Mapping (1:1 base-talos-cluster-Variablen) ---
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.talosVersion
+                toFieldPath: spec.forProvider.varmap.talos_version
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.talosInstallVersion
+                toFieldPath: spec.forProvider.varmap.talos_install_version
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.kubernetesVersion
+                toFieldPath: spec.forProvider.varmap.kubernetes_version
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterEndpoint
+                toFieldPath: spec.forProvider.varmap.cluster_endpoint
+              # Strukturierte Werte: ganze Arrays/Maps werden kopiert.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.nodes
+                toFieldPath: spec.forProvider.varmap.nodes
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.classes
+                toFieldPath: spec.forProvider.varmap.classes
+              # Status: Connection-Secret-Referenz zurück ins XCluster.
+              - type: ToCompositeFieldPath
+                fromFieldPath: spec.writeConnectionSecretToRef.name
+                toFieldPath: status.kubeconfigSecretRef.name
+              - type: ToCompositeFieldPath
+                fromFieldPath: spec.writeConnectionSecretToRef.namespace
+                toFieldPath: status.kubeconfigSecretRef.namespace
+            connectionDetails:
+              - type: FromConnectionSecretKey
+                name: kubeconfig
+                fromConnectionSecretKey: kubeconfig
+              - type: FromConnectionSecretKey
+                name: talosconfig
+                fromConnectionSecretKey: talosconfig
 
-    # --- Schritt 2: Cilium-Bootstrap nach Cluster-Up ---
-    - step: helm-cilium-bootstrap
+    # --- Schritt 2: Ready-Status ableiten (Workspace Ready → XCluster Ready) ---
+    - step: ready
       functionRef:
-        name: function-patch-and-transform
-      input:
-        apiVersion: pt.fn.crossplane.io/v1beta1
-        kind: Resources
-        resources:
-          - name: cilium-release
-            base:
-              apiVersion: helm.crossplane.io/v1beta1
-              kind: Release
-              spec:
-                forProvider:
-                  namespace: kube-system
-                  chart:
-                    name: cilium
-                    repository: https://helm.cilium.io
-                    version: 1.19.3  # TODO Phase-1-Acceptance: pinnen, Source-Allow-Liste (apps/helm_chart_source_official)
-                providerConfigRef:
-                  name: ""  # patched — zeigt auf kubeconfig-Secret aus Schritt 1
-            patches:
-              - fromFieldPath: spec.clusterName
-                toFieldPath: spec.providerConfigRef.name
-                transforms:
-                  - type: string
-                    string:
-                      fmt: "helm-%s"
+        name: function-auto-ready
 
-    # --- Schritt 3: Argo-CD-Bootstrap + App-of-Apps ---
-    - step: helm-argocd-bootstrap
-      functionRef:
-        name: function-patch-and-transform
-      input:
-        apiVersion: pt.fn.crossplane.io/v1beta1
-        kind: Resources
-        resources:
-          - name: argocd-release
-            base:
-              apiVersion: helm.crossplane.io/v1beta1
-              kind: Release
-              spec:
-                forProvider:
-                  namespace: argocd
-                  chart:
-                    name: argo-cd
-                    repository: https://argoproj.github.io/argo-helm
-                    version: 7.7.0  # TODO Phase-1-Acceptance: pinnen
-                providerConfigRef:
-                  name: ""  # patched
-            patches:
-              - fromFieldPath: spec.clusterName
-                toFieldPath: spec.providerConfigRef.name
-                transforms:
-                  - type: string
-                    string:
-                      fmt: "helm-%s"
-
-# Die XCluster-Composition ist intentional schlank — sie bringt den
-# Child-Cluster auf den Punkt, an dem Argo-CD den Rest übernimmt
-# (App-of-Apps zieht talos-platform-apps Sub-Layer-OCIs).
+# Die Composition ist bewusst schlank: sie bringt den Child-Cluster auf den
+# Punkt, an dem dessen eigene (base-inlineManifest-)ArgoCD den Rest übernimmt
+# (App-of-Apps zieht die talos-platform-apps-Sub-Layer-OCIs aus dem Child-Repo).
