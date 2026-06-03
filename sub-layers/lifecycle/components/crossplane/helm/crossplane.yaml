@@ -7,9 +7,9 @@
 metadata:
   chart: crossplane
   repo: https://charts.crossplane.io/stable
-  version: 1.18.0  # v1.x line. NOTE: crossplane core is now v2.x (v2.3.1) — a major
-  # jump (namespaced XRs, Composition/XRD changes). Staying on v1.x until a v2
-  # migration is decided. Verify the exact latest v1.x chart at push time.
+  version: 2.3.1  # Crossplane v2 (greenfield → current line). v2 = namespaced XRs
+  # (XRD apiextensions.crossplane.io/v2, scope: Namespaced); no claims.
+  # >>> VERIFY the exact latest v2.x chart at push (`helm search repo crossplane-stable`).
   namespace: crossplane-system
 
 values:
@@ -37,11 +37,10 @@ values:
     medium: ""
     sizeLimit: 5Gi
 
-  # Composition revisions are essential for GitOps reconciliation.
-  # EnvironmentConfigs moved into function-environment-configs in Crossplane
-  # 1.18+; the old --enable-environment-configs is removed and crashes the pod.
-  args:
-    - --enable-composition-revisions
+  # No extra args on v2: composition revisions are always-on (the v1
+  # --enable-composition-revisions flag is removed and would crash the pod, like
+  # --enable-environment-configs did). >>> VERIFY the v2 chart values surface
+  # (rbacManager/resourcesCrossplane/packageCache key names may differ on v2).
 
   # Proactive reconcile interval (default: 1 min)
   pollInterval: 1m

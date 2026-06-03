@@ -1,25 +1,30 @@
 # CompositeResourceDefinition for XCluster — the API a consumer repo (child
-# repo, e.g. talos-office-lab-cluster) uses to claim a child cluster.
+# repo, e.g. talos-office-lab-cluster) uses to request a child cluster.
 #
-# Arch B (DRY, ADR-0022 rev / ADR-0006): the XCluster claim is DELIBERATELY THIN.
+# Crossplane v2 (apiextensions.crossplane.io/v2): scope is Namespaced — the
+# consumer creates an XCluster directly in a namespace (no separate claim; the
+# v1 claim model is gone in v2). The package set is pinned to the v1.x-line
+# providers/functions; see providers + crossplane/helm for the v2 decision.
+#
+# Arch B (DRY, ADR-0022 rev / ADR-0006): the XCluster is DELIBERATELY THIN.
 # Cluster identity (nodes, classes, versions, endpoint) lives ONLY in the
 # consumer's committed cluster.yaml, read by the consumer's `stage-1/` tofu root
-# — the SAME root the Stage-0 laptop `tofu apply` runs. The claim therefore must
-# NOT duplicate that identity; it only tells Crossplane WHICH root to run and
-# where the secrets are. Update = edit cluster.yaml once, not the claim too.
+# — the SAME root the Stage-0 laptop `tofu apply` runs. The XCluster therefore
+# must NOT duplicate that identity; it only tells Crossplane WHICH root to run
+# and where the secrets are. Update = edit cluster.yaml once, not the XCluster too.
 
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
   name: xclusters.platform.devoba.de
 spec:
+  scope: Namespaced # v2 default; the consumer creates an XCluster in a namespace
   group: platform.devoba.de
   names:
     kind: XCluster
     plural: xclusters
-  claimNames:
-    kind: Cluster
-    plural: clusters
+  # No claimNames — claims are a v1/LegacyCluster concept; in v2 the namespaced
+  # XCluster IS the consumer-facing object.
   defaultCompositionRef:
     name: xcluster-talos
   versions:

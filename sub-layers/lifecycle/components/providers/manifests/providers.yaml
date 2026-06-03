@@ -4,11 +4,11 @@
 # Versions verified 2026-06 against the GitHub release pages / Upbound
 # marketplace. Confirm the exact current latest at push time.
 #
-# >>> DECISION (crossplane v1 ↔ v2): the providers/functions below are pinned to
-# >>> their v1.x-era latest, compatible with the crossplane chart 1.18.0 in
-# >>> crossplane/helm/crossplane.yaml. Crossplane core is now v2.x (v2.3.1) — a
-# >>> major jump (namespaced XRs, Composition/XRD changes). Migrating to v2 is a
-# >>> separate architecture decision; until then stay on the v1.x line.
+# Crossplane target: v2.x (chart 2.3.1, crossplane/helm/crossplane.yaml) —
+# greenfield, so we start on the current major (namespaced XRs, XRD
+# apiextensions.crossplane.io/v2). The provider/function packages below are the
+# current v1.x-line releases and run on Crossplane v2. >>> VERIFY each package's
+# v2 compatibility (crossplane-contrib providers/functions support v2; confirm).
 
 ---
 apiVersion: pkg.crossplane.io/v1
