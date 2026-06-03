@@ -1,8 +1,14 @@
-# Crossplane provider packages — installed by the Crossplane operator after its
-# bootstrap. Pinning is mandatory (ADR-0009 § no_latest_image_tag).
+# Crossplane provider + function packages — installed by the Crossplane operator
+# after its bootstrap. Pinning is mandatory (ADR-0009 § no_latest_image_tag).
 #
-# Versions as of 2026; verify before push via `crossplane package list` or the
-# Upbound marketplace.
+# Versions verified 2026-06 against the GitHub release pages / Upbound
+# marketplace. Confirm the exact current latest at push time.
+#
+# >>> DECISION (crossplane v1 ↔ v2): the providers/functions below are pinned to
+# >>> their v1.x-era latest, compatible with the crossplane chart 1.18.0 in
+# >>> crossplane/helm/crossplane.yaml. Crossplane core is now v2.x (v2.3.1) — a
+# >>> major jump (namespaced XRs, Composition/XRD changes). Migrating to v2 is a
+# >>> separate architecture decision; until then stay on the v1.x line.
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -10,10 +16,13 @@ kind: Provider
 metadata:
   name: provider-terraform
 spec:
-  package: xpkg.upbound.io/upbound/provider-terraform:v0.20.0
+  package: xpkg.upbound.io/upbound/provider-terraform:v1.1.4
   # Stage-1 cluster provisioning runs via provider-terraform against the
-  # talos-cluster tofu module (talos-seeder-cluster/stage-1).
+  # consumer's stage-1 tofu root (e.g. talos-seeder-cluster//stage-1).
   # The provider accepts SOPS-encrypted inputs via the carlpett/sops tofu provider.
+  # >>> VERIFY: provider-terraform v1.x — confirm the Workspace API group/version
+  # >>> still is tf.upbound.io/v1beta1 (used in composition-xcluster.yaml) and the
+  # >>> env/varFiles/backend fields match.
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -21,7 +30,7 @@ kind: Provider
 metadata:
   name: provider-kubernetes
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
+  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v1.2.1
   # Optional/post-provisioning: may apply bootstrap objects into the child
   # (e.g. ArgoCD repo credential) IF the child tofu root doesn't already bring
   # them as a Talos inlineManifest. The CNI (Cilium) + ArgoCD bootstrap itself
@@ -34,18 +43,17 @@ spec:
 # Composition is therefore a pure tofu Workspace.
 
 ---
-# Composition functions — MANDATORY for Pipeline-mode Compositions (Crossplane
-# 1.18). The xcluster Composition runs `mode: Pipeline` and references these
-# functions via functionRef; without the function packages installed every
-# XCluster claim stalls in reconcile. Versions as of 2026; verify before push.
+# Composition functions — MANDATORY for Pipeline-mode Compositions. The xcluster
+# Composition runs `mode: Pipeline` and references these via functionRef; without
+# the function packages installed every XCluster claim stalls in reconcile.
 apiVersion: pkg.crossplane.io/v1
 kind: Function
 metadata:
   name: function-patch-and-transform
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.8.2
-  # Maps XCluster spec fields (clusterName, nodes, classes, …) onto the
-  # tf.Workspace varmap (see composition-xcluster.yaml).
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.10.6
+  # Maps the thin XCluster spec (clusterName, tofuModuleSource, secretName) onto
+  # the provider-terraform Workspace fields (see composition-xcluster.yaml).
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -53,7 +61,7 @@ kind: Function
 metadata:
   name: function-auto-ready
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.4.2
+  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.6.5
   # Derives the XCluster Ready status from the composed resources
   # (Workspace Ready → XCluster Ready). Last pipeline step.
 
