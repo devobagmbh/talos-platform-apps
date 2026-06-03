@@ -2,18 +2,18 @@
 
 `CompositeResourceDefinition` `XCluster` + its `Composition` for child-cluster provisioning (e.g. office-lab).
 
-`XCluster` is the platform-internal API. An `XCluster` manifest describes a complete Talos child cluster (`clusterName`, `clusterEndpoint`, `talosVersion`, `kubernetesVersion`, `nodes` incl. `class`, `classes`, `tofuModuleSource`) — the spec schema mirrors 1:1 the variable contract of the base `talos-cluster` module (v0.7.0).
+`XCluster` is the platform-internal API. **Arch B (DRY):** the claim is **thin** — `clusterName` + `tofuModuleSource` (+ optional `secretName`). It does **not** carry cluster identity (nodes/classes/versions). That identity lives once in the consumer's committed `cluster.yaml`, read by the consumer's self-contained `stage-1/` tofu root — the **same root** the Stage-0 laptop `tofu apply` runs. Update = edit `cluster.yaml` once, never the claim too.
 
-The Composition is **tofu-only** (changed 2026-06-03): a single `Workspace` (provider-terraform) against the base module; the spec fields are mapped onto the Workspace `varmap` (tfvars) via `function-patch-and-transform`, and `function-auto-ready` derives the Ready status.
+The Composition is **tofu-only**: a single `Workspace` (provider-terraform) runs that consumer root (`source: Remote`, `module` = `tofuModuleSource`). Crossplane passes only **secrets** through (`TF_VAR_sops_age_key`, `TF_VAR_tf_encryption_passphrase`, Garage `AWS_*`) via the per-cluster Secret `<clusterName>-tofu-secrets`, and collects the `kubeconfig`/`talosconfig` outputs; `function-auto-ready` derives the Ready status.
 
-**No** downstream Cilium/ArgoCD Helm step anymore: the child brings its substrate itself — `talos-platform-base` v0.7.0 delivers ArgoCD via `deploy_argocd` (PR #102) and Cilium via Recipe as a Talos `inlineManifest` at bootstrap. The base health gate (`data.talos_cluster_health`) already waits for nodes=Ready (CNI up) before `tofu apply` returns — a separate Helm step would be redundant and race the gate. Once the child is up, its own (inlineManifest) ArgoCD takes over GitOps reconciliation from the child repo.
+**No** downstream Cilium/ArgoCD Helm step: the child brings its substrate itself — `talos-platform-base` v0.7.0 delivers ArgoCD via `deploy_argocd` (PR #102) and Cilium via Recipe as a Talos `inlineManifest` at bootstrap. The base health gate (`data.talos_cluster_health`) waits for nodes=Ready (CNI up) before `tofu apply` returns. Once the child is up, its own (inlineManifest) ArgoCD takes over GitOps from the child repo.
 
 ## Contents
 
-- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` (schema = base variable contract: clusterName, clusterEndpoint, talos/kubernetesVersion, nodes+class, classes, tofuModuleSource, …).
-- `manifests/composition-xcluster.yaml` — `Composition` (`mode: Pipeline`, tofu-only: provision → ready).
+- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` (**thin**: clusterName, tofuModuleSource, optional secretName).
+- `manifests/composition-xcluster.yaml` — `Composition` (`mode: Pipeline`, runs the consumer root → ready). Contains `VERIFY` markers for the provider-terraform `Workspace` env/backend shape to confirm against a running Crossplane.
 
-> **ADR-0022 note:** the tofu-only rework follows the base OpenTofu cutover (v0.7.0, node/class defs in the consumer root) + PR #102 (ArgoCD via tofu). ADR-0022 (ConfigMap pattern) needs a matching revision — tracked separately.
+> **ADR-0022 note:** Arch B (thin claim + consumer-root-runner) follows the base OpenTofu cutover (v0.7.0, node/class defs in the consumer root) + PR #102 (ArgoCD via tofu). ADR-0022 (old ConfigMap+go-templating pattern) needs a matching revision — tracked in talos-platform-docs#72.
 
 ## Sync-wave position
 

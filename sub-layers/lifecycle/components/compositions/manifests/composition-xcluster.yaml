@@ -1,20 +1,20 @@
-# Composition for XCluster — provisions a child cluster via ONE tofu Workspace
-# (provider-terraform) against the base talos-cluster module.
+# Composition for XCluster — runs the consumer's self-contained `stage-1/` tofu
+# root via ONE provider-terraform Workspace (Arch B, DRY).
 #
-# Tofu-only (changed 2026-06-03): Cilium + ArgoCD no longer arrive as a
-# downstream helm.crossplane.io/Release, but as a Talos inlineManifest at the
-# cluster bootstrap itself — talos-platform-base v0.7.0 delivers ArgoCD via
-# `deploy_argocd` (PR #102) and Cilium via Recipe (KPS style). The base health
-# gate (`data.talos_cluster_health`) already waits for nodes=Ready (= CNI up)
-# before `tofu apply` returns. A separate Helm step would therefore be redundant
-# AND would race the health gate. Once the child is up, its OWN
-# (inlineManifest) ArgoCD takes over GitOps reconciliation from the child repo.
-# Crossplane's role ends at a running, self-bootstrapping cluster.
+# The Workspace runs the SAME root the Stage-0 laptop `tofu apply` runs; that
+# root reads the consumer's committed cluster.yaml (single source of cluster
+# identity — no duplication into the claim) and calls the base talos-cluster
+# module with deploy_argocd = true. Crossplane only passes through SECRETS
+# (sops_age_key, tf encryption passphrase, Garage S3 creds) and collects the
+# kubeconfig/talosconfig outputs. Cilium + ArgoCD come up as base inlineManifest
+# at bootstrap; the base health gate makes `tofu apply` block until the cluster
+# is online. Crossplane's role ends at a running, self-bootstrapping cluster.
 #
-# Cluster identity (node IPs, versions, classes) comes from the XCluster claim
-# (spec fields, authored by the child repo) and is mapped onto the tf.Workspace
-# varmap. This repo does NOT know the concrete base module source — it arrives as
-# spec.tofuModuleSource from the consumer (seeder/child repo).
+# >>> VERIFY against a running Crossplane + provider-terraform v0.20: the exact
+# >>> Workspace.spec.forProvider.env secretKeyRef shape, how the S3 backend
+# >>> (DS720+ Garage, see consumer stage-1/versions.tf partial backend) is
+# >>> completed for the in-cluster run, and writeConnectionSecret key names
+# >>> (kubeconfig/talosconfig from the module outputs). Markers: VERIFY below.
 
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
@@ -27,13 +27,11 @@ spec:
     apiVersion: platform.devoba.de/v1alpha1
     kind: XCluster
 
-  # Workspace outputs (kubeconfig/talosconfig) land in the XCluster connection
-  # secret and are projected into status.kubeconfigSecretRef.
   writeConnectionSecretsToNamespace: crossplane-system
 
   mode: Pipeline
   pipeline:
-    # --- Step 1: tofu Workspace = the entire cluster lifecycle ---
+    # --- Step 1: run the consumer stage-1 root = the entire cluster lifecycle ---
     - step: provision-talos-cluster
       functionRef:
         name: function-patch-and-transform
@@ -48,15 +46,38 @@ spec:
               spec:
                 forProvider:
                   source: Remote
-                  module: ""  # patched from spec.tofuModuleSource
-                  # Structured cluster definition as tfvars. varmap takes
-                  # arbitrary objects/arrays (nodes[], classes{}) — unlike
-                  # `vars` (flat strings only). Mapped from the XCluster spec.
-                  varmap:
-                    cluster_name: ""  # patched
+                  module: ""  # patched from spec.tofuModuleSource (the stage-1 root git URL)
                   enableTerraformCLILogging: true
-                # ProviderConfig (Garage S3 backend + SOPS_AGE_KEY env for
-                # decrypting the child tofu SOPS inputs) is supplied by Layer 3.
+                  # Secrets only — NO cluster identity (that lives in the root's
+                  # committed cluster.yaml). The per-cluster Secret
+                  # (<clusterName>-tofu-secrets, in crossplane-system) is supplied
+                  # by Layer 3 (consumer repo, SOPS/ESO).
+                  # VERIFY: env[].secretKeyRef support + exact field shape in
+                  # provider-terraform v0.20 (alternatively spec.forProvider.varFiles
+                  # referencing a Secret with a tfvars file).
+                  env:
+                    - name: TF_VAR_sops_age_key
+                      secretKeyRef:
+                        namespace: crossplane-system
+                        name: ""  # patched: <clusterName>-tofu-secrets
+                        key: sops_age_key
+                    - name: TF_VAR_tf_encryption_passphrase
+                      secretKeyRef:
+                        namespace: crossplane-system
+                        name: ""  # patched
+                        key: tf_encryption_passphrase
+                    - name: AWS_ACCESS_KEY_ID
+                      secretKeyRef:
+                        namespace: crossplane-system
+                        name: ""  # patched
+                        key: aws_access_key_id
+                    - name: AWS_SECRET_ACCESS_KEY
+                      secretKeyRef:
+                        namespace: crossplane-system
+                        name: ""  # patched
+                        key: aws_secret_access_key
+                # ProviderConfig completes the S3 backend (DS720+ Garage
+                # endpoint/bucket) — see consumer crossplane/providerconfigs/.
                 providerConfigRef:
                   name: terraform-default
                 # kubeconfig + talosconfig (module outputs) → connection secret.
@@ -71,37 +92,39 @@ spec:
                   - type: string
                     string: { fmt: "talos-%s" }
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.clusterName
-                toFieldPath: spec.forProvider.varmap.cluster_name
+                fromFieldPath: spec.tofuModuleSource
+                toFieldPath: spec.forProvider.module
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.writeConnectionSecretToRef.name
                 transforms:
                   - type: string
                     string: { fmt: "%s-cluster-conn" }
+              # Secret name (<clusterName>-tofu-secrets) into every env secretKeyRef.
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.tofuModuleSource
-                toFieldPath: spec.forProvider.module
-              # --- tfvars mapping (1:1 base talos-cluster variables) ---
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.env[0].secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { fmt: "%s-tofu-secrets" }
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.talosVersion
-                toFieldPath: spec.forProvider.varmap.talos_version
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.env[1].secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { fmt: "%s-tofu-secrets" }
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.talosInstallVersion
-                toFieldPath: spec.forProvider.varmap.talos_install_version
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.env[2].secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { fmt: "%s-tofu-secrets" }
               - type: FromCompositeFieldPath
-                fromFieldPath: spec.kubernetesVersion
-                toFieldPath: spec.forProvider.varmap.kubernetes_version
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.clusterEndpoint
-                toFieldPath: spec.forProvider.varmap.cluster_endpoint
-              # Structured values: whole arrays/maps are copied.
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.nodes
-                toFieldPath: spec.forProvider.varmap.nodes
-              - type: FromCompositeFieldPath
-                fromFieldPath: spec.classes
-                toFieldPath: spec.forProvider.varmap.classes
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.env[3].secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { fmt: "%s-tofu-secrets" }
               # Status: connection-secret reference back into the XCluster.
               - type: ToCompositeFieldPath
                 fromFieldPath: spec.writeConnectionSecretToRef.name
@@ -122,6 +145,6 @@ spec:
       functionRef:
         name: function-auto-ready
 
-# The Composition is deliberately slim: it brings the child cluster to the point
-# where its own (base-inlineManifest) ArgoCD takes over the rest (the app-of-apps
-# pulls the talos-platform-apps sub-layer OCIs from the child repo).
+# The Composition is deliberately thin: it runs the consumer root and collects
+# credentials. Cluster identity stays in the root's committed cluster.yaml — one
+# config, whether applied by the laptop or by Crossplane.

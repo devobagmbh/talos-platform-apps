@@ -1,11 +1,12 @@
 # CompositeResourceDefinition for XCluster — the API a consumer repo (child
 # repo, e.g. talos-office-lab-cluster) uses to claim a child cluster.
 #
-# The spec schema mirrors 1:1 the variable contract of the base talos-cluster
-# module (talos-platform-base v0.7.0): controlplane/worker roles, hardware
-# specialisation via `class` (→ classes map with architecture/extensions/
-# overlay/config_patches). The Composition maps these fields onto the
-# tf.Workspace varmap.
+# Arch B (DRY, ADR-0022 rev / ADR-0006): the XCluster claim is DELIBERATELY THIN.
+# Cluster identity (nodes, classes, versions, endpoint) lives ONLY in the
+# consumer's committed cluster.yaml, read by the consumer's `stage-1/` tofu root
+# — the SAME root the Stage-0 laptop `tofu apply` runs. The claim therefore must
+# NOT duplicate that identity; it only tells Crossplane WHICH root to run and
+# where the secrets are. Update = edit cluster.yaml once, not the claim too.
 
 apiVersion: apiextensions.crossplane.io/v1
 kind: CompositeResourceDefinition
@@ -34,88 +35,28 @@ spec:
               properties:
                 clusterName:
                   type: string
-                  description: "Child cluster name (e.g. office-lab) → var.cluster_name"
-                clusterEndpoint:
-                  type: string
-                  description: "Kubernetes API endpoint/VIP, https://…:6443 → var.cluster_endpoint"
-                talosVersion:
-                  type: string
-                  description: "Talos schema pin (fixed at bootstrap) → var.talos_version, e.g. v1.13.0"
-                talosInstallVersion:
-                  type: string
-                  description: "Talos installer version (OS pin, optional) → var.talos_install_version"
-                kubernetesVersion:
-                  type: string
-                  description: "Kubernetes version → var.kubernetes_version, e.g. v1.36.0"
-                nodes:
-                  type: array
-                  description: "Bare-metal nodes → var.nodes (each already in Talos maintenance mode)"
-                  items:
-                    type: object
-                    properties:
-                      hostname:
-                        type: string
-                      ip:
-                        type: string
-                      role:
-                        type: string
-                        enum: [controlplane, worker]
-                      class:
-                        type: string
-                        description: "Hardware class (key in classes), defaults to 'standard'"
-                      config_patches:
-                        type: array
-                        description: "Per-node machine-config patches (YAML strings)"
-                        items:
-                          type: string
-                    required: [hostname, ip, role]
-                classes:
-                  type: object
                   description: >-
-                    Per-class Image-Factory + patch profile → var.classes. Key =
-                    class name (matches node.class). The 'standard' key is mandatory.
-                  additionalProperties:
-                    type: object
-                    properties:
-                      architecture:
-                        type: string
-                        enum: [amd64, arm64]
-                      extensions:
-                        type: array
-                        items:
-                          type: string
-                      overlay:
-                        type: object
-                        properties:
-                          name: { type: string }
-                          image: { type: string }
-                          options:
-                            type: object
-                            additionalProperties: { type: string }
-                        required: [name, image]
-                      config_patches:
-                        type: array
-                        items:
-                          type: string
-                platformBaseTag:
-                  type: string
-                  description: "Which talos-platform-base OCI tag is consumed"
+                    Cluster name (e.g. office-lab). Used for labeling, the tofu
+                    Workspace name, the connection-secret name, and (by
+                    convention) the per-cluster secret name <clusterName>-tofu-secrets.
                 tofuModuleSource:
                   type: string
                   description: >-
-                    Tofu module/root source URL for cluster provisioning, set by
-                    the consumer repo — e.g.
+                    Git source URL of the consumer's self-contained `stage-1/`
+                    tofu root (which reads its committed cluster.yaml and calls the
+                    base talos-cluster module with deploy_argocd) — e.g.
                     'git::https://github.com/devobagmbh/talos-office-lab-cluster.git//stage-1?ref=main'.
-                    This repo (talos-platform-apps) deliberately does NOT know the
-                    concrete source; wiring base + apps is the child/seeder repo's
-                    job. The root delivers ArgoCD + Cilium as a base inlineManifest
-                    (deploy_argocd) — hence tofu-only.
-                appsSubLayerPins:
-                  type: object
-                  description: "Map sub-layer-name → OCI tag (e.g. monitoring: v0.3.1)"
-                  additionalProperties:
-                    type: string
-              required: [clusterName, clusterEndpoint, talosVersion, kubernetesVersion, nodes, classes, tofuModuleSource]
+                    The SAME root the Stage-0 laptop runs. ArgoCD + Cilium come up
+                    as base inlineManifest (deploy_argocd) — tofu-only.
+                secretName:
+                  type: string
+                  description: >-
+                    Optional override for the Secret (in crossplane-system) that
+                    carries the runner secrets (TF_VAR_sops_age_key,
+                    TF_VAR_tf_encryption_passphrase, AWS_ACCESS_KEY_ID,
+                    AWS_SECRET_ACCESS_KEY for the Garage S3 state backend).
+                    Default convention: <clusterName>-tofu-secrets.
+              required: [clusterName, tofuModuleSource]
             status:
               type: object
               properties:
