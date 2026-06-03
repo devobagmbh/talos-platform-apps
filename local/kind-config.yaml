@@ -1,5 +1,5 @@
 # Kind-Cluster für lokale Sub-Layer-Entwicklung — prod-konform (Cilium-CNI +
-# Gateway-API, wie DHQ-Cluster laut ADR-0014 + ADR-0009).
+# Gateway-API, wie Office-Lab-Cluster laut ADR-0014 + ADR-0009).
 #
 # - kindnet deaktiviert: Cilium übernimmt CNI
 # - kube-proxy deaktiviert: Cilium übernimmt via kubeProxyReplacement

@@ -1,6 +1,6 @@
 # Komponente `lifecycle/compositions`
 
-`CompositeResourceDefinition` `XCluster` + zugehörige `Composition` für die DHQ-Provisionierung.
+`CompositeResourceDefinition` `XCluster` + zugehörige `Composition` für die Office-Lab-Provisionierung.
 
 `XCluster` ist die plattform-interne API. Ein `XCluster`-Manifest beschreibt einen kompletten Talos-Child-Cluster (`clusterName`, `talosVersion`, `nodes`, `platformBaseTag`, `appsSubLayerPins`). Die Composition rendert daraus eine 3-Step-Pipeline:
 

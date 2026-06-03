@@ -48,3 +48,4 @@ snyk-results.sarif
 # Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
 !.claude/reviews/.gitkeep
 .mkcert-registry/
+.ansible/

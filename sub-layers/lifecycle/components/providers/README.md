@@ -1,6 +1,6 @@
 # Komponente `lifecycle/providers`
 
-Crossplane-Provider-Pakete für die DHQ-Provisionierungs-Pipeline.
+Crossplane-Provider-Pakete für die Office-Lab-Provisionierungs-Pipeline.
 
 | Provider | Version | Zweck |
 |---|---|---|

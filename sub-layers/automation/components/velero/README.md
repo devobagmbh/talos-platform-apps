@@ -17,7 +17,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/automation/velero:vX.Y.Z
 ## Konsumiert von
 
 - **Seeder** — Backups von tf-state, ArgoCD-Config, Harbor
-- **DHQ** — Vollbackup
+- **Office-Lab** — Vollbackup
 
 ## Verwandte ADRs
 

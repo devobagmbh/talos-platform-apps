@@ -1,6 +1,6 @@
 name: project-sync
 
-# Fügt neue Issues automatisch zum Org-Project "DHQ Cluster" (#3) hinzu und
+# Fügt neue Issues automatisch zum Org-Project "Office-Lab Cluster" (#3) hinzu und
 # setzt das Komponente-Feld aus dem area:*-Label ab.
 #
 # Setup-Voraussetzung (einmalig pro Repo):
@@ -115,7 +115,7 @@ jobs:
               "area:repo": "Automation",
               "area:hardware": "Hardware",
               "area:seeder": "Cluster-Seeder",
-              "area:dhq": "Cluster-DHQ",
+              "area:office-lab": "Cluster-Office-Lab",
               "area:operations": "Operations",
               "area:onboarding": "Operations",
               "area:overlays": "Operations",

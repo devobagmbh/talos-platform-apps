@@ -1,5 +1,5 @@
 # CompositeResourceDefinition für XCluster — das API, mit dem ein
-# Konsumenten-Repo einen Child-Cluster claimt (z. B. DHQ).
+# Konsumenten-Repo einen Child-Cluster claimt (z. B. Office-Lab).
 #
 # Schema-Felder sind bewusst minimal in Phase 1. Erweiterungen
 # (NodeGroups, GPU-Affinity, Custom-CNI-Settings) folgen mit Phase 2+
@@ -32,7 +32,7 @@ spec:
               properties:
                 clusterName:
                   type: string
-                  description: "Name des Child-Clusters (z. B. dhq)"
+                  description: "Name des Child-Clusters (z. B. office-lab)"
                 talosVersion:
                   type: string
                   description: "Talos-Linux-Version (z. B. v1.13.0)"

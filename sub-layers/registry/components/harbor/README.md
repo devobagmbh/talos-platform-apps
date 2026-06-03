@@ -2,7 +2,7 @@
 
 Harbor (Helm `harbor/harbor`) — Container-Registry + Pull-Through-Cache + OCI-Artefakt-Store (Helm-Charts, cosign, SBOMs, CNAB). Inkl. Trivy-Scanner als Subchart. Postgres via CNPG, Storage via Garage S3, OIDC via Dex.
 
-**Skelett** — Implementation in Issues [#14](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+registry), [#27](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-Harbor), [#33](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DHQ-Harbor).
+**Skelett** — Implementation in Issues [#14](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+registry), [#27](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-Harbor), [#33](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Office-Lab-Harbor).
 
 ## Sync-Wave
 
@@ -17,7 +17,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/registry/harbor:vX.Y.Z
 ## Konsumiert von
 
 - **Seeder** — als Pull-Through-Cache vor GHCR/Docker-Hub
-- **DHQ** — als eigener Workload-Registry für interne Devoba-Apps
+- **Office-Lab** — als eigener Workload-Registry für interne Devoba-Apps
 
 Beide Cluster betreiben Harbor unabhängig (eigene Postgres, eigener Garage-Bucket-Store).
 

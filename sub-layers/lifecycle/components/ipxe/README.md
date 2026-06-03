@@ -1,11 +1,11 @@
 # Komponente `lifecycle/ipxe`
 
-HTTP-Server für statische iPXE-Boot-Assets. Wird vom DHCP-Boot-Pfad der DHQ-Nodes als Next-Boot-URL referenziert und liefert die Talos-Initial-Boot-Konfig (Kernel-Cmdline → `machine-config`-URL).
+HTTP-Server für statische iPXE-Boot-Assets. Wird vom DHCP-Boot-Pfad der Office-Lab-Nodes als Next-Boot-URL referenziert und liefert die Talos-Initial-Boot-Konfig (Kernel-Cmdline → `machine-config`-URL).
 
 ## Architektur
 
 ```
-DHQ-Node (PXE-Boot)
+Office-Lab-Node (PXE-Boot)
    │
    │ 1. DHCP: gibt 'next-server' + 'filename' zurück
    ▼

@@ -2,7 +2,7 @@
 
 LGTM-A-Stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only).
 
-OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subset (Seeder = Operator + Alloy-Forwarder, DHQ = Vollstack).
+OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subset (Seeder = Operator + Alloy-Forwarder, Office-Lab = Vollstack).
 
 ## Komponenten
 
@@ -17,18 +17,18 @@ OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subs
 
 Wave 0: Operator + CRDs. Wave 10: drei Storage-Endpoints (alle gegen Garage). Wave 20: Collector + UI (brauchen Endpoints aus Wave 10).
 
-Bidirektionale Watchdog-AlertmanagerConfig (Seeder ↔ DHQ) lebt aktuell als Cross-Cluster-Resource im Konsumenten-Repo — sobald Issue #36 implementiert ist, kann das eine eigene `monitoring/watchdog`-Komponente werden.
+Bidirektionale Watchdog-AlertmanagerConfig (Seeder ↔ Office-Lab) lebt aktuell als Cross-Cluster-Resource im Konsumenten-Repo — sobald Issue #36 implementiert ist, kann das eine eigene `monitoring/watchdog`-Komponente werden.
 
 ## Konsumiert von
 
-- **DHQ** — Vollstack
-- **Seeder** — Subset: `kube-prometheus-stack` + `alloy` (Forwarder zu DHQ-Endpoints)
+- **Office-Lab** — Vollstack
+- **Seeder** — Subset: `kube-prometheus-stack` + `alloy` (Forwarder zu Office-Lab-Endpoints)
 
 ## Backlog-Issue
 
 [#17 — Sub-Layer `monitoring/`: LGTM-A](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring)
 
-Verwandt: [#34 — DHQ-LGTM-A-Monitoring-Stack](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DHQ-LGTM-A), [#35 — Seeder-LGTM-A-Subset](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-LGTM-A), [#36 — Bidirektionale Watchdog-Webhooks](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Watchdog-Webhooks).
+Verwandt: [#34 — Office-Lab-LGTM-A-Monitoring-Stack](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Office-Lab-LGTM-A), [#35 — Seeder-LGTM-A-Subset](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-LGTM-A), [#36 — Bidirektionale Watchdog-Webhooks](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Watchdog-Webhooks).
 
 ## Verwandte ADRs
 

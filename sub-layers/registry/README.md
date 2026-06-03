@@ -15,7 +15,7 @@ Cross-Sub-Layer-Abhängigkeiten: braucht `databases/cnpg` (Postgres) und `storag
 ## Konsumiert von
 
 - **Seeder** — als Pull-Through-Cache vor GHCR/Docker-Hub
-- **DHQ** — als eigener Workload-Registry
+- **Office-Lab** — als eigener Workload-Registry
 
 Beide Cluster betreiben Harbor unabhängig.
 
@@ -23,7 +23,7 @@ Beide Cluster betreiben Harbor unabhängig.
 
 - [#14 — Sub-Layer `registry/`: Harbor](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+registry)
 - [#27 — Seeder-Harbor konfigurieren (OIDC + Pre-Warm)](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-Harbor)
-- [#33 — DHQ-Harbor mit CNPG-Postgres](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DHQ-Harbor)
+- [#33 — Office-Lab-Harbor mit CNPG-Postgres](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Office-Lab-Harbor)
 
 ## Verwandte ADRs
 

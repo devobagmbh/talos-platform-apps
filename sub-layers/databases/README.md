@@ -13,7 +13,7 @@ OCI-Distribution pro Komponente (ADR-0009). Konkrete `Cluster`-CRs (Dex, Harbor,
 ## Konsumiert von
 
 - **Seeder** — kein Postgres-Konsument vorgesehen
-- **DHQ** — Konsumenten sind Dex, Harbor, PowerDNS, ggf. Workload-Apps
+- **Office-Lab** — Konsumenten sind Dex, Harbor, PowerDNS, ggf. Workload-Apps
 
 ## Backlog-Issue
 

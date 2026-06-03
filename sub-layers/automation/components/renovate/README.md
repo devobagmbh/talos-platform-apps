@@ -16,7 +16,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/automation/renovate:vX.Y.Z
 
 ## Konsumiert von
 
-- **DHQ** — überwacht die Devoba-Plattform-Repos
+- **Office-Lab** — überwacht die Devoba-Plattform-Repos
 - **Seeder** — nein
 
 ## Verwandte ADRs

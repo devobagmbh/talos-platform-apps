@@ -16,8 +16,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/monitoring/grafana:vX.Y.Z
 
 ## Konsumiert von
 
-- **DHQ** — Vollstack
-- **Seeder** — nein (Grafana wird auf DHQ konsolidiert)
+- **Office-Lab** — Vollstack
+- **Seeder** — nein (Grafana wird auf Office-Lab konsolidiert)
 
 ## Verwandte ADRs
 

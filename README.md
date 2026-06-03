@@ -17,7 +17,7 @@
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation` und `monitoring`. Vorgerenderte Manifeste mit cosign-Signatur, SLSA-v1-Provenance und CycloneDX-SBOM. Konsumiert von Seeder und DHQ.
+OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation` und `monitoring`. Vorgerenderte Manifeste mit cosign-Signatur, SLSA-v1-Provenance und CycloneDX-SBOM. Konsumiert von Seeder und Office-Lab.
 
 ## Zweck
 
@@ -31,13 +31,13 @@ OCI-Distribution erfolgt **pro Komponente** (ADR-0009 Revision 2026-05-26). Sub-
 
 | Sub-Layer | Komponenten | Konsumiert von | Backlog-Issue |
 |---|---|---|---|
-| [`automation`](sub-layers/automation/) | renovate, velero | DHQ (Renovate), beide (Velero) | #16 |
+| [`automation`](sub-layers/automation/) | renovate, velero | Office-Lab (Renovate), beide (Velero) | #16 |
 | [`databases`](sub-layers/databases/) | cnpg | beide | #15 |
 | [`lifecycle`](sub-layers/lifecycle/) | crossplane, ipxe, providers, compositions | Seeder | #12 |
 | [`monitoring`](sub-layers/monitoring/) | kube-prometheus-stack, loki, mimir, tempo, alloy, grafana | beide | #17 |
 | [`registry`](sub-layers/registry/) | harbor | beide | #14 |
 | [`secrets`](sub-layers/secrets/) | external-secrets, clustersecretstore-defaults | beide | #15a |
-| [`storage-objects`](sub-layers/storage-objects/) | garage, garage-buckets | beide (Seeder + DHQ je eigene Instance, DS720+ als Backup-Ziel) | #13 |
+| [`storage-objects`](sub-layers/storage-objects/) | garage, garage-buckets | beide (Seeder + Office-Lab je eigene Instance, DS720+ als Backup-Ziel) | #13 |
 
 Pro Sub-Layer existiert ein `README.md` mit Komponenten-Tabelle inkl. sync-wave-Reihenfolge. Pro Komponente ein eigenes `README.md` + `compatibility.yaml` mit `requires`-Block (Komponenten-Dependencies inkl. Cross-Sub-Layer wie `databases/cnpg` für Harbor).
 
@@ -134,14 +134,14 @@ Pipeline-Implementierung folgt in einer separaten Iteration (Task aus Phase 2 de
 - **Sub-Layer-Versionierung**: SemVer pro Sub-Layer (`<sub-layer>-vMAJ.MIN.PATCH`). Jeder Sub-Layer hat einen unabhängigen Lifecycle.
 - **OCI-Pfade**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` als Manifest, gleicher Pfad für SBOM/Provenance-Attestations.
 - **Signing**: cosign keyless (OIDC via GitHub-Actions-Workflow-Identity). Verifikation in Konsumenten-Clustern via Kyverno-ClusterPolicy `image-verify-platform-oci` (siehe [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22)).
-- **Werte-Trennung**: cluster-spezifische Helm-Values bleiben in den Konsumenten-Repos (`talos-seeder-cluster`, `talos-dhq-cluster`). Dieser Layer enthält Defaults und shared values.
+- **Werte-Trennung**: cluster-spezifische Helm-Values bleiben in den Konsumenten-Repos (`talos-seeder-cluster`, `talos-office-lab-cluster`). Dieser Layer enthält Defaults und shared values.
 - **Sprache**: Deutsch in `README.md` und Doku. Code/Werte folgen Upstream-Konventionen (englisch).
 - **Tools**: alle dev-relevanten Binaries kommen aus Devbox — direktes `brew install <tool>` ist verboten, um Versions-Drift zu vermeiden.
 
 ## Konsumenten
 
 - **Seeder** — [`talos-seeder-cluster`](https://github.com/devobagmbh/talos-seeder-cluster): konsumiert `lifecycle`, `registry`, `storage-objects`, `automation` (Renovate), `secrets`, `monitoring` (Subset).
-- **DHQ** — [`talos-dhq-cluster`](https://github.com/devobagmbh/talos-dhq-cluster): konsumiert alle 8 Sub-Layer.
+- **Office-Lab** — [`talos-office-lab-cluster`](https://github.com/devobagmbh/talos-office-lab-cluster): konsumiert alle 8 Sub-Layer.
 
 ## Verwandte Doku
 

@@ -1,5 +1,5 @@
 # iPXE-Server: schlanker HTTP-Server für statische iPXE-Boot-Skripte und
-# -Binaries (.ipxe / .efi / .kpxe). Wird vom DHCP-Boot-Pfad der DHQ-Nodes
+# -Binaries (.ipxe / .efi / .kpxe). Wird vom DHCP-Boot-Pfad der Office-Lab-Nodes
 # als Next-Boot-URL referenziert, liefert die Talos-Initial-Boot-Konfig
 # (Kernel-Cmdline → machine-config-URL).
 #

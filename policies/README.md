@@ -18,7 +18,7 @@ Diese Repo nutzt **Conftest in CI + Kyverno im Cluster** mit getrennten Rollen. 
 
 **Conftest hier**: Pre-OCI-Push-Validation der `rendered/`-Manifeste, bevor sie als signierte OCI-Artefakte publiziert werden. CI-Sekundenfeedback im PR.
 
-**Kyverno später** in Konsumenten-Clustern (Seeder + DHQ): Admission-Webhook-Validation + Kyverno-exklusive Features (cosign-Image-Verify, Auto-Generate, Mutate). Lebt in `sub-layers/secrets/manifests/policies/`.
+**Kyverno später** in Konsumenten-Clustern (Seeder + Office-Lab): Admission-Webhook-Validation + Kyverno-exklusive Features (cosign-Image-Verify, Auto-Generate, Mutate). Lebt in `sub-layers/secrets/manifests/policies/`.
 
 ## Mapping — welche Policy gehört wohin
 
