@@ -16,8 +16,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/secrets/external-secrets:vX.Y.Z
 
 ## Konsumiert von
 
-- **Seeder** — ja (cross-cluster zu DHQ-Vault via AppRole/JWT)
-- **DHQ** — ja (lokale Vault-Cluster via Kubernetes-Auth)
+- **Seeder** — ja (cross-cluster zu Office-Lab-Vault via AppRole/JWT)
+- **Office-Lab** — ja (lokale Vault-Cluster via Kubernetes-Auth)
 
 Stage-0-Seeder-Bootstrap nutzt **kein** ESO — nur SOPS.
 

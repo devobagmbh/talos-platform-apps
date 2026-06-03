@@ -6,7 +6,7 @@ Helm `grafana/alloy` — DaemonSet als unified Telemetry-Collector (ersetzt Prom
 
 ## Sync-Wave
 
-`20` — braucht die drei Storage-Komponenten (Wave 10) als Endpoints. Auf Seeder als reiner Forwarder konfiguriert (Sinks → DHQ-Endpoints).
+`20` — braucht die drei Storage-Komponenten (Wave 10) als Endpoints. Auf Seeder als reiner Forwarder konfiguriert (Sinks → Office-Lab-Endpoints).
 
 ## OCI
 

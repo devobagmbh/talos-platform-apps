@@ -16,7 +16,7 @@ Beide parallel — keine Inter-Komponenten-Abhängigkeit.
 ## Konsumiert von
 
 - **Seeder** — nur `velero`
-- **DHQ** — beide
+- **Office-Lab** — beide
 
 ## Backlog-Issue
 

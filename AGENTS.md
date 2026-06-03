@@ -7,7 +7,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 ## Repository Purpose
 
-`talos-platform-apps` ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform. **Alles, was nicht Substrat ist** (nicht in `talos-platform-base`), lebt hier und wird als signierte OCI-Artefakte publiziert. Consumer-Cluster-Repos (Seeder, DHQ) **bedienen sich aus dem Katalog** — sie referenzieren per Tag genau die Komponenten, die sie brauchen. Arbeitsteilung: **Base = Substrat (Talos + Cilium + ArgoCD + cert-approver), Apps = Katalog (alles Übrige), Consumer = Komposition.**
+`talos-platform-apps` ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform. **Alles, was nicht Substrat ist** (nicht in `talos-platform-base`), lebt hier und wird als signierte OCI-Artefakte publiziert. Consumer-Cluster-Repos (Seeder, Office-Lab) **bedienen sich aus dem Katalog** — sie referenzieren per Tag genau die Komponenten, die sie brauchen. Arbeitsteilung: **Base = Substrat (Talos + Cilium + ArgoCD + cert-approver), Apps = Katalog (alles Übrige), Consumer = Komposition.**
 
 **Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Sieben Sub-Layer als Klammer: `automation`, `databases`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
 
@@ -15,7 +15,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 - Cluster-Identität (Node-IPs, Hostnamen, TLS-Cert-CNs)
 - Echte Secrets (Vault-Tokens, age-Keys, Passwords)
-- Cluster-spezifische Helm-Overrides (gehören in `talos-seeder-cluster` und `talos-dhq-cluster`)
+- Cluster-spezifische Helm-Overrides (gehören in `talos-seeder-cluster` und `talos-office-lab-cluster`)
 - Runnable Cluster oder kubeconfigs
 
 ## Project Structure
@@ -93,7 +93,7 @@ Dieses Repo hat keinen Live-Cluster. Validierung ist Render- und Policy-fokussie
 - `task render -- <sub-layer>` produziert valide YAML gegen den jeweiligen Default-Werten-Stack
 - Schema-Konformität wird via `kubeconform` geprüft
 - Cosign-/Provenance-Signing wird in der GHA-Pipeline keyless verifiziert (`cosign verify`)
-- Echte Cluster-Verifikation gehört in die Konsumenten-Repos (`talos-seeder-cluster`, `talos-dhq-cluster`)
+- Echte Cluster-Verifikation gehört in die Konsumenten-Repos (`talos-seeder-cluster`, `talos-office-lab-cluster`)
 
 ## Commits & Pull Requests
 

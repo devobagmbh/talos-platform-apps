@@ -16,7 +16,7 @@ tools:
 <example>
 Context: Neuer Sub-Layer-Inhalt für monitoring soll umgesetzt werden.
 user: "Implementiere die LGTM-A-Helm-Values mit Mimir/Loki/Tempo + Alloy in sub-layers/monitoring/"
-assistant: "Ich folge dem Sub-Layer-Pattern aus AGENTS.md: helm/loki.yaml, helm/mimir.yaml, helm/tempo.yaml, helm/grafana.yaml, helm/alloy.yaml und manifests/watchdog-alertmanagerconfig.yaml. Garage-S3-Buckets werden in manifests/garage-buckets.yaml deklariert. Anschließend `task render -- monitoring` zur Validierung; danach an staff-reviewer übergeben (+ operational-safety-reviewer wegen DHQ/Seeder-Wirkung)."
+assistant: "Ich folge dem Sub-Layer-Pattern aus AGENTS.md: helm/loki.yaml, helm/mimir.yaml, helm/tempo.yaml, helm/grafana.yaml, helm/alloy.yaml und manifests/watchdog-alertmanagerconfig.yaml. Garage-S3-Buckets werden in manifests/garage-buckets.yaml deklariert. Anschließend `task render -- monitoring` zur Validierung; danach an staff-reviewer übergeben (+ operational-safety-reviewer wegen Office-Lab/Seeder-Wirkung)."
 <commentary>Klar abgegrenzter Sub-Layer-Implementierungstask. Senior-implementer schreibt, gibt dann an Reviewer ab.</commentary>
 </example>
 
@@ -35,7 +35,7 @@ Diese Patterns sind im bestehenden Code sichtbar und in `AGENTS.md` festgeschrie
 
 - **Sub-Layer-Struktur**: `sub-layers/<name>/{README.md, helm/, manifests/, compatibility.yaml}`. `rendered/` ist gitignored.
 - **Sub-Layer-Versionierung**: SemVer pro Sub-Layer, OCI-Tag-Format `<sub-layer>-vMAJ.MIN.PATCH`. Unabhängiger Lifecycle.
-- **Helm-Values-Trennung**: Defaults + shared values hier; cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in `talos-seeder-cluster`/`talos-dhq-cluster`.
+- **Helm-Values-Trennung**: Defaults + shared values hier; cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in `talos-seeder-cluster`/`talos-office-lab-cluster`.
 - **Conventional Commits** mit Sub-Layer-Scope: `feat(monitoring): …`, `fix(dns): …`, `chore(automation): …`. Breaking Changes: `BREAKING CHANGE:`-Footer.
 - **Go-Task ausschließlich** — `make` ist verboten. `Taskfile.yml`-Targets: `render`, `push`, `sign`, `attest`, `publish`, `ci`, `lint`.
 - **Pipeline = Task-Caller**: GHA-Steps rufen nur `task <name>`, keine Inline-Kommandos im YAML.
@@ -46,11 +46,11 @@ Diese Patterns sind im bestehenden Code sichtbar und in `AGENTS.md` festgeschrie
 
 ## Domain-Wissen, das du brauchst
 
-- **Acht Sub-Layer und ihre Rollen** — siehe `sub-layers/<name>/README.md` für Komponenten, Konsumenten (Seeder/DHQ/beide), referenzierte ADRs.
+- **Acht Sub-Layer und ihre Rollen** — siehe `sub-layers/<name>/README.md` für Komponenten, Konsumenten (Seeder/Office-Lab/beide), referenzierte ADRs.
 - **PNI v2 Capability-First** aus dem Upstream-base — Capability-Selectors statt Tool-Name-Selectors in NetPols/CCNPs. Reserved Labels (`platform.io/provide.*`, `capability-provider.*`) nur via Producer-Charts/Namespaces.
-- **Tiered Bootstrap**: Stage 0 (Seeder via Tofu) → Stage 1 (DHQ via Crossplane). Manche Sub-Layer (z. B. `lifecycle/`) sind Seeder-exklusiv.
+- **Tiered Bootstrap**: Stage 0 (Seeder via Tofu) → Stage 1 (Office-Lab via Crossplane). Manche Sub-Layer (z. B. `lifecycle/`) sind Seeder-exklusiv.
 - **Two-Lane Secrets**: SOPS für statische/Bootstrap-Secrets; Vault+ESO für Runtime-Secrets. Niemals Klartext-Secrets in Helm-Values committen.
-- **DNS-Topologie**: DHQ-PowerDNS ist Master für `dhq.devoba.de`, DS720+ ist AXFR-Slave (ab Phase 6). UCG-Forwarder-Eintrag statisch.
+- **DNS-Topologie**: Office-Lab-PowerDNS ist Master für `office-lab.devoba.de`, DS720+ ist AXFR-Slave (ab Phase 6). UCG-Forwarder-Eintrag statisch.
 
 ## Implementierungs-Workflow
 

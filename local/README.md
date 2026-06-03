@@ -10,7 +10,7 @@
 [![Helm](https://img.shields.io/badge/Helm-v3-0F1689?style=flat-square&logo=helm)](https://helm.sh/)
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 
-Prod-konformer Kind-Cluster für lokales Sub-Layer-Testing: gleiche CNI- und Ingress-Komponenten wie Seeder/DHQ, plus lokale OCI-Registry mit Gateway-Exposure und mkcert-TLS. Damit lässt sich der komplette **Render → Push → Argo-Sync → Apply**-Workflow am Laptop spielen, bevor ein Tag in den produktiven OCI-Pfad gepusht wird.
+Prod-konformer Kind-Cluster für lokales Sub-Layer-Testing: gleiche CNI- und Ingress-Komponenten wie Seeder/Office-Lab, plus lokale OCI-Registry mit Gateway-Exposure und mkcert-TLS. Damit lässt sich der komplette **Render → Push → Argo-Sync → Apply**-Workflow am Laptop spielen, bevor ein Tag in den produktiven OCI-Pfad gepusht wird.
 
 ## Zweck und Designprinzipien
 
@@ -201,7 +201,7 @@ Argo kann das Artefakt nicht pullen. Check der Service-DNS: `kubectl -n registry
 
 - **Keine LoadBalancer-IPs**. Cilium hat `l2announcements.enabled: true`, aber kein `CiliumLoadBalancerIPPool` und kein `CiliumL2AnnouncementPolicy` — auf Mac sind LB-VIPs über Docker-NAT nicht erreichbar. Routing läuft ausschließlich über die NodePort-Bridge.
 - **Kein cosign/SBOM-Signing**. Der lokale Publish-Pfad rendert + paketiert + pusht; Signing und Attest läuft im CI-Pfad (`task publish` mit GHA-OIDC). Der lokale Workflow ist explizit „Helm-Werte testen", nicht „Supply-Chain validieren".
-- **Kein Dex, kein RBAC-Mapping**. ArgoCD läuft mit Local-Admin (`argocd-initial-admin-secret`). Identity-Federation ist Layer-3-Thema im DHQ.
+- **Kein Dex, kein RBAC-Mapping**. ArgoCD läuft mit Local-Admin (`argocd-initial-admin-secret`). Identity-Federation ist Layer-3-Thema im Office-Lab.
 - **Kein Velero-Backup**. Lokale Daten sind ephemer per Definition.
 
 ## Verwandte Doku
@@ -209,4 +209,4 @@ Argo kann das Artefakt nicht pullen. Check der Service-DNS: `kubectl -n registry
 - [Top-`README.md`](../README.md) — Repo-Übersicht + Sub-Layer
 - [`AGENTS.md`](../AGENTS.md) — Konventionen (Taskfile-Regeln, Hard Constraints)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — warum Helm-Chart-Wrapper-OCI als Distributions-Format
-- [ADR-0014 — Gateway-API + Cilium für DHQ/Seeder](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-gateway-api.md) — Prod-Entsprechung dieses Setups
+- [ADR-0014 — Gateway-API + Cilium für Office-Lab/Seeder](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-gateway-api.md) — Prod-Entsprechung dieses Setups

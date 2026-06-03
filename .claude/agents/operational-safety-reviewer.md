@@ -28,7 +28,7 @@ Rejection-Output:
   verdict: rejected
   findings:
     - severity: critical
-      description: "DS720+-Slave-Sync optional zu machen verstößt gegen ADR-0017 (DS720+ ist dauerhafte Failover-Quelle für dhq.devoba.de). Cluster-Outage ohne Slave = NXDOMAIN für alle DHQ-Konsumenten."
+      description: "DS720+-Slave-Sync optional zu machen verstößt gegen ADR-0017 (DS720+ ist dauerhafte Failover-Quelle für office-lab.devoba.de). Cluster-Outage ohne Slave = NXDOMAIN für alle Office-Lab-Konsumenten."
       suggestion: "Slave-Liste muss DS720+ enthalten als Default; Konsumenten dürfen sie nicht abschalten."
 <commentary>DR-Pfad-Bruch — abweisen.</commentary>
 </example>
@@ -38,7 +38,7 @@ Du fragst: **"Was passiert, wenn das schiefgeht — und wie kommen wir wieder ho
 ## Was du prüfst
 
 1. **Bootstrap-Ordnung**
-   - Stage 0 (Seeder via Tofu) → Stage 1 (DHQ via Crossplane) konsistent eingehalten?
+   - Stage 0 (Seeder via Tofu) → Stage 1 (Office-Lab via Crossplane) konsistent eingehalten?
    - Sub-Layer-Abhängigkeiten klar (z. B. `monitoring` braucht `storage-objects`-Buckets vorab)?
    - Argo-Sync-Waves im Konsumenten-Repo dafür vorgesehen?
 
@@ -49,17 +49,17 @@ Du fragst: **"Was passiert, wenn das schiefgeht — und wie kommen wir wieder ho
    - Restore-Reihenfolge im Disaster-Recovery-Runbook ([RB-09](https://github.com/devobagmbh/talos-platform-docs/blob/main/runbooks/disaster-recovery.md)) abgedeckt?
 
 3. **Multi-Cluster-Failover**
-   - DNS: DHQ-PowerDNS-Master + DS720+-Slave-Pfad intakt?
-   - Vault Cross-Cluster-Auth: Seeder→DHQ-Vault über mTLS + scoped Token funktioniert nach Change?
+   - DNS: Office-Lab-PowerDNS-Master + DS720+-Slave-Pfad intakt?
+   - Vault Cross-Cluster-Auth: Seeder→Office-Lab-Vault über mTLS + scoped Token funktioniert nach Change?
    - Argo-Auto-Sync auf Sub-Layer-Tag — kann Konsumenten-Cluster den Tag-Bump folgen?
 
 4. **DR-Drill-Konformität**
    - Wenn Change Strukturen in den 10 Runbooks ([RB-01 bis RB-10](https://github.com/devobagmbh/talos-platform-docs/blob/main/runbooks/)) berührt: ist das Runbook noch korrekt?
    - Bei Vault-Touch: ist [RB-03 vault-unseal](https://github.com/devobagmbh/talos-platform-docs/blob/main/runbooks/vault-unseal.md) noch konsistent?
-   - Bei Provisionierungs-Touch: ist [RB-04 dhq-cluster-provision](https://github.com/devobagmbh/talos-platform-docs/blob/main/runbooks/dhq-cluster-provision.md) noch korrekt?
+   - Bei Provisionierungs-Touch: ist [RB-04 office-lab-cluster-provision](https://github.com/devobagmbh/talos-platform-docs/blob/main/runbooks/office-lab-cluster-provision.md) noch korrekt?
 
 5. **Blast-Radius**
-   - Wie viele Cluster sind betroffen (Seeder, DHQ, beide)?
+   - Wie viele Cluster sind betroffen (Seeder, Office-Lab, beide)?
    - Rolling vs. atomar: kann der Change graduell zurückgenommen werden?
    - Was passiert beim Rollback während die Change halb appliziert ist?
 

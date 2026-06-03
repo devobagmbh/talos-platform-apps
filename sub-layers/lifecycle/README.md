@@ -17,8 +17,8 @@ Sync-Wave folgt der CRD-Bootstrap-Reihenfolge: Wave 0 erzeugt die Crossplane-CRD
 
 ## Konsumiert von
 
-- **Seeder** — exklusiv. DHQ-Provisionierung läuft vom Seeder aus.
-- **DHQ** — nein (DHQ provisioniert keine weiteren Cluster, vorerst).
+- **Seeder** — exklusiv. Office-Lab-Provisionierung läuft vom Seeder aus.
+- **Office-Lab** — nein (Office-Lab provisioniert keine weiteren Cluster, vorerst).
 
 ## Render-Konvention
 
