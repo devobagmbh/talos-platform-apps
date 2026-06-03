@@ -199,6 +199,54 @@ tasks:
       snyk iac test sub-layers/ \
         --sarif-file-output=snyk-results.sarif
 
+  # --- SOPS-Datei-Management (KPS-Pattern, ADR-0011) ---
+  # FILE-parametrisierte Helfer für beliebige *.sops.yaml. SOPS_AGE_KEY_FILE
+  # kommt aus .envrc; Recipients/Pfad-Regeln aus .sops.yaml. Hinweis: dieser
+  # Katalog führt aktuell KEINE echten Secrets (.sops.yaml.tmpl, Issue #3) —
+  # die Tasks stehen bereit, sobald .sops.yaml existiert.
+
+  secrets:edit:
+    desc: 'SOPS-Datei in-place editieren: task secrets:edit -- <datei>'
+    cmd: sops {{.CLI_ARGS}}
+
+  secrets:encrypt:
+    desc: 'Plaintext-Datei in-place verschlüsseln: task secrets:encrypt -- <datei>'
+    cmd: sops --encrypt --in-place {{.CLI_ARGS}}
+
+  secrets:decrypt:
+    desc: 'SOPS-Datei nach stdout entschlüsseln (kein Plaintext auf Platte): task secrets:decrypt -- <datei>'
+    cmd: sops --decrypt {{.CLI_ARGS}}
+
+  secrets:updatekeys:
+    desc: 'Alle *.sops.yaml mit aktuellen .sops.yaml-Recipients re-encrypten (kein Inhalts-Change)'
+    cmd: |
+      set -euo pipefail
+      found=0
+      for f in $(find . -name '*.sops.yaml' -not -path './.git/*' 2>/dev/null | sort); do
+        found=$((found+1)); echo "  ↳ $f"; sops updatekeys --yes "$f"
+      done
+      [ "$found" -gt 0 ] && echo "✓ ${found} Datei(en) re-encrypted" || echo "⊘ keine *.sops.yaml gefunden"
+
+  secrets:create:
+    desc: 'Neue verschlüsselte Secret-Datei aus Template: task secrets:create -- <datei>'
+    cmd: |
+      set -euo pipefail
+      f="{{.CLI_ARGS}}"
+      test -n "$f" || { echo "usage: task secrets:create -- <pfad/datei.sops.yaml>"; exit 1; }
+      test ! -e "$f" || { echo "$f existiert bereits"; exit 1; }
+      mkdir -p "$(dirname "$f")"
+      cat > "$f" <<'TMPL'
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: CHANGEME
+        namespace: CHANGEME
+      stringData:
+        key: value
+      TMPL
+      sops --encrypt --in-place "$f"
+      echo "✓ $f erstellt + verschlüsselt — befüllen mit: task secrets:edit -- $f"
+
   # --- Publish-Targets ---
 
   package:
