@@ -8,12 +8,17 @@ body:
       label: Betroffener Sub-Layer (oder „neu")
       options:
         - automation
+        - compute
         - databases
         - dns
+        - identity
         - lifecycle
-        - monitoring
+        - network
+        - observability
         - registry
         - secrets
+        - security
+        - storage-block
         - storage-objects
         - cross-cutting (Pipeline / Build / Tooling)
         - new (neuer Sub-Layer)

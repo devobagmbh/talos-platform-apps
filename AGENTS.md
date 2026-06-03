@@ -9,7 +9,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 `talos-platform-apps` ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform. **Alles, was nicht Substrat ist** (nicht in `talos-platform-base`), lebt hier und wird als signierte OCI-Artefakte publiziert. Consumer-Cluster-Repos (Seeder, Office-Lab) **bedienen sich aus dem Katalog** — sie referenzieren per Tag genau die Komponenten, die sie brauchen. Arbeitsteilung: **Base = Substrat (Talos + Cilium + ArgoCD + cert-approver), Apps = Katalog (alles Übrige), Consumer = Komposition.**
 
-**Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Sieben Sub-Layer als Klammer: `automation`, `databases`, `lifecycle`, `monitoring`, `registry`, `secrets`, `storage-objects` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte.
+**Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Sub-Layer als Klammer (Stand 2026-06-03, Taxonomie-Entscheid #16): `automation`, `databases`, `lifecycle`, `observability` (vormals `monitoring`), `registry`, `secrets`, `storage-objects` plus die capability-getriebenen `identity`, `network`, `compute`, `storage-block`, `security` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte. `kube-prometheus-stack` ist ein *Stack* (Komposition aus Einzel-Apps), keine eigene Komponente.
 
 **NICHT** in diesem Repo:
 
