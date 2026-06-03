@@ -6,23 +6,26 @@
 #
 # Crossplane target: v2.x (chart 2.3.1, crossplane/helm/crossplane.yaml) —
 # greenfield, so we start on the current major (namespaced XRs, XRD
-# apiextensions.crossplane.io/v2). The provider/function packages below are the
-# current v1.x-line releases and run on Crossplane v2. >>> VERIFY each package's
-# v2 compatibility (crossplane-contrib providers/functions support v2; confirm).
+# apiextensions.crossplane.io/v2). Pins verified 2026-06 against the GitHub
+# release pages / Upbound marketplace: provider-opentofu v1.1.3 (ships the
+# namespaced opentofu.m.upbound.io API), provider-kubernetes v1.2.1,
+# function-patch-and-transform v0.10.6, function-auto-ready v0.6.5.
 
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
-  name: provider-terraform
+  name: provider-opentofu
 spec:
-  package: xpkg.upbound.io/upbound/provider-terraform:v1.1.4
-  # Stage-1 cluster provisioning runs via provider-terraform against the
-  # consumer's stage-1 tofu root (e.g. talos-seeder-cluster//stage-1).
-  # The provider accepts SOPS-encrypted inputs via the carlpett/sops tofu provider.
-  # >>> VERIFY: provider-terraform v1.x — confirm the Workspace API group/version
-  # >>> still is tf.upbound.io/v1beta1 (used in composition-xcluster.yaml) and the
-  # >>> env/varFiles/backend fields match.
+  package: xpkg.upbound.io/upbound/provider-opentofu:v1.1.3
+  # Stage-1 cluster provisioning runs the consumer's stage-1 tofu root (e.g.
+  # talos-seeder-cluster//stage-1) via a Workspace. We use provider-OPENTOFU, not
+  # provider-terraform: the latter is frozen at Terraform 1.5.7 (BSL) and cannot
+  # run our roots, which use OpenTofu 1.7+ state encryption (the `encryption {}`
+  # block / tofu-encrypt). provider-opentofu runs the `tofu` binary.
+  # Crossplane v2: the namespaced Workspace/ProviderConfig API group is
+  # opentofu.m.upbound.io/v1beta1 (used in composition-xcluster.yaml and the
+  # consumer providerconfig). env[].secretKeyRef + varFiles are supported.
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -52,8 +55,8 @@ metadata:
   name: function-patch-and-transform
 spec:
   package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.10.6
-  # Maps the thin XCluster spec (clusterName, tofuModuleSource, secretName) onto
-  # the provider-terraform Workspace fields (see composition-xcluster.yaml).
+  # Maps the thin XCluster spec (clusterName, tofuModuleSource) onto the
+  # provider-opentofu Workspace fields (see composition-xcluster.yaml).
 
 ---
 apiVersion: pkg.crossplane.io/v1
@@ -67,6 +70,8 @@ spec:
 
 ---
 # ProviderConfigs (carrying cluster identity) live in Layer 3 (talos-seeder-cluster):
-# a terraform ProviderConfig with Garage S3 backend config + SOPS_AGE_KEY env
-# (so the child tofu root can decrypt its SOPS inputs). These cluster-specific
-# bindings do NOT belong in the module catalog.
+# an opentofu ProviderConfig that completes the stage-1 root's partial S3 backend
+# (Garage endpoint/bucket/key via backendFile) — the in-cluster equivalent of the
+# laptop's `tofu init -backend-config=backend.hcl`. The S3 creds + age key are
+# injected as Workspace env by the Composition. These cluster-specific bindings do
+# NOT belong in the module catalog.
