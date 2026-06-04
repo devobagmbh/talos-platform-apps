@@ -1,8 +1,9 @@
 requires:
   talos-platform-base: ">=v0.4.0 <v1.0.0"
-  databases/cnpg: ">=v0.1.0" # Postgres-Backend
-  storage-objects/garage: ">=v0.1.0" # S3-Bucket-Store
+  # Seeder-Pull-Through-Cache-Profil: eingebettete DB + ephemeral Storage.
+  # KEIN databases/cnpg, KEIN storage-objects/garage (garage obsolet). Das
+  # persistente office-lab-Harbor-Profil (CNPG + S3) bekommt ein eigenes Render-Profil.
 provides:
   - name: harbor
-    apis: [] # wird mit Issue #14 befüllt
+    apis: []  # wird mit Issue #14 befüllt
     capabilities: [] # TODO: Capability oci-registry definieren (proposed, Vertrag offen)
