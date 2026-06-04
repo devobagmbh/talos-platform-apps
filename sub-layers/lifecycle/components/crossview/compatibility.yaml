@@ -1,0 +1,6 @@
+requires:
+  lifecycle/crossplane: ">=v0.1.0" # reads Crossplane CRs (CRDs must exist)
+provides:
+  - name: crossview
+    apis:
+      - crossview@4.4.0 # crossplane-contrib Crossview dashboard (read-only by default)

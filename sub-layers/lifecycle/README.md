@@ -12,8 +12,9 @@ Der Sub-Layer ist eine organisatorische Klammer; **OCI-Distribution erfolgt pro 
 | [`ipxe`](components/ipxe/) | 0 | iPXE-Server-Stub (Namespace + Labels, Inhalt in Issue #28) | `oci://.../lifecycle/ipxe:vX.Y.Z` |
 | [`providers`](components/providers/) | 10 | provider-opentofu + Pipeline functions | `oci://.../lifecycle/providers:vX.Y.Z` |
 | [`compositions`](components/compositions/) | 20 | `XCluster`-XRD + Composition (3-Step-Pipeline) | `oci://.../lifecycle/compositions:vX.Y.Z` |
+| [`crossview`](components/crossview/) | 30 | Crossplane-Visualisierungs-Dashboard (crossplane-contrib) | `oci://.../lifecycle/crossview:vX.Y.Z` |
 
-Sync-Wave folgt der CRD-Bootstrap-Reihenfolge: Wave 0 erzeugt die Crossplane-CRDs, Wave 10 die Provider-CRs (brauchen `pkg.crossplane.io/Provider`), Wave 20 die XRD+Composition (brauchen aktive Provider).
+Sync-Wave folgt der CRD-Bootstrap-Reihenfolge: Wave 0 erzeugt die Crossplane-CRDs, Wave 10 die Provider-CRs (brauchen `pkg.crossplane.io/Provider`), Wave 20 die XRD+Composition (brauchen aktive Provider), Wave 30 das crossview-Dashboard (liest die Crossplane-CRs).
 
 ## Konsumiert von
 

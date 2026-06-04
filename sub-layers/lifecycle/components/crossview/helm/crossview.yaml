@@ -1,0 +1,47 @@
+# Crossview — Crossplane resource-visualization dashboard (crossplane-contrib).
+# Layer-2 default values for talos-platform-apps. Cluster-specific bits (the
+# public host / CORS origin, Dex OIDC wiring, the admin/db/session secrets) are
+# consumer-owned (Layer 3, ADR-0024 Shapes b/c) — see customization.yaml.
+
+metadata:
+  chart: crossview
+  repo: https://crossplane-contrib.github.io/crossview
+  version: 4.4.0  # latest stable (gh-pages index, 2026-05-19); appVersion v4.4.0
+  # >>> VERIFY the current chart at push (`helm search repo crossview`).
+  namespace: crossview
+
+values:
+  # Gateway-API at the consumer (base Hard-Constraint: no Ingress) → ClusterIP,
+  # ingress off. The consumer fronts it with an HTTPRoute on the Cilium Gateway.
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+
+  # Embedded Postgres for the dashboard's own state. The DB-backend choice is a
+  # Workload-Variant-Axis (ADR-0024): a consumer may disable persistence
+  # (ephemeral, fine for a rebuildable dashboard) or point at an external CNPG.
+  database:
+    enabled: true
+    persistence:
+      enabled: true
+      size: 10Gi
+
+  config:
+    server:
+      auth:
+        # Read-only dashboard by default; crossview reads Crossplane resources
+        # cluster-wide via the chart-shipped RBAC (read ClusterRole + SA).
+        defaultRole: viewer
+    # SSO is cluster-specific (Dex issuer/clientId/callbackURL, ADR-0010) →
+    # consumer-owned (ADR-0024 Shape b config + Shape c OIDCClientSecret).
+    # Disabled here; the consumer enables + wires Dex in its overlay.
+    sso:
+      oidc:
+        enabled: false
+
+  # Secrets: the chart's defaults (adminPassword "password", empty dbPassword/
+  # sessionSecret) are PLACEHOLDERS — never ship a real credential in the catalog
+  # (base Hard-Constraint: no real secrets in the repo). The consumer MUST supply
+  # adminPassword + dbPassword + sessionSecret (+ OIDCClientSecret when SSO is on)
+  # via an existing Secret (ADR-0024 Shape c, secretKeyRef). See customization.yaml.
