@@ -1,20 +1,23 @@
-# Customization Contract (ADR-0023) — Seeder-Pull-Through-Cache-Profil.
-# Der Konsument liefert harbor-runtime-secret (via SOPS, da Vault noch nicht
-# läuft) mit zwei Keys; externalURL ist ein strukturwerts-Kustomize-Patch
-# (siehe Hinweis unten), KEIN envFrom-Wert — daher nicht in configmap_keys.
-schema_version: "1"
-component: registry/harbor
-cluster_agnostic: false
-sync_wave: "0"
-required:
-  configmap_keys: []
-  secret_keys:
-    - HARBOR_ADMIN_PASSWORD   # Harbor-Admin-Login
-    - secretKey               # 16-Zeichen-Encryption-Key (DB-at-rest)
+# Customization Contract v2 (ADR-0024) — Seeder pull-through-cache profile.
+# The consumer supplies harbor-runtime-secret (via SOPS while Vault is not yet
+# running) with two keys (Shape c).
+freeze_line:
+  workload: rendered/manifest.yaml # Harbor Deployment/Service/DB — never consumer-patched
 provided_refs:
-  secret: harbor-runtime-secret
+  secret: harbor-runtime-secret # Shape (c)
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: # Shape (c) — keys in harbor-runtime-secret the consumer MUST supply
+    - HARBOR_ADMIN_PASSWORD # Harbor admin login
+    - secretKey # 16-char encryption key (DB at rest)
+  selector_crs: []
+sync_wave: "0"
 external_dependencies: []
-# HINWEIS structural-patch (nicht maschinengeprüft): der Konsument MUSS
-# spec.externalURL via Kustomize patchen — das gerenderte Manifest trägt den
-# Platzhalter https://REPLACE-ME.harbor.invalid in der harbor-core-ConfigMap
-# (EXT_ENDPOINT). externalURL ist Render-Zeit-strukturell, kein envFrom-Wert.
+# NOTE externalURL (open v2 follow-up, not machine-checked): in v1 this was a
+# consumer Kustomize structural-patch of spec.externalURL (placeholder
+# https://REPLACE-ME.harbor.invalid in the harbor-core ConfigMap, EXT_ENDPOINT).
+# ADR-0024 removes consumer Kustomize-patching of the signed workload, so the
+# hostname must be re-modelled as Shape (a) env. Deferred to the harbor v2 pilot
+# (ADR-0024 §Validierung) — out of scope for this schema migration.

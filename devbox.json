@@ -23,7 +23,8 @@
     "argocd@latest",
     "kubectx@latest",
     "gettext@latest",
-    "mkcert@latest"
+    "mkcert@latest",
+    "check-jsonschema@latest"
   ],
   "shell": {
     "init_hook": [

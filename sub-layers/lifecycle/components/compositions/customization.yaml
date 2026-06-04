@@ -1,13 +1,16 @@
-# Customization Contract (ADR-0023). XRD + Composition are cluster-agnostic
+# Customization Contract v2 (ADR-0024). XRD + Composition are cluster-agnostic
 # (the template itself). Cluster identity lives in the consumer's committed
 # cluster.yaml, read by the consumer's stage-1 tofu root (Arch B) — the thin
 # XCluster claim only points at that root, it carries no identity.
-schema_version: "1"
-component: lifecycle/compositions
-cluster_agnostic: true
-sync_wave: "20"
+freeze_line:
+  workload: rendered/manifest.yaml # XRD + Composition — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
 required:
-  configmap_keys: []
+  env_keys: []
+  config_files: []
   secret_keys: []
+  selector_crs: []
+sync_wave: "20"
 external_dependencies:
   - lifecycle/providers

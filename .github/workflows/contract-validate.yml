@@ -1,15 +1,14 @@
 name: contract-validate
 
-# Customization-Contract-Selbstkonsistenz (ADR-0023, Ebene 1).
+# Customization-contract self-consistency (ADR-0024 v2, Layer 1).
 #
-# BEWUSST getrennt von oci-publish.yml/`task ci`: der Contract wird graduell
-# pro Komponente eingeführt. Ein eigener Job koppelt unfertige Komponenten NICHT
-# an die Render-/Lint-Pipeline — er prüft nur die Komponenten, die bereits eine
-# customization.yaml tragen (task validate:contract meldet die übrigen, schlägt
-# aber nicht fehl). Läuft nur, wenn Contracts, Schema oder gerenderte Manifeste
-# sich ändern.
+# DELIBERATELY separate from oci-publish.yml/`task ci`: the contract is rolled
+# out per component. A dedicated job does NOT couple unfinished components to the
+# render/lint pipeline — it only validates components that already carry a
+# customization.yaml (task validate:contract reports the rest without failing).
+# Runs only when contracts, the schema, or rendered manifests change.
 #
-# Konvention (AGENTS.md § CI-Konventionen): Pipeline = dünner Task-Caller.
+# Convention (AGENTS.md § CI-Konventionen): pipeline = thin task caller.
 
 on:
   pull_request:
@@ -35,5 +34,5 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Customization-Contract validieren
+      - name: Validate customization contract
         run: devbox run -- task validate:contract

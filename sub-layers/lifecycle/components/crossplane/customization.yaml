@@ -1,11 +1,16 @@
-# Customization Contract (ADR-0023). The Crossplane operator is cluster-agnostic
-# — no cluster-specific values. ProviderConfigs (carrying cluster identity) are
-# supplied separately by the consumer repo (talos-seeder-cluster/crossplane/providerconfigs/).
-schema_version: "1"
-component: lifecycle/crossplane
-cluster_agnostic: true
-sync_wave: "0"
+# Customization Contract v2 (ADR-0024). The Crossplane operator is cluster-agnostic
+# — the workload carries no cluster identity. ProviderConfigs (carrying cluster
+# identity) are supplied separately by the consumer repo
+# (talos-seeder-cluster/crossplane/providerconfigs/), so this component provides
+# no refs/selectors and requires nothing.
+freeze_line:
+  workload: rendered/manifest.yaml # operator Deployment/RBAC/CRDs — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
 required:
-  configmap_keys: []
+  env_keys: []
+  config_files: []
   secret_keys: []
+  selector_crs: []
+sync_wave: "0"
 external_dependencies: []
