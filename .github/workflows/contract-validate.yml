@@ -1,0 +1,39 @@
+name: contract-validate
+
+# Customization-Contract-Selbstkonsistenz (ADR-0023, Ebene 1).
+#
+# BEWUSST getrennt von oci-publish.yml/`task ci`: der Contract wird graduell
+# pro Komponente eingeführt. Ein eigener Job koppelt unfertige Komponenten NICHT
+# an die Render-/Lint-Pipeline — er prüft nur die Komponenten, die bereits eine
+# customization.yaml tragen (task validate:contract meldet die übrigen, schlägt
+# aber nicht fehl). Läuft nur, wenn Contracts, Schema oder gerenderte Manifeste
+# sich ändern.
+#
+# Konvention (AGENTS.md § CI-Konventionen): Pipeline = dünner Task-Caller.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sub-layers/*/components/*/customization.yaml'
+      - 'sub-layers/*/components/*/rendered/manifest.yaml'
+      - 'schemas/customization.schema.json'
+      - 'Taskfile.yml'
+      - '.github/workflows/contract-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Customization-Contract validieren
+        run: devbox run -- task validate:contract

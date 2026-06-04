@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devoba.de/schemas/customization.schema.json",
+  "title": "Component Customization Contract",
+  "description": "Vertrag, was eine vorgerenderte OCI-Komponente vom Konsumenten an cluster-spezifischen Werten/Secrets erwartet (talos-platform-docs ADR-0023). Liegt als customization.yaml neben helm/ + manifests/ der Komponente und wird mit dem OCI-Artefakt mitgeliefert.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "component", "sync_wave"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1",
+      "description": "Schema-Version dieses Contract-Formats."
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "description": "Komponenten-ID als <sub-layer>/<component> (muss zum Verzeichnis passen)."
+    },
+    "cluster_agnostic": {
+      "type": "boolean",
+      "default": false,
+      "description": "true = die Komponente braucht KEINE cluster-spezifischen Werte (z.B. ein Operator). Dann müssen required.* leer und provided_refs weggelassen sein."
+    },
+    "sync_wave": {
+      "type": "string",
+      "pattern": "^-?[0-9]+$",
+      "description": "ArgoCD-Sync-Wave als String (vorgerendert ins Manifest; Konsument patcht sie nicht). Plattform-Eigenschaft, keine Cluster-Eigenschaft."
+    },
+    "required": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Was der Konsument liefern MUSS. Leere Listen = nichts (cluster-agnostisch).",
+      "properties": {
+        "configmap_keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Klasse-A-Werte (Plain): Keys, die die runtime-config-ConfigMap des Konsumenten enthalten muss."
+        },
+        "secret_keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Klasse-B-Werte (Secrets): Keys, die das runtime-secret (ESO/SOPS) des Konsumenten enthalten muss."
+        }
+      }
+    },
+    "provided_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Die Namen, unter denen die Komponente ihre Werte via envFrom/volumeMount erwartet. Default-Konvention <component>-runtime-{config,secret}, aber ein freier Name ist erlaubt (z.B. legacy ipxe-boot-scripts).",
+      "properties": {
+        "configmap": {
+          "type": "string",
+          "description": "Name der ConfigMap, die das Manifest via envFrom/volumeMount referenziert."
+        },
+        "secret": {
+          "type": "string",
+          "description": "Name des Secrets, das das Manifest via envFrom/volumeMount referenziert."
+        }
+      }
+    },
+    "external_dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+      },
+      "default": [],
+      "description": "Andere Komponenten (<sub-layer>/<component>), die im selben Cluster vorhanden sein müssen, bevor diese sinnvoll läuft (z.B. registry/harbor → secrets/dex, storage-objects/garage)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "cluster_agnostic": { "const": true } }
+      },
+      "then": {
+        "description": "Cluster-agnostische Komponenten dürfen keine provided_refs tragen.",
+        "not": { "required": ["provided_refs"] }
+      }
+    }
+  ]
+}
