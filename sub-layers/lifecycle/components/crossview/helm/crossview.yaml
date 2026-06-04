@@ -40,8 +40,22 @@ values:
       oidc:
         enabled: false
 
-  # Secrets: the chart's defaults (adminPassword "password", empty dbPassword/
-  # sessionSecret) are PLACEHOLDERS — never ship a real credential in the catalog
-  # (base Hard-Constraint: no real secrets in the repo). The consumer MUST supply
-  # adminPassword + dbPassword + sessionSecret (+ OIDCClientSecret when SSO is on)
-  # via an existing Secret (ADR-0024 Shape c, secretKeyRef). See customization.yaml.
+  # Secrets (ADR-0024 Shape c): the render references an EXISTING Secret
+  # `crossview-runtime-secret` by name — it ships NO credential value (base
+  # Hard-Constraint: no real secrets in the catalog). The consumer creates that
+  # Secret in the destination namespace (SOPS, applied out-of-band before sync).
+  # The workload stays payload-agnostic + signed; only the named ref is frozen.
+  # OIDCClientSecret is added the same way once the consumer enables Dex SSO.
+  secrets:
+    adminPassword:
+      secretKeyRef:
+        name: crossview-runtime-secret
+        key: admin-password
+    dbPassword:
+      secretKeyRef:
+        name: crossview-runtime-secret
+        key: db-password
+    sessionSecret:
+      secretKeyRef:
+        name: crossview-runtime-secret
+        key: session-secret

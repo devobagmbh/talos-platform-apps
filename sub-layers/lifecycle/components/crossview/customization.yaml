@@ -11,10 +11,10 @@ provided_selectors: {} # no consumer-labeled CRs
 required:
   env_keys: []
   config_files: [] # SSO/OIDC config (Shape b) only when SSO is enabled by the consumer
-  secret_keys: # Shape (c) — the consumer MUST supply these (catalog ships placeholders only)
-    - crossview.admin_password
-    - crossview.db_password
-    - crossview.session_secret
+  secret_keys: # Shape (c) — keys in crossview-runtime-secret the consumer MUST supply
+    - admin-password
+    - db-password
+    - session-secret
   selector_crs: []
 sync_wave: "30"
 external_dependencies:
