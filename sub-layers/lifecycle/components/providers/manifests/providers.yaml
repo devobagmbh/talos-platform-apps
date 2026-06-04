@@ -38,7 +38,7 @@ spec:
   # (e.g. ArgoCD repo credential) IF the child tofu root doesn't already bring
   # them as a Talos inlineManifest. The CNI (Cilium) + ArgoCD bootstrap itself
   # no longer runs here, but as a base inlineManifest at the child tofu apply
-  # (talos-platform-base v0.7.0 deploy_argocd + Cilium recipe).
+  # (talos-platform-base v0.8.0 deploy_argocd, PR #102 + Cilium recipe).
 
 # provider-helm was REMOVED: Cilium/ArgoCD no longer arrive as a downstream
 # helm.crossplane.io/Release, but as a Talos inlineManifest at cluster bootstrap

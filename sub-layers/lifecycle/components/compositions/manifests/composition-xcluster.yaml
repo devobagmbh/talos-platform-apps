@@ -42,9 +42,13 @@ spec:
         resources:
           - name: talos-workspace
             base:
-              # provider-opentofu, Crossplane v2 namespaced API group. The XCluster
-              # is namespaced (crossplane-system), so the composed Workspace is the
-              # namespaced kind and lands in the XR's namespace.
+              # provider-opentofu, Crossplane v2 namespaced API group. The composed
+              # Workspace is the namespaced kind and lands in the XCluster's OWN
+              # namespace. All its secret refs are therefore LOCAL (same namespace) —
+              # we deliberately set NO explicit `namespace:`, because cross-namespace
+              # refs are forbidden in the v2 namespaced local-ref model. The consumer
+              # co-locates the runner Secret + the connection secret with the XCluster
+              # (the seeder's XCluster + secrets live in crossplane-system).
               apiVersion: opentofu.m.upbound.io/v1beta1
               kind: Workspace
               spec:
@@ -54,28 +58,24 @@ spec:
                   enableTofuCLILogging: true
                   # Secrets only — NO cluster identity (that lives in the root's
                   # committed cluster.yaml). The per-cluster Secret
-                  # (<clusterName>-tofu-secrets, in crossplane-system) is supplied
-                  # by Layer 3 (consumer repo, SOPS/ESO). env[].secretKeyRef is
-                  # supported by the opentofu Workspace API.
+                  # (<clusterName>-tofu-secrets) is supplied by Layer 3 (consumer
+                  # repo, SOPS/ESO) in the XCluster's namespace. env[].secretKeyRef
+                  # is a LOCAL ref (no namespace) — v2 namespaced model.
                   env:
                     - name: TF_VAR_sops_age_key
                       secretKeyRef:
-                        namespace: crossplane-system
                         name: ""  # patched: <clusterName>-tofu-secrets
                         key: sops_age_key
                     - name: TF_VAR_tf_encryption_passphrase
                       secretKeyRef:
-                        namespace: crossplane-system
                         name: ""  # patched
                         key: tf_encryption_passphrase
                     - name: AWS_ACCESS_KEY_ID
                       secretKeyRef:
-                        namespace: crossplane-system
                         name: ""  # patched
                         key: aws_access_key_id
                     - name: AWS_SECRET_ACCESS_KEY
                       secretKeyRef:
-                        namespace: crossplane-system
                         name: ""  # patched
                         key: aws_secret_access_key
                 # ProviderConfig completes the S3 backend (DS720+ Garage
@@ -84,9 +84,9 @@ spec:
                 # (namespaced, same namespace as this Workspace).
                 providerConfigRef:
                   name: opentofu-default
-                # kubeconfig + talosconfig (module outputs) → connection secret.
+                # kubeconfig + talosconfig (module outputs) → connection secret,
+                # written LOCALLY into the XCluster's namespace (no explicit namespace).
                 writeConnectionSecretToRef:
-                  namespace: crossplane-system
                   name: ""  # patched: <clusterName>-cluster-conn
             patches:
               - type: FromCompositeFieldPath
@@ -138,8 +138,11 @@ spec:
               - type: ToCompositeFieldPath
                 fromFieldPath: spec.writeConnectionSecretToRef.name
                 toFieldPath: status.kubeconfigSecretRef.name
-              - type: ToCompositeFieldPath
-                fromFieldPath: spec.writeConnectionSecretToRef.namespace
+              # The conn secret is written LOCALLY into the XCluster's own namespace
+              # — surface that namespace from the XR itself, not from a (now absent)
+              # writeConnectionSecretToRef.namespace field.
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.namespace
                 toFieldPath: status.kubeconfigSecretRef.namespace
 
     # --- Step 2: derive Ready status (Workspace Ready → XCluster Ready) ---
