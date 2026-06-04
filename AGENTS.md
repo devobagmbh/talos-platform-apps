@@ -82,7 +82,7 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 - **YAML**: 2-Space-Indent, keine Tabs, Block-Style bevorzugen
 - **Verzeichnisname == Identität**: `sub-layers/lifecycle/components/crossplane/` produziert OCI-Pfad `<registry>/lifecycle/crossplane` mit Git-Tag-Pattern `lifecycle/crossplane-vX.Y.Z`
 - **README pro Sub-Layer UND pro Komponente**: Sub-Layer-README listet die Komponenten + sync-wave-Reihenfolge; Komponenten-README beschreibt Inhalt + OCI-Pfad + sync-wave + ADR-Verweise.
-- **Sprache**: Deutsch in `README.md`, `AGENTS.md` und Doku. Helm-Werte/Code folgen Upstream (englisch).
+- **Language**: **English everywhere** — code, comments, READMEs, and docs. Platform policy (2026-06-03): only `talos-platform-docs` stays German; every other repo (`talos-platform-base`, `talos-platform-apps`, the consumer cluster repos) is English throughout, code AND docs. Helm values/code follow upstream (English). Existing German component READMEs are migrated incrementally — new/edited files are English.
 - **Versionierung pro Komponente**: SemVer (`<sub-layer>/<component>-vMAJ.MIN.PATCH`). Jede Komponente hat einen unabhängigen Lifecycle.
 
 ## Testing Guidelines
