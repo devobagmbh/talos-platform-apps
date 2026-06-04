@@ -1,14 +1,13 @@
 requires:
-  talos-platform-base: ">=v0.4.0 <v1.0.0"
-  lifecycle/crossplane: ">=v0.1.0"  # Provider-CRD muss da sein
+  lifecycle/crossplane: ">=v0.1.0"  # Provider/Function CRDs must exist first
 
 provides:
-  - name: provider-terraform
+  - name: provider-opentofu
     apis:
-      - pkg.crossplane.io/Provider@v0.20.0
-  - name: provider-helm
+      - pkg.crossplane.io/Provider@v1.1.3
+  - name: function-patch-and-transform
     apis:
-      - pkg.crossplane.io/Provider@v0.20.0
-  - name: provider-kubernetes
+      - pkg.crossplane.io/Function@v0.10.6
+  - name: function-auto-ready
     apis:
-      - pkg.crossplane.io/Provider@v0.18.0
+      - pkg.crossplane.io/Function@v0.6.5

@@ -1,0 +1,14 @@
+# Customization Contract (ADR-0023). The iPXE server ships a default boot-script
+# ConfigMap (stub); the consumer MUST override it with the real Talos boot script
+# (image URL, kernel args, machine-config URL). Class-A value (plain, not a secret).
+schema_version: "1"
+component: lifecycle/ipxe
+cluster_agnostic: false
+sync_wave: "0"
+required:
+  configmap_keys:
+    - boot.ipxe
+  secret_keys: []
+provided_refs:
+  configmap: ipxe-boot-scripts
+external_dependencies: []

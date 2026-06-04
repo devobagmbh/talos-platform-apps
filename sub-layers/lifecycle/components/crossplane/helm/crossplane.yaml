@@ -1,23 +1,26 @@
-# Crossplane-Operator — Layer-2-Default-Values für talos-platform-apps.
+# Crossplane operator — Layer-2 default values for talos-platform-apps.
 #
-# Cluster-spezifisches (Replicas, Resource-Limits-Tuning, Provider-Pakete-
-# Pinning) lebt im Konsumenten-Repo (talos-seeder-cluster, Layer 3).
-# Diese Datei ist Helm-Values-Default für den Modulkatalog.
+# Cluster-specific bits (replicas, resource-limit tuning, provider package
+# pinning) live in the consumer repo (talos-seeder-cluster, Layer 3).
+# This file is the Helm-values default for the module catalog.
 
 metadata:
   chart: crossplane
   repo: https://charts.crossplane.io/stable
-  version: 1.18.0  # vendored at vendor/crossplane-1.18.0.tgz — charts.crossplane.io 403s CI runner IPs (render:one prefers the local archive). Bump: helm pull crossplane --repo https://charts.crossplane.io/stable --version <v> -d vendor/ && remove the old .tgz
+  version: 2.3.1  # Crossplane v2 (namespaced XRs — XRD apiextensions.crossplane.io/v2,
+  # scope: Namespaced; no claims). Vendored at vendor/crossplane-2.3.1.tgz —
+  # charts.crossplane.io 403s CI runner IPs, so render:one prefers the local archive.
+  # Bump: helm pull crossplane --repo https://charts.crossplane.io/stable --version <v> -d vendor/ && remove the old .tgz
   namespace: crossplane-system
 
 values:
   replicas: 1
 
-  # Metrics-Endpoint für Prometheus
+  # Metrics endpoint for Prometheus
   metrics:
     enabled: true
 
-  # Ressourcen — bewusst konservativ; Konsumenten-Repo kann erhöhen
+  # Resources — deliberately conservative; the consumer repo can raise them
   resourcesCrossplane:
     requests:
       cpu: 100m
@@ -25,21 +28,20 @@ values:
     limits:
       memory: 512Mi
 
-  # RBAC-Manager bleibt enabled für Composition-Authoring
+  # RBAC manager stays enabled for Composition authoring
   rbacManager:
     deploy: true
     replicas: 1
 
-  # Provider-Cache — wichtig für Air-Gap / Seeder-Harbor-Pull-Through
+  # Package cache — important for air-gap / seeder Harbor pull-through
   packageCache:
     medium: ""
     sizeLimit: 5Gi
 
-  # Composition-Revisions sind essentiell für GitOps-Reconciliation.
-  # EnvironmentConfigs wandern in Crossplane 1.18+ in function-environment-configs;
-  # das alte --enable-environment-configs ist removed und crasht den Pod.
-  args:
-    - --enable-composition-revisions
+  # No extra args on v2: composition revisions are always-on (the v1
+  # --enable-composition-revisions flag is removed and would crash the pod, like
+  # --enable-environment-configs did). >>> VERIFY the v2 chart values surface
+  # (rbacManager/resourcesCrossplane/packageCache key names may differ on v2).
 
-  # Pro-active Reconcile-Intervall (Default: 1 Min)
+  # Proactive reconcile interval (default: 1 min)
   pollInterval: 1m

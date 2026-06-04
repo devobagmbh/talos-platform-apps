@@ -1,22 +1,30 @@
-# CompositeResourceDefinition für XCluster — das API, mit dem ein
-# Konsumenten-Repo einen Child-Cluster claimt (z. B. Office-Lab).
+# CompositeResourceDefinition for XCluster — the API a consumer repo (child
+# repo, e.g. talos-office-lab-cluster) uses to request a child cluster.
 #
-# Schema-Felder sind bewusst minimal in Phase 1. Erweiterungen
-# (NodeGroups, GPU-Affinity, Custom-CNI-Settings) folgen mit Phase 2+
-# Use-Cases.
+# Crossplane v2 (apiextensions.crossplane.io/v2): scope is Namespaced — the
+# consumer creates an XCluster directly in a namespace (no separate claim; the
+# v1 claim model is gone in v2). The package set is pinned to the v1.x-line
+# providers/functions; see providers + crossplane/helm for the v2 decision.
+#
+# Arch B (DRY, ADR-0022 rev / ADR-0006): the XCluster is DELIBERATELY THIN.
+# Cluster identity (nodes, classes, versions, endpoint) lives ONLY in the
+# consumer's committed cluster.yaml, read by the consumer's `stage-1/` tofu root
+# — the SAME root the Stage-0 laptop `tofu apply` runs. The XCluster therefore
+# must NOT duplicate that identity; it only tells Crossplane WHICH root to run
+# and where the secrets are. Update = edit cluster.yaml once, not the XCluster too.
 
-apiVersion: apiextensions.crossplane.io/v1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
   name: xclusters.platform.devoba.de
 spec:
+  scope: Namespaced # v2 default; the consumer creates an XCluster in a namespace
   group: platform.devoba.de
   names:
     kind: XCluster
     plural: xclusters
-  claimNames:
-    kind: Cluster
-    plural: clusters
+  # No claimNames — claims are a v1/LegacyCluster concept; in v2 the namespaced
+  # XCluster IS the consumer-facing object.
   defaultCompositionRef:
     name: xcluster-talos
   versions:
@@ -32,45 +40,24 @@ spec:
               properties:
                 clusterName:
                   type: string
-                  description: "Name des Child-Clusters (z. B. office-lab)"
-                talosVersion:
-                  type: string
-                  description: "Talos-Linux-Version (z. B. v1.13.0)"
-                kubernetesVersion:
-                  type: string
-                  description: "Kubernetes-Version (z. B. v1.36.0)"
-                nodes:
-                  type: array
-                  description: "Liste der Bare-Metal-Node-Specs"
-                  items:
-                    type: object
-                    properties:
-                      hostname:
-                        type: string
-                      ip:
-                        type: string
-                      role:
-                        type: string
-                        enum: [controlplane, worker]
-                    required: [hostname, ip, role]
-                platformBaseTag:
-                  type: string
-                  description: "Welcher talos-platform-base-OCI-Tag konsumiert wird"
+                  description: >-
+                    Cluster name (e.g. office-lab). Used for labeling, the tofu
+                    Workspace name, the connection-secret name, and (by
+                    convention) the per-cluster secret name <clusterName>-tofu-secrets.
                 tofuModuleSource:
                   type: string
                   description: >-
-                    Tofu-Modul-Source-URL für die Cluster-Provisionierung, vom
-                    Konsumenten-Repo (talos-seeder-cluster) gesetzt — z. B.
-                    'git::https://github.com/Nosmoht/talos-platform-base.git//tofu/modules/talos-cluster?ref=vX.Y.Z'.
-                    Dieses Repo (talos-platform-apps) kennt die konkrete Source
-                    bewusst NICHT; die Verdrahtung von base + apps macht erst
-                    das Seeder-Repo.
-                appsSubLayerPins:
-                  type: object
-                  description: "Map sub-layer-name → OCI-Tag (z. B. monitoring: v0.3.1)"
-                  additionalProperties:
-                    type: string
-              required: [clusterName, talosVersion, nodes, platformBaseTag]
+                    Git source URL of the consumer's self-contained `stage-1/`
+                    tofu root (which reads its committed cluster.yaml and calls the
+                    base talos-cluster module with deploy_argocd) — e.g.
+                    'git::https://github.com/devobagmbh/talos-office-lab-cluster.git//stage-1?ref=main'.
+                    The SAME root the Stage-0 laptop runs. ArgoCD + Cilium come up
+                    as base inlineManifest (deploy_argocd) — tofu-only.
+              # No secretName field: the per-cluster runner Secret name follows the
+              # fixed convention <clusterName>-tofu-secrets (the Composition derives
+              # it). Add an override field here AND the matching Composition patches
+              # together if a real need arises — an unused field is worse than none.
+              required: [clusterName, tofuModuleSource]
             status:
               type: object
               properties:

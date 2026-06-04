@@ -1,40 +1,69 @@
-# Crossplane Provider-Packages — installiert vom Crossplane-Operator nach
-# dessen Bootstrap. Pinning ist Pflicht (ADR-0009 § no_latest_image_tag).
+# Crossplane provider + function packages — installed by the Crossplane operator
+# after its bootstrap. Pinning is mandatory (ADR-0009 § no_latest_image_tag).
 #
-# Versionen Stand 2026; vor Push via `crossplane package list` oder
-# upbound-Marketplace verifizieren.
+# Versions verified 2026-06 against the GitHub release pages / Upbound
+# marketplace. Confirm the exact current latest at push time.
+#
+# Crossplane target: v2.x (chart 2.3.1, crossplane/helm/crossplane.yaml) —
+# greenfield, so we start on the current major (namespaced XRs, XRD
+# apiextensions.crossplane.io/v2). Pins verified 2026-06 against the GitHub
+# release pages / Upbound marketplace: provider-opentofu v1.1.3 (ships the
+# namespaced opentofu.m.upbound.io API), function-patch-and-transform v0.10.6,
+# function-auto-ready v0.6.5.
 
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
-  name: provider-terraform
+  name: provider-opentofu
 spec:
-  package: xpkg.upbound.io/upbound/provider-terraform:v0.20.0
-  # Stage-1-Cluster-Provisionierung läuft via provider-terraform gegen
-  # das talos-cluster-Tofu-Modul (talos-seeder-cluster/stage-1/modules/talos-cluster).
-  # Provider akzeptiert SOPS-encrypted-Inputs via carlpett/sops Tofu-Provider.
+  package: xpkg.upbound.io/upbound/provider-opentofu:v1.1.3
+  # Stage-1 cluster provisioning runs the consumer's stage-1 tofu root (e.g.
+  # talos-seeder-cluster//stage-1) via a Workspace. We use provider-OPENTOFU, not
+  # provider-terraform: the latter is frozen at Terraform 1.5.7 (BSL) and cannot
+  # run our roots, which use OpenTofu 1.7+ state encryption (the `encryption {}`
+  # block / tofu-encrypt). provider-opentofu runs the `tofu` binary.
+  # Crossplane v2: the namespaced Workspace/ProviderConfig API group is
+  # opentofu.m.upbound.io/v1beta1 (used in composition-xcluster.yaml and the
+  # consumer providerconfig). env[].secretKeyRef + varFiles are supported.
+
+# provider-kubernetes was NOT shipped: no Composition references it (review Nit 11
+# — don't pin/publish an unused package). Add it back in its own change when a
+# Composition actually needs to apply K8s objects into a child. Child bootstrap
+# objects (e.g. the ArgoCD repo credential) arrive as base inlineManifest, not here.
+
+# provider-helm was REMOVED: Cilium/ArgoCD no longer arrive as a downstream
+# helm.crossplane.io/Release, but as a Talos inlineManifest at cluster bootstrap
+# (base delivers ArgoCD via deploy_argocd, Cilium via Recipe). The xcluster
+# Composition is therefore a pure tofu Workspace.
+
+---
+# Composition functions — MANDATORY for Pipeline-mode Compositions. The xcluster
+# Composition runs `mode: Pipeline` and references these via functionRef; without
+# the function packages installed every XCluster claim stalls in reconcile.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.10.6
+  # Maps the thin XCluster spec (clusterName, tofuModuleSource) onto the
+  # provider-opentofu Workspace fields (see composition-xcluster.yaml).
 
 ---
 apiVersion: pkg.crossplane.io/v1
-kind: Provider
+kind: Function
 metadata:
-  name: provider-helm
+  name: function-auto-ready
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/provider-helm:v0.20.0
-  # Bootstrappt Cilium/Linstor/Argo nach Cluster-Up.
+  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.6.5
+  # Derives the XCluster Ready status from the composed resources
+  # (Workspace Ready → XCluster Ready). Last pipeline step.
 
 ---
-apiVersion: pkg.crossplane.io/v1
-kind: Provider
-metadata:
-  name: provider-kubernetes
-spec:
-  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.18.0
-  # Appliziert App-of-Apps + RBAC-Manifeste nach Argo-Install.
-
----
-# Provider-Configs (mit Cluster-Identität) leben in Layer 3 (talos-seeder-cluster).
-# Beispielsweise muss provider-terraform ein ProviderConfig haben, das auf
-# die Seeder-Garage-S3-Credentials zeigt. Diese Cluster-spezifischen
-# Bindings gehören NICHT in den Modulkatalog.
+# ProviderConfigs (carrying cluster identity) live in Layer 3 (talos-seeder-cluster):
+# an opentofu ProviderConfig that completes the stage-1 root's partial S3 backend
+# (Garage endpoint/bucket/key via backendFile) — the in-cluster equivalent of the
+# laptop's `tofu init -backend-config=backend.hcl`. The S3 creds + age key are
+# injected as Workspace env by the Composition. These cluster-specific bindings do
+# NOT belong in the module catalog.

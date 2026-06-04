@@ -1,0 +1,11 @@
+# Customization Contract (ADR-0023). Provider/function packages are
+# cluster-agnostic (pinned package refs). ProviderConfigs are supplied by the consumer.
+schema_version: "1"
+component: lifecycle/providers
+cluster_agnostic: true
+sync_wave: "10"
+required:
+  configmap_keys: []
+  secret_keys: []
+external_dependencies:
+  - lifecycle/crossplane

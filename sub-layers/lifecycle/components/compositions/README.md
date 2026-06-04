@@ -1,21 +1,23 @@
-# Komponente `lifecycle/compositions`
+# Component `lifecycle/compositions`
 
-`CompositeResourceDefinition` `XCluster` + zugehörige `Composition` für die Office-Lab-Provisionierung.
+`CompositeResourceDefinition` `XCluster` + its `Composition` for child-cluster provisioning (e.g. office-lab).
 
-`XCluster` ist die plattform-interne API. Ein `XCluster`-Manifest beschreibt einen kompletten Talos-Child-Cluster (`clusterName`, `talosVersion`, `nodes`, `platformBaseTag`, `appsSubLayerPins`). Die Composition rendert daraus eine 3-Step-Pipeline:
+`XCluster` is the platform-internal API. **Crossplane v2:** the XRD is `apiextensions.crossplane.io/v2`, `scope: Namespaced` — the consumer creates a namespaced `XCluster` directly (no v1 claim). **Arch B (DRY):** that `XCluster` is **thin** — `clusterName` + `tofuModuleSource`. It does **not** carry cluster identity (nodes/classes/versions). That identity lives once in the consumer's committed `cluster.yaml`, read by the consumer's self-contained `stage-1/` tofu root — the **same root** the Stage-0 laptop `tofu apply` runs. Update = edit `cluster.yaml` once, never the `XCluster` too.
 
-1. **`Workspace`** (provider-terraform) — provisioniert die Talos-Maschinen via `talos-cluster`-Modul.
-2. **`Release`** (provider-helm) — installiert Cilium ins frische Cluster.
-3. **`Release`** (provider-helm) — installiert ArgoCD ins frische Cluster, das danach den Rest der Apps zieht.
+The Composition is **tofu-only**: a single `Workspace` (provider-**opentofu**, namespaced `opentofu.m.upbound.io/v1beta1`) runs that consumer root (`source: Remote`, `module` = `tofuModuleSource`). provider-opentofu, not -terraform, because the roots use OpenTofu 1.7+ state encryption that the Terraform-1.5.7-frozen provider cannot run. Crossplane passes only **secrets** through (`TF_VAR_sops_age_key`, `TF_VAR_tf_encryption_passphrase`, Garage `AWS_*`) via the per-cluster Secret `<clusterName>-tofu-secrets`; the `Workspace` writes the `kubeconfig`/`talosconfig` outputs to its own connection secret `<clusterName>-cluster-conn` (Crossplane v2 dropped native XR connection-detail aggregation), and `function-auto-ready` derives the Ready status.
 
-## Inhalt
+**No** downstream Cilium/ArgoCD Helm step: the child brings its substrate itself — `talos-platform-base` v0.8.0 delivers ArgoCD via `deploy_argocd` (PR #102) and Cilium via Recipe as a Talos `inlineManifest` at bootstrap. The base health gate (`data.talos_cluster_health`) waits for nodes=Ready (CNI up) before `tofu apply` returns. Once the child is up, its own (inlineManifest) ArgoCD takes over GitOps from the child repo.
 
-- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` (Schema: clusterName, talosVersion, nodes, platformBaseTag, appsSubLayerPins).
-- `manifests/composition-xcluster.yaml` — `Composition` als 3-Step-Pipeline.
+## Contents
 
-## Sync-Wave-Position
+- `manifests/xrd-xcluster.yaml` — `CompositeResourceDefinition` (`apiextensions.crossplane.io/v2`, `scope: Namespaced`; **thin**: clusterName, tofuModuleSource).
+- `manifests/composition-xcluster.yaml` — `Composition` (`mode: Pipeline`, runs the consumer root → ready). One `VERIFY` marker remains: the base module output names surfaced into the `Workspace` connection secret (`kubeconfig`/`talosconfig`), to confirm at first reconcile.
 
-`sync-wave: "20"` — braucht `lifecycle/providers` (Provider-Pods müssen ready sein, sonst landen die `Workspace`/`Release`-Resources im Pending).
+> **ADR-0022 note:** Arch B (thin claim + consumer-root-runner) follows the base OpenTofu cutover (v0.7.0, node/class defs in the consumer root) + PR #102 (ArgoCD via tofu). ADR-0022 (old ConfigMap+go-templating pattern) needs a matching revision — tracked in talos-platform-docs#72.
+
+## Sync-wave position
+
+`sync-wave: "20"` — requires `lifecycle/providers` (provider + function pods must be ready, otherwise the `Workspace` resources stay Pending).
 
 ## OCI
 
@@ -23,6 +25,6 @@
 oci://ghcr.io/devobagmbh/talos-platform-apps/lifecycle/compositions:vX.Y.Z
 ```
 
-## Verwandte ADRs
+## Related ADRs
 
 - [ADR-0004 — Cluster-Lifecycle-Tooling](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0004-cluster-lifecycle-tooling.md)
