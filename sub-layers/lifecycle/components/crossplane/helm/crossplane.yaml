@@ -7,9 +7,10 @@
 metadata:
   chart: crossplane
   repo: https://charts.crossplane.io/stable
-  version: 2.3.1  # Crossplane v2 (greenfield → current line). v2 = namespaced XRs
-  # (XRD apiextensions.crossplane.io/v2, scope: Namespaced); no claims.
-  # >>> VERIFY the exact latest v2.x chart at push (`helm search repo crossplane-stable`).
+  version: 2.3.1  # Crossplane v2 (namespaced XRs — XRD apiextensions.crossplane.io/v2,
+  # scope: Namespaced; no claims). Vendored at vendor/crossplane-2.3.1.tgz —
+  # charts.crossplane.io 403s CI runner IPs, so render:one prefers the local archive.
+  # Bump: helm pull crossplane --repo https://charts.crossplane.io/stable --version <v> -d vendor/ && remove the old .tgz
   namespace: crossplane-system
 
 values:
