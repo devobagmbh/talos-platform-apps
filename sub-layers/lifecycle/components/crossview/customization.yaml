@@ -18,4 +18,4 @@ required:
   selector_crs: []
 sync_wave: "30"
 external_dependencies:
-  - crossplane
+  - lifecycle/crossplane
