@@ -1,14 +1,22 @@
-# Customization Contract (ADR-0023). The iPXE server ships a default boot-script
-# ConfigMap (stub); the consumer MUST override it with the real Talos boot script
-# (image URL, kernel args, machine-config URL). Class-A value (plain, not a secret).
-schema_version: "1"
-component: lifecycle/ipxe
-cluster_agnostic: false
-sync_wave: "0"
-required:
-  configmap_keys:
-    - boot.ipxe
-  secret_keys: []
+# Customization Contract v2 (ADR-0024). The iPXE server (nginx) ships a default
+# boot-script ConfigMap (stub); the consumer MUST author the real boot.ipxe
+# (Talos image URL, kernel args, machine-config URL per hardware variant). The
+# server mounts the ConfigMap as a file (Shape b) at /usr/share/nginx/html — the
+# consumer owns the whole file, the signed workload is never patched. (v1 modelled
+# this as a Class-A configmap_key; ADR-0024 Shape b is the correct form for a
+# file-driven app.)
+freeze_line:
+  workload: rendered/manifest.yaml # nginx Deployment/Service — never consumer-patched
 provided_refs:
-  configmap: ipxe-boot-scripts
+  config: ipxe-boot-scripts # Shape (b): mounted boot-script file
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: # Shape (b) — the consumer authors the full boot.ipxe
+    - path: /usr/share/nginx/html/boot.ipxe
+      ref: ipxe-boot-scripts
+      key: boot.ipxe
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
 external_dependencies: []

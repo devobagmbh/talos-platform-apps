@@ -97,6 +97,70 @@
         }
       }
     },
+    "check-jsonschema@latest": {
+      "last_modified": "2026-05-21T08:15:18Z",
+      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#check-jsonschema",
+      "source": "devbox-search",
+      "version": "0.37.2",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/p2zz6g14dyn24rqvz19s22dnsg4nrsvf-check-jsonschema-0.37.2",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/3l70crngvmgwfrr72wb6k5lvrqlyp70x-check-jsonschema-0.37.2-dist"
+            }
+          ],
+          "store_path": "/nix/store/p2zz6g14dyn24rqvz19s22dnsg4nrsvf-check-jsonschema-0.37.2"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/kwrzwzyg9dqqgmxrkihglz6640wa5m29-check-jsonschema-0.37.2",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/v50n26wb02vzkqxk80wbspv9lzpqmycp-check-jsonschema-0.37.2-dist"
+            }
+          ],
+          "store_path": "/nix/store/kwrzwzyg9dqqgmxrkihglz6640wa5m29-check-jsonschema-0.37.2"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ffzydhlqzjr1wb3x1qhls9qzj15ydd13-check-jsonschema-0.37.2",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/nm40mhd9pr4xpy77x050rcklil2vwjkf-check-jsonschema-0.37.2-dist"
+            }
+          ],
+          "store_path": "/nix/store/ffzydhlqzjr1wb3x1qhls9qzj15ydd13-check-jsonschema-0.37.2"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/73hspz2nv77j6s7kxnw5bsknasx2inl9-check-jsonschema-0.37.2",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/57qlsgqw3gi2lylnjpbnbsmxzk5vwxll-check-jsonschema-0.37.2-dist"
+            }
+          ],
+          "store_path": "/nix/store/73hspz2nv77j6s7kxnw5bsknasx2inl9-check-jsonschema-0.37.2"
+        }
+      }
+    },
     "conftest@latest": {
       "last_modified": "2026-04-23T13:07:47Z",
       "resolved": "github:NixOS/nixpkgs/01fbdeef22b76df85ea168fbfe1bfd9e63681b30#conftest",

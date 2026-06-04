@@ -1,85 +1,120 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://devoba.de/schemas/customization.schema.json",
-  "title": "Component Customization Contract",
-  "description": "Vertrag, was eine vorgerenderte OCI-Komponente vom Konsumenten an cluster-spezifischen Werten/Secrets erwartet (talos-platform-docs ADR-0023). Liegt als customization.yaml neben helm/ + manifests/ der Komponente und wird mit dem OCI-Artefakt mitgeliefert.",
+  "title": "Component Customization Contract v2",
+  "description": "Contract declaring the freeze-line and the four config shapes a pre-rendered OCI component expects from the consumer (talos-platform-docs ADR-0024). Lives as customization.yaml next to the component's helm/ + manifests/ and ships with the OCI artifact. Supersedes the ADR-0023 v1 contract.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "component", "sync_wave"],
+  "required": ["freeze_line", "provided_refs", "provided_selectors", "required", "sync_wave", "external_dependencies"],
   "properties": {
-    "schema_version": {
-      "type": "string",
-      "const": "1",
-      "description": "Schema-Version dieses Contract-Formats."
-    },
-    "component": {
-      "type": "string",
-      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
-      "description": "Komponenten-ID als <sub-layer>/<component> (muss zum Verzeichnis passen)."
-    },
-    "cluster_agnostic": {
-      "type": "boolean",
-      "default": false,
-      "description": "true = die Komponente braucht KEINE cluster-spezifischen Werte (z.B. ein Operator). Dann müssen required.* leer und provided_refs weggelassen sein."
-    },
-    "sync_wave": {
-      "type": "string",
-      "pattern": "^-?[0-9]+$",
-      "description": "ArgoCD-Sync-Wave als String (vorgerendert ins Manifest; Konsument patcht sie nicht). Plattform-Eigenschaft, keine Cluster-Eigenschaft."
-    },
-    "required": {
+    "freeze_line": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Was der Konsument liefern MUSS. Leere Listen = nichts (cluster-agnostisch).",
+      "required": ["workload"],
+      "description": "The workload/config boundary (ADR-0024). The workload is pre-rendered, signed, and never consumer-patched; config is 100% consumer-owned.",
       "properties": {
-        "configmap_keys": {
-          "type": "array",
-          "items": { "type": "string" },
-          "default": [],
-          "description": "Klasse-A-Werte (Plain): Keys, die die runtime-config-ConfigMap des Konsumenten enthalten muss."
-        },
-        "secret_keys": {
-          "type": "array",
-          "items": { "type": "string" },
-          "default": [],
-          "description": "Klasse-B-Werte (Secrets): Keys, die das runtime-secret (ESO/SOPS) des Konsumenten enthalten muss."
+        "workload": {
+          "type": "string",
+          "description": "Path to the pre-rendered, signed workload manifest the consumer never patches (conventionally rendered/manifest.yaml)."
         }
       }
     },
     "provided_refs": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Die Namen, unter denen die Komponente ihre Werte via envFrom/volumeMount erwartet. Default-Konvention <component>-runtime-{config,secret}, aber ein freier Name ist erlaubt (z.B. legacy ipxe-boot-scripts).",
+      "description": "Names under which the rendered workload expects consumer-supplied config, by shape. Empty {} for cluster-agnostic components.",
       "properties": {
-        "configmap": {
+        "env": {
           "type": "string",
-          "description": "Name der ConfigMap, die das Manifest via envFrom/volumeMount referenziert."
+          "description": "Shape (a): ConfigMap consumed via envFrom (12-factor env scalars). Convention <component>-runtime-config."
+        },
+        "config": {
+          "type": "string",
+          "description": "Shape (b): ConfigMap/Secret mounted as a whole config file the app reads. Convention <component>-config."
         },
         "secret": {
           "type": "string",
-          "description": "Name des Secrets, das das Manifest via envFrom/volumeMount referenziert."
+          "description": "Shape (c): Secret consumed via envFrom or mounted. Convention <component>-runtime-secret."
         }
       }
     },
+    "provided_selectors": {
+      "type": "object",
+      "description": "Shape (d): for each operator-assembled config kind, the label set the consumer CRs must carry; the rendered consuming CR declares the matching selector. Empty {} when the component has no operator-assembled config.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Label set (key/value) the consumer CRs must carry to match the workload selector.",
+        "minProperties": 1,
+        "additionalProperties": { "type": "string" }
+      }
+    },
+    "required": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["env_keys", "config_files", "secret_keys", "selector_crs"],
+      "description": "What the consumer MUST supply, per shape. Empty lists = nothing (cluster-agnostic).",
+      "properties": {
+        "env_keys": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Shape (a): scalar keys the consumer must set in the env ConfigMap (provided_refs.env)."
+        },
+        "config_files": {
+          "type": "array",
+          "default": [],
+          "description": "Shape (b): full config files the consumer authors; the workload mounts each at its path.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "ref", "key"],
+            "properties": {
+              "path": { "type": "string", "description": "Mount path the workload reads the file from." },
+              "ref": { "type": "string", "description": "ConfigMap/Secret name carrying the file (matches provided_refs.config or .secret)." },
+              "key": { "type": "string", "description": "Key within the ref holding the file content." }
+            }
+          }
+        },
+        "secret_keys": {
+          "type": "array",
+          "default": [],
+          "items": { "type": "string" },
+          "description": "Shape (c): keys the consumer must provide in the runtime secret (provided_refs.secret)."
+        },
+        "selector_crs": {
+          "type": "array",
+          "default": [],
+          "description": "Shape (d): CRs the consumer must create and label so the operator assembles them.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "label"],
+            "properties": {
+              "kind": { "type": "string", "description": "CR kind the consumer must create (e.g. ServiceMonitor, PrometheusRule)." },
+              "label": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": { "type": "string" },
+                "description": "Label set the CR must carry to match the rendered workload selector."
+              }
+            }
+          }
+        }
+      }
+    },
+    "sync_wave": {
+      "type": "string",
+      "pattern": "^-?[0-9]+$",
+      "description": "ArgoCD sync-wave as a string (pre-rendered into the manifest; a platform property, not a cluster property — the consumer does not patch it)."
+    },
     "external_dependencies": {
       "type": "array",
+      "default": [],
       "items": {
         "type": "string",
         "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
       },
-      "default": [],
-      "description": "Andere Komponenten (<sub-layer>/<component>), die im selben Cluster vorhanden sein müssen, bevor diese sinnvoll läuft (z.B. registry/harbor → secrets/dex, storage-objects/garage)."
+      "description": "Other components (<sub-layer>/<component>) that must exist in the same cluster before this one runs sensibly."
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": { "cluster_agnostic": { "const": true } }
-      },
-      "then": {
-        "description": "Cluster-agnostische Komponenten dürfen keine provided_refs tragen.",
-        "not": { "required": ["provided_refs"] }
-      }
-    }
-  ]
+  }
 }

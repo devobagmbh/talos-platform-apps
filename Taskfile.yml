@@ -161,63 +161,42 @@ tasks:
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
   validate:contract:
-    desc: 'Customization-Contract-Selbstkonsistenz (ADR-0023, Ebene 1)'
+    desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1)'
     summary: |
-      Prüft pro Komponente mit customization.yaml:
-        1. schema_version == "1", sync_wave gesetzt
-        2. component-Feld == Verzeichnis-ID
-        3. cluster_agnostic=true → keine provided_refs (nur leere required)
-        4. cluster_agnostic=false → provided_refs gesetzt UND das gerenderte
-           Manifest referenziert die provided_refs-Namen (envFrom/volumeMount)
-      Schema-Referenz: schemas/customization.schema.json.
-      Komponenten OHNE customization.yaml werden gemeldet (noch nicht vertraglich).
+      Validates each component's customization.yaml against
+      schemas/customization.schema.json (ADR-0024 v2 freeze-line contract) with
+      check-jsonschema. Components WITHOUT customization.yaml are reported (not
+      yet under contract).
+
+      Scope: schema self-consistency only. The deeper render-time checks from
+      ADR-0024 (config-file mount #1, selector non-nil #3, config snapshot #5)
+      are a follow-up and require the Dex pilot component.
     cmd: |
       set -uo pipefail
+      schema="schemas/customization.schema.json"
       fail=0
       found=0
       missing=""
       for cdir in sub-layers/*/components/*/; do
         comp_id=$(echo "$cdir" | sed 's|sub-layers/||; s|/components/|/|; s|/$||')
         cfile="${cdir}customization.yaml"
-        manifest="${cdir}rendered/manifest.yaml"
         if [ ! -f "$cfile" ]; then
           missing="${missing}  - ${comp_id}"$'\n'
           continue
         fi
         found=$((found+1))
-        cfail=0
-
-        sv=$(yq -r '.schema_version // ""' "$cfile")
-        [ "$sv" = "1" ] || { echo "✗ ${comp_id}: schema_version != \"1\" (ist: '$sv')"; cfail=1; }
-
-        decl=$(yq -r '.component // ""' "$cfile")
-        [ "$decl" = "$comp_id" ] || { echo "✗ ${comp_id}: component-Feld '$decl' != Verzeichnis '$comp_id'"; cfail=1; }
-
-        sw=$(yq -r '.sync_wave // ""' "$cfile")
-        [ -n "$sw" ] || { echo "✗ ${comp_id}: sync_wave fehlt"; cfail=1; }
-
-        agnostic=$(yq -r '.cluster_agnostic // false' "$cfile")
-        if [ "$agnostic" = "true" ]; then
-          has_refs=$(yq -r 'has("provided_refs")' "$cfile")
-          [ "$has_refs" = "false" ] || { echo "✗ ${comp_id}: cluster_agnostic=true aber provided_refs gesetzt"; cfail=1; }
+        if out=$(check-jsonschema --schemafile "$schema" "$cfile" 2>&1); then
+          echo "✓ ${comp_id}"
         else
-          cm=$(yq -r '.provided_refs.configmap // ""' "$cfile")
-          sec=$(yq -r '.provided_refs.secret // ""' "$cfile")
-          [ -n "$cm" ] || [ -n "$sec" ] || { echo "✗ ${comp_id}: cluster_agnostic=false aber keine provided_refs.configmap/secret"; cfail=1; }
-          if [ -s "$manifest" ]; then
-            [ -z "$cm" ] || grep -q "$cm" "$manifest" || { echo "✗ ${comp_id}: Manifest referenziert ConfigMap '$cm' nicht"; cfail=1; }
-            [ -z "$sec" ] || grep -q "$sec" "$manifest" || { echo "✗ ${comp_id}: Manifest referenziert Secret '$sec' nicht"; cfail=1; }
-          else
-            echo "⊘ ${comp_id}: rendered/manifest.yaml leer — Referenz-Check übersprungen (noch nicht gerendert)"
-          fi
+          echo "✗ ${comp_id}:"
+          printf '%s\n' "$out" | sed 's/^/    /'
+          fail=1
         fi
-        [ "$cfail" -eq 0 ] && echo "✓ ${comp_id} (wave ${sw}${agnostic:+, agnostic=${agnostic}})" || true
-        [ "$cfail" -ne 0 ] && fail=1 || true
       done
       echo ""
-      echo "→ ${found} Komponente(n) mit Contract geprüft."
+      echo "→ ${found} component(s) validated against ${schema}."
       if [ -n "$missing" ]; then
-        echo "Komponenten OHNE customization.yaml (noch nicht vertraglich):"
+        echo "Components WITHOUT customization.yaml (not yet under contract):"
         printf '%s' "$missing"
       fi
       exit $fail
@@ -461,13 +440,11 @@ tasks:
       - task: scan:conftest-verify
       - task: scan:conftest
 
-  # Hinweis: validate:contract ist BEWUSST NICHT Teil von `ci`. Der
-  # Customization-Contract wird graduell pro Komponente eingeführt
-  # (ADR-0023) — solange die Mehrheit der Komponenten noch keinen Contract
-  # trägt, wäre ein CI-weites Gate die falsche Kopplung: ein einzelner
-  # unfertiger/kaputter Contract würde die ganze Render-/Lint-Pipeline
-  # blockieren. Stattdessen separater, gezielter Aufruf (+ eigener CI-Job
-  # contract-validate.yml, der nur Komponenten MIT Contract prüft).
+  # Note: validate:contract is DELIBERATELY not part of `ci`. The customization
+  # contract is rolled out per component (ADR-0024); coupling the render/lint
+  # pipeline to it would be the wrong dependency — a single broken contract would
+  # block the whole pipeline. Instead it runs as a separate, targeted call (+ its
+  # own CI job contract-validate.yml, which only checks components that carry one).
 
   # --- Housekeeping ---
 

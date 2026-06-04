@@ -1,11 +1,15 @@
-# Customization Contract (ADR-0023). Provider/function packages are
-# cluster-agnostic (pinned package refs). ProviderConfigs are supplied by the consumer.
-schema_version: "1"
-component: lifecycle/providers
-cluster_agnostic: true
-sync_wave: "10"
+# Customization Contract v2 (ADR-0024). Provider/function packages are
+# cluster-agnostic (pinned package refs). ProviderConfigs are supplied by the
+# consumer repo, so this component provides no refs/selectors and requires nothing.
+freeze_line:
+  workload: rendered/manifest.yaml # Provider/Function packages — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
 required:
-  configmap_keys: []
+  env_keys: []
+  config_files: []
   secret_keys: []
+  selector_crs: []
+sync_wave: "10"
 external_dependencies:
   - lifecycle/crossplane
