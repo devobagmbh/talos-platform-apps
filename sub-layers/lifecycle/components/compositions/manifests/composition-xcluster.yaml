@@ -138,10 +138,12 @@ spec:
               - type: ToCompositeFieldPath
                 fromFieldPath: spec.writeConnectionSecretToRef.name
                 toFieldPath: status.kubeconfigSecretRef.name
-              # The conn secret is written LOCALLY into the XCluster's own namespace
-              # — surface that namespace from the XR itself, not from a (now absent)
-              # writeConnectionSecretToRef.namespace field.
-              - type: FromCompositeFieldPath
+              # The conn secret is written LOCALLY into the XCluster's own namespace.
+              # Surface it via ToCompositeFieldPath (mirrors the .name patch above):
+              # read the composed Workspace's metadata.namespace (= the XR namespace
+              # in v2) and write it to the XR status. FromCompositeFieldPath would
+              # write the Workspace, not the XR status, leaving it empty (review LOW).
+              - type: ToCompositeFieldPath
                 fromFieldPath: metadata.namespace
                 toFieldPath: status.kubeconfigSecretRef.namespace
 
