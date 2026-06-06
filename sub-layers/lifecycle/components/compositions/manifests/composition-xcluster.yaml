@@ -55,7 +55,11 @@ spec:
                 forProvider:
                   source: Remote
                   module: ""  # patched from spec.tofuModuleSource (the stage-1 root git URL)
-                  enableTofuCLILogging: true
+                  # Default OFF: env[] below injects four secrets (sops_age_key,
+                  # tf_encryption_passphrase, AWS_*); verbose tofu CLI logging can surface
+                  # their values in the provider-opentofu pod logs. Consumers opt in
+                  # per-cluster for debugging.
+                  enableTofuCLILogging: false
                   # Secrets only — NO cluster identity (that lives in the root's
                   # committed cluster.yaml). The per-cluster Secret
                   # (<clusterName>-tofu-secrets) is supplied by Layer 3 (consumer
