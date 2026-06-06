@@ -40,8 +40,10 @@ values:
 
   # No extra args on v2: composition revisions are always-on (the v1
   # --enable-composition-revisions flag is removed and would crash the pod, like
-  # --enable-environment-configs did). >>> VERIFY the v2 chart values surface
-  # (rbacManager/resourcesCrossplane/packageCache key names may differ on v2).
+  # --enable-environment-configs did). Validated 2026-06-06 against the vendored
+  # crossplane-2.3.1 chart values.yaml: replicas / metrics / resourcesCrossplane /
+  # rbacManager / packageCache are all real chart values and are honored.
 
-  # Proactive reconcile interval (default: 1 min)
-  pollInterval: 1m
+  # Reconcile poll interval: crossplane core defaults to 1m. It is NOT a top-level
+  # chart value — a `pollInterval:` key is silently dropped by Helm. To override,
+  # set `args: ["--poll-interval=<dur>"]`. We keep the 1m default, so no arg needed.
