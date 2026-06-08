@@ -23,6 +23,12 @@ values:
   # (ephemeral, fine for a rebuildable dashboard) or point at an external CNPG.
   database:
     enabled: true
+    # Pin the embedded-Postgres image: the chart defaults to postgres:latest,
+    # which the catalog's no_latest_image_tag policy rejects (the tag also drives
+    # the wait-for-db init container). 16.4 is a specific, current stable.
+    image:
+      repository: postgres
+      tag: "16.4"
     persistence:
       enabled: true
       size: 10Gi

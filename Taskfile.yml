@@ -105,17 +105,20 @@ tasks:
         # Helm repo blocks CI-runner IPs (e.g. charts.crossplane.io 403s GitHub-Actions
         # IPs while serving locally). Prefer the local archive; fall back to the HTTP repo.
         # (Separate from charts/ which is gitignored for transient Helm dependency charts.)
+        # --skip-tests: helm test hooks (templates/tests/*) never belong in a published
+        # GitOps manifest — Argo would apply the test Pod as a regular resource, and such
+        # hooks often use unpinned images (e.g. busybox).
         archive="${root}/vendor/${chart}-${version}.tgz"
         if [ -f "$archive" ]; then
           echo "  ↳ Helm-Render   $name (chart=$chart version=$version, vendored)"
           helm template "$name" "$archive" \
-            --namespace "$namespace" \
+            --namespace "$namespace" --skip-tests \
             --values "$vals_tmp" >> "$out"
         else
           echo "  ↳ Helm-Render   $name (chart=$chart version=$version, repo=$repo)"
           helm template "$name" "$chart" \
             --repo "$repo" --version "$version" \
-            --namespace "$namespace" \
+            --namespace "$namespace" --skip-tests \
             --values "$vals_tmp" >> "$out"
         fi
         echo "---" >> "$out"
