@@ -1,0 +1,21 @@
+# Customization Contract v2 (ADR-0024). Crossview's workload (Deployment/Service/
+# RBAC + embedded Postgres) is the signed, pre-rendered artifact. The consumer
+# supplies only secrets (Shape c) and — when SSO is enabled — the Dex OIDC config
+# (Shape b). SSO is off in the catalog default, so the hard requirement is the
+# runtime secret.
+freeze_line:
+  workload: rendered/manifest.yaml # Deployment/Service/RBAC/DB — never consumer-patched
+provided_refs:
+  secret: crossview-runtime-secret # Shape (c): admin/db/session (+ OIDC) credentials
+provided_selectors: {} # no consumer-labeled CRs
+required:
+  env_keys: []
+  config_files: [] # SSO/OIDC config (Shape b) only when SSO is enabled by the consumer
+  secret_keys: # Shape (c) — keys in crossview-runtime-secret the consumer MUST supply
+    - admin-password
+    - db-password
+    - session-secret
+  selector_crs: []
+sync_wave: "30"
+external_dependencies:
+  - lifecycle/crossplane
