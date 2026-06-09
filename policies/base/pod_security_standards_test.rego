@@ -27,6 +27,25 @@ test_namespace_invalid_level_violates if {
 	}
 }
 
+# --- Edge: falsy label values (empty string / null) deny exactly once ---
+# In Rego only `false` and `undefined` are falsy, so an empty-string or null
+# value is NOT treated as a missing key by rule 1 (`not ""` / `not null` are
+# both false); only rule 2 (invalid-level) fires → exactly one deny message.
+
+test_namespace_empty_enforce_denies_once if {
+	count(deny) == 1 with input as {
+		"kind": "Namespace",
+		"metadata": {"name": "ns-empty", "labels": {"pod-security.kubernetes.io/enforce": ""}},
+	}
+}
+
+test_namespace_null_enforce_denies_once if {
+	count(deny) == 1 with input as {
+		"kind": "Namespace",
+		"metadata": {"name": "ns-null", "labels": {"pod-security.kubernetes.io/enforce": null}},
+	}
+}
+
 # --- Conforming: each of the three valid PSA levels ---
 
 test_namespace_restricted_ok if {

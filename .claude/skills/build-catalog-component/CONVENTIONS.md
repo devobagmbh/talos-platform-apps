@@ -71,7 +71,11 @@ source ever does:
   standalone apps): the component ships `manifests/00-namespace.yaml` declaring the
   namespace with an `enforce` label. A shipped Namespace manifest takes precedence
   over Argo `managedNamespaceMetadata` (Argo CD docs, Sync Options), so this is
-  authoritative and self-contained. Examples: `databases/cnpg` (`cnpg-system`,
+  authoritative and self-contained. The consumer's Argo Application may keep
+  `CreateNamespace=true` (Argo applies a `Namespace` before namespace-scoped
+  resources, so the labelled manifest lands before any pod) or set it `false` —
+  either is safe; the shipped manifest is the source of the PSA label regardless.
+  Examples: `databases/cnpg` (`cnpg-system`,
   `restricted`), `storage-block/synology-csi` (`synology-csi`, `privileged` — CSI
   needs host access), `automation/renovate` (`renovate`, `baseline`).
 - **Shared namespace** (two or more catalog components co-locate): NONE ship the
@@ -99,7 +103,12 @@ Setting `restricted` on a workload that does not comply is an admission-reject
 footgun. The deterministic gate (`pod_security_standards` conftest policy) enforces
 that every *declared* Namespace carries a valid `enforce` level; the catalog-evaluator's
 semantic AC additionally catches a dedicated-namespace component that ships no
-`Namespace` object at all (the gate only sees declared namespaces).
+`Namespace` object at all (the gate only sees declared namespaces). Cross-component
+namespace-name uniqueness (two components both shipping the same namespace name,
+each passing its own per-component check, colliding only at Argo apply with
+"managed by multiple Applications") is NOT yet mechanically enforced — it lands
+with the sub-layer-aggregate check alongside the future `compatibility.yaml:
+namespace:` field. Until then it is a convention contributors uphold.
 
 ## Builder write-scope (hard constraint — anti gate-gaming)
 
