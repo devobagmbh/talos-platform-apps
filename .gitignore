@@ -45,6 +45,9 @@ snyk-results.sarif
 .claude/worktrees/
 .claude/plans/
 
+# Runtime state (subagent briefs/summaries, progress.json, transient logs)
+.work/
+
 # Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
 !.claude/reviews/.gitkeep
 .mkcert-registry/

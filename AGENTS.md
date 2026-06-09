@@ -155,17 +155,20 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
 ## Multi-Agent-Coordination
 
-`.claude/agents/` listet spezialisierte Subagenten. Reduziert auf **5 Rollen** (2026-05-26, Bobby's Bus-Faktor-Kritik) — bei 1 Maintainer ist eine differenzierte 9-Rollen-Hierarchie Self-Review-Theater. Bei M2-Onboarding kommen `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer` und `compatibility-reviewer` aus dem Git-Verlauf zurück.
+`.claude/agents/` listet spezialisierte Subagenten. **5 Impl/Review-Rollen** (2026-05-26, Bobby's Bus-Faktor-Kritik) — bei 1 Maintainer ist eine differenzierte 9-Rollen-*Review*-Hierarchie Self-Review-Theater. Hinzu kommt **`catalog-evaluator`** als separater Build-Zeit-Acceptance-Verifier: das ist orthogonal zur Review-Rollen-Zahl — ein Agent, der baut und sein Werk selbst verifiziert, ist das dokumentierte Self-Verification-Failure (MAST FC3; arXiv:2410.21819 + 2402.08115), daher Judge-Builder-Trennung statt Bequemlichkeit. Bei M2-Onboarding kommen `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer` und `compatibility-reviewer` aus dem Git-Verlauf zurück.
 
 | Phase | Agent | Output |
 |---|---|---|
 | Recherche (optional) | `researcher` | Findings + Quellen |
 | Implementierung | `senior-implementer` | Code-Diff |
+| **Verify (Build-Zeit)** (deterministischer Gate + Semantik-ACs, getrennter Kontext) | `catalog-evaluator` | Pass/Fail + Findings |
 | Security-Review (Vault/SOPS/cosign/RBAC/Policies) | `security-reviewer` | Findings |
 | Operational-Safety (Bootstrap/DR/Backup) | `operational-safety-reviewer` | Findings |
 | **Gate** (Triage + Approve oder Block) | `staff-reviewer` | Approve oder Block |
 
 **Self-Review ist auch bei 1 Maintainer unerwünscht, aber nicht hart blockiert** — Wechsel des Agent-Hut ist ein Anti-Drift-Mechanismus, kein Vier-Augen-Prinzip-Ersatz. Sobald M2 da ist, wird der `require-review.sh`-Hook reaktiviert und das volle 9-Agent-Modell zurückgeholt.
+
+**Catalog-Build-Primitives**: Für die Component-Issues (#17–#61) orchestrieren das Skill `build-catalog-component` (eine Komponente) und der Workflow `catalog-fleet` (paralleles Fan-out) die obige Kette als builder→verifier→reviewer mit Builder ≠ Verifier in getrennten Kontexten. Deterministischer Gate (`task ci` + `task validate:contract` + Chart-Ref-/Tamper-Check) zuerst, LLM-Judge nur für die Semantik. Output sind Branches + Report — nie Auto-Merge (CODEOWNERS + Branch-Protection). Spec: `.claude/skills/build-catalog-component/CONVENTIONS.md`.
 
 ## Validation Checklist
 

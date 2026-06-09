@@ -11,19 +11,27 @@ Dieses Repo verfolgt den **mcp-server-Stil**: ein eigenes `.claude/`-Verzeichnis
 - `.claude/hooks/require-review.sh` — PreToolUse-Gate für `Bash`-Commits. **Aktuell inaktiv** (nicht in `settings.json` gebunden). Hintergrund: bei 1 Maintainer wäre fail-closed Selbst-Sabotage (Bobby's Bus-Faktor-Kritik, 2026-05-26). Skript bleibt im Repo; Reaktivierung sobald M2 onboardet ist.
 - `.claude/hooks/pre-commit` — klassischer Git-Pre-Commit-Pfad (rendered/-Detection, conventional-commit-Pattern). Ebenfalls dormant.
 
-### Subagents — reduziert auf 5 Rollen
+### Subagents — 5 Impl/Review-Rollen + 1 Build-Verifier
 
-Tiered-Review-Modell, adaptiert aus `talos-mcp-server`. Auf **5 Rollen reduziert (2026-05-26)** — bei 1 Maintainer ist ein 9-Rollen-Apparat Theater. Reaktivierung der vollen Hierarchie sobald M2 da ist.
+Tiered-Review-Modell, adaptiert aus `talos-mcp-server`. Auf **5 Impl/Review-Rollen reduziert (2026-05-26)** — bei 1 Maintainer ist ein 9-Rollen-*Review*-Apparat Theater. Hinzu kommt `catalog-evaluator` als separater Build-Zeit-Verifier: das ist *kein* sechstes Review-Theater, sondern die Judge-Builder-Trennung — ein Agent, der baut *und* sein eigenes Werk verifiziert, ist das dokumentierte Self-Verification-/Self-Preference-Failure (MAST FC3, arXiv:2410.21819 + 2402.08115). Reaktivierung der vollen Review-Hierarchie sobald M2 da ist.
 
 Verfügbar in `.claude/agents/`:
 
 - `senior-implementer` — schreibt Code/Manifeste/Helm-Values; hat write+edit+bash
+- `catalog-evaluator` — unabhängiger Build-Zeit-Acceptance-Verifier (deterministischer Gate + Semantik-ACs, Tamper-/Chart-Ref-Check); read+bash, kein write/edit; nie derselbe Kontext, der gebaut hat
 - `staff-reviewer` — Primary Gate vor Commits, triagiert ggf. an Spezialisten
 - `security-reviewer` — Vault/SOPS/cosign/SBOM/RBAC/Policies
 - `operational-safety-reviewer` — Bootstrap-Ordnung, DR-Risiken, Backup-Pfade
 - `researcher` — Recherche im base/anderen Repos, Findings-Synthese
 
 Aus dem Git-Verlauf bei M2-Onboarding zurückzuholen: `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer`.
+
+### Skills + Workflows
+
+In-tree Claude-Code-Primitives für den Catalog-Build (Issues #17–#61), nach aktuellen Claude-Code- + LLM-Best-Practices (deterministischer Gate zuerst, LLM-Judge nur für die Semantik; Builder ≠ Verifier; parallele Personas statt sequenzieller Debatte):
+
+- **`/build-catalog-component <sub-layer>/<component>`** (`.claude/skills/build-catalog-component/`) — baut EINE Komponente durch builder→verifier→reviewer in getrennten Kontexten; Fix-Loop-Cap 2; Branch + PR, nie Auto-Merge. Spec/DRY-Quelle: `CONVENTIONS.md` im Skill-Verzeichnis (auch der Workflow-Builder-Brief zeigt dorthin).
+- **`catalog-fleet`** (`.claude/workflows/catalog-fleet.js`) — fächert N Component-Issues parallel auf (build→verify→review als Pipeline, Worktree-Isolation pro Build, schema-validierter Output, konsolidierter Report). Shared-File-Integration (capability-index, Sub-Layer-Aggregate) + PR bleiben serialisiert/menschlich. Erfordert expliziten Opt-in zum Ausführen (Workflow-Tool).
 
 ### Settings
 
