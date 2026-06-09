@@ -1,0 +1,6 @@
+requires: {} # no catalog-internal dependencies (substrate assumptions are capability-form, not version pins — #71)
+provides:
+  - name: synology-csi
+    apis:
+      - synology-csi@v1.3.0 # vendored SynologyOpenSource/synology-csi manifests (deploy/kubernetes/v1.20, MPL-2.0)
+    capabilities: [] # TODO: define a block-storage / csi-iscsi capability in capability-index (proposed, ADR-0021)
