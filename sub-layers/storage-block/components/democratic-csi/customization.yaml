@@ -15,5 +15,9 @@ required:
     - driver-config-file.yaml
   selector_crs: []
 sync_wave: "0" # storage substrate — must be Ready before stateful consumers (e.g. harbor, wave 30)
-external_dependencies:
-  - talos-extension: siderolabs/iscsi-tools # node nsenters into host iscsid; the extension is bootstrap-baked (consumer cluster.yaml)
+# No catalog-component dependency. The node's required Talos system extension
+# `siderolabs/iscsi-tools` is a substrate/bootstrap prerequisite (baked into the
+# consumer cluster.yaml), documented in README — NOT a <sub-layer>/<component>
+# catalog edge, so it does not belong here (this field is catalog components
+# only, per schemas/customization.schema.json).
+external_dependencies: []
