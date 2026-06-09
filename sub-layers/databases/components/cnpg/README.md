@@ -45,6 +45,16 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/databases/cnpg:cnpg-vX.Y.Z
 - **Seeder** — no Postgres consumer currently planned.
 - **office-lab** — consumers are Dex, Harbor, PowerDNS, and workload apps.
 
+## Security trade-off — cluster-wide operator
+
+`config.clusterWide: true` (chart default, pinned here) lets one operator watch
+`Cluster` CRs in **every** namespace — which the multi-app consumers (Dex, Harbor,
+PowerDNS) need. The cost is a broad `ClusterRole`: the operator can read/write the
+PostgreSQL `Secret`s (credentials, TLS) of every CNPG `Cluster` in all namespaces.
+That is the standard CNPG multi-tenant posture; a consumer running a single-tenant
+or strongly-isolated cluster may instead prefer a namespace-scoped operator
+(`config.clusterWide: false` + a per-namespace install) in its overlay.
+
 ## Related ADRs
 
 - [ADR-0008 — Backup-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)

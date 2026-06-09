@@ -46,3 +46,14 @@ values:
     podMonitorEnabled: false
     grafanaDashboard:
       create: false
+
+  # Resource requests/limits for the operator controller-manager (chart top-level
+  # `resources`). The operator is a lightweight reconciler, so the catalog default
+  # is small: requests size it for scheduling; the memory limit prevents a
+  # noisy-neighbor on a single-node cluster. Consumers tune per cluster.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
