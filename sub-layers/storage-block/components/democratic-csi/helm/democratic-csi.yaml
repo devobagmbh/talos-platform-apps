@@ -68,6 +68,14 @@ values:
     driver:
       image:
         tag: v1.9.5
+      # The chart default mounts the host's /etc/iscsi (Type: Directory). On Talos
+      # that path lives only inside the iscsi-tools extension's iscsid namespace,
+      # not in the host root mount namespace — the hostPath mount would fail and
+      # the node pod never starts. /var/iscsi is the writable path the iscsi-tools
+      # extension (v0.2.0, Talos 1.11+) exposes. Type "" disables the strict
+      # existence check so the mount is robust across extension states.
+      iscsiDirHostPath: /var/iscsi
+      iscsiDirHostPathType: ""
       extraEnv:
         - name: ISCSIADM_HOST_STRATEGY
           value: nsenter
