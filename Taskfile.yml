@@ -449,6 +449,102 @@ tasks:
   # block the whole pipeline. Instead it runs as a separate, targeted call (+ its
   # own CI job contract-validate.yml, which only checks components that carry one).
 
+  # --- Worktree (parallel independent sessions) ---
+  # Multiple independent Claude Code sessions build components in parallel on ONE
+  # shared clone: each session gets its own git worktree under .claude/worktrees/.
+  # The only .git-mutating steps (fetch + worktree add/remove/prune) run under a
+  # mkdir-atomic lock (portable; macOS has no flock) so concurrent sessions can't
+  # corrupt shared .git. slug = <sub-layer>-<component>; branch = catalog-build/<slug>.
+
+  worktree:create:
+    desc: 'Isolierten Worktree für eine Komponente anlegen: task worktree:create -- <sub-layer>/<component>'
+    summary: |
+      Cross-session-sicherer git-Worktree unter .claude/worktrees/<slug> auf Branch
+      catalog-build/<slug>. Idempotent (existierender Worktree wird wiederverwendet);
+      fail-fast, wenn der Branch bereits existiert (Claim einer anderen Session).
+      Gibt den absoluten Worktree-Pfad auf der LETZTEN Zeile aus (vom Skill via
+      `| tail -1` gelesen).
+    cmd: |
+      component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
+        echo "usage: task worktree:create -- <sub-layer>/<component>" >&2
+        exit 1
+      fi
+      slug="${component_id%/*}-${component_id#*/}"
+      wt=".claude/worktrees/${slug}"
+      branch="catalog-build/${slug}"
+      mkdir -p .claude/worktrees
+      # acquire cross-session lock (mkdir is atomic on POSIX; no flock on macOS)
+      waited=0
+      until mkdir .claude/worktrees/.lock 2>/dev/null; do
+        if [ -n "$(find .claude/worktrees/.lock -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+          rmdir .claude/worktrees/.lock 2>/dev/null || true   # stale lock, dead session
+          continue
+        fi
+        waited=$((waited + 1))
+        if [ "$waited" -gt 60 ]; then
+          echo "worktree:create: could not acquire lock within ~30s" >&2
+          exit 1
+        fi
+        sleep 0.5
+      done
+      trap 'rmdir .claude/worktrees/.lock 2>/dev/null || true' EXIT
+      # idempotent reuse: dir exists and is on the expected branch
+      if [ -d "$wt" ]; then
+        cur="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        if [ "$cur" = "$branch" ]; then
+          (cd "$wt" && pwd)
+          exit 0
+        fi
+        echo "worktree:create: $wt exists but is on '$cur', not '$branch'" >&2
+        exit 1
+      fi
+      # claim check: branch exists (local or remote) without our worktree -> owned elsewhere
+      if git show-ref --verify --quiet "refs/heads/${branch}" \
+         || git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+        echo "worktree:create: component ${component_id} already claimed (branch ${branch} exists) — another session owns it" >&2
+        exit 1
+      fi
+      git fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing origin/main" >&2
+      git worktree add "$wt" -b "$branch" origin/main >/dev/null
+      (cd "$wt" && pwd)
+
+  worktree:remove:
+    desc: 'Worktree einer Komponente entfernen (Branch bleibt): task worktree:remove -- <sub-layer>/<component>'
+    cmd: |
+      component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
+        echo "usage: task worktree:remove -- <sub-layer>/<component>" >&2
+        exit 1
+      fi
+      slug="${component_id%/*}-${component_id#*/}"
+      wt=".claude/worktrees/${slug}"
+      mkdir -p .claude/worktrees
+      waited=0
+      until mkdir .claude/worktrees/.lock 2>/dev/null; do
+        if [ -n "$(find .claude/worktrees/.lock -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+          rmdir .claude/worktrees/.lock 2>/dev/null || true
+          continue
+        fi
+        waited=$((waited + 1))
+        if [ "$waited" -gt 60 ]; then
+          echo "worktree:remove: could not acquire lock within ~30s" >&2
+          exit 1
+        fi
+        sleep 0.5
+      done
+      trap 'rmdir .claude/worktrees/.lock 2>/dev/null || true' EXIT
+      if [ -d "$wt" ]; then
+        git worktree remove --force "$wt"
+      fi
+      git worktree prune
+      echo "removed worktree $wt (branch catalog-build/${slug} kept; delete with: git branch -D catalog-build/${slug})"
+
+  worktree:list:
+    desc: Aktive Komponenten-Worktrees auflisten
+    cmd: |
+      git worktree list | grep '.claude/worktrees/' || echo "(no active component worktrees)"
+
   # --- Housekeeping ---
 
   clean:

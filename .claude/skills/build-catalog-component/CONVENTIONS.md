@@ -117,6 +117,32 @@ These belong to the GHA pipeline and the consumer cluster repos. The verify step
 records them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is
 GHA + human PR review under branch protection — the local gate is triage.
 
+## Worktree-per-component & parallel sessions
+
+Each session builds ONE component in its own git worktree, so multiple independent
+Claude Code sessions run in parallel on a single clone:
+
+- `task worktree:create -- <sub-layer>/<component>` creates
+  `.claude/worktrees/<slug>` (slug = `<sub-layer>-<component>`, `/`→`-`) on branch
+  `catalog-build/<slug>`, and prints the absolute worktree path on its last line.
+- The `.git`-mutating steps (fetch + worktree add/remove/prune) run under a
+  `mkdir`-atomic lock (portable — macOS has no `flock`), so concurrent
+  `worktree:create`/`worktree:remove` from separate sessions cannot corrupt the
+  shared `.git`. A stale lock (>2 min, dead session) is auto-reclaimed.
+- **Branch name = claim.** A second session calling `worktree:create` for a
+  component whose `catalog-build/<slug>` branch already exists fails fast
+  ("already claimed"). One component, one session. Re-running for an existing
+  worktree on the right branch is idempotent (returns the path, exit 0).
+- `task worktree:remove -- <sub-layer>/<component>` removes the worktree once the
+  PR is open; it keeps the branch (may hold unpushed work).
+- `task worktree:list` shows the active component worktrees.
+
+Steady state is safe: only the brief setup/teardown is serialized by the lock;
+render / lint / commit run unlocked in parallel (each worktree has its own index).
+`.claude/worktrees/` is gitignored. The optional `catalog-fleet` workflow (one
+operator, autonomous fan-out across many components in ONE session) uses these
+same `worktree:*` targets for its serial pre-step.
+
 ## Sequencing
 
 Build foundational (depended-upon) components before their dependents.

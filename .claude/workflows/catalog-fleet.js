@@ -1,6 +1,6 @@
 export const meta = {
   name: 'catalog-fleet',
-  description: 'Fan out catalog-build issues through build -> verify -> review with the builder and verifier in separate contexts; one branch + consolidated LOCAL-TRIAGE report per component, never auto-merged (GHA + human PR are authoritative).',
+  description: 'OPTIONAL single-operator autonomous fan-out: one session builds N catalog-build components through build -> verify -> review (builder/verifier in separate contexts), one branch + LOCAL-TRIAGE report per component, never auto-merged. The PRIMARY parallel path is multiple INDEPENDENT sessions, each running the build-catalog-component skill on its own `task worktree:create` worktree — use this workflow only when one operator wants to fan out many components at once.',
   phases: [
     { title: 'Build', detail: 'senior-implementer scaffolds + renders each component in its pre-created worktree' },
     { title: 'Verify', detail: 'catalog-evaluator runs the deterministic gate + semantic ACs (separate context)' },
@@ -25,10 +25,13 @@ export const meta = {
 // args: array of components, each:
 //   { path, issue, facts, acs, secretsClass, wave0, worktree, branch, base? }
 // `worktree` (abs path) and `branch` are created by the CALLER, SERIALLY, before
-// invoking (a fresh worktree per component from the base ref under the gitignored
-// .claude/worktrees/). Worktree creation is the caller's job because concurrent
-// `git worktree add/prune` on the shared .git races — this fan-out only builds in
-// pre-made trees and constructs no paths from builder output. `base` (default
+// invoking — via `task worktree:create -- <sub-layer>/<component>` (which prints
+// the worktree path on its last line and creates branch catalog-build/<slug>).
+// That task's mkdir-atomic lock makes worktree setup safe even if this single-
+// operator fan-out coexists with independent sessions on the same clone; this
+// fan-out only builds in pre-made trees and constructs no paths from builder
+// output. (The same `task worktree:create` is the per-session entry point for the
+// PRIMARY parallel path — many independent sessions running the skill.) `base` (default
 // origin/main) is the ref the build branched from and the tamper-check diffs
 // against. Dependents MUST appear after their dependencies (no topological sort).
 let rawArgs = args

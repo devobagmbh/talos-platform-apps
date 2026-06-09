@@ -69,6 +69,9 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 | `task publish -- <sub-layer>/<component> <tag>` | render → package → push → sign in einem Rutsch |
 | `task publish:sublayer -- <sub-layer> <tag>` | publish aller Komponenten eines Sub-Layers mit gleichem Tag |
 | `task ci` | **lokale Reproduktion der GHA-Pipeline** (alle Komponenten, Lint + Render + Conftest, kein Push) |
+| `task worktree:create -- <sub-layer>/<component>` | isolierten git-Worktree (`.claude/worktrees/<slug>`, Branch `catalog-build/<slug>`) für parallele unabhängige Sessions anlegen; cross-session-sicher (`mkdir`-Lock), idempotent, Branch = Claim; gibt den Pfad aus |
+| `task worktree:remove -- <sub-layer>/<component>` | Worktree entfernen (Branch bleibt erhalten) |
+| `task worktree:list` | aktive Komponenten-Worktrees auflisten |
 
 **Niemals `make` verwenden** — die Konvention ist go-task.
 
@@ -168,7 +171,7 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
 **Self-Review ist auch bei 1 Maintainer unerwünscht, aber nicht hart blockiert** — Wechsel des Agent-Hut ist ein Anti-Drift-Mechanismus, kein Vier-Augen-Prinzip-Ersatz. Sobald M2 da ist, wird der `require-review.sh`-Hook reaktiviert und das volle 9-Agent-Modell zurückgeholt.
 
-**Catalog-Build-Primitives**: Für die Component-Issues (#17–#61) orchestrieren das Skill `build-catalog-component` (eine Komponente) und der Workflow `catalog-fleet` (paralleles Fan-out) die obige Kette als builder→verifier→reviewer mit Builder ≠ Verifier in getrennten Kontexten. Deterministischer Gate (`task ci` + `task validate:contract` + Chart-Ref-/Tamper-Check) zuerst, LLM-Judge nur für die Semantik. Output sind Branches + Report — nie Auto-Merge (CODEOWNERS + Branch-Protection). Spec: `.claude/skills/build-catalog-component/CONVENTIONS.md`.
+**Catalog-Build-Primitives**: Für die Component-Issues (#17–#61) orchestrieren das Skill `build-catalog-component` (eine Komponente, **Pro-Session-Einheit**) und der Workflow `catalog-fleet` (**optionaler Single-Operator-Fan-out**) die obige Kette als builder→verifier→reviewer mit Builder ≠ Verifier in getrennten Kontexten. **Parallelität läuft über unabhängige Sessions**: jede Session baut EINE Komponente in einem eigenen git-Worktree (`task worktree:create` — cross-session-sicherer `mkdir`-Lock, Branch-Name = Claim), sodass mehrere Sessions parallel auf EINEM Clone arbeiten; `catalog-fleet` ist nur für den Ein-Operator-Massen-Fan-out. Deterministischer Gate (`task ci` + `task validate:contract` + Chart-Ref-/Tamper-Check) zuerst, LLM-Judge nur für die Semantik. Output sind Branches + Report — nie Auto-Merge (CODEOWNERS + Branch-Protection). Spec: `.claude/skills/build-catalog-component/CONVENTIONS.md`.
 
 ## Validation Checklist
 

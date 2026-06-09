@@ -25,6 +25,12 @@ the **authoritative** gate is downstream: GHA (chart-ref re-resolution, signing,
 re-render) + human PR review under branch protection. This skill produces a
 triage signal + a branch, never an authoritative merge decision.
 
+**Parallel independent sessions.** Each session builds ONE component in its own
+git worktree (`task worktree:create`), so multiple independent Claude Code
+sessions can run this skill in parallel on a single clone. The setup is
+cross-session-safe (a `mkdir`-atomic lock guards the `.git`-mutating steps), and
+the branch name is the claim — a second session on the same component fails fast.
+
 Argument: `<sub-layer>/<component>` and optionally the issue number.
 
 ## Phase 1 — Prep (orchestrator, inline)
@@ -38,7 +44,11 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
 4. Confirm every `external_dependencies` / `requires:` target already exists in
    the tree. If a dependency is missing, stop and surface it — build the
    dependency first (sequencing per CONVENTIONS.md).
-5. `git fetch origin && git switch -c catalog-build/<sub-layer>-<component> origin/main`.
+5. `WT="$(task worktree:create -- <sub-layer>/<component> | tail -1)"` then
+   `cd "$WT"`. This creates the isolated worktree
+   (`.claude/worktrees/<slug>`, slug = `<sub-layer>-<component>`) on branch
+   `catalog-build/<slug>` under the cross-session lock. All later phases operate
+   inside `$WT`. (Fails fast if another session already claimed the component.)
 
 ## Phase 2 — Build (dispatch `senior-implementer`, isolated)
 
@@ -58,9 +68,9 @@ correctness.
 
 ## Phase 3 — Verify (dispatch `catalog-evaluator`, separate context)
 
-Brief it with: the component path, the **worktree path** (for the single-component
-skill this is the repo root — the working tree is checked out on the build
-branch), the build branch name, and the **external spec** (issue ACs +
+Brief it with: the component path, the **worktree path** (`$WT` from Phase 1 —
+`.claude/worktrees/<slug>`, checked out on the build branch), the build branch
+name, and the **external spec** (issue ACs +
 `AGENTS.md §Hard Constraints`). It runs the deterministic gate
 (render-idempotency, lint, kubeconform, validate:contract, conftest, chart-ref
 resolution, tamper-check) then the semantic ACs (freeze-line consistency,
@@ -111,6 +121,10 @@ explicit user approval, open a PR (`gh pr create`) summarizing: what was built,
 deterministic-gate evidence, evaluator verdict, reviewer verdicts, and the
 **NOT-locally-verifiable** items deferred to GHA/consumer (cosign sign, OCI
 push, ArgoCD deploy). Never merge; a human merges after CI + code-owner review.
+
+Once the PR is open (the branch is on the remote), free the local worktree with
+`task worktree:remove -- <sub-layer>/<component>` — the branch is kept, only the
+working tree is removed, which releases the slot for another session.
 
 ## Completion predicate
 
