@@ -240,7 +240,7 @@ capabilities:
     domain: databases
     instanced: true
     implementations:
-      - {name: redis-operator, status: candidate, swap_class: data-migration}
+      - {name: valkey-operator, status: active, swap_class: data-migration} # hyperspike/valkey-operator (Valkey, Redis-wire-compat); spotahome dead, Harbor migrates to Valkey (#83)
   - id: rabbitmq-managed
     name: RabbitMQ (managed)
     domain: messaging
