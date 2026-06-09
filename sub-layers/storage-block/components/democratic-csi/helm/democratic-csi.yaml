@@ -55,12 +55,19 @@ values:
     # allowVolumeExpansion on the StorageClass needs the resizer sidecar.
     externalResizer:
       enabled: true
+    driver:
+      # Pin the democratic-csi image — the chart defaults to :latest (rejected by
+      # the no_latest_image_tag policy). v1.9.5 is the current release.
+      image:
+        tag: v1.9.5
 
   node:
     # Talos: nsenter into the iscsid namespace instead of chroot /host. hostPID
     # lets the node container find the iscsid PID. No /host chroot is used.
     hostPID: true
     driver:
+      image:
+        tag: v1.9.5
       extraEnv:
         - name: ISCSIADM_HOST_STRATEGY
           value: nsenter
