@@ -1,0 +1,68 @@
+# democratic-csi — synology-iscsi driver for the Synology DS720+ NAS (ADR-0026).
+# Helm chart democratic-csi/democratic-csi, rendered to static manifests for the
+# OCI catalog.
+#
+# Talos integration: iscsiadm runs ON THE HOST via `nsenter` into the iscsi-tools
+# extension's iscsid mount/net namespace (node.driver.extraEnv below). This is the
+# ONLY thing that works on Talos — the official chroot-into-/host approach fails
+# (Talos host rootfs has no /usr/bin/env, no iscsiadm). The siderolabs/iscsi-tools
+# system extension must be baked into the node image (consumer cluster.yaml) and
+# provides /usr/local/sbin/iscsiadm.
+#
+# The DSM connection (host + credentials) is NOT in the catalog: the consumer
+# supplies the full driver config as an existingConfigSecret (Customization
+# Contract Shape c, see customization.yaml). config:{} keeps the chart template
+# valid without emitting a config Secret into the published artifact.
+metadata:
+  chart: democratic-csi
+  repo: https://democratic-csi.github.io/charts/
+  version: 0.15.1
+  namespace: democratic-csi
+
+values:
+  csiDriver:
+    # provisioner name — MUST match the StorageClass provisioner (chart wires both
+    # from csiDriver.name). Stable, self-chosen; do not change once volumes exist.
+    name: org.democratic-csi.synology-iscsi
+    attachRequired: true
+    podInfoOnMount: true
+
+  # StorageClass kept at the name `synology-iscsi-storage` (the seeder default)
+  # so stateful consumers (harbor, crossview) bind unchanged. Retain: durable
+  # tier, keep the LUN on the NAS if the PVC is deleted (ADR-0026).
+  storageClasses:
+    - name: synology-iscsi-storage
+      defaultClass: true
+      reclaimPolicy: Retain
+      volumeBindingMode: Immediate
+      allowVolumeExpansion: true
+      parameters:
+        fsType: ext4
+      mountOptions: []
+
+  volumeSnapshotClasses: []
+
+  driver:
+    # Only the driver TYPE — needed at render time so the chart wires the iSCSI
+    # node mounts. The actual config (DSM host + credentials, iscsi targetPortal)
+    # comes from existingConfigSecret at runtime; no credentials in the catalog.
+    config:
+      driver: synology-iscsi
+    existingConfigSecret: synology-iscsi-driver-config
+
+  controller:
+    enabled: true
+    # allowVolumeExpansion on the StorageClass needs the resizer sidecar.
+    externalResizer:
+      enabled: true
+
+  node:
+    # Talos: nsenter into the iscsid namespace instead of chroot /host. hostPID
+    # lets the node container find the iscsid PID. No /host chroot is used.
+    hostPID: true
+    driver:
+      extraEnv:
+        - name: ISCSIADM_HOST_STRATEGY
+          value: nsenter
+        - name: ISCSIADM_HOST_PATH
+          value: /usr/local/sbin/iscsiadm
