@@ -55,6 +55,17 @@ That is the standard CNPG multi-tenant posture; a consumer running a single-tena
 or strongly-isolated cluster may instead prefer a namespace-scoped operator
 (`config.clusterWide: false` + a per-namespace install) in its overlay.
 
+## Namespace & Pod Security
+
+The operator ships its own `cnpg-system` namespace (`manifests/00-namespace.yaml`)
+with `pod-security.kubernetes.io/enforce: restricted` — cnpg is the sole occupant
+(dedicated namespace), so the Namespace object travels with the artifact and a
+shipped manifest wins over Argo `managedNamespaceMetadata`. `restricted` is the
+strictest level the rendered operator satisfies (pod `runAsNonRoot` + seccomp
+`RuntimeDefault`; container `allowPrivilegeEscalation: false` + drop `ALL` caps +
+`readOnlyRootFilesystem`). Consumer-authored `Cluster` CRs run in their **own**
+consumer-owned namespaces, so this level governs only the operator pods.
+
 ## Related ADRs
 
 - [ADR-0008 — Backup-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
