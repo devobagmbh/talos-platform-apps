@@ -110,7 +110,7 @@ Phase-1-Vollausbau gemäß [ADR-0018 § Phase-1-Scope](https://github.com/devoba
 - [ ] `namespace_quota` (COULD) — jeder Workload-Namespace hat `ResourceQuota`
 - [ ] `limit_range` (COULD) — jeder Workload-Namespace hat `LimitRange` mit Defaults
 - [ ] `service_no_externalip` (COULD) — kein `Service.spec.externalIPs`
-- [ ] `pod_security_standards` (COULD) — `pod-security.kubernetes.io/enforce: restricted` o. `baseline`
+- [x] `pod_security_standards` (COULD) — jeder deklarierte Namespace trägt `pod-security.kubernetes.io/enforce` (`privileged`|`baseline`|`restricted`); strengstes Level, das der Workload erfüllt
 - [ ] `image_digest_pinning` (COULD) — Image-Refs nutzen `@sha256:…`-Digest
 
 #### `apps/` — Repo-Hygiene (Conftest-only)
