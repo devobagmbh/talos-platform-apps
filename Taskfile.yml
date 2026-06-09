@@ -164,7 +164,7 @@ tasks:
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
   validate:contract:
-    desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1)'
+    desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1); optional: -- <sub-layer>/<component> to scope to one'
     summary: |
       Validates each component's customization.yaml against
       schemas/customization.schema.json (ADR-0024 v2 freeze-line contract) with
@@ -177,10 +177,18 @@ tasks:
     cmd: |
       set -uo pipefail
       schema="schemas/customization.schema.json"
+      # Optional per-component scope: `task validate:contract -- <sub-layer>/<component>`
+      # validates only that component; with no arg, every component is validated.
+      scope="{{.CLI_ARGS}}"
+      if [ -n "$scope" ]; then
+        set -- "sub-layers/${scope%/*}/components/${scope#*/}/"
+      else
+        set -- sub-layers/*/components/*/
+      fi
       fail=0
       found=0
       missing=""
-      for cdir in sub-layers/*/components/*/; do
+      for cdir in "$@"; do
         comp_id=$(echo "$cdir" | sed 's|sub-layers/||; s|/components/|/|; s|/$||')
         cfile="${cdir}customization.yaml"
         if [ ! -f "$cfile" ]; then
