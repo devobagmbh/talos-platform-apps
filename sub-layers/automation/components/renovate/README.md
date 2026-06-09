@@ -71,6 +71,18 @@ and grants nothing until the consumer opts in:
   the package registries actually needed). Egress targets are consumer-specific,
   so this is a consumer-side follow-up, not part of the catalog default.
 
+## Namespace & Pod Security
+
+Renovate ships its own `renovate` namespace (`manifests/00-namespace.yaml`) with
+`pod-security.kubernetes.io/enforce: baseline` — renovate is the sole occupant
+(dedicated namespace), so the Namespace object travels with the artifact. The
+chart sets no `securityContext` on the scan CronJob (rendered pod and container
+securityContext are both empty), so `restricted` would reject the pods at
+admission; `baseline` is the strictest level the workload satisfies as shipped.
+Tightening to `restricted` — adding `runAsNonRoot` + seccomp `RuntimeDefault` +
+drop `ALL` caps + `allowPrivilegeEscalation: false` to the chart values — is a
+separate hardening step a consumer (or a follow-up) can take.
+
 ## Related ADRs
 
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
