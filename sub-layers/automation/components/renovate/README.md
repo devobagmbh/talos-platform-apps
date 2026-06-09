@@ -56,6 +56,21 @@ proposed` in the index — the provider/consumer contract is still open and is
 tracked as a follow-up; the swap_class declared here matches the index
 implementation entry as it stands.
 
+## Security defaults
+
+The catalog default is deliberately conservative — the component scans nothing
+and grants nothing until the consumer opts in:
+
+- `autodiscover: false` + `"repositories": []` — no repository is scanned until
+  the consumer supplies the list in its overlay.
+- No in-cluster RBAC (no ClusterRole/Role) — Renovate talks only to the Git host.
+- Resource requests/limits are set (memory ceiling) so a bursty, memory-hungry
+  scan cannot OOM the node; consumers tune them per cluster.
+- A Renovate scan executes package-manager / toolchain code. Consumers SHOULD
+  additionally restrict egress (a `NetworkPolicy` allowing only the Git host +
+  the package registries actually needed). Egress targets are consumer-specific,
+  so this is a consumer-side follow-up, not part of the catalog default.
+
 ## Related ADRs
 
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

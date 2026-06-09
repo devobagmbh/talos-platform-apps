@@ -27,8 +27,10 @@ values:
     # Skip a new run if the previous one is still going (a slow scan must not
     # stack concurrent Renovate processes against the same Git host).
     concurrencyPolicy: Forbid
-    successfulJobsHistoryLimit: "3"
-    failedJobsHistoryLimit: "3"
+    # int (not "3"): the chart renders these straight into the CronJob's int32
+    # history-limit fields.
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
 
   # The Renovate image is pinned by the chart (ghcr.io/renovatebot/renovate,
   # tag = appVersion 43.216.3) — satisfies the no_latest_image_tag policy. The
@@ -59,3 +61,16 @@ values:
   # out-of-band before sync) carrying RENOVATE_TOKEN (the Git-host token). The
   # workload stays payload-agnostic + signed; only the named ref is frozen.
   existingSecret: renovate-runtime-secret
+
+  # Resource requests/limits for the Renovate scan container (chart top-level
+  # `resources`). Catalog default: conservative requests for scheduling + a
+  # generous memory ceiling, because a Renovate dependency scan is bursty and
+  # memory-hungry (large lockfiles / many package managers) — without a limit it
+  # is a real OOM risk for the node on a small cluster. Consumers tune per
+  # cluster in their overlay.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
