@@ -18,12 +18,21 @@ on:
     branches: [main]
   push:
     tags:
+      # One pattern per sub-layer (AGENTS.md taxonomy). The capability-driven
+      # sub-layers (compute/identity/network/security/storage-block) are listed
+      # too so a `<sub-layer>/<component>-vX.Y.Z` tag triggers publish the moment
+      # the sub-layer exists — patterns for not-yet-created dirs are harmless.
       - 'automation/*-v*'
+      - 'compute/*-v*'
       - 'databases/*-v*'
+      - 'identity/*-v*'
       - 'lifecycle/*-v*'
       - 'monitoring/*-v*'
+      - 'network/*-v*'
       - 'registry/*-v*'
       - 'secrets/*-v*'
+      - 'security/*-v*'
+      - 'storage-block/*-v*'
       - 'storage-objects/*-v*'
 
 permissions:
