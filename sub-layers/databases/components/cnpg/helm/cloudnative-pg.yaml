@@ -1,0 +1,48 @@
+# CloudNativePG — the PostgreSQL operator for the Devoba platform (cnpg-postgres
+# capability). Layer-2 default values for talos-platform-apps. This component ships
+# ONLY the operator + its CRDs; concrete `postgresql.cnpg.io/Cluster` CRs (Dex,
+# Harbor, PowerDNS, workload apps) are consumer-owned and live in the app sub-layers
+# / consumer cluster repos — never here.
+#
+# Cluster-specific bits (operator replica count for HA, PodMonitor scrape labels,
+# node placement) are consumer-owned (Layer 3) — see customization.yaml. This
+# component is cluster-agnostic at the freeze line: it needs nothing from the
+# consumer to render a valid, signed workload.
+
+metadata:
+  chart: cloudnative-pg
+  repo: https://cloudnative-pg.github.io/charts
+  version: 0.28.2  # latest stable (helm search repo cnpg/cloudnative-pg, 2026-06-09); appVersion 1.29.1
+  # >>> VERIFY the current chart at push (`helm search repo cnpg/cloudnative-pg`).
+  # The github.io repo 301-redirects to cloudnative-pg.io/charts; helm follows it.
+  namespace: cnpg-system
+
+values:
+  # Foundational substrate (sync-wave 0): the operator OWNS the postgresql.cnpg.io
+  # CRDs that every consuming app's Cluster CR depends on. Keep CRD creation in this
+  # artifact so the CRDs land with the operator — no separate CRD-only step.
+  crds:
+    create: true
+
+  # Image tag is intentionally left empty so the chart pins to its appVersion
+  # (1.29.1 for chart 0.28.2) — a concrete, pinned tag, never :latest. The catalog's
+  # no_latest_image_tag policy is therefore satisfied without us hardcoding a tag
+  # that would drift from the chart version on the next bump.
+  image:
+    repository: ghcr.io/cloudnative-pg/cloudnative-pg
+    pullPolicy: IfNotPresent
+
+  # Cluster-wide operator: it watches Cluster CRs in every namespace, which is what
+  # the multi-app consumers (Dex, Harbor, PowerDNS) need. This is the chart default;
+  # pinned here so the contract is explicit rather than inherited.
+  config:
+    clusterWide: true
+
+  # PodMonitor is OFF by default: it renders a monitoring.coreos.com/PodMonitor, whose
+  # CRD is NOT guaranteed at sync-wave 0 (observability is consumer-deployed and lands
+  # later). Consumers that run the Prometheus operator enable it in their overlay
+  # (monitoring.podMonitorEnabled=true) — a cluster property, not a catalog default.
+  monitoring:
+    podMonitorEnabled: false
+    grafanaDashboard:
+      create: false
