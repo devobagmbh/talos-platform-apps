@@ -1,0 +1,19 @@
+# Customization Contract v2 (ADR-0024). The democratic-csi workload (CSIDriver,
+# controller Deployment, node DaemonSet, RBAC, StorageClass, Namespace) is the
+# signed, pre-rendered artifact. The consumer supplies ONLY the driver config
+# secret (Shape c) — the DSM host/credentials + iSCSI settings never ship in the
+# catalog.
+freeze_line:
+  workload: rendered/manifest.yaml # CSIDriver/controller/node/RBAC/StorageClass/Namespace — never consumer-patched
+provided_refs:
+  secret: synology-iscsi-driver-config # Shape (c): democratic-csi driver config (DSM httpConnection + iscsi block settings)
+provided_selectors: {} # no consumer-labeled CRs
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: # controller + node mount this Secret at /config, read via --driver-config-file
+    - driver-config-file.yaml
+  selector_crs: []
+sync_wave: "0" # storage substrate — must be Ready before stateful consumers (e.g. harbor, wave 30)
+external_dependencies:
+  - talos-extension: siderolabs/iscsi-tools # node nsenters into host iscsid; the extension is bootstrap-baked (consumer cluster.yaml)
