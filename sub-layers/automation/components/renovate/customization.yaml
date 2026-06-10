@@ -1,0 +1,19 @@
+# Customization Contract v2 (ADR-0024). Renovate's workload (CronJob +
+# ServiceAccount + global-config ConfigMap) is the signed, pre-rendered
+# artifact. The consumer supplies only the Git-host token (Shape c) — the
+# rendered CronJob references the secret by name via envFrom.secretRef and
+# Renovate reads RENOVATE_TOKEN from it. The repository list / platform endpoint
+# are consumer-tuned in the overlay; the hard runtime requirement is the token.
+freeze_line:
+  workload: rendered/manifest.yaml # CronJob/ServiceAccount/ConfigMap — never consumer-patched
+provided_refs:
+  secret: renovate-runtime-secret # Shape (c): Git-host token, via envFrom.secretRef
+provided_selectors: {} # no consumer-labeled CRs
+required:
+  env_keys: []
+  config_files: [] # global Renovate config ships as a do-nothing baseline; repo list is consumer-tuned in overlay
+  secret_keys: # Shape (c) — keys in renovate-runtime-secret the consumer MUST supply
+    - RENOVATE_TOKEN
+  selector_crs: []
+sync_wave: "0" # no inter-component dependency (automation tier, not bootstrap-0)
+external_dependencies: []
