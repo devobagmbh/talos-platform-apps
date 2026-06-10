@@ -1,7 +1,7 @@
 # Gateway-API Gateway für lokales Ingress-Routing.
 # Cilium erstellt für dieses Gateway einen Service, den der Taskfile
-# nach Apply auf NodePort 30080/30443 patcht — Kind reicht 80/443 vom
-# Host darauf durch.
+# nach Apply auf NodePort 30080/30443 patcht — die talosctl-docker-Node
+# reicht 80/443 vom Host darauf durch (-p 30080:30080/30443:30443).
 #
 # *.localhost.direct resolved zu 127.0.0.1 (DNS-Provider).
 # TLS-Cert wird per cert-manager mit dem mkcert-CA-ClusterIssuer

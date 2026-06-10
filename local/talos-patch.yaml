@@ -1,0 +1,45 @@
+# Talos machine-config patch for the local docker-provisioner dev cluster.
+# Applied to every node via `talosctl cluster create docker --config-patch @this`
+# (task local:cluster:up). Mirrors the prod substrate (talos-platform-base /
+# talos-seeder-cluster): Cilium owns CNI, kube-proxy is off, KubePrism fronts the
+# API for Cilium's k8sServiceHost.
+#
+# Talos is immutable + API-driven — unlike the old kind setup there is NO
+# `docker exec node` containerd hostpatch; the registry mirror lives here in the
+# machine config, exactly as it does on a real Talos node.
+machine:
+  # KubePrism: a node-local load balancer in front of the control-plane API on
+  # 127.0.0.1:7445. Cilium points k8sServiceHost at it (see cilium-values.yaml),
+  # identical to talos-seeder-cluster/tofu/main.tf. Default-on since Talos 1.6;
+  # pinned explicitly for determinism.
+  features:
+    kubePrism:
+      enabled: true
+      port: 7445
+  registries:
+    # Image pulls referencing localhost:5001 (the workstation push view) are
+    # redirected to the kind-registry container over the shared docker network.
+    mirrors:
+      "localhost:5001":
+        endpoints:
+          - "https://kind-registry:5000"
+    config:
+      # Intra-docker-network node→registry pull. skip-verify matches the old
+      # kind containerd hostpatch (the node has no mkcert CA); this is the node
+      # image-pull path, NOT the Argo/browser path — those keep real mkcert trust
+      # (argocd-repo-server CA initContainer + the Cilium-Gateway wildcard cert).
+      "kind-registry:5000":
+        tls:
+          insecureSkipVerify: true
+cluster:
+  # Cilium is the CNI (installed post-boot via Helm, task local:cilium:install).
+  # cni:none keeps Talos from shipping its own — CoreDNS stays pending until
+  # Cilium is up, same as the prod bootstrap.
+  network:
+    cni:
+      name: none
+  # kube-proxy off — Cilium's kubeProxyReplacement takes over (ADR-0014).
+  proxy:
+    disabled: true
+  # Single-node: the lone control plane must run workloads.
+  allowSchedulingOnControlPlanes: true

@@ -11,6 +11,14 @@ version: '3'
 # explizit am Task.
 silent: true
 
+# DOCKER_HOST aus dem aktiven docker-Context ableiten, damit talosctl (das hart
+# auf unix:///var/run/docker.sock schaut) auch auf Colima/Orbstack/Docker-Desktop
+# den richtigen Socket findet. Fallback = Standard-Socket. 2>/dev/null hält CI-
+# Jobs ohne docker still; nicht-docker-Tasks (lint/render/ci) ignorieren die Var.
+env:
+  DOCKER_HOST:
+    sh: docker context inspect --format '{{`{{ .Endpoints.docker.Host }}`}}' 2>/dev/null || echo "unix:///var/run/docker.sock"
+
 vars:
   # Alle Komponenten als <sub-layer>/<component>-Liste, aus dem Verzeichnis-Baum
   # gelesen. Komponente ist die OCI-Distribution-Unit (ADR-0009); Sub-Layer ist
@@ -589,13 +597,13 @@ tasks:
     desc: Devbox-Tool-Versionen anzeigen
     cmd: devbox info
 
-  # --- Lokale Entwicklung: Kind + Local-Registry + ArgoCD ---
+  # --- Lokale Entwicklung: Talos (docker) + Local-Registry + ArgoCD ---
 
   local:preflight:
     desc: 'Prüft dass alle Tools im PATH sind (sonst hilfreicher Hinweis)'
     cmd: |
       missing=""
-      for t in docker kind kubectl helm mkcert envsubst yq; do
+      for t in docker talosctl kubectl helm mkcert envsubst yq; do
         command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
       done
       if [ -n "$missing" ]; then
@@ -610,7 +618,7 @@ tasks:
       fi
 
   local:up:
-    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Kind + Gateway-API + Cilium + ArgoCD'
+    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Talos + Gateway-API + Cilium + ArgoCD'
     # WICHTIG: Gateway-API-CRDs müssen VOR Cilium installiert werden, sonst
     # initialisiert der Cilium-Operator seinen Gateway-API-Controller nicht
     # und es entsteht keine GatewayClass 'cilium' (Folge: Gateway hängt für
@@ -638,7 +646,7 @@ tasks:
   local:down:
     desc: 'Alles abreißen: Cluster + Registry + Mkcert-Daten'
     cmds:
-      - kind delete cluster --name talos-platform-apps || true
+      - talosctl cluster destroy --name talos-platform-apps || true
       - task: local:registry:down
 
   local:stop:
@@ -647,7 +655,7 @@ tasks:
     # local:start sind alle Workloads + Daten wieder da. Sinnvoll für
     # Laptop-Suspend oder mehrtägige Pausen ohne Re-Install.
     cmd: |
-      for c in talos-platform-apps-control-plane kind-registry; do
+      for c in talos-platform-apps-controlplane-1 kind-registry; do
         if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c" 2>/dev/null)" = "true" ]; then
           docker stop "$c" >/dev/null
           echo "✓ $c gestoppt"
@@ -662,7 +670,7 @@ tasks:
     # Container neu. Wartet bis die K8s-API antwortet, damit Folge-Tasks
     # (kubectl, helm) nicht in Race-Conditions laufen.
     cmd: |
-      for c in kind-registry talos-platform-apps-control-plane; do
+      for c in kind-registry talos-platform-apps-controlplane-1; do
         if ! docker inspect "$c" >/dev/null 2>&1; then
           echo "ERROR: Container '$c' existiert nicht — task local:up?"
           exit 1
@@ -674,7 +682,7 @@ tasks:
           echo "✓ $c gestartet"
         fi
       done
-      kubectx kind-talos-platform-apps >/dev/null 2>&1 || true
+      kubectx admin@talos-platform-apps >/dev/null 2>&1 || true
       echo "warte bis K8s-API antwortet..."
       for i in $(seq 1 60); do
         if kubectl get --raw='/readyz' >/dev/null 2>&1; then
@@ -722,27 +730,33 @@ tasks:
     cmd: docker rm -f kind-registry || true
 
   local:cluster:up:
-    desc: 'Kind-Cluster erstellen und mit lokaler Registry verbinden'
+    desc: 'Talos-Cluster (docker provisioner) erstellen + lokale Registry verbinden'
     cmds:
-      - kind create cluster --name talos-platform-apps --config local/kind-config.yaml || true
-      - kubectx kind-talos-platform-apps
       - |
-        # Containerd-Hostpatches pro Node:
-        # localhost:5001 → https://kind-registry:5000 mit mkcert-TLS.
-        # skip_verify=true: containerd hat das mkcert-CA nicht — okay weil intra-kind-Docker-Netz.
-        for node in $(kind get nodes --name talos-platform-apps); do
-          docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
-          docker exec "$node" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml <<EOF
-        [host."https://kind-registry:5000"]
-          capabilities = ["pull", "resolve"]
-          skip_verify = true
-        EOF'
-        done
-      - |
-        # Registry-Container ins kind-Docker-Netzwerk verbinden (idempotent)
-        if [ "$(docker inspect -f='{{`{{json .NetworkSettings.Networks.kind}}`}}' kind-registry)" = 'null' ]; then
-          docker network connect "kind" kind-registry
+        # Talos docker-provisioner cluster: single schedulable control plane,
+        # prod-pinned Talos (v1.13.3) + K8s (1.36.0). CNI/proxy off, KubePrism,
+        # and the localhost:5001 registry mirror all come from local/talos-patch.yaml.
+        # Host 80/443 → NodePort 30080/30443 (Cilium-Gateway) via -p, the talosctl
+        # analog of kind's extraPortMappings.
+        # talosctl create is NOT idempotent — skip if the cluster already exists.
+        if talosctl cluster show --name talos-platform-apps >/dev/null 2>&1; then
+          echo "✓ Talos-Cluster 'talos-platform-apps' existiert bereits (skip create)"
+        else
+          talosctl cluster create docker \
+            --name talos-platform-apps \
+            --workers 0 \
+            --image ghcr.io/siderolabs/talos:v1.13.3 \
+            --kubernetes-version 1.36.0 \
+            --config-patch @local/talos-patch.yaml \
+            -p 30080:30080/tcp,30443:30443/tcp \
+            --wait
         fi
+      - kubectx admin@talos-platform-apps
+      - |
+        # Registry-Container ins Talos-Docker-Netzwerk (= Cluster-Name) hängen,
+        # damit der Node sie über die Docker-DNS als kind-registry:5000 auflöst
+        # (Registry-Mirror im machine-config). 'connect' meckert wenn schon drin → || true.
+        docker network connect talos-platform-apps kind-registry 2>/dev/null || true
       - |
         # ConfigMap nach KEP-1755 (local-registry-hosting)
         kubectl apply -f - <<'EOF'
@@ -754,7 +768,7 @@ tasks:
         data:
           localRegistryHosting.v1: |
             host: "localhost:5001"
-            help: "https://kind.sigs.k8s.io/docs/user/local-registry/"
+            help: "https://github.com/siderolabs/talos"
         EOF
 
   local:cert-manager:install:
@@ -795,18 +809,18 @@ tasks:
   local:cilium:install:
     desc: 'Cilium als CNI installieren (kubeProxyReplacement, Gateway-API enabled)'
     cmd: |
-      # K8s-API-IP des Control-Plane-Containers ermitteln (Cilium ohne kube-proxy)
-      api_ip=$(docker container inspect talos-platform-apps-control-plane \
-        --format '{{`{{ .NetworkSettings.Networks.kind.IPAddress }}`}}')
-      echo "Cilium k8sServiceHost=$api_ip:6443"
+      # Cilium ohne kube-proxy braucht eine API-Adresse. Auf Talos zeigt sie auf
+      # KubePrism (node-lokaler LB auf 127.0.0.1:7445, machine-config) — identisch
+      # zu talos-seeder-cluster/tofu/main.tf. Kein docker-inspect der Node-IP mehr.
+      echo "Cilium k8sServiceHost=localhost:7445 (KubePrism)"
       helm repo add cilium https://helm.cilium.io 2>/dev/null || true
       helm repo update cilium
       helm upgrade --install cilium cilium/cilium \
         --namespace kube-system \
         --version 1.19.3 \
         --values local/cilium-values.yaml \
-        --set k8sServiceHost="$api_ip" \
-        --set k8sServicePort=6443 \
+        --set k8sServiceHost=localhost \
+        --set k8sServicePort=7445 \
         --wait --timeout 5m
       # Wartet, bis CoreDNS via Cilium-CNI wieder läuft
       kubectl -n kube-system rollout status deployment/coredns --timeout=2m
@@ -819,7 +833,7 @@ tasks:
       kubectl wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=2m
 
   local:argo:install:
-    desc: 'ArgoCD via Helm im Kind installieren (HTTPRoute auf argocd.localhost.direct)'
+    desc: 'ArgoCD via Helm im Cluster installieren (HTTPRoute auf argocd.localhost.direct)'
     cmd: |
       helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
       helm repo update argo
@@ -862,10 +876,12 @@ tasks:
     # TLS terminiert der Container selbst (mkcert-Cert mit Service-DNS-SAN),
     # KEINE Gateway-HTTPRoute mehr — direkter Pfad ohne Re-Encrypt.
     cmd: |
+      # Netzwerk = Cluster-Name (talosctl docker provisioner). Hyphen im Namen →
+      # index statt Dot-Access im Go-Template.
       kind_registry_ip=$(docker container inspect kind-registry \
-        --format '{{`{{ .NetworkSettings.Networks.kind.IPAddress }}`}}')
-      if [ -z "$kind_registry_ip" ]; then
-        echo "ERROR: kind-registry-Container nicht im kind-Netzwerk — task local:cluster:up?"
+        --format '{{`{{ (index .NetworkSettings.Networks "talos-platform-apps").IPAddress }}`}}')
+      if [ -z "$kind_registry_ip" ] || [ "$kind_registry_ip" = "<no value>" ]; then
+        echo "ERROR: kind-registry nicht im talos-platform-apps-Netzwerk — task local:cluster:up?"
         exit 1
       fi
       echo "kind-registry-Container IP: $kind_registry_ip"
@@ -927,7 +943,7 @@ tasks:
       done
 
   local:apply:
-    desc: 'Argo-Apps eines Sub-Layers im Kind anwenden: task local:apply -- <sub-layer> <tag>'
+    desc: 'Argo-Apps eines Sub-Layers im Cluster anwenden: task local:apply -- <sub-layer> <tag>'
     summary: |
       Sucht local/argo-apps/<sub-layer>/*.yaml und applied jede Datei mit
       envsubst-Substitution für ${TAG} und ${REGISTRY}. Pro Komponente eine
@@ -970,8 +986,8 @@ tasks:
   local:status:
     desc: 'Überblick: Cluster + Argo + Applications'
     cmd: |
-      echo "=== Kind-Cluster ==="
-      kind get clusters | grep talos-platform-apps || echo "  (nicht da)"
+      echo "=== Talos-Cluster ==="
+      talosctl cluster show --name talos-platform-apps 2>/dev/null || echo "  (nicht da)"
       echo ""
       echo "=== Lokale Registry ==="
       docker ps --filter name=kind-registry --format 'table {{`{{.Names}}\t{{.Status}}\t{{.Ports}}`}}'

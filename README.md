@@ -79,14 +79,14 @@ task publish -- monitoring v0.1.0 # render → push → sign → attest in einem
 task ci                           # lokale Reproduktion der GHA-Pipeline
 ```
 
-### Lokales Live-Testing (Kind + ArgoCD)
+### Lokales Live-Testing (Talos + ArgoCD)
 
-Für End-to-End-Tests einzelner Sub-Layer (Render → OCI-Push → Argo-Sync → Apply) gibt es einen prod-konformen Kind-Cluster mit Cilium-CNI, Gateway-API und einer lokalen OCI-Registry hinter `registry.localhost.direct` (mkcert-TLS):
+Für End-to-End-Tests einzelner Sub-Layer (Render → OCI-Push → Argo-Sync → Apply) gibt es einen prod-konformen **Talos**-Cluster (docker provisioner) — gleiches Substrat wie Seeder/Office-Lab (Talos-Nodes, Cilium-CNI, Gateway-API, kube-proxy aus, KubePrism) — mit einer lokalen OCI-Registry hinter `registry.localhost.direct` (mkcert-TLS):
 
 ```bash
-task local:up                                  # Cluster + Cilium + Gateway + ArgoCD + Registry-Bridge
-task local:publish -- lifecycle 0.0.0-dev      # Sub-Layer in die lokale Registry pushen
-task local:apply   -- lifecycle 0.0.0-dev crossplane-system  # Argo-Application anlegen
+task local:up                                  # Talos + Cilium + Gateway + ArgoCD + Registry-Bridge
+task local:publish -- lifecycle/crossplane 0.0.0-dev  # Komponente in die lokale Registry pushen
+task local:apply   -- lifecycle 0.0.0-dev      # Argo-Applications des Sub-Layers anlegen
 task local:argo:ui                             # https://argocd.localhost.direct öffnen
 task local:down                                # alles abreißen
 ```

@@ -19,7 +19,7 @@
     "jq@latest",
     "sops@latest",
     "age@latest",
-    "kind@latest",
+    "talosctl@1.13.3",
     "argocd@latest",
     "kubectx@latest",
     "gettext@latest",
