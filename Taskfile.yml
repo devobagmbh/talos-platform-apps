@@ -1359,6 +1359,10 @@ tasks:
       done
       echo "warte auf XCluster-CRD (Established)…"
       kubectl --context admin@talos-platform-apps wait --for=condition=Established crd/xclusters.platform.devoba.de --timeout=120s || true
+      # ClusterProviderConfig ZUERST (consumer-eigen, lokaler Dummy) — sonst kann
+      # provider-opentofu sie beim Workspace-Reconcile nicht auflösen ("not found").
+      echo "→ ClusterProviderConfig (lokaler Dummy) applien"
+      kubectl --context admin@talos-platform-apps apply -f local/crossplane/examples/clusterproviderconfig.yaml
       echo "→ Test-XR applien"
       kubectl --context admin@talos-platform-apps apply -f local/crossplane/examples/xcluster-test.yaml
       echo ""
