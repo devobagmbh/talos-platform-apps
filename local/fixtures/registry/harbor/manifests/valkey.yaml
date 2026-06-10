@@ -1,0 +1,22 @@
+# Lokale Valkey-Instanz (Redis-Cache) für Harbor — NUR Test-Umgebung.
+# In prod consumer-eigen. Erzeugt Service harbor-cache:6379 (harbors redis.addr).
+# anonymousAuth: true → kein Redis-Passwort lokal (harbor-redis bleibt leer, kein
+# Kopie-/Key-Mismatch). tls: false (harbor spricht plain Redis). Default-SC (local-path).
+apiVersion: hyperspike.io/v1
+kind: Valkey
+metadata:
+  name: harbor-cache
+  namespace: harbor
+spec:
+  nodes: 1
+  replicas: 0
+  anonymousAuth: true
+  tls: false
+  prometheus: false
+  serviceMonitor: false
+  volumePermissions: true
+  clusterDomain: cluster.local
+  storage:
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources: { requests: { storage: 1Gi } }

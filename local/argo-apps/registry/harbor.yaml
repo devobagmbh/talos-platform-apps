@@ -34,6 +34,16 @@ spec:
       kind: Deployment
       jsonPointers:
         - /status/terminatingReplicas
+    # harbor-trivy StatefulSet: der kube-controller-manager defaultet volumeMode +
+    # status in die volumeClaimTemplates, die das gerenderte Manifest nicht hat.
+    # volumeClaimTemplates sind immutable → Argo kann den Diff nie reconcilen →
+    # dauerhaft OutOfSync (Health bleibt Healthy). Ignorieren ist sicher.
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - '.spec.volumeClaimTemplates[]?.metadata.annotations'
+        - '.spec.volumeClaimTemplates[]?.spec.volumeMode'
+        - '.spec.volumeClaimTemplates[]?.status'
 
   syncPolicy:
     automated:

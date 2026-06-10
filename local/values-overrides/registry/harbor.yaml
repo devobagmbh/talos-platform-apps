@@ -7,3 +7,11 @@
 # externalURL bäckt Harbor als EXT_ENDPOINT in die core-ConfigMap → generierte
 # Links / docker-push-Befehle / OIDC-Redirects zeigen lokal auf den Gateway-Host.
 externalURL: https://harbor.localhost.direct
+
+# DB-Passwort lokal direkt aus CNPGs LEBENDEM harbor-pg-app lesen statt aus einer
+# Kopie (harbor-db) — sonst veraltet die Kopie, sobald die CNPG-Instanz neu
+# entsteht (vgl. crossview). harbor-pg-app hat key `password` (= Chart-Erwartung).
+# Nur lokal: in prod liefert der Konsument harbor-db (Shape c, ADR-0023/0024).
+database:
+  external:
+    existingSecret: harbor-pg-app
