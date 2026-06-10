@@ -84,9 +84,13 @@ spec:
                         key: aws_secret_access_key
                 # ProviderConfig completes the S3 backend (DS720+ Garage
                 # endpoint/bucket/key via backendFile) — see consumer
-                # crossplane/providerconfigs/. Default kind is ProviderConfig
-                # (namespaced, same namespace as this Workspace).
+                # crossplane/providerconfigs/. The namespaced opentofu.m.upbound.io
+                # provider REQUIRES kind explicitly (ProviderConfig vs
+                # ClusterProviderConfig); we use the cluster-scoped one — one shared
+                # tofu provider config for all XClusters (consumer-owned, named
+                # opentofu-default).
                 providerConfigRef:
+                  kind: ClusterProviderConfig
                   name: opentofu-default
                 # kubeconfig + talosconfig (module outputs) → connection secret,
                 # written LOCALLY into the XCluster's namespace (no explicit namespace).
