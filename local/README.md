@@ -95,11 +95,12 @@ Step order:
 2. `local:cluster:up` — `talosctl cluster create docker` (single schedulable control plane, Talos `v1.13.3`, K8s `1.36.0`, `talos-patch.yaml`), attach the registry to the `talos-platform-apps` docker network, KEP-1755 `local-registry-hosting` ConfigMap
 3. `local:gateway-api:install` — standard CRDs `v1.2.0` (before Cilium, so the operator initialises its Gateway-API controller)
 4. `local:cilium:install` — Cilium 1.19.3, `k8sServiceHost=localhost:7445` (KubePrism), wait for the CoreDNS rollout
-5. `local:cert-manager:install` — cert-manager `v1.17` (Helm, CRDs inline)
-6. `local:certs` — `mkcert -install` + `rootCA.pem` as a cert-manager secret + the argocd-NS CA ConfigMap + `ClusterIssuer mkcert-ca`
-7. `local:argo:install` — ArgoCD 7.7.0 (headless, no Ingress)
-8. `local:gateway:apply` — Gateway + wildcard Certificate + ArgoCD HTTPRoute + NodePort patch `30080/30443`
-9. `local:registry:bridge` — Service + EndpointSlice with the docker IP of `kind-registry`
+5. `local:storage:install` — local-path-provisioner as the **default StorageClass** (catalog CSIs need the real NAS; local-path is the local stand-in, hostPath under `/var`, namespace PSA-privileged for Talos). Needed for stateful local tests (CNPG, …).
+6. `local:cert-manager:install` — cert-manager `v1.17` (Helm, CRDs inline)
+7. `local:certs` — `mkcert -install` + `rootCA.pem` as a cert-manager secret + the argocd-NS CA ConfigMap + `ClusterIssuer mkcert-ca`
+8. `local:argo:install` — ArgoCD 7.7.0 (headless, no Ingress)
+9. `local:gateway:apply` — Gateway + wildcard Certificate + ArgoCD HTTPRoute + NodePort patch `30080/30443`
+10. `local:registry:bridge` — Service + EndpointSlice with the docker IP of `kind-registry`
 
 Endpoints at the end:
 
@@ -145,7 +146,10 @@ For active development on **one** component, skip the manual publish/apply round
 task local:dev -- registry/harbor
 ```
 
-It does an initial build and then **watches** `sub-layers/<sub-layer>/components/<component>/`. On every save it automatically runs `render → package → push` (local registry, a fresh `0.0.0-dev.<epoch>` tag) and hard-refreshes the component's Argo `Application`; the app's `syncPolicy.automated` then applies the change. `Ctrl-C` ends the loop.
+It does an initial build and then **watches** `sub-layers/<sub-layer>/components/<component>/`. On every save it automatically runs `render → package → push` (local registry, a fresh `0.0.0-dev.<epoch>` tag) and hard-refreshes the component's Argo `Application`; the app's `syncPolicy.automated` then applies the change.
+
+- **Brings up fixtures.** Consumer-owned things the catalog doesn't ship (the actual DB/cache instance + runtime secrets, ADR-0023/0024) come from `local/fixtures/<sub-layer>/<component>/` — CR manifests (e.g. a CNPG `Cluster`) + a `secrets.yaml` whose secrets are **generated at apply time** (no values in the repo; a DB password is copied from CNPG's auto-secret). So `task local:dev -- lifecycle/crossview` first ensures the cnpg operator (dep), then a `crossview-pg` CNPG `Cluster` + the `crossview-db`/`crossview-runtime-secret` secrets, then crossview reaches Healthy. Disable with `LOCAL_DEV_SKIP_FIXTURES=1`. `task local:fixtures -- <comp>` runs it standalone. **Local-only** — in prod these are consumer-owned (seeder repo). Needs a working StorageClass → `local:up` installs local-path-provisioner (see Quickstart step).
+- **`Ctrl-C` tears down.** Skaffold-style: stopping the watcher removes what this component *is* — its Argo `Application`, HTTPRoute, and fixtures (CR instances + generated secrets). Dependency operators (cnpg, crossplane) stay (expensive to redeploy). `LOCAL_DEV_KEEP=1` keeps everything; `task local:down` removes the whole cluster.
 
 - **Fresh tag per iteration.** ArgoCD caches OCI charts by digest, so re-pushing the *same* tag would not be re-pulled. Each save gets a new `0.0.0-dev.<epoch>` tag, which guarantees a clean re-pull — no manual `--hard-refresh`, no tag bookkeeping.
 - **No self-trigger.** `rendered/` is gitignored, and `watchexec` honors `.gitignore`, so the render output never re-triggers the watcher.

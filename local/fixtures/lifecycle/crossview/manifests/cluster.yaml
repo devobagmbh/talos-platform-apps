@@ -1,0 +1,18 @@
+# Lokale CNPG-Cluster-Instanz für crossview — NUR Test-Umgebung.
+# In prod ist diese Cluster-CR consumer-eigen (seeder-Repo); der Katalog liefert
+# nur den cnpg-Operator (Capability cnpg-postgres). Hier reicht 1 Instanz / 1Gi.
+# CNPG erzeugt Service `crossview-pg-rw` (was crossview als DB_HOST erwartet) und
+# das Secret `crossview-pg-app` (username/password für den `crossview`-User).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: crossview-pg
+  namespace: crossview
+spec:
+  instances: 1
+  storage:
+    size: 1Gi
+  bootstrap:
+    initdb:
+      database: crossview
+      owner: crossview

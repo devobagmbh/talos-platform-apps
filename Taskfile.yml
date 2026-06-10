@@ -638,6 +638,7 @@ tasks:
       - task: local:cluster:up
       - task: local:gateway-api:install
       - task: local:cilium:install
+      - task: local:storage:install
       - task: local:cert-manager:install
       - task: local:certs
       - task: local:argo:install
@@ -856,6 +857,28 @@ tasks:
       # zieht der Cilium-Agent/Operator/Envoy erst Images, bevor das CNI Pods
       # verdrahtet — 2m war zu knapp und ließ local:up false-negativ failen.
       kubectl -n kube-system rollout status deployment/coredns --timeout=5m
+
+  local:storage:install:
+    desc: 'local-path-provisioner als Default-StorageClass (lokal — Katalog-CSI braucht das NAS)'
+    # Das lokale Talos-Cluster hat keine StorageClass; die Katalog-CSIs (synology/
+    # democratic) brauchen das echte NAS. Für stateful Local-Tests (CNPG-Cluster,
+    # Harbor-PVCs …) installieren wir Rancher local-path-provisioner. Talos-
+    # Anpassung: / ist read-only → hostPath nach /var/local-path-provisioner.
+    cmd: |
+      ver="v0.0.30"
+      kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${ver}/deploy/local-path-storage.yaml"
+      # Talos erzwingt Pod-Security; der Helper-Pod (mountet hostPath) braucht
+      # einen privileged-NS, sonst blockt PSA die PVC-Provisionierung.
+      kubectl label namespace local-path-storage pod-security.kubernetes.io/enforce=privileged --overwrite
+      cfg='{"nodePathMap":[{"node":"DEFAULT_PATH_FOR_NON_LISTED_NODES","paths":["/var/local-path-provisioner"]}]}'
+      kubectl -n local-path-storage patch configmap local-path-config --type merge \
+        -p "$(jq -nc --arg c "$cfg" '{data:{"config.json":$c}}')"
+      # local-path als Default-StorageClass (CNPG & Co. setzen kein storageClassName)
+      kubectl patch storageclass local-path \
+        -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+      kubectl -n local-path-storage rollout restart deployment/local-path-provisioner
+      kubectl -n local-path-storage rollout status deployment/local-path-provisioner --timeout=2m
+      echo "✓ local-path ist Default-StorageClass"
 
   local:gateway-api:install:
     desc: 'Gateway-API-CRDs installieren (Standard-Channel v1.2.0)'
@@ -1112,13 +1135,23 @@ tasks:
         fi
       fi
 
-      # Hinweis auf consumer-gelieferte Secrets (sind KEINE Katalog-Komponenten,
-      # werden NICHT automatisch erstellt — sonst bleiben Pods Pending/CrashLoop).
+      # Test-Fixtures: consumer-eigene Instanzen (CNPG-Cluster, Valkey) + Dev-Secrets,
+      # die der Katalog nicht liefert. Auto, sofern vorhanden; LOCAL_DEV_SKIP_FIXTURES=1 aus.
+      fdir="local/fixtures/${sub_layer}/${component}"
+      if [ "${LOCAL_DEV_SKIP_FIXTURES:-0}" != "1" ] && [ -d "$fdir" ]; then
+        echo "Test-Fixtures (Instanzen + Dev-Secrets):"
+        task local:fixtures -- "$component_id"
+      fi
+
+      # Hinweis auf consumer-gelieferte Secrets — nur wenn KEINE Fixture sie stellt
+      # (sonst werden sie oben automatisch erzeugt).
       cust="${comp_dir}/customization.yaml"
-      if [ -f "$cust" ]; then
+      if [ ! -d "$fdir" ] && [ -f "$cust" ]; then
         sref=$(yq -r '.provided_refs.secret // ""' "$cust" 2>/dev/null)
         skeys=$(yq -r '.required.secret_keys[]?' "$cust" 2>/dev/null | paste -sd, -)
-        [ -n "$skeys" ] && echo "ℹ ${component_id} braucht Secret '${sref}' mit Keys [${skeys}] (consumer-supplied, manuell anlegen)"
+        if [ -n "$skeys" ]; then
+          echo "ℹ ${component_id} braucht Secret '${sref}' mit Keys [${skeys}] (consumer-supplied, manuell anlegen — oder local/fixtures/${sub_layer}/${component}/ anlegen)"
+        fi
       fi
 
       echo "Initial-Build ${component_id}…"
@@ -1132,10 +1165,37 @@ tasks:
         echo "🌐 erreichbar unter https://${component}.localhost.direct"
       fi
 
+      # Skaffold-artiges Teardown: Strg-C entfernt, was DIESE Komponente ausmacht —
+      # Argo-App + HTTPRoute + Fixtures (CR-Instanzen + generierte Secrets). Deps/
+      # Operatoren bleiben (teuer im Re-Deploy). LOCAL_DEV_KEEP=1 behält alles.
+      # WICHTIG: go-tasks mvdan/sh kann KEINE Signal-Traps ("invalid signal
+      # specification"). Watch + Trap laufen daher in echtem `bash -c`; Vars per env.
       echo ""
-      echo "👀 Watching ${comp_dir} — Speichern löst Rebuild + Argo-Sync aus. Strg-C beendet."
-      watchexec --watch "$comp_dir" --ignore '**/rendered/**' --debounce 800ms --postpone \
-        -- task local:dev:sync -- "$component_id"
+      echo "👀 Watching ${comp_dir} — Speichern löst Rebuild + Argo-Sync aus. Strg-C → Teardown."
+      DEV_SL="$sub_layer" DEV_COMP="$component" DEV_CID="$component_id" \
+      DEV_COMPDIR="$comp_dir" DEV_ROUTE="$route" DEV_FDIR="$fdir" DEV_APPTMPL="$app_tmpl" \
+      bash -c '
+        set -u
+        K="kubectl --context admin@talos-platform-apps"
+        cleanup() {
+          trap - INT TERM
+          if [ "${LOCAL_DEV_KEEP:-0}" = "1" ]; then echo; echo "LOCAL_DEV_KEEP=1 → ${DEV_CID} bleibt im Cluster."; exit 0; fi
+          echo; echo "🧹 Strg-C → räume ${DEV_CID} auf …"
+          $K -n argocd delete application "${DEV_SL}-${DEV_COMP}" --ignore-not-found --wait=false >/dev/null 2>&1
+          [ -f "$DEV_ROUTE" ] && $K delete -f "$DEV_ROUTE" --ignore-not-found --wait=false >/dev/null 2>&1
+          if [ -d "$DEV_FDIR" ]; then
+            [ -d "$DEV_FDIR/manifests" ] && $K delete -f "$DEV_FDIR/manifests" --ignore-not-found --wait=false >/dev/null 2>&1
+            if [ -f "$DEV_FDIR/secrets.yaml" ]; then
+              fns=$(yq -r ".spec.destination.namespace" "$DEV_APPTMPL" 2>/dev/null); { [ -z "$fns" ] || [ "$fns" = "null" ]; } && fns="$DEV_COMP"
+              for n in $(yq -r ".secrets[].name" "$DEV_FDIR/secrets.yaml" 2>/dev/null); do $K -n "$fns" delete secret "$n" --ignore-not-found >/dev/null 2>&1; done
+            fi
+          fi
+          echo "  ✓ ${DEV_CID} (App, Route, Fixtures) entfernt. Operatoren/Deps bleiben — task local:down räumt alles ab."
+          exit 0
+        }
+        trap cleanup INT TERM
+        watchexec --watch "$DEV_COMPDIR" --ignore "**/rendered/**" --debounce 800ms --postpone -- task local:dev:sync -- "$DEV_CID"
+      '
 
   local:dev:sync:
     desc: 'Eine Dev-Iteration (intern, von local:dev getriggert): render→push→Argo-refresh mit frischem Tag'
@@ -1164,6 +1224,64 @@ tasks:
       kubectl --context admin@talos-platform-apps -n argocd annotate application "$app_name" \
         argocd.argoproj.io/refresh=hard --overwrite >/dev/null
       echo "  ✓ ${app_name} → ${tag} (Argo auto-sync läuft)"
+
+  local:fixtures:
+    desc: 'Lokale Test-Fixtures (Capability-Instanzen + Dev-Secrets) einer Komponente: task local:fixtures -- <sub-layer>/<component>'
+    summary: |
+      Bringt die consumer-eigenen Ressourcen, die der Katalog NICHT liefert
+      (ADR-0023/0024), für lokale Tests ein:
+        - CR-Manifeste aus local/fixtures/<sl>/<comp>/manifests/ (CNPG-Cluster, Valkey, …)
+        - Dev-Secrets aus secrets.yaml — zur Apply-Zeit generiert, idempotent
+          (keine Werte im Repo). `fromCnpgApp` kopiert das password aus dem
+          CNPG-Auto-Secret <cluster>-app, sonst Zufallswert pro Key.
+      No-op, wenn kein Fixtures-Verzeichnis existiert.
+    cmd: |
+      set -uo pipefail
+      set -- {{.CLI_ARGS}}
+      cid="${1:?usage: task local:fixtures -- <sub-layer>/<component>}"
+      sl="${cid%/*}"; comp="${cid#*/}"
+      fdir="local/fixtures/${sl}/${comp}"
+      [ -d "$fdir" ] || { echo "  (keine Fixtures für ${cid})"; exit 0; }
+      KC="kubectl --context admin@talos-platform-apps"
+      ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
+      { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
+      $KC create namespace "$ns" --dry-run=client -o yaml | $KC apply -f - >/dev/null
+
+      if [ -d "$fdir/manifests" ]; then
+        $KC apply -f "$fdir/manifests" >/dev/null && echo "  ✓ Fixture-Manifeste angewendet"
+      fi
+
+      spec="$fdir/secrets.yaml"
+      [ -f "$spec" ] || exit 0
+      count=$(yq -r '.secrets | length' "$spec" 2>/dev/null)
+      i=0
+      while [ "$i" -lt "${count:-0}" ]; do
+        name=$(yq -r ".secrets[$i].name" "$spec")
+        cnpg=$(yq -r ".secrets[$i].fromCnpgApp // \"\"" "$spec")
+        if $KC -n "$ns" get secret "$name" >/dev/null 2>&1; then
+          echo "  ✓ Secret ${name} existiert (skip)"
+        elif [ -n "$cnpg" ]; then
+          echo "  → warte auf CNPG-Auto-Secret ${cnpg}-app …"
+          for _ in $(seq 1 60); do $KC -n "$ns" get secret "${cnpg}-app" >/dev/null 2>&1 && break; sleep 2; done
+          pw=$($KC -n "$ns" get secret "${cnpg}-app" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+          if [ -n "$pw" ]; then
+            $KC -n "$ns" create secret generic "$name" --from-literal=password="$pw" >/dev/null
+            echo "  ✓ Secret ${name} (password aus ${cnpg}-app)"
+          else
+            echo "  ⚠ ${cnpg}-app (noch) nicht da — ${name} übersprungen"
+          fi
+        else
+          args=""
+          for key in $(yq -r ".secrets[$i].generate[]" "$spec"); do
+            # head liest /dev/urandom direkt (endlich) → kein SIGPIPE; danach base64/tr/cut.
+            val=$(head -c 18 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | cut -c1-24)
+            args="$args --from-literal=${key}=${val}"
+          done
+          $KC -n "$ns" create secret generic "$name" $args >/dev/null
+          echo "  ✓ Secret ${name} (generiert)"
+        fi
+        i=$((i+1))
+      done
 
   local:remove:
     desc: 'Alle Argo-Apps eines Sub-Layers entfernen: task local:remove -- <sub-layer>'
