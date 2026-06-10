@@ -1,0 +1,45 @@
+# Argo-Application für lifecycle/crossview (lokale Test-Umgebung).
+# Template-Platzhalter (envsubst durch task local:apply / local:dev):
+#   ${TAG}       — Chart-Version (z. B. 0.0.0-dev oder 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lifecycle-crossview
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: lifecycle
+    platform.devoba.de/component: crossview
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/lifecycle
+    chart: crossview
+    targetRevision: ${TAG}
+    helm:
+      releaseName: crossview
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossview
+
+  # K8s 1.32+ hat .status.terminatingReplicas in Deployment.status; Argos
+  # structured-merge-diff cached das alte OpenAPI-Schema und kann das Feld
+  # nicht typisieren → "field not declared in schema". Ignorieren ist sicher,
+  # weil status-Felder eh nicht durch Argo verwaltet werden.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
