@@ -185,7 +185,9 @@ task crossplane:dev             # watch + re-render on every save (Skaffold-styl
 task crossplane:apply           # deploy crossplane+providers+compositions, apply the test XR
 ```
 
-Deploys the lifecycle Crossplane stack to the local Talos cluster (via `local:dev:sync`) and applies the test XR. It reconciles **up to the provider boundary**: the XRD/Composition install, the `XCluster` is accepted, the `opentofu` `Workspace` is created — then the real `tofu apply` fails as expected (no hardware/backend locally). This validates the in-cluster wiring, not full provisioning.
+Deploys the lifecycle Crossplane stack to the local Talos cluster (via `local:dev:sync`), applies a dummy `ClusterProviderConfig opentofu-default` (consumer-owned in prod — the catalog only references it by name) and the test XR. It reconciles **up to the provider boundary**: XRD/Composition install, the `XCluster` is `Synced`, the `opentofu` `Workspace` is composed, `provider-opentofu` resolves the config and attempts the tofu module download — which fails as expected on the dummy git source (no real module/backend/hardware locally). This validates the full in-cluster wiring, not actual provisioning.
+
+> The `crossplane:apply` test surfaced two real composition bugs that offline render alone would miss: a string transform missing `type: Format`, and the `Workspace` missing the required `providerConfigRef.kind` for the namespaced opentofu provider.
 
 ## Iteration and cleanup
 
