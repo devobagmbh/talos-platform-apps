@@ -136,6 +136,23 @@ task local:argo:ui
 
 Argo pulls the Helm-chart-wrapper OCI over the Service DNS (no Gateway round-trip), renders it and applies it to the target namespace.
 
+## Live dev loop (`task local:dev`) — Skaffold-style
+
+For active development on **one** component, skip the manual publish/apply round-trip:
+
+```bash
+task local:dev -- registry/harbor
+```
+
+It does an initial build and then **watches** `sub-layers/<sub-layer>/components/<component>/`. On every save it automatically runs `render → package → push` (local registry, a fresh `0.0.0-dev.<epoch>` tag) and hard-refreshes the component's Argo `Application`; the app's `syncPolicy.automated` then applies the change. `Ctrl-C` ends the loop.
+
+- **Fresh tag per iteration.** ArgoCD caches OCI charts by digest, so re-pushing the *same* tag would not be re-pulled. Each save gets a new `0.0.0-dev.<epoch>` tag, which guarantees a clean re-pull — no manual `--hard-refresh`, no tag bookkeeping.
+- **No self-trigger.** `rendered/` is gitignored, and `watchexec` honors `.gitignore`, so the render output never re-triggers the watcher.
+- **Survives typos.** A broken render mid-edit fails only that one iteration (printed to the console); the watcher keeps running and the next save retries.
+- **Requires an Argo-app template** `local/argo-apps/<sub-layer>/<component>.yaml` (template: [`lifecycle/crossplane.yaml`](argo-apps/lifecycle/crossplane.yaml)). `local:dev` errors with a hint if it is missing.
+
+`task local:dev:sync -- <sub-layer>/<component>` runs a single iteration (build + push + refresh) without the watcher — useful for a one-off resync.
+
 ## Iteration and cleanup
 
 ```bash
