@@ -80,10 +80,15 @@ values:
     external:
       # Convention: a Valkey CR `harbor-cache` → its service `harbor-cache:6379`.
       addr: harbor-cache:6379
+      # ALL indices 0: the redis-managed capability (valkey-operator) runs Valkey in
+      # CLUSTER mode, where Redis `SELECT <db>` is forbidden ("SELECT is not allowed
+      # in cluster mode" → jobservice/registry/trivy crashloop). Harbor keys are
+      # component-prefixed, so sharing DB 0 is safe and is the standard cluster-Redis
+      # setup. (Separate indices only work against a standalone Redis.)
       coreDatabaseIndex: "0"
-      jobserviceDatabaseIndex: "1"
-      registryDatabaseIndex: "2"
-      trivyAdapterIndex: "5"
+      jobserviceDatabaseIndex: "0"
+      registryDatabaseIndex: "0"
+      trivyAdapterIndex: "0"
       # Consumer-supplied (class B). Key MUST be `REDIS_PASSWORD` (goharbor chart
       # contract). Map it from the Valkey-operator secret in the consumer repo.
       existingSecret: harbor-redis
