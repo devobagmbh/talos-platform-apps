@@ -11,3 +11,14 @@ config:
   server:
     cors:
       origin: https://crossview.localhost.direct
+
+# DB-Passwort direkt aus CNPGs LEBENDEM Auto-Secret <cluster>-app lesen, statt aus
+# einer Kopie (crossview-db). Die Kopie wird veraltet, sobald die CNPG-Instanz über
+# einen local:dev-Zyklus neu entsteht (neues Passwort) → "password authentication
+# failed". CNPG hält username/password in crossview-pg-app immer aktuell.
+# Nur lokal: in prod liefert der Konsument crossview-db (Shape c, ADR-0023/0024).
+secrets:
+  dbPassword:
+    secretKeyRef:
+      name: crossview-pg-app
+      key: password
