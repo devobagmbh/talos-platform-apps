@@ -98,7 +98,7 @@ spec:
                 toFieldPath: metadata.name
                 transforms:
                   - type: string
-                    string: { fmt: "talos-%s" }
+                    string: { type: Format, fmt: "talos-%s" }
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.tofuModuleSource
                 toFieldPath: spec.forProvider.module
@@ -107,32 +107,32 @@ spec:
                 toFieldPath: spec.writeConnectionSecretToRef.name
                 transforms:
                   - type: string
-                    string: { fmt: "%s-cluster-conn" }
+                    string: { type: Format, fmt: "%s-cluster-conn" }
               # Secret name (<clusterName>-tofu-secrets) into every env secretKeyRef.
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.forProvider.env[0].secretKeyRef.name
                 transforms:
                   - type: string
-                    string: { fmt: "%s-tofu-secrets" }
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.forProvider.env[1].secretKeyRef.name
                 transforms:
                   - type: string
-                    string: { fmt: "%s-tofu-secrets" }
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.forProvider.env[2].secretKeyRef.name
                 transforms:
                   - type: string
-                    string: { fmt: "%s-tofu-secrets" }
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.forProvider.env[3].secretKeyRef.name
                 transforms:
                   - type: string
-                    string: { fmt: "%s-tofu-secrets" }
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
               # Surface the Workspace's own connection-secret reference into the
               # XCluster status (observability). Crossplane v2 dropped native XR
               # connection-detail aggregation, so the consumer reads the
