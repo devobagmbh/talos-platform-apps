@@ -21,3 +21,13 @@ external_dependencies: []
 # ADR-0024 removes consumer Kustomize-patching of the signed workload, so the
 # hostname must be re-modelled as Shape (a) env. Deferred to the harbor v2 pilot
 # (ADR-0024 §Validierung) — out of scope for this schema migration.
+#
+# NOTE external backends (#84) — beyond harbor-runtime-secret above, the consumer
+# wires the cnpg-postgres + redis-managed capabilities. The concrete CNPG `Cluster`
+# (`harbor-pg` → service `harbor-pg-rw`) and `Valkey` CR (`harbor-cache:6379`) are
+# consumer-owned (seeder repo). Two more consumer-supplied secrets, keys fixed by
+# the goharbor chart:
+#   - `harbor-db`    — key `password`        (DB; CNPG auto-creates `<cluster>-app`)
+#   - `harbor-redis` — key `REDIS_PASSWORD`  (Redis; map from the Valkey secret)
+# These are not in provided_refs (the schema models one ref); they are catalog
+# capability edges (see compatibility.yaml requires) + documented in README.

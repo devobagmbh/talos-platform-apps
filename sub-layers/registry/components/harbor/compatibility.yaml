@@ -1,8 +1,11 @@
 requires:
   talos-platform-base: ">=v0.4.0 <v1.0.0"
-  # Seeder-Pull-Through-Cache-Profil: eingebettete DB + ephemeral Storage.
-  # KEIN databases/cnpg, KEIN storage-objects/garage (garage obsolet). Das
-  # persistente office-lab-Harbor-Profil (CNPG + S3) bekommt ein eigenes Render-Profil.
+  # Capability deps (#84): Harbor no longer embeds DB/Redis. Postgres comes from
+  # the cnpg-postgres capability (databases/cnpg), Redis from redis-managed
+  # (databases/valkey-operator). The concrete CNPG `Cluster` + `Valkey` CRs are
+  # consumer-owned (seeder); registry blobs stay on synology-csi PVCs (ADR-0026).
+  cnpg-postgres: "*"
+  redis-managed: "*"
 provides:
   - name: harbor
     apis: []  # wird mit Issue #14 befüllt

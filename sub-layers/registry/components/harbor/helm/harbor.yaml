@@ -1,20 +1,22 @@
 # Harbor — Container-Registry + Pull-Through-Cache (ADR-0012/0013).
 # Render-Input für `task render:one -- registry/harbor`.
 #
-# Tag-1-Profil: Seeder-Pull-Through-Cache, Single-Node, EINE Platte, kein
-# Linstor → Storage EPHEMERAL (persistence.enabled=false, emptyDir). Für einen
-# Cache vertretbar — er baut sich neu auf. Für den persistenten office-lab-Harbor wird
-# ein eigenes Profil mit PVC + stabilen internen Secrets gerendert.
+# Tag-1-Profil: Seeder-Pull-Through-Cache, Single-Node. Storage PERSISTENT
+# (ADR-0026) — Harbor-State überlebt einen Node-Rebuild. Harbor hält nur noch
+# seine eigenen PVCs (registry-blobs/jobLog/trivy); Postgres + Redis sind
+# EXTERN (CNPG + Valkey, #84), kein eingebettetes harbor-database/harbor-redis.
 #
 # Consumer-Side Value Layering (ADR-0023):
 #   - admin-Passwort + globaler secretKey → existingSecret `harbor-runtime-secret`
 #     (Klasse B). Der Konsument liefert es via SOPS (Vault läuft noch nicht).
 #   - externalURL → Platzhalter; der Konsument patcht ihn via Kustomize
 #     (Klasse A, strukturell — Harbor backt EXT_ENDPOINT in die core-ConfigMap).
+#   - DB/Redis-Connection → cnpg-postgres + redis-managed capabilities. Die
+#     konkreten CNPG-`Cluster`- + `Valkey`-CRs sind Konsumenten-eigen (seeder);
+#     existingSecrets `harbor-db` (key password) + `harbor-redis` (key
+#     REDIS_PASSWORD) liefert der Konsument (Klasse B). Siehe compatibility.yaml.
 #   - interne Service-Secrets (core/xsrf/jobservice/registry-http) lässt Harbor
-#     generieren. Toleriert für den ephemeral Cache (Rotation bei Re-Render
-#     unkritisch, da kein persistenter State). Der office-lab-Harbor stabilisiert sie
-#     via SOPS/Vault-existingSecret.
+#     generieren. Der office-lab-Harbor stabilisiert sie via SOPS/Vault-existingSecret.
 
 metadata:
   chart: harbor
@@ -40,11 +42,9 @@ values:
   externalURL: https://REPLACE-ME.harbor.invalid
 
   # --- Storage: persistent (ADR-0026), so Harbor state survives a node rebuild.
-  # Harbor runs ONLY on the seeder (single central registry, ADR-0026), and the
-  # seeder gets ONLY synology-csi (NAS iSCSI) — its sole/default StorageClass. So
-  # storageClass is left unset → the seeder default = synology-iscsi-storage. The
-  # piraeus/LINSTOR + default-SC question is office-lab-only (gets both); Harbor is
-  # not deployed there, so no explicit pin is needed. Sizes are seeder-scale. ---
+  # storageClass unset → the seeder default = synology-iscsi-storage. Only the
+  # registry blobs + jobLog + trivy cache are Harbor's own PVCs now — Postgres
+  # and Redis state live in CNPG / Valkey (external, below), NOT in Harbor PVCs. ---
   persistence:
     enabled: true
     persistentVolumeClaim:
@@ -53,18 +53,40 @@ values:
       jobservice:
         jobLog:
           size: 1Gi
-      database:
-        size: 5Gi
-      redis:
-        size: 1Gi
       trivy:
         size: 5Gi
 
-  # --- Eingebettete Backends (kein CNPG, kein Garage-S3) ---
+  # --- External backends (capability-first, #84): Postgres via cnpg-postgres,
+  # Redis via redis-managed (Valkey). Harbor no longer ships harbor-database /
+  # harbor-redis StatefulSets. The concrete CNPG `Cluster` + `Valkey` CRs are
+  # CONSUMER-owned (seeder repo); this render only sets type=external + the
+  # connection convention + the existing-secret contract (ADR-0023). ---
   database:
-    type: internal
+    type: external
+    external:
+      # Convention: a CNPG Cluster named `harbor-pg` in the harbor namespace →
+      # its read-write service `harbor-pg-rw`. Consumer patches host via kustomize
+      # if it names the cluster differently (ADR-0023 class A).
+      host: harbor-pg-rw
+      port: "5432"
+      username: harbor
+      coreDatabase: registry
+      sslmode: require            # CNPG serves TLS by default
+      # Consumer-supplied (class B). CNPG auto-creates `<cluster>-app` with a
+      # `password` key — point existingSecret at it (or a SOPS runtime-secret).
+      existingSecret: harbor-db
   redis:
-    type: internal
+    type: external
+    external:
+      # Convention: a Valkey CR `harbor-cache` → its service `harbor-cache:6379`.
+      addr: harbor-cache:6379
+      coreDatabaseIndex: "0"
+      jobserviceDatabaseIndex: "1"
+      registryDatabaseIndex: "2"
+      trivyAdapterIndex: "5"
+      # Consumer-supplied (class B). Key MUST be `REDIS_PASSWORD` (goharbor chart
+      # contract). Map it from the Valkey-operator secret in the consumer repo.
+      existingSecret: harbor-redis
 
   # --- Secrets (ADR-0023 Klasse B) ---
   # admin-Passwort: Konsument liefert harbor-runtime-secret.HARBOR_ADMIN_PASSWORD
