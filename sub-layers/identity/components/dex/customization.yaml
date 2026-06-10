@@ -1,0 +1,35 @@
+# Customization Contract v2 (ADR-0024). The dex Deployment/Service/SA/RBAC is the
+# signed, pre-rendered artifact. The dex CONFIG is NOT embedded: the chart is
+# rendered with `configSecret.create: false` → the workload references an EXISTING
+# secret `dex-config` (key `config.yaml`). That single file carries everything
+# cluster-specific AND sensitive (issuer, storage, connectors=EntraID OIDC,
+# staticClients, oauth2), so the whole config is one consumer-supplied Shape (c)
+# secret — no Shape (b) merged file, no Kustomize patch of the signed workload.
+freeze_line:
+  workload: rendered/manifest.yaml # Deployment/Service/SA/RBAC — never consumer-patched
+provided_refs:
+  secret: dex-config # Shape (c): the full dex config.yaml (config + connector/client secrets)
+provided_selectors: {} # no consumer-labeled CRs
+required:
+  env_keys: []
+  config_files: [] # dex config is the provided_ref secret (config.yaml), not a merged Shape-b file
+  secret_keys: # Shape (c) — the dexidp chart requires this key in `dex-config`
+    - config.yaml
+  selector_crs: []
+sync_wave: "0"
+external_dependencies: []
+# NOTE config.yaml content (consumer-owned, ADR-0010 + identity-design): the
+# consumer supplies `dex-config` via SOPS (seeder) / Vault+ESO (office-lab) with a
+# `config.yaml` containing at minimum:
+#   - issuer:        https://<dex-host>           (cluster-specific public URL)
+#   - storage:       type kubernetes (CRDs) OR postgres — NOT memory for replicaCount>1
+#   - connectors:    the EntraID OIDC connector (clientID + clientSecret)
+#   - staticClients: one per relying app (argocd, harbor, crossview, …; ADR-0010 roster)
+#   - oauth2.skipApprovalScreen: true
+# The EntraID connector secret + each staticClient secret live INSIDE this file —
+# hence the whole config is Shape (c), not Shape (b).
+#
+# NOTE consumer network (PNI): base#90 carried platform.io/network-profile=managed
+# + platform.io/consume.{cnpg-postgres,gateway-backend,controlplane-egress} on the
+# namespace. Those are the consumer's network-layer contract (no apps component
+# ships them) — the consumer overlay adds them + the HTTPRoute fronting dex.

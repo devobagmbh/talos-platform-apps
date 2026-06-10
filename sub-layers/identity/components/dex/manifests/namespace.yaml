@@ -1,0 +1,18 @@
+# Namespace for the dex OIDC broker. PSA `baseline` enforce / `restricted`
+# audit+warn — migrated from base#90 (dex runs restricted-compliant; baseline
+# enforce leaves headroom for the consumer's storage backend if it ever needs it).
+#
+# The base#90 namespace also carried PNI labels (platform.io/network-profile,
+# platform.io/consume.{cnpg-postgres,gateway-backend,controlplane-egress}). Those
+# are the consumer's network-layer contract (no apps component carries them) and
+# are added by the consumer overlay — documented in README "Consumer network".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dex
+  labels:
+    app.kubernetes.io/name: dex
+    app.kubernetes.io/part-of: identity
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
