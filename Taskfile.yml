@@ -1272,13 +1272,19 @@ tasks:
           fi
         else
           args=""
-          for key in $(yq -r ".secrets[$i].generate[]" "$spec"); do
-            # head liest /dev/urandom direkt (endlich) → kein SIGPIPE; danach base64/tr/cut.
+          # literals: feste Dev-Werte (lokale Convenience, z. B. admin/admin — KEINE
+          # echten Secrets; Werte dürfen keine Leerzeichen enthalten).
+          for kv in $(yq -r ".secrets[$i].literals // {} | to_entries[] | .key + \"=\" + .value" "$spec" 2>/dev/null); do
+            args="$args --from-literal=${kv}"
+          done
+          # generate: Zufallswerte pro Key. head liest /dev/urandom direkt (endlich)
+          # → kein SIGPIPE; danach base64/tr/cut.
+          for key in $(yq -r ".secrets[$i].generate[]?" "$spec"); do
             val=$(head -c 18 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | cut -c1-24)
             args="$args --from-literal=${key}=${val}"
           done
           $KC -n "$ns" create secret generic "$name" $args >/dev/null
-          echo "  ✓ Secret ${name} (generiert)"
+          echo "  ✓ Secret ${name} (literals + generiert)"
         fi
         i=$((i+1))
       done
