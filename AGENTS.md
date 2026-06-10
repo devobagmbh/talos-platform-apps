@@ -37,6 +37,7 @@ talos-platform-apps/
 │   └── components/<component>/
 │       ├── README.md               — Komponenten-Beschreibung, sync-wave-Position, OCI-Pfad
 │       ├── compatibility.yaml      — requires/provides der Komponente
+│       ├── customization.yaml      — ADR-0024 v2 freeze-line contract (validiert gegen schemas/customization.schema.json)
 │       ├── helm/*.yaml             — Helm-Chart-Referenz (chart/repo/version + values) ODER metadata.inline für Stubs
 │       ├── manifests/*.yaml        — Raw-Manifeste (CRs, NetPols, Bucket-Defs)
 │       └── rendered/               — gitignored, Output von helm template + manifest-Konkatenation
@@ -131,7 +132,7 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
 - **Ein Verzeichnis pro Sub-Layer** unter `sub-layers/<name>/`, mit `components/<component>/` darunter pro OCI-Artefakt. Verzeichnisname == OCI-Pfad-Komponente.
 - **Pro Sub-Layer**: `README.md` (Pflicht, listet Komponenten + sync-wave-Reihenfolge), `compatibility.yaml` (Aggregate).
-- **Pro Komponente**: `README.md` (Pflicht: Inhalt + OCI-Pfad + sync-wave + ADR-Verweise), `compatibility.yaml` (Pflicht: requires/provides), `helm/` oder `manifests/` (Inhalt).
+- **Pro Komponente**: `README.md` (Pflicht: Inhalt + OCI-Pfad + sync-wave + ADR-Verweise), `compatibility.yaml` (Pflicht: requires/provides), `customization.yaml` (Pflicht: ADR-0024 v2 freeze-line contract, validiert gegen `schemas/customization.schema.json`), `helm/` oder `manifests/` (Inhalt).
 - **Konsumenten-Trennung**: dieses Repo enthält Defaults und shared-Values. Cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in die Konsumenten-Repos.
 - **Argo-Application-Definitionen leben im Konsumenten-Cluster-Repo**, nicht hier. Pro Komponente eine `Application`-CR mit `argocd.argoproj.io/sync-wave`-Annotation. Für lokale End-to-End-Tests gibt es `local/argo-apps/<sub-layer>/<component>.yaml`-Templates im apps-Repo.
 - **`compatibility.yaml` pro Komponente** deklariert die Komponenten-Abhängigkeiten:
@@ -158,7 +159,7 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
 ## Multi-Agent-Coordination
 
-`.claude/agents/` listet spezialisierte Subagenten. **5 Impl/Review-Rollen** (2026-05-26, Bobby's Bus-Faktor-Kritik) — bei 1 Maintainer ist eine differenzierte 9-Rollen-*Review*-Hierarchie Self-Review-Theater. Hinzu kommt **`catalog-evaluator`** als separater Build-Zeit-Acceptance-Verifier: das ist orthogonal zur Review-Rollen-Zahl — ein Agent, der baut und sein Werk selbst verifiziert, ist das dokumentierte Self-Verification-Failure (MAST FC3; arXiv:2410.21819 + 2402.08115), daher Judge-Builder-Trennung statt Bequemlichkeit. Bei M2-Onboarding kommen `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer` und `compatibility-reviewer` aus dem Git-Verlauf zurück.
+`.claude/agents/` listet spezialisierte Subagenten. **5 Impl/Review-Rollen** (2026-05-26, Bobby's Bus-Faktor-Kritik) — bei 1 Maintainer ist eine differenzierte 9-Rollen-*Review*-Hierarchie Self-Review-Theater. Hinzu kommt **`catalog-evaluator`** als separater Build-Zeit-Acceptance-Verifier: das ist orthogonal zur Review-Rollen-Zahl — ein Agent, der baut und sein Werk selbst verifiziert, ist das dokumentierte Self-Verification-Failure (MAST FC3; arXiv:2410.21819 + 2402.08115), daher Judge-Builder-Trennung statt Bequemlichkeit. Bei M2-Onboarding kommen `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer` und `compatibility-reviewer` aus dem Git-Verlauf zurück. Die „5"-Zahl betrifft nur die **Impl/Review**-Achse; die **Plan-Phase** ist eine separate Achse und bringt das Paar `catalog-planner` (schreibt den App-Plan, kein Verdict) + `plan-reviewer` (read-only, kanonisches Verdict-Enum, konformations-/adversariale Persona per Brief) hinzu — Judge-Builder-Trennung wie bei Implementierung/Verify.
 
 | Phase | Agent | Output |
 |---|---|---|
@@ -170,6 +171,8 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 | **Gate** (Triage + Approve oder Block) | `staff-reviewer` | Approve oder Block |
 
 **Self-Review ist auch bei 1 Maintainer unerwünscht, aber nicht hart blockiert** — Wechsel des Agent-Hut ist ein Anti-Drift-Mechanismus, kein Vier-Augen-Prinzip-Ersatz. Sobald M2 da ist, wird der `require-review.sh`-Hook reaktiviert und das volle 9-Agent-Modell zurückgeholt.
+
+**Catalog-Plan-Primitive**: Vorgelagert plant das Skill `plan-catalog-app` (mit `catalog-planner` + `plan-reviewer`) eine Catalog-App durch einen konvergierenden plan→review→revise-Loop (parallele cross-model Personas, Finding-Ledger, harter Round-Cap, explizite Termination) zu einem finding-freien Plan unter `.work/plan/<app>/`. Den konsumiert `/build-catalog-component` pro Komponente in `build_order`. Spec: `.claude/skills/plan-catalog-app/CONVENTIONS.md`.
 
 **Catalog-Build-Primitives**: Für die Component-Issues (#17–#61) orchestrieren das Skill `build-catalog-component` (eine Komponente, **Pro-Session-Einheit**) und der Workflow `catalog-fleet` (**optionaler Single-Operator-Fan-out**) die obige Kette als builder→verifier→reviewer mit Builder ≠ Verifier in getrennten Kontexten. **Parallelität läuft über unabhängige Sessions**: jede Session baut EINE Komponente in einem eigenen git-Worktree (`task worktree:create` — cross-session-sicherer `mkdir`-Lock, Branch-Name = Claim), sodass mehrere Sessions parallel auf EINEM Clone arbeiten; `catalog-fleet` ist nur für den Ein-Operator-Massen-Fan-out. Deterministischer Gate (`task ci` + `task validate:contract` + Chart-Ref-/Tamper-Check) zuerst, LLM-Judge nur für die Semantik. Output sind Branches + Report — nie Auto-Merge (CODEOWNERS + Branch-Protection). Spec: `.claude/skills/build-catalog-component/CONVENTIONS.md`.
 
@@ -183,7 +186,7 @@ Vor PR-Open:
 - [ ] `compatibility.yaml` aktualisiert wenn Helm-Chart-Version geändert wurde
 - [ ] README im betroffenen Sub-Layer aktualisiert wenn Komponenten oder Konsumenten sich geändert haben
 - [ ] Konventionalcommits-Style mit Sub-Layer-Scope
-- [ ] Mindestens ein Reviewer-Subagent ausgeführt; bei Pipeline-/Signing-Themen zusätzlich `provenance-reviewer`
+- [ ] Mindestens ein Reviewer-Subagent ausgeführt; bei Pipeline-/Signing-Themen die Provenance-Risiken im `notes`-Feld festhalten — `provenance-reviewer` ist M2-deferred (kein Backing-Agent heute), wird bei M2-Onboarding reaktiviert und dann hier zur Pflicht
 
 ## References
 

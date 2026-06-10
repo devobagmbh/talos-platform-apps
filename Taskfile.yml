@@ -229,6 +229,343 @@ tasks:
       fi
       exit $fail
 
+  check:primitives:
+    desc: 'Self-containment + A1 + verdict-schema-consistency of the .claude/ primitives'
+    summary: |
+      Deterministic hygiene gate for the repo-local Claude Code primitives
+      (agents/skills/workflows/hooks). All checks fail-closed:
+        (a) self-containment — no reference to a developer's global user config
+            (~/.claude, claude-config, or a bare rules/<x>.md / references/<x>.md
+            that is not the repo-local .claude/rules/). The primitives must stand
+            alone for any developer who clones the repo.
+        (b) A1 — no peer-agent names anywhere in an agent file (description OR
+            body), self excepted. Routing lives in skills, never in a worker's
+            prose or its routing description (prevents dead-documentation +
+            O(N^2) coupling). Implemented by `check:agent-names` (parameterized
+            + covered by `test:check-primitives`).
+        (c) verdict-schema consistency — catches the schema-drift / non-local-
+            invalidation class (a change to one consumer silently breaking
+            another). Two canonical verdict contracts exist: the REVIEWER enum
+            (approved|rejected|needs-info) and the EVALUATOR enum (pass|fail).
+            Every agent that declares a verdict enum must use exactly one of them
+            (discovered dynamically — a new reviewer is covered without editing
+            this check); BOTH commit hooks (require-review.sh, pre-commit) must
+            read `verdict` (never the retired `status`); the live workflow must
+            dispatch both contracts with the canonical enums.
+      Honest limits (NOT covered — by design or deferred): the agent-enum check
+      normalizes whitespace then matches the value sequence exactly (catches dropped
+      OR added values), but harvests only column-0 lowercase-kebab `verdict:` lines —
+      an indented line or a value outside `[a-z-]` (title-case, digits) falls outside
+      the grep harvest (it is not a full parser; the canonical values are
+      lowercase-kebab so the harvest matches the real corpus). The WORKFLOW-enum
+      check only asserts the canonical enum
+      substring is PRESENT somewhere in catalog-fleet.js — a deliberate decoy comment
+      or an enum on a non-dispatch line evades it (pinning the live dispatch line
+      would need JS-parser semantics; the threat model is accidental drift, not an
+      adversarial insider). A1 matches whole-token peer names only, so plural/affixed
+      forms (`researchers`) are intentionally NOT flagged — a token boundary cannot
+      tell the peer `researcher`+s from the English word without false-positiving.
+      It also greps the JS dispatch-prompt enum, not the JS parser semantics (the
+      parser is deliberately tolerant → 'errored'); it checks hook case-arm presence,
+      not that each arm denies; the forgeable `reviewer-role` self-assertion is a
+      known dormant-hook residual (see Plans/ + the hooks' own notes).
+    cmd: |
+      set -uo pipefail
+      fail=0
+
+      # (a) self-containment
+      sc_hits=$(grep -rnE '~/\.claude|claude-config' .claude/agents .claude/skills .claude/workflows .claude/hooks 2>/dev/null || true)
+      bare_hits=$(grep -rnE '(^|[^./[:alnum:]])(rules|references)/[a-z0-9-]+\.md' \
+        .claude/agents .claude/skills .claude/workflows .claude/hooks 2>/dev/null \
+        | grep -vE '\.claude/(rules|references)/' || true)
+      if [ -n "$sc_hits$bare_hits" ]; then
+        [ -n "$sc_hits" ] && printf '%s\n' "$sc_hits"
+        [ -n "$bare_hits" ] && printf '%s\n' "$bare_hits"
+        echo "✗ self-containment: primitive references a global user config (above)"
+        fail=1
+      else
+        echo "✓ self-containment: no global-config references"
+      fi
+
+      # (b) A1 — no peer-agent names in any agent file (self excepted).
+      #     Delegated to `check:agent-names` so the matching logic has ONE source
+      #     and is unit-testable against fixtures (see `test:check-primitives`).
+      if task check:agent-names; then :; else fail=1; fi
+
+      # (c) verdict-schema consistency
+      sc=0
+      # Every agent verdict-enum line must be exactly one canonical contract.
+      #   Delegated to `check:agent-verdicts` (harvest is whitespace- AND
+      #   trailing-content-tolerant, normalize-then-exact-match on the value
+      #   sequence, fail-closed on an empty corpus). Fixture-tested in
+      #   `test:check-primitives`.
+      if task check:agent-verdicts; then :; else sc=1; fi
+      # No agent may carry a retired status:-keyed verdict block.
+      stale=$(grep -rlE '^status: (approved|escalate|changes-requested|rejected|needs-info)' .claude/agents/*.md 2>/dev/null || true)
+      [ -n "$stale" ] && { echo "✗ schema: retired status:-keyed verdict block in: $stale"; sc=1; }
+      # Live workflow must dispatch BOTH contracts with the canonical enums.
+      #   Delegated to `check:workflow-enums` (whitespace-tolerant ERE, not a
+      #   fixed-string byte-match, so a cosmetic reformat does not cry wolf; the
+      #   token values are still matched exactly). Fixture-tested in
+      #   `test:check-primitives`.
+      if task check:workflow-enums; then :; else sc=1; fi
+      # Both commit hooks read `verdict`, not the retired `status`, and accept the three reviewer values.
+      for hook in require-review.sh pre-commit; do
+        grep -qF 'PRIMARY_VERDICT=' ".claude/hooks/$hook" || { echo "✗ schema: hooks/$hook does not read 'verdict'"; sc=1; }
+        grep -qE 'get_yaml_field .*"status"' ".claude/hooks/$hook" && { echo "✗ schema: hooks/$hook still reads the retired 'status' field"; sc=1; }
+        for v in approved rejected needs-info; do
+          grep -qE "(^|\\|)[[:space:]]*${v}\\)" ".claude/hooks/$hook" || { echo "✗ schema: hooks/$hook lacks case arm for verdict '$v'"; sc=1; }
+        done
+      done
+      [ "$sc" = 0 ] && echo "✓ verdict-schema consistent across agents/workflow/both hooks" || fail=1
+
+      if [ "$fail" != 0 ]; then echo ""; echo "check:primitives FAILED"; fi
+      exit $fail
+
+  check:agent-names:
+    desc: 'A1 gate: no agent file names a peer agent (self excepted). AGENTS_DIR overridable.'
+    summary: |
+      Per-peer standalone-token scan: for each agent file, every OTHER agent's
+      name must not appear as a standalone token. Self is excluded BEFORE
+      matching (not filtered out afterwards) — that is what makes substring
+      names safe. The token boundary [^-[:alnum:]] treats '-' as intra-token, so
+      a name that is a hyphen-substring of another (`reviewer` inside
+      `staff-reviewer`, or a future bare `reviewer` vs `plan-reviewer`) is NOT a
+      false match, while a genuine standalone peer reference still is.
+      Single source of the A1 logic: `check:primitives` calls this; the older
+      build-all-names-alternation form false-positived on substring names.
+      AGENTS_DIR defaults to .claude/agents; `test:check-primitives` passes
+      fixture dirs to exercise both the false-positive and false-negative edges.
+    cmd: |
+      set -uo pipefail
+      shopt -s nullglob
+      # NOTE: go-task's shell aborts the whole script when the LAST command in a
+      # loop body returns nonzero (verified: a mid-script `cond && stmt` is fine,
+      # but `cond && stmt` as a loop body's final statement kills the run when
+      # cond is false). So use if/fi for the flag-set — the loop body then ends on
+      # `fi` (always 0). The summary line / `|| fail` idiom elsewhere is the same
+      # guard at the top-level scope.
+      dir='{{.AGENTS_DIR | default ".claude/agents"}}'
+      a1=0
+      found=0
+      for f in "$dir"/*.md; do
+        found=1
+        self=$(basename "$f" .md)
+        hits=""
+        for g in "$dir"/*.md; do
+          p=$(basename "$g" .md)
+          if [ "$p" = "$self" ]; then continue; fi
+          # Agent basenames are kebab-case ([a-z0-9-]+) → no ERE metachars to escape.
+          # Boundary [^-[:alnum:]] treats '-' as intra-token, so a peer name glued
+          # into a longer hyphenated name (incl. the self name) does not match.
+          if grep -qE "(^|[^-[:alnum:]])${p}([^-[:alnum:]]|$)" "$f"; then
+            hits="$hits $p"
+          fi
+        done
+        if [ -n "$hits" ]; then
+          echo "✗ A1: $self names peer agent(s):$hits"
+          a1=1
+        fi
+      done
+      if [ "$found" = 0 ]; then
+        echo "✗ A1: no agent files found in $dir"
+        exit 1
+      fi
+      if [ "$a1" = 0 ]; then
+        echo "✓ A1: no peer-agent names in agent files"
+      fi
+      exit "$a1"
+
+  check:workflow-enums:
+    desc: 'Schema gate: the live workflow dispatches both canonical verdict enums. WORKFLOW_FILE overridable.'
+    summary: |
+      Whitespace-tolerant check that the workflow dispatches BOTH canonical
+      verdict contracts in its dispatch-prompt strings (reviewer:
+      approved|rejected|needs-info; evaluator: pass|fail). Uses ERE, not a
+      fixed-string grep -F byte-match, so a cosmetic reformat (spaces around ':'
+      or '|') does NOT cry wolf — yet the token values are matched exactly, so a
+      genuinely missing or value-drifted enum still FAILS. Single source of the
+      workflow-enum logic: `check:primitives` calls this. WORKFLOW_FILE defaults
+      to .claude/workflows/catalog-fleet.js; `test:check-primitives` passes
+      fixtures to exercise the reformat and drift edges.
+    cmd: |
+      set -uo pipefail
+      wf='{{.WORKFLOW_FILE | default ".claude/workflows/catalog-fleet.js"}}'
+      sc=0
+      if [ ! -f "$wf" ]; then
+        echo "✗ schema: workflow file not found: $wf"
+        exit 1
+      fi
+      # `\|` is a literal pipe in the enum string; [[:space:]]* tolerates reformat.
+      if ! grep -qE '"verdict"[[:space:]]*:[[:space:]]*"approved"[[:space:]]*\|[[:space:]]*"rejected"[[:space:]]*\|[[:space:]]*"needs-info"' "$wf"; then
+        echo "✗ schema: $wf reviewer dispatch lacks the reviewer verdict enum (approved|rejected|needs-info)"
+        sc=1
+      fi
+      if ! grep -qE '"verdict"[[:space:]]*:[[:space:]]*"pass"[[:space:]]*\|[[:space:]]*"fail"' "$wf"; then
+        echo "✗ schema: $wf verify dispatch lacks the evaluator verdict enum (pass|fail)"
+        sc=1
+      fi
+      if [ "$sc" = 0 ]; then
+        echo "✓ workflow dispatches both canonical verdict enums"
+      fi
+      exit "$sc"
+
+  check:agent-verdicts:
+    desc: 'Schema gate: every agent verdict-enum line is exactly one canonical contract. AGENTS_DIR overridable.'
+    summary: |
+      For each agent file, every column-0 `verdict:` enum line whose values are
+      lowercase-kebab (`[a-z-]`) must be exactly one canonical contract (reviewer:
+      approved | rejected | needs-info; evaluator: pass | fail). The harvest is
+      whitespace-tolerant AND has no trailing `$` anchor, so a non-spaced spelling
+      (`approved|rejected`) OR a verdict line with a trailing `# comment` is still
+      harvested and validated. Each enum is whitespace-normalized, then the value
+      SEQUENCE is matched exactly, so a dropped OR an added value fails. Harvest scope
+      (this grep is NOT a full parser — honest-limit also noted in check:primitives):
+      an INDENTED verdict line, or values outside `[a-z-]` (title-case, digits), fall
+      outside the harvest and are not validated. The canonical contracts are
+      lowercase-kebab and the live agents write column-0 lines, so the harvest matches
+      the real corpus; a parser-grade check is future work. Fail-closed on an empty
+      corpus. Single source of the agent-verdict logic: `check:primitives` (c)
+      delegates here. AGENTS_DIR defaults to .claude/agents; `test:check-primitives`
+      passes fixtures.
+    cmd: |
+      set -uo pipefail
+      shopt -s nullglob
+      dir='{{.AGENTS_DIR | default ".claude/agents"}}'
+      rev_enum='verdict: approved | rejected | needs-info'   # reviewer contract
+      evl_enum='verdict: pass | fail'                        # builder-evaluator contract
+      sc=0
+      found=0
+      for f in "$dir"/*.md; do
+        found=1
+        while IFS= read -r vline; do
+          # Normalize whitespace around ':' and '|', strip trailing ws (incl. a CR),
+          # then match the value sequence exactly against a canonical contract.
+          norm=$(printf '%s' "$vline" | sed -E 's/^verdict:[[:space:]]*/verdict: /; s/[[:space:]]*\|[[:space:]]*/ | /g; s/[[:space:]]*$//')
+          if [ "$norm" != "$rev_enum" ] && [ "$norm" != "$evl_enum" ]; then
+            echo "✗ schema: $(basename "$f") declares non-canonical verdict enum: '$vline'"
+            sc=1
+          fi
+        done < <(grep -oE '^verdict:[[:space:]]*[a-z-]+([[:space:]]*\|[[:space:]]*[a-z-]+)+' "$f" || true)
+      done
+      if [ "$found" = 0 ]; then
+        echo "✗ schema: no agent files found in $dir"
+        exit 1
+      fi
+      if [ "$sc" = 0 ]; then
+        echo "✓ agent verdict enums canonical"
+      fi
+      exit "$sc"
+
+  test:check-primitives:
+    desc: 'Deterministic tests of the gate: A1 substring matching + workflow verdict-enum tolerance.'
+    summary: |
+      Hermetic fixtures (mktemp; no network) for the two fixture-testable gate
+      sub-checks:
+        A1 (check:agent-names):
+          1. no false positive — a self-name containing a peer name as a
+             hyphen-substring (`rev` in `rev-helper`) is NOT flagged;
+          2. no false negative — a genuine standalone peer reference IS flagged.
+        workflow enums (check:workflow-enums):
+          3. a reformatted workflow (spaces around ':' and '|') still matches;
+          4. a value-drifted enum (needs-info dropped) still FAILS.
+        Plus: the real .claude tree passes both checks.
+    cmd: |
+      set -uo pipefail
+      tmp=$(mktemp -d)
+      trap 'rm -rf "$tmp"' EXIT
+      errors=0
+
+      # ---- A1: check:agent-names ----
+      mkdir -p "$tmp/pass" "$tmp/fail"
+      # PASS: rev-helper's self-name contains peer `rev` as a hyphen-substring;
+      # no standalone peer reference → must NOT be flagged.
+      printf 'Role: rev. Operates on its own.\n' > "$tmp/pass/rev.md"
+      printf 'Role: rev-helper. Operates independently; emits findings only.\n' > "$tmp/pass/rev-helper.md"
+      # FAIL: rev-helper keeps its self-name (hyphen-substring `rev`) AND adds a
+      # genuine standalone reference to peer `rev` → flagged for `rev` only.
+      printf 'Role: rev. Operates on its own.\n' > "$tmp/fail/rev.md"
+      printf 'Role: rev-helper. Delegates to the rev agent for scoring.\n' > "$tmp/fail/rev-helper.md"
+
+      if out=$(task check:agent-names AGENTS_DIR="$tmp/pass" 2>&1); then
+        echo "✓ test: A1 substring self-name not false-flagged"
+      else
+        echo "✗ test: A1 PASS fixture was flagged (false positive):"; printf '%s\n' "$out"; errors=1
+      fi
+      if out=$(task check:agent-names AGENTS_DIR="$tmp/fail" 2>&1); then
+        echo "✗ test: A1 FAIL fixture passed (false negative):"; printf '%s\n' "$out"; errors=1
+      elif printf '%s' "$out" | grep -qE 'rev-helper names peer agent\(s\): rev$'; then
+        echo "✓ test: A1 genuine standalone peer reference caught"
+      else
+        echo "✗ test: A1 FAIL fixture failed for the wrong reason:"; printf '%s\n' "$out"; errors=1
+      fi
+      # empty dir → fail-closed via the `found=0` guard (exit 1 + no-files message).
+      mkdir -p "$tmp/empty"
+      if out=$(task check:agent-names AGENTS_DIR="$tmp/empty" 2>&1); then
+        echo "✗ test: A1 empty dir did not fail closed (found-guard regressed):"; printf '%s\n' "$out"; errors=1
+      elif printf '%s' "$out" | grep -qE 'no agent files found'; then
+        echo "✓ test: A1 empty dir fails closed"
+      else
+        echo "✗ test: A1 empty dir failed for the wrong reason:"; printf '%s\n' "$out"; errors=1
+      fi
+
+      # ---- workflow enums: check:workflow-enums ----
+      # reformat: spaces around ':' and '|' in the reviewer enum → must still match.
+      printf '%s\n' \
+        'const reviewer = `{"role":"x", "verdict" : "approved" | "rejected" | "needs-info"}`' \
+        'const verify = `{"verdict": "pass"|"fail"}`' \
+        > "$tmp/wf_reformat.js"
+      # drift: reviewer enum dropped `needs-info` → reviewer half must FAIL.
+      printf '%s\n' \
+        'const reviewer = `{"verdict": "approved"|"rejected"}`' \
+        'const verify = `{"verdict": "pass"|"fail"}`' \
+        > "$tmp/wf_broken.js"
+
+      if out=$(task check:workflow-enums WORKFLOW_FILE="$tmp/wf_reformat.js" 2>&1); then
+        echo "✓ test: workflow-enum reformat tolerated"
+      else
+        echo "✗ test: reformatted workflow rejected (over-strict):"; printf '%s\n' "$out"; errors=1
+      fi
+      if out=$(task check:workflow-enums WORKFLOW_FILE="$tmp/wf_broken.js" 2>&1); then
+        echo "✗ test: value-drifted enum passed (false negative):"; printf '%s\n' "$out"; errors=1
+      elif printf '%s' "$out" | grep -qE 'reviewer dispatch lacks the reviewer verdict enum'; then
+        echo "✓ test: value-drifted reviewer enum caught"
+      else
+        echo "✗ test: drift fixture failed for the wrong reason:"; printf '%s\n' "$out"; errors=1
+      fi
+
+      # ---- agent verdicts: check:agent-verdicts ----
+      mkdir -p "$tmp/av"
+      # canonical agent (must NOT be flagged) + a drifted enum hidden behind a
+      # trailing comment (the silent-drop edge — must still be harvested and FAIL).
+      printf 'Role doc.\nverdict: approved | rejected | needs-info\n' > "$tmp/av/good.md"
+      printf 'Role doc.\nverdict: approved | maybe   # a trailing comment must not hide drift\n' > "$tmp/av/drift.md"
+      if out=$(task check:agent-verdicts AGENTS_DIR="$tmp/av" 2>&1); then
+        echo "✗ test: agent-verdict drift behind a trailing comment passed (false negative):"; printf '%s\n' "$out"; errors=1
+      elif printf '%s' "$out" | grep -qE 'drift.md declares non-canonical' && ! printf '%s' "$out" | grep -qE 'good.md'; then
+        echo "✓ test: agent-verdict drift (trailing-comment edge) caught, canonical not flagged"
+      else
+        echo "✗ test: agent-verdict fixture failed for the wrong reason:"; printf '%s\n' "$out"; errors=1
+      fi
+      # empty corpus → fail-closed (own found guard, independent of the A1 check).
+      if out=$(task check:agent-verdicts AGENTS_DIR="$tmp/empty" 2>&1); then
+        echo "✗ test: agent-verdicts empty dir did not fail closed:"; printf '%s\n' "$out"; errors=1
+      elif printf '%s' "$out" | grep -qE 'no agent files found'; then
+        echo "✓ test: agent-verdicts empty dir fails closed"
+      else
+        echo "✗ test: agent-verdicts empty dir failed for the wrong reason:"; printf '%s\n' "$out"; errors=1
+      fi
+
+      # ---- real tree passes all three checks ----
+      if task check:agent-names >/dev/null 2>&1 && task check:workflow-enums >/dev/null 2>&1 && task check:agent-verdicts >/dev/null 2>&1; then
+        echo "✓ test: real .claude tree passes A1 + workflow-enum + agent-verdict checks"
+      else
+        echo "✗ test: real .claude tree is flagged"; errors=1
+      fi
+
+      if [ "$errors" = 0 ]; then echo "test:check-primitives PASSED"; else echo "test:check-primitives FAILED"; fi
+      exit "$errors"
+
   # --- Security-Scans (Issue #11.8) ---
 
   scan:
@@ -460,8 +797,9 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (lint + render + scan:conftest)
+    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + lint + render + scan:conftest)
     cmds:
+      - task: check:primitives
       - task: lint
       - task: render
       - task: lint:rendered

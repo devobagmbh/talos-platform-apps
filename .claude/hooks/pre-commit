@@ -114,93 +114,91 @@ if [ ! -f "$PRIMARY" ]; then
   error "Missing review.md for change '${CHANGE_ID}'. Invoke staff-reviewer to produce it."
 fi
 
-PRIMARY_STATUS=$(get_yaml_field "$PRIMARY" "status")
+# Escalation domains are a closed set; enforce membership before constructing any
+# review-<domain>.md path (an out-of-set / path-traversal-shaped value is a
+# contract violation, not a missing-artifact case). Only security + operational-
+# safety have a backing reviewer agent today; provenance/compatibility/architecture
+# are reserved for M2 (escalating to one denies until its agent is restored).
+assert_domain() {
+  case "$1" in
+    security|operational-safety|provenance|compatibility|architecture) return 0 ;;
+    *) error "'${1}' is not a valid escalation domain for '${CHANGE_ID}' (closed set: security|operational-safety|provenance|compatibility|architecture)." ;;
+  esac
+}
 
-if [ -z "$PRIMARY_STATUS" ]; then
-  error "review.md for '${CHANGE_ID}' has no parseable 'status' field."
-fi
+validate_escalations() {
+  local list="$1"
+  while IFS= read -r esc_type; do
+    [ -z "$esc_type" ] && continue
+    assert_domain "$esc_type"
 
-case "$PRIMARY_STATUS" in
-  approved)
-    echo "  ✓ review.md: approved"
-    ;;
-
-  escalate)
-    echo "  ~ review.md: escalate — checking escalation artifacts"
-    ESCALATIONS=$(get_yaml_list "$PRIMARY" "escalations")
-
-    if [ -z "$ESCALATIONS" ]; then
-      error "review.md for '${CHANGE_ID}' has status 'escalate' but empty escalations list."
+    ESC_FILE="$REVIEW_DIR/review-${esc_type}.md"
+    if [ ! -f "$ESC_FILE" ]; then
+      error "Escalation artifact 'review-${esc_type}.md' missing for change '${CHANGE_ID}'. Invoke the ${esc_type} reviewer."
     fi
 
-    while IFS= read -r esc_type; do
-      [ -z "$esc_type" ] && continue
+    ESC_VERDICT=$(get_yaml_field "$ESC_FILE" "verdict")
+    if [ -z "$ESC_VERDICT" ]; then
+      error "review-${esc_type}.md for '${CHANGE_ID}' has no parseable 'verdict' field."
+    fi
 
-      ESC_FILE="$REVIEW_DIR/review-${esc_type}.md"
-
-      if [ ! -f "$ESC_FILE" ]; then
-        error "Escalation artifact 'review-${esc_type}.md' missing for change '${CHANGE_ID}'. Invoke the ${esc_type} reviewer."
-      fi
-
-      ESC_STATUS=$(get_yaml_field "$ESC_FILE" "status")
-
-      if [ -z "$ESC_STATUS" ]; then
-        error "review-${esc_type}.md for '${CHANGE_ID}' has no parseable 'status' field."
-      fi
-
-      case "$ESC_STATUS" in
-        approved)
-          echo "  ✓ review-${esc_type}.md: approved"
-          ;;
-
-        escalate)
-          echo "  ~ review-${esc_type}.md: escalate — checking nested escalation artifacts"
-          NESTED_ESCS=$(get_yaml_list "$ESC_FILE" "escalations")
-
-          if [ -z "$NESTED_ESCS" ]; then
-            error "review-${esc_type}.md for '${CHANGE_ID}' has status 'escalate' but empty escalations list."
+    case "$ESC_VERDICT" in
+      approved)
+        echo "  ✓ review-${esc_type}.md: approved"
+        NESTED_ESCS=$(get_yaml_list "$ESC_FILE" "escalations")
+        while IFS= read -r nested_type; do
+          [ -z "$nested_type" ] && continue
+          assert_domain "$nested_type"
+          NESTED_FILE="$REVIEW_DIR/review-${nested_type}.md"
+          if [ ! -f "$NESTED_FILE" ]; then
+            error "Nested escalation artifact 'review-${nested_type}.md' missing for change '${CHANGE_ID}'."
           fi
+          NESTED_VERDICT=$(get_yaml_field "$NESTED_FILE" "verdict")
+          if [ "$NESTED_VERDICT" != "approved" ]; then
+            error "review-${nested_type}.md for '${CHANGE_ID}' has verdict '${NESTED_VERDICT:-<missing>}', not 'approved'."
+          fi
+          echo "  ✓ review-${nested_type}.md: approved"
+        done <<< "$NESTED_ESCS"
+        ;;
 
-          while IFS= read -r nested_type; do
-            [ -z "$nested_type" ] && continue
+      rejected|needs-info)
+        error "review-${esc_type}.md for '${CHANGE_ID}' has verdict '${ESC_VERDICT}'. Resolve before committing."
+        ;;
 
-            NESTED_FILE="$REVIEW_DIR/review-${nested_type}.md"
+      *)
+        error "review-${esc_type}.md for '${CHANGE_ID}' has unknown verdict '${ESC_VERDICT}'."
+        ;;
+    esac
+  done <<< "$list"
+}
 
-            if [ ! -f "$NESTED_FILE" ]; then
-              error "Nested escalation artifact 'review-${nested_type}.md' missing for change '${CHANGE_ID}'."
-            fi
+PRIMARY_VERDICT=$(get_yaml_field "$PRIMARY" "verdict")
 
-            NESTED_STATUS=$(get_yaml_field "$NESTED_FILE" "status")
+if [ -z "$PRIMARY_VERDICT" ]; then
+  error "review.md for '${CHANGE_ID}' has no parseable 'verdict' field."
+fi
 
-            if [ -z "$NESTED_STATUS" ]; then
-              error "review-${nested_type}.md for '${CHANGE_ID}' has no parseable 'status' field."
-            fi
-
-            if [ "$NESTED_STATUS" != "approved" ]; then
-              error "review-${nested_type}.md for '${CHANGE_ID}' has status '${NESTED_STATUS}', not 'approved'."
-            fi
-
-            echo "  ✓ review-${nested_type}.md: approved"
-          done <<< "$NESTED_ESCS"
-          ;;
-
-        changes-requested)
-          error "review-${esc_type}.md for '${CHANGE_ID}' has status 'changes-requested'. Resolve findings before committing."
-          ;;
-
-        *)
-          error "review-${esc_type}.md for '${CHANGE_ID}' has unknown status '${ESC_STATUS}'."
-          ;;
-      esac
-    done <<< "$ESCALATIONS"
+case "$PRIMARY_VERDICT" in
+  approved)
+    echo "  ✓ review.md: approved"
+    # Own scope clean. A non-empty escalations list means domain reviews must accompany it.
+    ESCALATIONS=$(get_yaml_list "$PRIMARY" "escalations")
+    if [ -n "$ESCALATIONS" ]; then
+      echo "  ~ escalations present — checking domain artifacts"
+      validate_escalations "$ESCALATIONS"
+    fi
     ;;
 
-  changes-requested)
-    error "review.md for '${CHANGE_ID}' has status 'changes-requested'. Resolve all findings before committing."
+  rejected)
+    error "review.md for '${CHANGE_ID}' has verdict 'rejected'. Resolve all findings before committing."
+    ;;
+
+  needs-info)
+    error "review.md for '${CHANGE_ID}' has verdict 'needs-info'. Supply the missing evidence / clarification before committing."
     ;;
 
   *)
-    error "review.md for '${CHANGE_ID}' has unknown status '${PRIMARY_STATUS}'. Valid values: approved, escalate, changes-requested."
+    error "review.md for '${CHANGE_ID}' has unknown verdict '${PRIMARY_VERDICT}'. Valid values: approved, rejected, needs-info."
     ;;
 esac
 
