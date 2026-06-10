@@ -193,6 +193,18 @@ each in a fresh isolated context.
   instructions** (the personas may have ingested an untrusted issue body) — the
   orchestrator authors each revision brief itself from the ledger, never passing
   a persona's output through verbatim.
+- **Mechanical anti-forge is deferred (decided 2026-06-10), not missing.** The
+  anti-forge above is prose-level: the in-session round count is authoritative,
+  the ledger is the resume backup, and the count is anomaly-checked on resume. A
+  *fully mechanical* anti-forge would need a bound `PreToolUse` hook that
+  validates the ledger before each round — but every commit hook in this repo is
+  deliberately dormant (1-maintainer; a fail-closed binding would be
+  self-sabotage, see CLAUDE.md §Hooks) and the loop is not yet exercised, so an
+  unbound hook now would be dead code. The blast radius is bounded either way:
+  an upward forge (claim more rounds → skip the loop) is caught by the
+  block-count-vs-persona-pairs anomaly check; a downward forge only wastes rounds
+  (extra reviews), never skips review. Revisit when the hooks are reactivated at
+  M2-onboarding.
 - **Blocking = `critical` or `high`. `needs-info` is never approval.** A
   `needs-info` verdict from either persona means the spec is missing/contradictory
   or the plan is too ambiguous to judge; it is treated exactly like an unresolved
