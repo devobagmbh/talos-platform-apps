@@ -1,0 +1,11 @@
+# democratic-csi namespace. PSA `privileged`: the node DaemonSet needs hostPID +
+# privileged mounts to nsenter into the host iscsid namespace for iSCSI. The
+# Helm chart does not ship a Namespace object, so it is provided here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: democratic-csi
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    platform.devoba.de/sub-layer: storage-block
+    platform.devoba.de/component: democratic-csi

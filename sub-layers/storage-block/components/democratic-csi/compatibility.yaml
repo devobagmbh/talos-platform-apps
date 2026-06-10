@@ -1,0 +1,6 @@
+requires: {} # no catalog-internal dependencies; the iscsi-tools substrate need is capability-form, not a version pin (#71)
+provides:
+  - name: democratic-csi
+    apis:
+      - democratic-csi@0.15.1 # Helm chart democratic-csi/democratic-csi, synology-iscsi driver (ext4 over iSCSI LUNs)
+    capabilities: [] # TODO: define a block-storage / csi-iscsi capability in capability-index (proposed, ADR-0021)

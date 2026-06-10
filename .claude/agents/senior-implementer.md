@@ -7,10 +7,7 @@ description: >-
   Hat write+edit+bash. Niemals Self-Review — jede Änderung braucht
   separaten Reviewer (mindestens staff-reviewer, zusätzlich domain-spezifische
   Reviewer je nach Edit-Pfad).
-tools:
-  write: true
-  edit: true
-  bash: true
+tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 <example>

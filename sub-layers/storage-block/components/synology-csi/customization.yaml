@@ -1,0 +1,17 @@
+# Customization Contract v2 (ADR-0024). The synology-csi workload (CSIDriver,
+# controller StatefulSet, node DaemonSet, RBAC, StorageClass) is the signed,
+# pre-rendered artifact. The consumer supplies ONLY the DSM connection secret
+# (Shape c) — the cluster-specific NAS host/credentials never ship in the catalog.
+freeze_line:
+  workload: rendered/manifest.yaml # CSIDriver/controller/node/RBAC/StorageClass — never consumer-patched
+provided_refs:
+  secret: client-info-secret # Shape (c): the Synology DSM connection (clients[].{host,port,https,username,password})
+provided_selectors: {} # no consumer-labeled CRs
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: # the controller + node mount this Secret as /etc/synology/client-info.yml
+    - client-info.yml
+  selector_crs: []
+sync_wave: "0" # storage substrate — must be Ready before stateful consumers (e.g. harbor, wave 30)
+external_dependencies: []

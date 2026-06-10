@@ -1,19 +1,20 @@
 # Sub-Layer `databases`
 
-CloudNativePG (CNPG) als Postgres-Operator für die Devoba-Plattform.
+Daten-Operatoren der Devoba-Plattform: **CloudNativePG (CNPG)** für PostgreSQL und **hyperspike/valkey-operator** für Valkey (Redis-wire-kompatibel, Capability `redis-managed`).
 
-OCI-Distribution pro Komponente (ADR-0009). Konkrete `Cluster`-CRs (Dex, Harbor, PowerDNS …) bleiben in den jeweiligen App-Sub-Layern bzw. im Konsumenten-Cluster-Repo.
+OCI-Distribution pro Komponente (ADR-0009). Konkrete `Cluster`-/`Valkey`-CRs (Dex, Harbor, PowerDNS …) bleiben in den jeweiligen App-Sub-Layern bzw. im Konsumenten-Cluster-Repo.
 
 ## Komponenten
 
 | Komponente | sync-wave | Quelle | OCI |
 |---|---|---|---|
 | [`cnpg`](components/cnpg/) | 0 | Helm `cnpg/cloudnative-pg` + Devoba-Defaults | `oci://.../databases/cnpg:vX.Y.Z` |
+| [`valkey-operator`](components/valkey-operator/) | 0 | vendored `install.yaml` (hyperspike/valkey-operator v0.0.61) | `oci://.../databases/valkey-operator:vX.Y.Z` |
 
 ## Konsumiert von
 
-- **Seeder** — kein Postgres-Konsument vorgesehen
-- **Office-Lab** — Konsumenten sind Dex, Harbor, PowerDNS, ggf. Workload-Apps
+- **Seeder** — Harbor-Cache via `valkey-operator` (`redis-managed`). Kein Postgres-Konsument auf dem Seeder (Harbor/crossview-Postgres → erst Office-Lab bzw. seeder-Wiring #40/#39).
+- **Office-Lab** — Postgres-Konsumenten sind Dex, Harbor, PowerDNS, ggf. Workload-Apps; Valkey für Cache-Bedarf.
 
 ## Backlog-Issue
 

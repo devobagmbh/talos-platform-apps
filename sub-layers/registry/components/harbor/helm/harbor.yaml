@@ -39,9 +39,26 @@ values:
   # Cluster-URL (z. B. https://harbor.seeder.devoba.de). Strukturell, kein env.
   externalURL: https://REPLACE-ME.harbor.invalid
 
-  # --- Storage: ephemeral (Single-Node, eine Platte, kein Linstor) ---
+  # --- Storage: persistent (ADR-0026), so Harbor state survives a node rebuild.
+  # Harbor runs ONLY on the seeder (single central registry, ADR-0026), and the
+  # seeder gets ONLY synology-csi (NAS iSCSI) — its sole/default StorageClass. So
+  # storageClass is left unset → the seeder default = synology-iscsi-storage. The
+  # piraeus/LINSTOR + default-SC question is office-lab-only (gets both); Harbor is
+  # not deployed there, so no explicit pin is needed. Sizes are seeder-scale. ---
   persistence:
-    enabled: false
+    enabled: true
+    persistentVolumeClaim:
+      registry:
+        size: 20Gi
+      jobservice:
+        jobLog:
+          size: 1Gi
+      database:
+        size: 5Gi
+      redis:
+        size: 1Gi
+      trivy:
+        size: 5Gi
 
   # --- Eingebettete Backends (kein CNPG, kein Garage-S3) ---
   database:
