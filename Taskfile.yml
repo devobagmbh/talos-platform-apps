@@ -738,8 +738,11 @@ tasks:
         # and the localhost:5001 registry mirror all come from local/talos-patch.yaml.
         # Host 80/443 → NodePort 30080/30443 (Cilium-Gateway) via -p, the talosctl
         # analog of kind's extraPortMappings.
-        # talosctl create is NOT idempotent — skip if the cluster already exists.
-        if talosctl cluster show --name talos-platform-apps >/dev/null 2>&1; then
+        # talosctl create is NOT idempotent (it refuses if the state dir exists).
+        # NOTE: `talosctl cluster show` is NOT a reliable existence probe — it exits
+        # 0 with empty output even when nothing exists. Gate on the state dir.
+        state_dir="${HOME}/.talos/clusters/talos-platform-apps"
+        if [ -d "$state_dir" ]; then
           echo "✓ Talos-Cluster 'talos-platform-apps' existiert bereits (skip create)"
         else
           talosctl cluster create docker \
@@ -748,10 +751,21 @@ tasks:
             --image ghcr.io/siderolabs/talos:v1.13.3 \
             --kubernetes-version 1.36.0 \
             --config-patch @local/talos-patch.yaml \
-            -p 30080:30080/tcp,30443:30443/tcp \
-            --wait
+            -p 80:30080/tcp,443:30443/tcp
         fi
-      - kubectx admin@talos-platform-apps
+      - |
+        # Select the kube context. create writes it correctly (server = the
+        # docker-forwarded 127.0.0.1:<port>). A skipped create with a pruned
+        # kubeconfig needs a rebuild — but `talosctl kubeconfig` writes the in-VM
+        # node IP (10.5.0.2:6443), which is unreachable from the host, so we
+        # repoint the server at the forwarded 6443 port. Node .2 is deterministic
+        # in the default 10.5.0.0/24 subnet (.1 = gateway).
+        if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx 'admin@talos-platform-apps'; then
+          talosctl --context talos-platform-apps kubeconfig --force --nodes 10.5.0.2 >/dev/null
+          api_port=$(docker port talos-platform-apps-controlplane-1 6443/tcp | head -1 | sed 's/.*://')
+          kubectl config set-cluster talos-platform-apps --server="https://127.0.0.1:${api_port}"
+        fi
+        kubectx admin@talos-platform-apps
       - |
         # Registry-Container ins Talos-Docker-Netzwerk (= Cluster-Name) hängen,
         # damit der Node sie über die Docker-DNS als kind-registry:5000 auflöst
@@ -822,8 +836,10 @@ tasks:
         --set k8sServiceHost=localhost \
         --set k8sServicePort=7445 \
         --wait --timeout 5m
-      # Wartet, bis CoreDNS via Cilium-CNI wieder läuft
-      kubectl -n kube-system rollout status deployment/coredns --timeout=2m
+      # Wartet, bis CoreDNS via Cilium-CNI läuft. 5m statt 2m: beim Erst-Install
+      # zieht der Cilium-Agent/Operator/Envoy erst Images, bevor das CNI Pods
+      # verdrahtet — 2m war zu knapp und ließ local:up false-negativ failen.
+      kubectl -n kube-system rollout status deployment/coredns --timeout=5m
 
   local:gateway-api:install:
     desc: 'Gateway-API-CRDs installieren (Standard-Channel v1.2.0)'

@@ -2,10 +2,41 @@
 # Cluster-spezifische Settings kommen im Taskfile als --set-Flags dazu:
 # k8sServiceHost=localhost / k8sServicePort=7445 (Talos-KubePrism, wie im Seeder).
 
+# --- Talos-spezifisch (Pflicht, sonst startet der cilium-agent nicht) ---
+# Talos ist immutable + lädt keine Kernel-Module. Der Default-Cilium-Chart gibt
+# dem clean-cilium-state-InitContainer die Capability SYS_MODULE → auf Talos
+# "operation not permitted" (clean-cilium-state crasht, Node bleibt NotReady).
+# Caps daher auf die Talos-Liste überschreiben (SYS_MODULE raus). Quelle: Talos-
+# Docs "Deploying Cilium CNI". Gilt 1:1 auch in prod (base liefert Cilium inline).
+securityContext:
+  capabilities:
+    ciliumAgent:
+      - CHOWN
+      - KILL
+      - NET_ADMIN
+      - NET_RAW
+      - IPC_LOCK
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    cleanCiliumState:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_RESOURCE
+# Talos mountet cgroupv2 selbst unter /sys/fs/cgroup — Cilium soll NICHT
+# automounten (sonst kollidiert es mit dem Talos-Mount).
+cgroup:
+  autoMount:
+    enabled: false
+  hostRoot: /sys/fs/cgroup
+
 # kube-proxy-Ersatz — Cilium übernimmt ClusterIP/NodePort/LoadBalancer
 kubeProxyReplacement: true
 
-# CNI im Kind via Kubernetes-IPAM
+# CNI via Kubernetes-IPAM
 ipam:
   mode: kubernetes
 
@@ -21,7 +52,7 @@ externalIPs:
 gatewayAPI:
   enabled: true
   # NodePort-Mode: Cilium-Gateway-Service kommt als NodePort statt LoadBalancer.
-  # NodePort 30443/30080 ist via kind-extraPortMappings auf Host 443/80 gemapped.
+  # NodePort 30443/30080 ist via talosctl -p auf Host 443/80 gemapped.
   # Detail-Patch erfolgt nach Apply im Taskfile (task local:gateway:apply).
 
 # eBPF-Host-Routing für Performance + L7-Policy-Support
