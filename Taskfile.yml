@@ -986,6 +986,12 @@ tasks:
           REGISTRY="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps" \
           envsubst < "$tmpl" | kubectl apply -f -
         echo "  ✓ ${sub_layer}/${component} → Argo-App '${sub_layer}-${component}'"
+        # Lokale HTTPRoute mit applien, falls die Komponente eine UI hat (nur lokal).
+        route="local/http-routes/${sub_layer}/${component}.yaml"
+        if [ -f "$route" ]; then
+          kubectl apply -f "$route" >/dev/null
+          echo "    🌐 https://${component}.localhost.direct"
+        fi
       done
       echo "✓ Sub-Layer ${sub_layer} angelegt (Tag ${chart_version})"
       echo "  Sync-Status: kubectl -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
@@ -1099,6 +1105,15 @@ tasks:
 
       echo "Initial-Build ${component_id}…"
       task local:dev:sync -- "$component_id"
+
+      # Lokale HTTPRoute applien, falls die Komponente eine UI hat. Nur lokal —
+      # in prod ist die Route consumer-eigen (cluster-spez. Hostname, ADR-0023/0024).
+      route="local/http-routes/${sub_layer}/${component}.yaml"
+      if [ -f "$route" ]; then
+        kubectl --context admin@talos-platform-apps apply -f "$route" >/dev/null
+        echo "🌐 erreichbar unter https://${component}.localhost.direct"
+      fi
+
       echo ""
       echo "👀 Watching ${comp_dir} — Speichern löst Rebuild + Argo-Sync aus. Strg-C beendet."
       watchexec --watch "$comp_dir" --ignore '**/rendered/**' --debounce 800ms --postpone \
