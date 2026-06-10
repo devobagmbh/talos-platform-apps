@@ -1,0 +1,15 @@
+# Compatibility contract for lifecycle/booter.
+# No base version-coupling line (per #71): apps does not pin a base version range
+# for booter — it is a self-contained workload that only needs a Cilium-networked
+# Talos node on the boot VLAN, which every base flavour provides.
+requires: {}
+provides:
+  - name: booter
+    apis:
+      - booter-standalone@0.3.x
+    capabilities:
+      # booter is a proxyDHCP responder and is one half of bare-metal-boot — it
+      # complements lifecycle/ipxe (HTTP boot assets), it does not swap with it.
+      # The capability DEFINITION lives in catalog/capability-index.yaml.
+      - id: bare-metal-boot
+        role: proxydhcp

@@ -5,6 +5,7 @@
 components:
   - crossplane    # CRD-Bootstrap (sync-wave 0)
   - ipxe          # parallel zu crossplane (sync-wave 0)
+  - booter        # proxyDHCP, complements ipxe (sync-wave 0)
   - providers     # braucht crossplane (sync-wave 10)
   - compositions  # braucht providers (sync-wave 20)
   - crossview     # Dashboard, liest Crossplane-CRs (sync-wave 30)

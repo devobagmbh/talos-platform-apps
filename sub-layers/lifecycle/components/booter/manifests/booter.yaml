@@ -1,0 +1,131 @@
+# booter — proxyDHCP / PXE responder (siderolabs/booter), standalone mode.
+#
+# Role (Design B hybrid, ADR-0005 / docs #83): booter is the L2 boot responder
+# that COMPLEMENTS lifecycle/ipxe — it does NOT replace it. On the lab boot VLAN
+# booter answers PXE/DHCP discovery (proxyDHCP: it does not hand out leases, it
+# only adds the boot options alongside the existing DHCP server) and chainloads
+# the iPXE binary; the iPXE script then fetches its boot assets from the local
+# lifecycle/ipxe HTTP service (offline-capable, see that component's README).
+#
+# SKELETON: apps ships the workload shell + a consumer-overridable config
+# placeholder. The consumer cluster repo (talos-seeder-cluster) supplies the real
+# proxyDHCP config (which iPXE binary to serve, the ipxe next-URL, the boot VLAN /
+# interface, allowed client MACs) and pins booter onto the node that sits on the
+# boot VLAN via nodeSelector. See README.md "Consumer-supplied config".
+#
+# proxyDHCP needs hostNetwork (raw L2 broadcast on the boot segment) and binds
+# UDP < 1024 (67 DHCP, 69 TFTP, 4011 proxyDHCP) — hence the namespace is PSA
+# `privileged`. This is the narrowest level that works; it is not relaxable down
+# to baseline/restricted for a DHCP/PXE responder.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: booter
+  labels:
+    # proxyDHCP requires hostNetwork + UDP<1024 — restricted/baseline cannot host it.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    app.kubernetes.io/name: booter
+    app.kubernetes.io/part-of: lifecycle
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: booter
+  namespace: booter
+  labels:
+    app.kubernetes.io/name: booter
+    app.kubernetes.io/part-of: lifecycle
+---
+# Consumer-overridable proxyDHCP config. The catalog ships a documented
+# placeholder; the consumer cluster repo replaces .data with the real config
+# (boot interface/VLAN, iPXE binary to serve, the ipxe HTTP next-URL, allowed
+# client MACs). In the local test env the fixture under
+# local/fixtures/lifecycle/booter/ overrides it (the Argo app ignores .data so
+# selfHeal does not revert the override).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: booter-config
+  namespace: booter
+  labels:
+    app.kubernetes.io/name: booter
+    app.kubernetes.io/part-of: lifecycle
+data:
+  # PLACEHOLDER — overridden by the consumer / local fixture. The exact booter
+  # standalone invocation (flags vs. config file) is consumer-final; see
+  # README.md "Open questions / consumer-supplied config".
+  booter.yaml: |
+    # Replace in the consumer cluster repo. Example shape (illustrative — the
+    # consumer pins the real boot interface, the ipxe next-URL and allowed MACs):
+    #   interface: <boot-vlan-iface>           # host NIC on the boot segment
+    #   ipxe:
+    #     bios:    undionly.kpxe               # legacy-BIOS PXE chainload binary
+    #     uefi:    ipxe.efi                    # UEFI PXE chainload binary
+    #   next-url: http://ipxe.lifecycle.svc/boot.ipxe   # local lifecycle/ipxe HTTP
+    REPLACE-ME: "consumer-supplied proxyDHCP config — see README.md"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booter
+  namespace: booter
+  labels:
+    app.kubernetes.io/name: booter
+    app.kubernetes.io/part-of: lifecycle
+spec:
+  # proxyDHCP is a singleton on the boot segment — a second responder would
+  # double-answer PXE discovery. Pin to one node via nodeSelector (consumer).
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: booter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: booter
+        app.kubernetes.io/part-of: lifecycle
+    spec:
+      serviceAccountName: booter
+      # proxyDHCP listens for L2 DHCP/PXE broadcasts on the boot segment — it must
+      # share the host network. ClusterFirstWithHostNet keeps in-cluster DNS.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # Consumer pins booter onto the node attached to the lab boot VLAN. Empty
+      # selector in the catalog skeleton — the consumer overlay sets the label.
+      nodeSelector: {}
+      containers:
+        - name: booter
+          image: ghcr.io/siderolabs/booter:v0.3.1
+          imagePullPolicy: IfNotPresent
+          # Exact standalone invocation (flags vs. mounted config) is consumer-
+          # final — see README.md. The catalog mounts the config and lets the
+          # consumer wire the entrypoint args in their overlay.
+          args:
+            - --config=/etc/booter/booter.yaml
+          securityContext:
+            # proxyDHCP needs raw sockets (NET_RAW) and to bind UDP < 1024
+            # (NET_BIND_SERVICE). Everything else is dropped. NOT privileged.
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE", "NET_RAW"]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - {name: dhcp, containerPort: 67, protocol: UDP}
+            - {name: tftp, containerPort: 69, protocol: UDP}
+            - {name: proxydhcp, containerPort: 4011, protocol: UDP}
+          volumeMounts:
+            - {name: config, mountPath: /etc/booter, readOnly: true}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {memory: 128Mi}
+      volumes:
+        - name: config
+          configMap:
+            name: booter-config

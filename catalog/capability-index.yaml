@@ -174,8 +174,12 @@ capabilities:
     name: Bare-Metal-Boot / PXE
     domain: lifecycle
     status: proposed
+    # ipxe (HTTP boot assets) and booter (proxyDHCP) are complementary halves of
+    # the PXE path (Design B hybrid, ADR-0005), not swap alternatives for each
+    # other — both are deployed together; `role` distinguishes them.
     implementations:
-      - {name: ipxe, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+      - {name: ipxe, status: active, role: http-assets, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+      - {name: booter, status: active, role: proxydhcp, swap_class: rewrite-required}
 
   # ═══════════════════════════════════════════════════════════════════
   # Capabilities, deren Implementierungen NICHT von apps deployt werden,
