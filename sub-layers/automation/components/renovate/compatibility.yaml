@@ -1,9 +1,0 @@
-requires:
-  talos-platform-base: ">=v0.4.0 <v1.0.0"
-provides:
-  - name: renovate
-    apis:
-      - renovate@46.184.3 # renovatebot/renovate Helm chart (appVersion 43.216.3)
-    capabilities:
-      - id: dependency-automation # catalog/capability-index.yaml (domain automation)
-        swap_class: rewrite-required # matches the index implementation entry for renovate
