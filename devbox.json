@@ -25,7 +25,8 @@
     "gettext@latest",
     "mkcert@latest",
     "check-jsonschema@latest",
-    "watchexec@latest"
+    "watchexec@latest",
+    "crossplane-cli@latest"
   ],
   "shell": {
     "init_hook": [

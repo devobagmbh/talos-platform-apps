@@ -1312,3 +1312,57 @@ tasks:
       echo ""
       echo "=== Lokale Argo-Applications ==="
       kubectl -n argocd get applications -l platform.devoba.de/local-test=true 2>/dev/null || true
+
+  # --- Crossplane-Composition-Test (Pendant zum Argo/Helm-Loop) ---
+
+  crossplane:render:
+    desc: 'Composition OFFLINE rendern (composed Resources, ohne Cluster/Provisionierung): task crossplane:render'
+    summary: |
+      `crossplane render` fährt die Composition-Function-Pipeline lokal in Docker
+      und zeigt die composed Resources (z. B. den opentofu-Workspace) — das
+      Crossplane-Pendant zu `task render` (Helm). Schnell, kein Cluster, kein tofu.
+      Default: XCluster-Composition + Test-XR. Override: XR=<file> COMP=<file>.
+      functions.yaml-Versionen müssen zu sub-layers/lifecycle/.../providers passen.
+    cmd: |
+      xr="${XR:-local/crossplane/examples/xcluster-test.yaml}"
+      comp="${COMP:-sub-layers/lifecycle/components/compositions/manifests/composition-xcluster.yaml}"
+      crossplane render "$xr" "$comp" local/crossplane/functions.yaml
+
+  crossplane:dev:
+    desc: 'Skaffold-artiger Offline-Loop: rendert die Composition bei jedem Save neu'
+    summary: |
+      Beobachtet die Composition/XRD-Manifeste + local/crossplane/ und re-rendert
+      bei jeder Änderung (offline, Docker-Functions). Strg-C beendet. Der schnelle
+      Iterier-Loop für Composition-Logik — ohne Cluster, ohne Provisionierung.
+    cmd: |
+      echo "Initial-Render…"
+      task crossplane:render || true
+      echo ""
+      echo "👀 Watching compositions/ + local/crossplane/ — Speichern → re-render. Strg-C beendet."
+      watchexec --watch sub-layers/lifecycle/components/compositions/manifests \
+        --watch local/crossplane --ignore '**/rendered/**' --debounce 500ms --postpone \
+        -- task crossplane:render
+
+  crossplane:apply:
+    desc: 'XRD+Composition+Provider+Test-XR ins lokale Cluster; Reconcile bis zur Provider-Grenze'
+    summary: |
+      Deployt den lifecycle-Crossplane-Stack (crossplane, providers, compositions)
+      ins lokale Talos-Cluster (via local:dev:sync) und appliert den Test-XR. Bis
+      zur PROVIDER-GRENZE: XRD/Composition installiert, XCluster accepted, der
+      opentofu-Workspace wird erzeugt — der echte tofu-apply schlägt lokal
+      erwartbar fehl (keine Hardware/kein Backend). Testet die In-Cluster-Verdrahtung.
+    cmd: |
+      kubectl --context admin@talos-platform-apps get ns argocd >/dev/null 2>&1 || { echo "ERROR: Cluster/ArgoCD nicht da — erst 'task local:up'"; exit 1; }
+      for c in lifecycle/crossplane lifecycle/providers lifecycle/compositions; do
+        echo "→ ${c} deployen…"
+        task local:dev:sync -- "$c"
+      done
+      echo "warte auf XCluster-CRD (Established)…"
+      kubectl --context admin@talos-platform-apps wait --for=condition=Established crd/xclusters.platform.devoba.de --timeout=120s || true
+      echo "→ Test-XR applien"
+      kubectl --context admin@talos-platform-apps apply -f local/crossplane/examples/xcluster-test.yaml
+      echo ""
+      echo "✓ Beobachten (tofu-apply scheitert lokal erwartbar — Provider-Grenze):"
+      echo "  kubectl --context admin@talos-platform-apps get xcluster xcluster-test"
+      echo "  kubectl --context admin@talos-platform-apps get workspace.opentofu.m.upbound.io"
+      echo "  crossplane beta trace xcluster.platform.devoba.de/xcluster-test"

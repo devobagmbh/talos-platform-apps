@@ -1,0 +1,12 @@
+# Beispiel-XCluster-XR für den lokalen Crossplane-Test (offline render + in-cluster).
+# NUR Test-Input — Dummy-Werte; provisioniert nichts real. Die echte XCluster-XR
+# liegt im Konsumenten-Repo (talos-seeder-cluster).
+apiVersion: platform.devoba.de/v1alpha1
+kind: XCluster
+metadata:
+  name: xcluster-test
+spec:
+  clusterName: office-lab-test
+  # Dummy-tofu-Source: muss nur ein plausibler git::-URL sein; der Workspace wird
+  # gerendert/erzeugt, der echte tofu-apply läuft lokal bewusst NICHT durch.
+  tofuModuleSource: git::https://github.com/devobagmbh/talos-office-lab-cluster.git//stage-1?ref=main
