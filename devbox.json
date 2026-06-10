@@ -24,7 +24,8 @@
     "kubectx@latest",
     "gettext@latest",
     "mkcert@latest",
-    "check-jsonschema@latest"
+    "check-jsonschema@latest",
+    "watchexec@latest"
   ],
   "shell": {
     "init_hook": [

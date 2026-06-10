@@ -990,6 +990,60 @@ tasks:
       echo "✓ Sub-Layer ${sub_layer} angelegt (Tag ${chart_version})"
       echo "  Sync-Status: kubectl -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
 
+  local:dev:
+    desc: 'Skaffold-artiger Watch-Loop für EINE Komponente: task local:dev -- <sub-layer>/<component>'
+    summary: |
+      Beobachtet sub-layers/<sub-layer>/components/<component>/ und fährt bei JEDER
+      Änderung automatisch render → package → push (lokale Registry, frischer Tag)
+      + Argo-Hard-Refresh. Die automated-syncPolicy der Application appliert dann
+      selbst — kein manuelles publish/apply mehr.
+
+      rendered/ ist gitignored → watchexec triggert NICHT auf den eigenen Output
+      (kein Endlos-Loop). Strg-C beendet den Loop. Voraussetzung: ein Argo-App-
+      Template local/argo-apps/<sub-layer>/<component>.yaml (Vorlage: crossplane).
+    cmd: |
+      set -- {{.CLI_ARGS}}
+      component_id="${1:?usage: task local:dev -- <sub-layer>/<component>}"
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
+      comp_dir="sub-layers/${sub_layer}/components/${component}"
+      app_tmpl="local/argo-apps/${sub_layer}/${component}.yaml"
+      [ -d "$comp_dir" ] || { echo "ERROR: ${comp_dir} existiert nicht"; exit 1; }
+      [ -f "$app_tmpl" ] || { echo "ERROR: kein Argo-App-Template ${app_tmpl} — anlegen (Vorlage: local/argo-apps/lifecycle/crossplane.yaml)"; exit 1; }
+      kubectl --context admin@talos-platform-apps get ns argocd >/dev/null 2>&1 || { echo "ERROR: Cluster/ArgoCD nicht da — erst 'task local:up'"; exit 1; }
+      echo "Initial-Build ${component_id}…"
+      task local:dev:sync -- "$component_id"
+      echo ""
+      echo "👀 Watching ${comp_dir} — Speichern löst Rebuild + Argo-Sync aus. Strg-C beendet."
+      watchexec --watch "$comp_dir" --ignore '**/rendered/**' --debounce 800ms --postpone \
+        -- task local:dev:sync -- "$component_id"
+
+  local:dev:sync:
+    desc: 'Eine Dev-Iteration (intern, von local:dev getriggert): render→push→Argo-refresh mit frischem Tag'
+    # Eigenständig aufrufbar für einen einmaligen Sync. Frischer Tag pro Lauf
+    # (0.0.0-dev.<epoch>), weil ArgoCD OCI-Tags per Digest cached — gleicher Tag
+    # würde nicht neu gezogen. Fehlerhafter Render (Tippfehler mitten im Edit)
+    # bricht nur diese Iteration ab; der watchexec-Loop läuft weiter.
+    cmd: |
+      set -euo pipefail
+      set -- {{.CLI_ARGS}}
+      component_id="${1:?usage: task local:dev:sync -- <sub-layer>/<component>}"
+      sub_layer="${component_id%/*}"
+      component="${component_id#*/}"
+      app_tmpl="local/argo-apps/${sub_layer}/${component}.yaml"
+      app_name="${sub_layer}-${component}"
+      registry="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps"
+      tag="0.0.0-dev.$(date +%s)"
+      echo "▶ ${component_id} → ${tag}"
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id" >/dev/null
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$component_id" "$tag" >/dev/null
+      OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$component_id" "$tag" >/dev/null
+      TAG="$tag" REGISTRY="$registry" envsubst < "$app_tmpl" \
+        | kubectl --context admin@talos-platform-apps apply -f - >/dev/null
+      kubectl --context admin@talos-platform-apps -n argocd annotate application "$app_name" \
+        argocd.argoproj.io/refresh=hard --overwrite >/dev/null
+      echo "  ✓ ${app_name} → ${tag} (Argo auto-sync läuft)"
+
   local:remove:
     desc: 'Alle Argo-Apps eines Sub-Layers entfernen: task local:remove -- <sub-layer>'
     cmd: |
