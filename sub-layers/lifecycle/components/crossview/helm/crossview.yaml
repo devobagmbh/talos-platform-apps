@@ -18,22 +18,26 @@ values:
   ingress:
     enabled: false
 
-  # Embedded Postgres for the dashboard's own state. The DB-backend choice is a
-  # Workload-Variant-Axis (ADR-0024): a consumer may disable persistence
-  # (ephemeral, fine for a rebuildable dashboard) or point at an external CNPG.
+  # External Postgres via the cnpg-postgres capability (#85). The chart's bundled
+  # Postgres is OFF — `database.enabled=false` drops the crossview-postgres
+  # Deployment + PVC. The DB lifecycle is owned by a consumer CNPG `Cluster`
+  # (`crossview-pg` → service `crossview-pg-rw`), NOT by this workload.
   database:
-    enabled: true
-    # Pin the embedded-Postgres image: the chart defaults to postgres:latest,
-    # which the catalog's no_latest_image_tag policy rejects (the tag also drives
-    # the wait-for-db init container). 16.4 is a specific, current stable.
-    image:
-      repository: postgres
-      tag: "16.4"
-    persistence:
-      enabled: true
-      size: 10Gi
+    enabled: false
 
   config:
+    # Connection config the app uses to reach the external CNPG DB. Convention:
+    # a CNPG Cluster named `crossview-pg` in the crossview namespace → its
+    # read-write service `crossview-pg-rw`. Consumer patches host via kustomize
+    # if it names the cluster differently (ADR-0024 Shape b).
+    database:
+      enabled: true
+      host: crossview-pg-rw
+      port: 5432
+      database: crossview
+      username: crossview
+      ssl:
+        mode: require   # CNPG serves TLS by default
     server:
       auth:
         # Read-only dashboard by default; crossview reads Crossplane resources
@@ -46,11 +50,14 @@ values:
       oidc:
         enabled: false
 
-  # Secrets (ADR-0024 Shape c): the render references an EXISTING Secret
-  # `crossview-runtime-secret` by name — it ships NO credential value (base
-  # Hard-Constraint: no real secrets in the catalog). The consumer creates that
-  # Secret in the destination namespace (SOPS, applied out-of-band before sync).
-  # The workload stays payload-agnostic + signed; only the named ref is frozen.
+  # Secrets (ADR-0024 Shape c): the render references EXISTING Secrets by name —
+  # it ships NO credential value (base Hard-Constraint: no real secrets in the
+  # catalog). The consumer creates them in the destination namespace before sync.
+  # The workload stays payload-agnostic + signed; only the named refs are frozen.
+  #   - admin/session → `crossview-runtime-secret` (SOPS-supplied).
+  #   - DB password → `crossview-db` key `password`. With CNPG the consumer
+  #     points this at the auto-created `<cluster>-app` secret (key `password`),
+  #     so the embedded `db-password` runtime key is GONE (#85).
   # OIDCClientSecret is added the same way once the consumer enables Dex SSO.
   secrets:
     adminPassword:
@@ -59,8 +66,8 @@ values:
         key: admin-password
     dbPassword:
       secretKeyRef:
-        name: crossview-runtime-secret
-        key: db-password
+        name: crossview-db
+        key: password
     sessionSecret:
       secretKeyRef:
         name: crossview-runtime-secret

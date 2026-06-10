@@ -1,5 +1,8 @@
 requires:
   lifecycle/crossplane: ">=v0.1.0" # reads Crossplane CRs (CRDs must exist)
+  # Postgres backend (#85): crossview no longer embeds its own DB. The concrete
+  # CNPG `Cluster` (crossview-pg → service crossview-pg-rw) is consumer-owned.
+  cnpg-postgres: "*"
 provides:
   - name: crossview
     apis:

@@ -1,21 +1,26 @@
 # Customization Contract v2 (ADR-0024). Crossview's workload (Deployment/Service/
-# RBAC + embedded Postgres) is the signed, pre-rendered artifact. The consumer
-# supplies only secrets (Shape c) and — when SSO is enabled — the Dex OIDC config
-# (Shape b). SSO is off in the catalog default, so the hard requirement is the
-# runtime secret.
+# RBAC) is the signed, pre-rendered artifact. Postgres is EXTERNAL (cnpg-postgres,
+# #85) — not embedded. The consumer supplies secrets (Shape c) and — when SSO is
+# enabled — the Dex OIDC config (Shape b). SSO is off in the catalog default, so
+# the hard requirements are the runtime secret + the CNPG-backed DB password.
 freeze_line:
-  workload: rendered/manifest.yaml # Deployment/Service/RBAC/DB — never consumer-patched
+  workload: rendered/manifest.yaml # Deployment/Service/RBAC — never consumer-patched
 provided_refs:
-  secret: crossview-runtime-secret # Shape (c): admin/db/session (+ OIDC) credentials
+  secret: crossview-runtime-secret # Shape (c): admin/session (+ OIDC) credentials
 provided_selectors: {} # no consumer-labeled CRs
 required:
   env_keys: []
   config_files: [] # SSO/OIDC config (Shape b) only when SSO is enabled by the consumer
   secret_keys: # Shape (c) — keys in crossview-runtime-secret the consumer MUST supply
     - admin-password
-    - db-password
     - session-secret
   selector_crs: []
+# NOTE external DB (#85): besides crossview-runtime-secret above, the consumer
+# wires the cnpg-postgres capability. The chart reaches the DB password through a
+# SECOND consumer-supplied secret `crossview-db` key `password` — point it at the
+# CNPG auto-created `<cluster>-app` secret (key `password`). The concrete CNPG
+# `Cluster` (crossview-pg → crossview-pg-rw) is consumer-owned (seeder repo). This
+# is a capability edge (see compatibility.yaml requires), not a provided_ref.
 sync_wave: "30"
 external_dependencies:
   - lifecycle/crossplane
