@@ -32,6 +32,14 @@ spec:
       kind: Deployment
       jsonPointers:
         - /status/terminatingReplicas
+    # boot.ipxe ist consumer-/test-eigen: lokal liefert die Fixture
+    # (local/fixtures/lifecycle/ipxe/) die echte boot.ipxe via harbor-Talos-Image.
+    # Ohne dieses Ignore würde selfHeal sie auf den Katalog-Platzhalter zurücksetzen.
+    - group: ""
+      kind: ConfigMap
+      name: ipxe-boot-scripts
+      jsonPointers:
+        - /data
 
   syncPolicy:
     automated:

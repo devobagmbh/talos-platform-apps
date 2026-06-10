@@ -189,6 +189,31 @@ Deploys the lifecycle Crossplane stack to the local Talos cluster (via `local:de
 
 > The `crossplane:apply` test surfaced two real composition bugs that offline render alone would miss: a string transform missing `type: Format`, and the `Workspace` missing the required `providerConfigRef.kind` for the namespaced opentofu provider.
 
+## Harbor pull-through cache + iPXE Talos boot
+
+End-to-end demo: serve the Talos installer image **through the local Harbor** and have **iPXE** reference it — the local mirror of the prod registry-proxy + PXE-boot flow.
+
+```bash
+task local:dev -- registry/harbor   # harbor Healthy (CNPG + Valkey fixtures)
+task local:harbor:proxy             # ghcr.io pull-through proxy project in harbor
+task local:dev -- lifecycle/ipxe    # ipxe serving the demo boot.ipxe
+```
+
+**`task local:harbor:proxy`** (idempotent) creates a Harbor registry endpoint + a `ghcr` **proxy-cache project** → `https://ghcr.io` (ADR-0012). Harbor then caches ghcr pulls on first access — the Talos installer at `harbor.localhost.direct/ghcr/siderolabs/installer:v1.13.3`. Verify the pull-through (Harbor proxies + caches the OCI manifest):
+
+```bash
+curl -su admin:<pw> https://harbor.localhost.direct/v2/ghcr/siderolabs/installer/manifests/v1.13.3
+```
+
+**iPXE** serves a demo `boot.ipxe` (`local/fixtures/lifecycle/ipxe/`) whose Talos `installer` (`machine.install.image`) points at the harbor-cached image. The boot assets (kernel/initramfs) come from the Talos Image Factory over HTTP; only the OCI installer image flows through harbor. The local boot.ipxe is delivered as a fixture (ConfigMap `ipxe-boot-scripts`); the ipxe Argo app `ignoreDifferences` its `/data` so `selfHeal` doesn't revert it to the catalog placeholder. Inspect it:
+
+```bash
+kubectl -n ipxe port-forward svc/ipxe 18080:8080 &
+curl -s http://localhost:18080/boot.ipxe          # references harbor.localhost.direct/ghcr/siderolabs/installer
+```
+
+Both are **local-only** (proxy project + boot.ipxe): in prod the seeder owns the Harbor proxy config and the real boot scripts (ADR-0012/0023).
+
 ## Iteration and cleanup
 
 ```bash
