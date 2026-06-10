@@ -2,10 +2,12 @@
 # Der Docker-Container 'kind-registry' (siehe task local:registry:up) ist
 # als externer Endpoint hier abgebildet. Service-DNS ist
 # kind-registry.registry.svc.cluster.local:5000.
+# (Name 'kind-registry' ist historisch — es ist ein plain registry:2-Container,
+# nicht an die kind-Binary gebunden; bleibt für stabile Cert-SANs/Service-DNS.)
 #
 # Die IP-Platzhalter ${KIND_REGISTRY_IP} werden vom Taskfile
-# (task local:registry:bridge) per envsubst ersetzt — IP des kind-registry-
-# Containers im kind-Docker-Netz, ermittelt via 'docker container inspect'.
+# (task local:registry:bridge) per envsubst ersetzt — IP des Containers im
+# talos-platform-apps-Docker-Netz, ermittelt via 'docker container inspect'.
 
 ---
 apiVersion: v1

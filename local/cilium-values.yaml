@@ -1,6 +1,6 @@
-# Cilium-Helm-Values für lokales Kind-Setup (prod-konform).
-# Kind-spezifische Settings werden im Taskfile als --set-Flags ergänzt
-# (k8sServiceHost ist die IP des Control-Plane-Containers).
+# Cilium-Helm-Values für das lokale Talos-Setup (prod-konform).
+# Cluster-spezifische Settings kommen im Taskfile als --set-Flags dazu:
+# k8sServiceHost=localhost / k8sServicePort=7445 (Talos-KubePrism, wie im Seeder).
 
 # kube-proxy-Ersatz — Cilium übernimmt ClusterIP/NodePort/LoadBalancer
 kubeProxyReplacement: true
