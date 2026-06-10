@@ -31,3 +31,14 @@ external_dependencies: []
 #   - `harbor-redis` — key `REDIS_PASSWORD`  (Redis; map from the Valkey secret)
 # These are not in provided_refs (the schema models one ref); they are catalog
 # capability edges (see compatibility.yaml requires) + documented in README.
+#
+# NOTE Dex/OIDC SSO (Day-2, opt-in) — Harbor binds to the cluster Dex via its
+# native OIDC mode, but that is RUNTIME config (Harbor API `PUT /configurations`
+# / UI), NOT a chart value: the signed workload is unchanged, so this is neither
+# a config_file (Shape b) nor a hard secret_key here. When the consumer enables
+# SSO it supplies one more secret (key fixed by the consumer's Day-2 tooling):
+#   - `harbor-oidc` — key `OIDC_CLIENT_SECRET` (the static Dex client secret)
+# plus the OIDC params (issuer/clientId/scope/groups-claim → ADR-0010). Parity
+# with lifecycle/crossview's sso.oidc hook. Prereq: identity/dex (#52). See README
+# § "Dex / OIDC SSO". SSO is OFF by default — DB auth (admin) is the catalog
+# default, so this stays out of `required`.

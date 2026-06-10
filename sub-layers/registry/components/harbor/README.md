@@ -19,6 +19,35 @@ The currently rendered profile targets the **seeder** (single-node):
 
 The concrete CNPG `Cluster` (`harbor-pg` → service `harbor-pg-rw`) and `Valkey` CR (`harbor-cache:6379`) are **consumer-owned** (seeder repo), not part of this render. Customization contract: [`customization.yaml`](customization.yaml).
 
+## Dex / OIDC SSO (Day-2, consumer-owned)
+
+Harbor authenticates against the cluster **Dex** via its native OIDC mode — but
+this is **runtime config, not a Helm value**: the goharbor chart exposes no OIDC
+knob, so the signed workload here ships **unchanged**. Binding is a **Day-2 step**
+the consumer cluster repo performs after Harbor is Ready (API `PUT /configurations`
+or UI → Administration → Configuration → Authentication):
+
+| Harbor setting | Value (consumer-supplied) |
+|---|---|
+| `auth_mode` | `oidc_auth` |
+| `oidc_name` | e.g. `dex` |
+| `oidc_endpoint` | the cluster Dex issuer URL (ADR-0010) |
+| `oidc_client_id` | the static Dex client registered for Harbor |
+| `oidc_client_secret` | from the consumer secret `harbor-oidc`, key `OIDC_CLIENT_SECRET` |
+| `oidc_scope` | `openid,profile,email,groups,offline_access` |
+| `oidc_groups_claim` | `groups` (Dex group claim → Harbor group mapping) |
+| `oidc_auto_onboard` | `true` |
+
+The OIDC client secret is **never in the catalog** (base Hard-Constraint). The
+consumer creates the `harbor-oidc` secret (SOPS while Vault is offline, later ESO)
+and registers a matching **static client in Dex** (clientID + redirect
+`https://<harbor-host>/c/oidc/callback`). This is the same per-app Dex-client
+model as `lifecycle/crossview` (which ships the hook enabled-on-demand). Dex
+itself is a separate prerequisite — see identity/dex (#52), epic #47.
+
+`auth_mode` can only switch DB→OIDC while no non-default local users exist beyond
+`admin`; do the binding before onboarding users.
+
 ## Sync-wave
 
 `0` — no intra-sub-layer dependency. Cross-sub-layer `requires` (`cnpg-postgres`, `redis-managed`) are ordered by their own sync-waves in the consumer cluster manifests; the CNPG `Cluster` + `Valkey` CR must be Ready before Harbor starts.
