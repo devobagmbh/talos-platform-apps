@@ -1,0 +1,21 @@
+# Renovate's own namespace. renovate is the sole occupant (dedicated namespace),
+# so this component ships the Namespace object — a shipped manifest takes
+# precedence over Argo `managedNamespaceMetadata`, making the PSA posture
+# authoritative and self-contained (see the build skill's CONVENTIONS.md
+# § Namespace & PSA).
+#
+# enforce: baseline — the renovate chart sets NO securityContext on the scan
+# CronJob (rendered pod/container securityContext are both empty), so `restricted`
+# would reject the pods at admission. `baseline` is the strictest level the
+# workload satisfies as shipped; tightening to `restricted` requires adding a
+# compliant securityContext to the chart values (runAsNonRoot + seccomp
+# RuntimeDefault + drop ALL caps + allowPrivilegeEscalation:false) and is a
+# separate hardening step.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: renovate
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    platform.devoba.de/sub-layer: automation
+    platform.devoba.de/component: renovate

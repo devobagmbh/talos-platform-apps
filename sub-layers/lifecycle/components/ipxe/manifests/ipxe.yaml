@@ -12,6 +12,9 @@ kind: Namespace
 metadata:
   name: ipxe
   labels:
+    # Pod Security Admission: the iPXE workload runs fully restricted-compliant
+    # (runAsNonRoot + seccomp RuntimeDefault + drop ALL caps + no priv-esc).
+    pod-security.kubernetes.io/enforce: restricted
     platform.devoba.de/sub-layer: lifecycle
     platform.devoba.de/component: ipxe
 

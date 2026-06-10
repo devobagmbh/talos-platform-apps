@@ -1,0 +1,20 @@
+# The operator's own namespace. cnpg is the sole occupant (dedicated namespace),
+# so this component ships the Namespace object — a shipped manifest takes
+# precedence over Argo `managedNamespaceMetadata`, making the PSA posture
+# authoritative and self-contained (see the build skill's CONVENTIONS.md
+# § Namespace & PSA).
+#
+# enforce: restricted — the operator controller-manager runs fully
+# restricted-compliant (rendered securityContext: pod runAsNonRoot + seccomp
+# RuntimeDefault; container allowPrivilegeEscalation:false + drop ALL caps +
+# readOnlyRootFilesystem + runAsUser 10001). Consumer-authored Cluster CRs land
+# in their OWN namespaces (consumer-owned), not here, so this level governs only
+# the operator pods.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: databases
+    platform.devoba.de/component: cnpg
