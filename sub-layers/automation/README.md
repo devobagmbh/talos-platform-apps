@@ -1,6 +1,6 @@
 # Sub-Layer `automation`
 
-Renovate (Dependency-Updates) und Velero (Cluster-Backup).
+Velero (Cluster-Backup). Dependency-Update-Automation läuft über **GitHub Dependabot** (nativ, `.github/dependabot.yml`) — kein self-hosted Renovate im Katalog (Entscheidung 2026-06-10).
 
 OCI-Distribution pro Komponente (ADR-0009).
 
@@ -8,15 +8,12 @@ OCI-Distribution pro Komponente (ADR-0009).
 
 | Komponente | sync-wave | Quelle | OCI |
 |---|---|---|---|
-| [`renovate`](components/renovate/) | 0 | Helm `renovatebot/renovate` | `oci://.../automation/renovate:vX.Y.Z` |
 | [`velero`](components/velero/) | 0 | Helm `vmware-tanzu/velero` mit Restic | `oci://.../automation/velero:vX.Y.Z` |
-
-Beide parallel — keine Inter-Komponenten-Abhängigkeit.
 
 ## Konsumiert von
 
-- **Seeder** — nur `velero`
-- **Office-Lab** — beide
+- **Seeder** — `velero`
+- **Office-Lab** — `velero`
 
 ## Backlog-Issue
 

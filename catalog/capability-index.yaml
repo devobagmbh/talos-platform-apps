@@ -167,8 +167,9 @@ capabilities:
     name: Dependency-Update-Automation
     domain: automation
     status: proposed
-    implementations:
-      - {name: renovate, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+    # Satisfied by GitHub Dependabot (native, .github/dependabot.yml) — NOT a
+    # self-hosted catalog component. renovate was removed (Robert, 2026-06-10).
+    implementations: []
   - id: bare-metal-boot
     name: Bare-Metal-Boot / PXE
     domain: lifecycle
