@@ -7,9 +7,7 @@ description: >-
   nach Komplexität, reviewt Implementierungen auf Korrektheit, YAML-Idiome,
   Test-Qualität, Doku, Security-Hygiene, Cognitive Complexity. Eskaliert an
   Domain-Reviewer NUR wenn konkretes Risiko identifiziert. Read-only.
-tools:
-  write: false
-  edit: false
+tools: Read, Grep, Glob
 ---
 
 <example>

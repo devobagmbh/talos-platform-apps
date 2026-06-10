@@ -1,0 +1,6 @@
+# Sub-layer aggregate (components carry their own compatibility.yaml).
+# Directory bracket for the sub-layer identity; OCI granularity is per component (ADR-0009).
+
+components:
+  - democratic-csi # NAS iSCSI block storage, Talos-native (nsenter) — synology-iscsi driver (sync-wave 0)
+  - synology-csi # DEPRECATED: official Synology CSI; does NOT work on Talos (chroot /host). Superseded by democratic-csi.

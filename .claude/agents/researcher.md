@@ -7,9 +7,7 @@ description: >-
   und in talos-platform-base + talos-platform-docs, dann offizielle
   Upstream-Doku (Helm-Charts, Talos, Cilium, Vault, cosign, ORAS, ADRs).
   Eingesetzt, wenn Implementierung oder Review auf Unbekanntes stößt.
-tools:
-  write: false
-  edit: false
+tools: Read, Grep, Glob, Bash, WebSearch, WebFetch
 ---
 
 <example>

@@ -7,9 +7,7 @@ description: >-
   bei Änderungen, die Bootstrap-Reihenfolge, Backup-/Restore-Pfade,
   Argo-Sync-Wave-Konflikte, Multi-Cluster-Failover oder DR-Drills beeinflussen.
   Verhindert silent-stuck-Klassen-Probleme im produktiven Cluster. Read-only.
-tools:
-  write: false
-  edit: false
+tools: Read, Grep, Glob
 ---
 
 <example>
