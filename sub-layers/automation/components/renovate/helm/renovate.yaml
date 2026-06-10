@@ -1,0 +1,76 @@
+# Renovate — self-hosted dependency-update bot (renovatebot/renovate).
+# Layer-2 default values for talos-platform-apps. The workload is a CronJob that
+# scans the configured repositories and opens update PRs. Cluster-specific bits
+# (the Git-host token, the target-repository list, the platform/endpoint) are
+# consumer-owned (Layer 3, ADR-0024 Shape c secret + Shape b config) — see
+# customization.yaml.
+
+metadata:
+  chart: renovate
+  repo: https://docs.renovatebot.com/helm-charts
+  version: 46.184.3 # resolved via `helm search repo renovate/renovate` (2026-06-09); appVersion 43.216.3
+  # >>> VERIFY the current chart at push (`helm search repo renovate/renovate --versions`).
+  namespace: renovate
+
+values:
+  # Own ServiceAccount for the scan Job. Renovate needs no cluster RBAC of its
+  # own — it talks to the Git host over the network, not to the kube-apiserver —
+  # so no ClusterRole/Role is created. A dedicated SA keeps it identifiable.
+  serviceAccount:
+    create: true
+
+  # The scan schedule is a platform default (daily at 01:00). A consumer that
+  # needs a different cadence overrides it in its overlay; it is not part of the
+  # runtime-config/secret contract.
+  cronjob:
+    schedule: "0 1 * * *"
+    # Skip a new run if the previous one is still going (a slow scan must not
+    # stack concurrent Renovate processes against the same Git host).
+    concurrencyPolicy: Forbid
+    # int (not "3"): the chart renders these straight into the CronJob's int32
+    # history-limit fields.
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+
+  # The Renovate image is pinned by the chart (ghcr.io/renovatebot/renovate,
+  # tag = appVersion 43.216.3) — satisfies the no_latest_image_tag policy. The
+  # slim image is sufficient; the full image (language toolchains) is opt-in.
+  image:
+    useFull: false
+
+  # Global self-hosted config (Shape b territory). The catalog ships ONLY the
+  # platform-agnostic, repo-agnostic defaults: GitHub platform, no autodiscover,
+  # let dryRun be governed by the consumer config. The consumer authors the real
+  # config file (repositories list, endpoint, onboarding, schedule windows) as
+  # Shape (b) `renovate-config` and the consumer overlay wires it in — this
+  # inline default is a safe, do-nothing baseline that never scans a repo until
+  # the consumer supplies the repository list.
+  renovate:
+    config: |
+      {
+        "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+        "platform": "github",
+        "autodiscover": false,
+        "repositories": []
+      }
+
+  # Secrets (ADR-0024 Shape c): the rendered CronJob references an EXISTING
+  # Secret `renovate-runtime-secret` by name via envFrom.secretRef — it ships NO
+  # credential value (base Hard-Constraint: no real secrets in the catalog). The
+  # consumer creates that Secret in the destination namespace (SOPS, applied
+  # out-of-band before sync) carrying RENOVATE_TOKEN (the Git-host token). The
+  # workload stays payload-agnostic + signed; only the named ref is frozen.
+  existingSecret: renovate-runtime-secret
+
+  # Resource requests/limits for the Renovate scan container (chart top-level
+  # `resources`). Catalog default: conservative requests for scheduling + a
+  # generous memory ceiling, because a Renovate dependency scan is bursty and
+  # memory-hungry (large lockfiles / many package managers) — without a limit it
+  # is a real OOM risk for the node on a small cluster. Consumers tune per
+  # cluster in their overlay.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
