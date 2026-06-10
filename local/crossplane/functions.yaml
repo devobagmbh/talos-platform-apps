@@ -1,0 +1,18 @@
+# Function-Definitionen für `crossplane render` (offline Composition-Test).
+# crossplane render zieht diese Packages als OCI-Image und führt sie als Container
+# (Docker) aus. Versionen MÜSSEN zu sub-layers/lifecycle/components/providers/
+# (den im Cluster installierten Functions) passen — sonst testet man etwas anderes
+# als das, was in prod läuft.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-patch-and-transform
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-patch-and-transform:v0.10.6
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-auto-ready
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-auto-ready:v0.6.5

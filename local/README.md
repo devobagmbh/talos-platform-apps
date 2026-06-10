@@ -162,6 +162,31 @@ It does an initial build and then **watches** `sub-layers/<sub-layer>/components
 
 `task local:dev:sync -- <sub-layer>/<component>` runs a single iteration (build + push + refresh) without the watcher — useful for a one-off resync. `task local:deps -- <sub-layer>/<component>` prints the resolved dependency order without deploying anything.
 
+## Crossplane composition testing
+
+The Argo loop above tests Helm/manifest components. Crossplane **Compositions** (the XCluster XRD + Composition in `lifecycle/compositions`) get their own loop — they can't use the Argo path because the XCluster composition provisions real clusters via `provider-opentofu` (tofu), which can't run locally.
+
+**Offline render (recommended inner loop)** — the Crossplane analog of `task render`:
+
+```bash
+task crossplane:render          # render the XCluster composition against the test XR
+task crossplane:dev             # watch + re-render on every save (Skaffold-style)
+```
+
+`crossplane render` runs the Composition's function pipeline locally **in Docker** (no cluster, no provisioning) and prints the composed resources — e.g. the `opentofu` `Workspace` the XCluster would create. Inputs:
+
+- `local/crossplane/examples/xcluster-test.yaml` — the test XR (dummy values).
+- `local/crossplane/functions.yaml` — the Function packages (versions must match `sub-layers/lifecycle/components/providers/`).
+- Override the target with `XR=<file> COMP=<file> task crossplane:render`.
+
+**In-cluster (up to the provider boundary)** — the Argo-style live test:
+
+```bash
+task crossplane:apply           # deploy crossplane+providers+compositions, apply the test XR
+```
+
+Deploys the lifecycle Crossplane stack to the local Talos cluster (via `local:dev:sync`) and applies the test XR. It reconciles **up to the provider boundary**: the XRD/Composition install, the `XCluster` is accepted, the `opentofu` `Workspace` is created — then the real `tofu apply` fails as expected (no hardware/backend locally). This validates the in-cluster wiring, not full provisioning.
+
 ## Iteration and cleanup
 
 ```bash
