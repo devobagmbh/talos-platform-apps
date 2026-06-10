@@ -1,0 +1,9 @@
+# Lokaler Helm-Values-Overlay für Harbor — NUR lokale Test-Umgebung.
+# Wird von local:dev / local:publish via EXTRA_VALUES an `task render:one`
+# gegeben (späteres --values gewinnt). CI/prod rendert OHNE diesen Overlay und
+# behält den Platzhalter externalURL aus helm/harbor.yaml (in prod patcht der
+# Konsument die echte Cluster-URL, ADR-0023/0024 Shape b).
+#
+# externalURL bäckt Harbor als EXT_ENDPOINT in die core-ConfigMap → generierte
+# Links / docker-push-Befehle / OIDC-Redirects zeigen lokal auf den Gateway-Host.
+externalURL: https://harbor.localhost.direct

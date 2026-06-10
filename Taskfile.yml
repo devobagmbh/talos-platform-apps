@@ -109,6 +109,15 @@ tasks:
 
         vals_tmp=$(mktemp)
         yq '.values' "$vfile" > "$vals_tmp"
+        # Optionaler lokaler Values-Overlay: nur gesetzt, wenn der Caller EXTRA_VALUES
+        # exportiert (local:dev/local:publish für UI-Komponenten — z. B. externalURL/
+        # CORS auf den .localhost.direct-Host). CI setzt es NIE → prod rendert mit den
+        # committeten Platzhaltern. Späteres --values gewinnt → Overlay sticht Default.
+        extra_vals=""
+        if [ -n "${EXTRA_VALUES:-}" ] && [ -f "${EXTRA_VALUES}" ]; then
+          extra_vals="--values ${EXTRA_VALUES}"
+          echo "  ↳ + lokaler Values-Overlay: ${EXTRA_VALUES}"
+        fi
         # Vendored chart: ${root}/vendor/<chart>-<version>.tgz. Used when the upstream
         # Helm repo blocks CI-runner IPs (e.g. charts.crossplane.io 403s GitHub-Actions
         # IPs while serving locally). Prefer the local archive; fall back to the HTTP repo.
@@ -121,13 +130,13 @@ tasks:
           echo "  ↳ Helm-Render   $name (chart=$chart version=$version, vendored)"
           helm template "$name" "$archive" \
             --namespace "$namespace" --skip-tests \
-            --values "$vals_tmp" >> "$out"
+            --values "$vals_tmp" $extra_vals >> "$out"
         else
           echo "  ↳ Helm-Render   $name (chart=$chart version=$version, repo=$repo)"
           helm template "$name" "$chart" \
             --repo "$repo" --version "$version" \
             --namespace "$namespace" --skip-tests \
-            --values "$vals_tmp" >> "$out"
+            --values "$vals_tmp" $extra_vals >> "$out"
         fi
         echo "---" >> "$out"
         rm -f "$vals_tmp"
@@ -738,6 +747,11 @@ tasks:
         # and the localhost:5001 registry mirror all come from local/talos-patch.yaml.
         # Host 80/443 → NodePort 30080/30443 (Cilium-Gateway) via -p, the talosctl
         # analog of kind's extraPortMappings.
+        # Node-Sizing: der talosctl-Default (2GiB/2CPU) ist zu klein — Cilium + Argo
+        # + mehrere Plattform-Komponenten (crossplane, cnpg, …) sprengen 2GiB →
+        # apiserver-Timeouts + OOM. Default 8GiB/6CPU (Limit, keine Reservierung →
+        # passt auch in kleinere VMs, bis tatsächlich genutzt). Per LOCAL_NODE_MEMORY
+        # / LOCAL_NODE_CPUS übersteuerbar.
         # talosctl create is NOT idempotent (it refuses if the state dir exists).
         # NOTE: `talosctl cluster show` is NOT a reliable existence probe — it exits
         # 0 with empty output even when nothing exists. Gate on the state dir.
@@ -748,6 +762,8 @@ tasks:
           talosctl cluster create docker \
             --name talos-platform-apps \
             --workers 0 \
+            --memory-controlplanes "${LOCAL_NODE_MEMORY:-8GiB}" \
+            --cpus-controlplanes "${LOCAL_NODE_CPUS:-6}" \
             --image ghcr.io/siderolabs/talos:v1.13.3 \
             --kubernetes-version 1.36.0 \
             --config-patch @local/talos-patch.yaml \
@@ -937,7 +953,9 @@ tasks:
       set -- {{.CLI_ARGS}}
       component_id="${1:?usage: task local:publish -- <sub-layer>/<component> <tag>}"
       tag="${2:?usage: task local:publish -- <sub-layer>/<component> <tag>}"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id"
+      # Lokaler Values-Overlay (externalURL/CORS auf .localhost.direct), falls vorhanden
+      ov="local/values-overrides/${component_id%/*}/${component_id#*/}.yaml"; [ -f "$ov" ] || ov=""
+      EXTRA_VALUES="$ov" OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id"
       OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$component_id" "$tag"
       OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$component_id" "$tag"
       echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${component_id}:${tag#v}"
@@ -1135,8 +1153,10 @@ tasks:
       app_name="${sub_layer}-${component}"
       registry="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps"
       tag="0.0.0-dev.$(date +%s)"
+      # Lokaler Values-Overlay (externalURL/CORS auf .localhost.direct), falls vorhanden
+      ov="local/values-overrides/${sub_layer}/${component}.yaml"; [ -f "$ov" ] || ov=""
       echo "▶ ${component_id} → ${tag}"
-      OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id" >/dev/null
+      EXTRA_VALUES="$ov" OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id" >/dev/null
       OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$component_id" "$tag" >/dev/null
       OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$component_id" "$tag" >/dev/null
       TAG="$tag" REGISTRY="$registry" envsubst < "$app_tmpl" \
