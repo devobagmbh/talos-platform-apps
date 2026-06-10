@@ -1,6 +1,13 @@
 # VENDORED — hyperspike/valkey-operator install manifest, release v0.0.61 (Valkey 8.1.4).
 # Source: https://github.com/hyperspike/valkey-operator/releases/download/v0.0.61/install.yaml
-# Do NOT hand-edit; re-vendor on version bump (curl the release install.yaml).
+# Do NOT hand-edit EXCEPT the documented LOCAL PATCH below; re-vendor on version
+# bump (curl the release install.yaml) and RE-APPLY the local patch afterwards.
+# LOCAL PATCH: pod-security.kubernetes.io/enforce: baseline on the
+# valkey-operator-system Namespace. Upstream ships the namespace unlabelled; the
+# catalog's pod_security_standards conftest policy requires an enforce level.
+# baseline (not restricted) because the rendered controller-manager sets no
+# seccompProfile — restricted would reject it at admission; tighten to restricted
+# when upstream adds a seccompProfile (or via a consumer overlay).
 # Operator only: CRD valkeys.hyperspike.io + controller-manager + RBAC + ns
 # valkey-operator-system. Concrete Valkey CRs are consumer-owned (ADR-0024).
 # No cert-manager dependency (no admission webhooks); image is pinned to v0.0.61.
@@ -8,6 +15,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
+    # LOCAL PATCH (see header) — re-apply on re-vendor:
+    pod-security.kubernetes.io/enforce: baseline
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: valkey-operator
     control-plane: controller-manager

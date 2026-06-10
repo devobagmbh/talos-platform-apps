@@ -2,6 +2,7 @@ requires:
   talos-platform-base: ">=v0.4.0 <v1.0.0"
 provides:
   - name: cnpg
-    apis: [] # wird mit Issue #15 befüllt
+    apis:
+      - cloudnative-pg@0.28.2 # CloudNativePG operator Helm chart (appVersion 1.29.1)
     capabilities:
       - {id: cnpg-postgres, swap_class: data-migration}

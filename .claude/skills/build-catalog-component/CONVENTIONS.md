@@ -59,6 +59,57 @@ Each `provides[].capabilities[].id` MUST exist in `catalog/capability-index.yaml
 not yet in the index, carry `capabilities: []` with a `# TODO:` comment naming
 the follow-up — do not invent an index entry inside the component.
 
+## Namespace & Pod Security Admission (PSA)
+
+A component's workloads land in a namespace, and that namespace MUST carry a
+`pod-security.kubernetes.io/enforce` label so the consumer cluster's Pod Security
+Admission has a defined posture rather than an implicit cluster default. The
+**sole-claimant rule** decides who declares the `Namespace` object — exactly one
+source ever does:
+
+- **Dedicated namespace** (this component is the only catalog occupant — operators,
+  standalone apps): the component ships `manifests/00-namespace.yaml` declaring the
+  namespace with an `enforce` label. A shipped Namespace manifest takes precedence
+  over Argo `managedNamespaceMetadata` (Argo CD docs, Sync Options), so this is
+  authoritative and self-contained. The consumer's Argo Application may keep
+  `CreateNamespace=true` (Argo applies a `Namespace` before namespace-scoped
+  resources, so the labelled manifest lands before any pod) or set it `false` —
+  either is safe; the shipped manifest is the source of the PSA label regardless.
+  Examples: `databases/cnpg` (`cnpg-system`,
+  `restricted`), `storage-block/synology-csi` (`synology-csi`, `privileged` — CSI
+  needs host access), `automation/renovate` (`renovate`, `baseline`).
+- **Shared namespace** (two or more catalog components co-locate): NONE ship the
+  `Namespace` object — two OCI artifacts declaring the same resource make Argo report
+  "resource managed by multiple Applications" and fight over the labels. The shared
+  namespace + its PSA label is the **consumer's composition concern** (Argo
+  `managedNamespaceMetadata`, uncontested because no manifest competes). Each
+  component documents its required PSA level in its README; a future
+  `compatibility.yaml: namespace:` field declares it machine-readably once the first
+  shared-namespace component exists (YAGNI until then).
+- **Foreign namespace** (`kube-system`, a base-layer namespace): never ship a
+  `Namespace` object for it.
+
+**Pick the strictest level the workload provably satisfies — derive it from the
+rendered `securityContext`, never assume the chart default:**
+
+- `restricted` — the pod sets `runAsNonRoot` + `seccompProfile: RuntimeDefault` and
+  every container sets `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`.
+- `baseline` — the safe floor when the chart sets no compliant securityContext;
+  `restricted` would reject the pods at admission.
+- `privileged` — only for workloads that genuinely need host access (CSI, host
+  networking).
+
+Setting `restricted` on a workload that does not comply is an admission-reject
+footgun. The deterministic gate (`pod_security_standards` conftest policy) enforces
+that every *declared* Namespace carries a valid `enforce` level; the catalog-evaluator's
+semantic AC additionally catches a dedicated-namespace component that ships no
+`Namespace` object at all (the gate only sees declared namespaces). Cross-component
+namespace-name uniqueness (two components both shipping the same namespace name,
+each passing its own per-component check, colliding only at Argo apply with
+"managed by multiple Applications") is NOT yet mechanically enforced — it lands
+with the sub-layer-aggregate check alongside the future `compatibility.yaml:
+namespace:` field. Until then it is a convention contributors uphold.
+
 ## Builder write-scope (hard constraint — anti gate-gaming)
 
 The builder writes ONLY inside `sub-layers/<sub-layer>/components/<component>/`

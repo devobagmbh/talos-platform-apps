@@ -1,0 +1,18 @@
+# Customization Contract v2 (ADR-0024). CloudNativePG's workload (operator
+# Deployment/Service/RBAC/webhooks + the postgresql.cnpg.io CRDs) is the signed,
+# pre-rendered artifact. The operator is CLUSTER-AGNOSTIC at the freeze line: it
+# needs no consumer-supplied secrets, config files, or env to run. The Postgres
+# credentials that DO get consumed live in the per-app `Cluster` CRs the consumer
+# authors in their own repos — they are not part of this operator artifact, so they
+# are not freeze-line refs here.
+freeze_line:
+  workload: rendered/manifest.yaml # operator Deployment/RBAC/webhooks/CRDs — never consumer-patched
+provided_refs: {} # cluster-agnostic: the operator expects nothing from the consumer
+provided_selectors: {} # no operator-assembled config in this artifact
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0" # foundational substrate: brings the CRDs every consuming app needs
+external_dependencies: [] # depends only on talos-platform-base (substrate), not on another catalog component
