@@ -150,8 +150,10 @@ It does an initial build and then **watches** `sub-layers/<sub-layer>/components
 - **No self-trigger.** `rendered/` is gitignored, and `watchexec` honors `.gitignore`, so the render output never re-triggers the watcher.
 - **Survives typos.** A broken render mid-edit fails only that one iteration (printed to the console); the watcher keeps running and the next save retries.
 - **Requires an Argo-app template** `local/argo-apps/<sub-layer>/<component>.yaml` (template: [`lifecycle/crossplane.yaml`](argo-apps/lifecycle/crossplane.yaml)). `local:dev` errors with a hint if it is missing.
+- **Brings up dependencies first.** Before watching, `local:dev` resolves the component's catalog dependencies from its `compatibility.yaml` `requires` (component paths directly; capabilities like `cnpg-postgres` via the providers' `provides[].capabilities[].id`) and deploys each — skipping any that are already `Synced/Healthy`. So `task local:dev -- lifecycle/crossview` first ensures `lifecycle/crossplane` + `databases/cnpg`. Disable with `LOCAL_DEV_SKIP_DEPS=1`.
+- **Flags consumer secrets.** It prints the component's required `secret_keys` (from `customization.yaml`) — those are consumer-supplied (e.g. `harbor-runtime-secret`) and are **not** created automatically; without them the workload stays Pending/CrashLoop.
 
-`task local:dev:sync -- <sub-layer>/<component>` runs a single iteration (build + push + refresh) without the watcher — useful for a one-off resync.
+`task local:dev:sync -- <sub-layer>/<component>` runs a single iteration (build + push + refresh) without the watcher — useful for a one-off resync. `task local:deps -- <sub-layer>/<component>` prints the resolved dependency order without deploying anything.
 
 ## Iteration and cleanup
 
