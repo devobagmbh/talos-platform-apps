@@ -37,6 +37,7 @@ talos-platform-apps/
 │   └── components/<component>/
 │       ├── README.md               — Komponenten-Beschreibung, sync-wave-Position, OCI-Pfad
 │       ├── compatibility.yaml      — requires/provides der Komponente
+│       ├── customization.yaml      — ADR-0024 v2 freeze-line contract (validiert gegen schemas/customization.schema.json)
 │       ├── helm/*.yaml             — Helm-Chart-Referenz (chart/repo/version + values) ODER metadata.inline für Stubs
 │       ├── manifests/*.yaml        — Raw-Manifeste (CRs, NetPols, Bucket-Defs)
 │       └── rendered/               — gitignored, Output von helm template + manifest-Konkatenation
@@ -131,7 +132,7 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
 - **Ein Verzeichnis pro Sub-Layer** unter `sub-layers/<name>/`, mit `components/<component>/` darunter pro OCI-Artefakt. Verzeichnisname == OCI-Pfad-Komponente.
 - **Pro Sub-Layer**: `README.md` (Pflicht, listet Komponenten + sync-wave-Reihenfolge), `compatibility.yaml` (Aggregate).
-- **Pro Komponente**: `README.md` (Pflicht: Inhalt + OCI-Pfad + sync-wave + ADR-Verweise), `compatibility.yaml` (Pflicht: requires/provides), `helm/` oder `manifests/` (Inhalt).
+- **Pro Komponente**: `README.md` (Pflicht: Inhalt + OCI-Pfad + sync-wave + ADR-Verweise), `compatibility.yaml` (Pflicht: requires/provides), `customization.yaml` (Pflicht: ADR-0024 v2 freeze-line contract, validiert gegen `schemas/customization.schema.json`), `helm/` oder `manifests/` (Inhalt).
 - **Konsumenten-Trennung**: dieses Repo enthält Defaults und shared-Values. Cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in die Konsumenten-Repos.
 - **Argo-Application-Definitionen leben im Konsumenten-Cluster-Repo**, nicht hier. Pro Komponente eine `Application`-CR mit `argocd.argoproj.io/sync-wave`-Annotation. Für lokale End-to-End-Tests gibt es `local/argo-apps/<sub-layer>/<component>.yaml`-Templates im apps-Repo.
 - **`compatibility.yaml` pro Komponente** deklariert die Komponenten-Abhängigkeiten:

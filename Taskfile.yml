@@ -212,6 +212,95 @@ tasks:
       fi
       exit $fail
 
+  check:primitives:
+    desc: 'Self-containment + A1 + verdict-schema-consistency of the .claude/ primitives'
+    summary: |
+      Deterministic hygiene gate for the repo-local Claude Code primitives
+      (agents/skills/workflows/hooks). All checks fail-closed:
+        (a) self-containment — no reference to a developer's global user config
+            (~/.claude, claude-config, or a bare rules/<x>.md / references/<x>.md
+            that is not the repo-local .claude/rules/). The primitives must stand
+            alone for any developer who clones the repo.
+        (b) A1 — no peer-agent names anywhere in an agent file (description OR
+            body), self excepted. Routing lives in skills, never in a worker's
+            prose or its routing description (prevents dead-documentation +
+            O(N^2) coupling).
+        (c) verdict-schema consistency — catches the schema-drift / non-local-
+            invalidation class (a change to one consumer silently breaking
+            another). Two canonical verdict contracts exist: the REVIEWER enum
+            (approved|rejected|needs-info) and the EVALUATOR enum (pass|fail).
+            Every agent that declares a verdict enum must use exactly one of them
+            (discovered dynamically — a new reviewer is covered without editing
+            this check); BOTH commit hooks (require-review.sh, pre-commit) must
+            read `verdict` (never the retired `status`); the live workflow must
+            dispatch both contracts with the canonical enums.
+      Honest limits (NOT covered — by design or deferred): it greps the workflow's
+      dispatch-prompt enum, not its JS parser semantics (the parser is deliberately
+      tolerant → 'errored'); it checks hook case-arm presence, not that each arm
+      denies; the forgeable `reviewer-role` self-assertion is a known dormant-hook
+      residual (see Plans/ + the hooks' own notes).
+    cmd: |
+      set -uo pipefail
+      fail=0
+
+      # (a) self-containment
+      sc_hits=$(grep -rnE '~/\.claude|claude-config' .claude/agents .claude/skills .claude/workflows .claude/hooks 2>/dev/null || true)
+      bare_hits=$(grep -rnE '(^|[^./[:alnum:]])(rules|references)/[a-z0-9-]+\.md' \
+        .claude/agents .claude/skills .claude/workflows .claude/hooks 2>/dev/null \
+        | grep -vE '\.claude/(rules|references)/' || true)
+      if [ -n "$sc_hits$bare_hits" ]; then
+        [ -n "$sc_hits" ] && printf '%s\n' "$sc_hits"
+        [ -n "$bare_hits" ] && printf '%s\n' "$bare_hits"
+        echo "✗ self-containment: primitive references a global user config (above)"
+        fail=1
+      else
+        echo "✓ self-containment: no global-config references"
+      fi
+
+      # (b) A1 — no peer-agent names anywhere in an agent file (description + body), self excepted
+      names=$(for f in .claude/agents/*.md; do basename "$f" .md; done | paste -sd'|' -)
+      a1=0
+      for f in .claude/agents/*.md; do
+        self=$(basename "$f" .md)
+        hits=$(grep -oE "\\b(${names})\\b" "$f" | grep -vx "$self" | sort -u | paste -sd' ' - || true)
+        if [ -n "$hits" ]; then echo "✗ A1: $(basename "$f") names peer agent(s): $hits"; a1=1; fi
+      done
+      [ "$a1" = 0 ] && echo "✓ A1: no peer-agent names in agent files" || fail=1
+
+      # (c) verdict-schema consistency
+      rev_enum='verdict: approved | rejected | needs-info'   # reviewer contract
+      evl_enum='verdict: pass | fail'                        # builder-evaluator contract
+      sc=0
+      # Every agent-declared verdict ENUM line (has ` | `) must be exactly one canonical contract.
+      for f in .claude/agents/*.md; do
+        while IFS= read -r vline; do
+          [ -z "$vline" ] && continue
+          if [ "$vline" != "$rev_enum" ] && [ "$vline" != "$evl_enum" ]; then
+            echo "✗ schema: $(basename "$f") declares non-canonical verdict enum: '$vline'"; sc=1
+          fi
+        done < <(grep -hoE '^verdict: [a-z-]+( \| [a-z-]+)+$' "$f" || true)
+      done
+      # No agent may carry a retired status:-keyed verdict block.
+      stale=$(grep -rlE '^status: (approved|escalate|changes-requested|rejected|needs-info)' .claude/agents/*.md 2>/dev/null || true)
+      [ -n "$stale" ] && { echo "✗ schema: retired status:-keyed verdict block in: $stale"; sc=1; }
+      # Live workflow must dispatch BOTH contracts with the canonical enums.
+      grep -qF '"verdict": "approved"|"rejected"|"needs-info"' .claude/workflows/catalog-fleet.js \
+        || { echo "✗ schema: catalog-fleet.js reviewer dispatch lacks the reviewer verdict enum"; sc=1; }
+      grep -qF '"verdict": "pass"|"fail"' .claude/workflows/catalog-fleet.js \
+        || { echo "✗ schema: catalog-fleet.js verify dispatch lacks the evaluator verdict enum"; sc=1; }
+      # Both commit hooks read `verdict`, not the retired `status`, and accept the three reviewer values.
+      for hook in require-review.sh pre-commit; do
+        grep -qF 'PRIMARY_VERDICT=' ".claude/hooks/$hook" || { echo "✗ schema: hooks/$hook does not read 'verdict'"; sc=1; }
+        grep -qE 'get_yaml_field .*"status"' ".claude/hooks/$hook" && { echo "✗ schema: hooks/$hook still reads the retired 'status' field"; sc=1; }
+        for v in approved rejected needs-info; do
+          grep -qE "(^|\\|)[[:space:]]*${v}\\)" ".claude/hooks/$hook" || { echo "✗ schema: hooks/$hook lacks case arm for verdict '$v'"; sc=1; }
+        done
+      done
+      [ "$sc" = 0 ] && echo "✓ verdict-schema consistent across agents/workflow/both hooks" || fail=1
+
+      if [ "$fail" != 0 ]; then echo ""; echo "check:primitives FAILED"; fi
+      exit $fail
+
   # --- Security-Scans (Issue #11.8) ---
 
   scan:
@@ -443,8 +532,9 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (lint + render + scan:conftest)
+    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + lint + render + scan:conftest)
     cmds:
+      - task: check:primitives
       - task: lint
       - task: render
       - task: lint:rendered

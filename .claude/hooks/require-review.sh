@@ -1,11 +1,32 @@
 #!/bin/bash
-# PreToolUse hook: require review artifacts before commits
-# Tiered validation: staff-reviewer primary artifact + on-demand escalation artifacts
+# PreToolUse hook: require review artifacts before commits.
+# Tiered validation: staff-reviewer primary artifact + on-demand escalation artifacts.
 #
-# Triggered by .claude/settings.json for Bash commands and MCP GitHub push tools.
+# STATUS: dormant — intentionally NOT bound in .claude/settings.json (no "hooks"
+# block). With a single maintainer, fail-closed self-review enforcement would be
+# self-sabotage; the hook is reactivated when a second maintainer onboards. Until
+# then this script is the contract the review agents emit against, not a live gate.
+#
+# Review-artifact contract (kept in parity with .claude/agents/* and the live
+# verdict schema in .claude/workflows/catalog-fleet.js):
+#   .claude/reviews/<change-id>/review.md           — staff-reviewer artifact
+#     verdict:       approved | rejected | needs-info
+#     reviewer-role: staff-reviewer
+#     escalations:   [<domain>, ...]   (non-empty + verdict approved ⇒ domain reviews required)
+#   .claude/reviews/<change-id>/review-<domain>.md  — one per escalated domain
+#     <domain> is a closed set: security | operational-safety | provenance |
+#                               compatibility | architecture
+#     NOTE: only `security` and `operational-safety` have a backing reviewer agent
+#     today. `provenance` / `compatibility` / `architecture` are reserved for M2
+#     onboarding; escalating to one of those denies (no agent can produce its
+#     artifact) until the reviewer is restored. staff-reviewer's triage table
+#     marks these as M2-deferred so it does not route into that dead end.
+#     verdict:       approved | rejected | needs-info
+#     reviewer-role: <domain>-reviewer
+#
+# When bound, intercepts Bash `git commit` and MCP GitHub push tools.
 # Fail-closed: any unexpected error causes a deny response.
-#
-# Usage: called automatically by Claude Code — receives JSON on stdin.
+# Receives JSON on stdin from Claude Code.
 
 set -uo pipefail
 
@@ -172,91 +193,91 @@ if [ ! -f "$PRIMARY" ]; then
   deny "BLOCKED: Missing review.md for change '${CHANGE_ID}'. Invoke staff-reviewer to produce it."
 fi
 
-PRIMARY_STATUS=$(get_yaml_field "$PRIMARY" "status")
+PRIMARY_VERDICT=$(get_yaml_field "$PRIMARY" "verdict")
 
-if [ -z "$PRIMARY_STATUS" ]; then
-  deny "BLOCKED: review.md for '${CHANGE_ID}' has no parseable 'status' field. Check YAML frontmatter."
+if [ -z "$PRIMARY_VERDICT" ]; then
+  deny "BLOCKED: review.md for '${CHANGE_ID}' has no parseable 'verdict' field. Check YAML frontmatter."
 fi
 
-case "$PRIMARY_STATUS" in
-  approved)
-    # Direct approval — proceed to role separation check below
-    ;;
+# Escalations are read independently of the verdict: a non-empty escalations list
+# on an approved primary review means domain reviews must accompany it. Each
+# escalated domain <d> requires review-<d>.md with verdict: approved. One level of
+# chained escalation (a domain review that itself escalates) is supported.
+# Escalation domains are a closed set. Enforce membership BEFORE constructing any
+# review-<domain>.md path: an out-of-set value (typo, or a path-traversal-shaped
+# string like '../../x') is a contract violation, not a missing-artifact case.
+assert_domain() {
+  case "$1" in
+    security|operational-safety|provenance|compatibility|architecture) return 0 ;;
+    *) deny "BLOCKED: '${1}' is not a valid escalation domain for '${CHANGE_ID}' (closed set: security|operational-safety|provenance|compatibility|architecture)." ;;
+  esac
+}
 
-  escalate)
-    # Escalation required — validate each referenced escalation artifact
-    ESCALATIONS=$(get_yaml_list "$PRIMARY" "escalations")
+validate_escalations() {
+  local list="$1"
+  while IFS= read -r esc_type; do
+    [ -z "$esc_type" ] && continue
+    assert_domain "$esc_type"
 
-    if [ -z "$ESCALATIONS" ]; then
-      deny "BLOCKED: review.md for '${CHANGE_ID}' has status 'escalate' but empty escalations list. Add escalation types or set status to 'approved'."
+    ESC_FILE="$REVIEW_DIR/review-${esc_type}.md"
+    if [ ! -f "$ESC_FILE" ]; then
+      deny "BLOCKED: Escalation artifact 'review-${esc_type}.md' missing for change '${CHANGE_ID}'. Invoke the ${esc_type} reviewer."
     fi
 
-    while IFS= read -r esc_type; do
-      [ -z "$esc_type" ] && continue
+    ESC_VERDICT=$(get_yaml_field "$ESC_FILE" "verdict")
+    if [ -z "$ESC_VERDICT" ]; then
+      deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has no parseable 'verdict' field."
+    fi
 
-      ESC_FILE="$REVIEW_DIR/review-${esc_type}.md"
-
-      if [ ! -f "$ESC_FILE" ]; then
-        deny "BLOCKED: Escalation artifact 'review-${esc_type}.md' missing for change '${CHANGE_ID}'. Invoke the ${esc_type} reviewer."
-      fi
-
-      ESC_STATUS=$(get_yaml_field "$ESC_FILE" "status")
-
-      if [ -z "$ESC_STATUS" ]; then
-        deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has no parseable 'status' field."
-      fi
-
-      case "$ESC_STATUS" in
-        approved)
-          # Escalation approved — continue
-          ;;
-
-        escalate)
-          # One level of chained escalation allowed
-          NESTED_ESCS=$(get_yaml_list "$ESC_FILE" "escalations")
-
-          if [ -z "$NESTED_ESCS" ]; then
-            deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has status 'escalate' but empty escalations list."
+    case "$ESC_VERDICT" in
+      approved)
+        # Domain review clean. If it chained a further escalation, each nested
+        # domain review must itself be approved (one level deep).
+        NESTED_ESCS=$(get_yaml_list "$ESC_FILE" "escalations")
+        while IFS= read -r nested_type; do
+          [ -z "$nested_type" ] && continue
+          assert_domain "$nested_type"
+          NESTED_FILE="$REVIEW_DIR/review-${nested_type}.md"
+          if [ ! -f "$NESTED_FILE" ]; then
+            deny "BLOCKED: Nested escalation artifact 'review-${nested_type}.md' missing for change '${CHANGE_ID}'."
           fi
+          NESTED_VERDICT=$(get_yaml_field "$NESTED_FILE" "verdict")
+          if [ "$NESTED_VERDICT" != "approved" ]; then
+            deny "BLOCKED: review-${nested_type}.md for '${CHANGE_ID}' has verdict '${NESTED_VERDICT:-<missing>}', not 'approved'."
+          fi
+        done <<< "$NESTED_ESCS"
+        ;;
 
-          while IFS= read -r nested_type; do
-            [ -z "$nested_type" ] && continue
+      rejected|needs-info)
+        deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has verdict '${ESC_VERDICT}'. Resolve before committing."
+        ;;
 
-            NESTED_FILE="$REVIEW_DIR/review-${nested_type}.md"
+      *)
+        deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has unknown verdict '${ESC_VERDICT}'."
+        ;;
+    esac
+  done <<< "$list"
+}
 
-            if [ ! -f "$NESTED_FILE" ]; then
-              deny "BLOCKED: Nested escalation artifact 'review-${nested_type}.md' missing for change '${CHANGE_ID}'."
-            fi
-
-            NESTED_STATUS=$(get_yaml_field "$NESTED_FILE" "status")
-
-            if [ -z "$NESTED_STATUS" ]; then
-              deny "BLOCKED: review-${nested_type}.md for '${CHANGE_ID}' has no parseable 'status' field."
-            fi
-
-            if [ "$NESTED_STATUS" != "approved" ]; then
-              deny "BLOCKED: review-${nested_type}.md for '${CHANGE_ID}' has status '${NESTED_STATUS}', not 'approved'."
-            fi
-          done <<< "$NESTED_ESCS"
-          ;;
-
-        changes-requested)
-          deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has status 'changes-requested'. Resolve findings before committing."
-          ;;
-
-        *)
-          deny "BLOCKED: review-${esc_type}.md for '${CHANGE_ID}' has unknown status '${ESC_STATUS}'."
-          ;;
-      esac
-    done <<< "$ESCALATIONS"
+case "$PRIMARY_VERDICT" in
+  approved)
+    # Own scope clean. If domains were escalated, each needs an approved domain review.
+    ESCALATIONS=$(get_yaml_list "$PRIMARY" "escalations")
+    if [ -n "$ESCALATIONS" ]; then
+      validate_escalations "$ESCALATIONS"
+    fi
     ;;
 
-  changes-requested)
-    deny "BLOCKED: review.md for '${CHANGE_ID}' has status 'changes-requested'. Resolve all findings before committing."
+  rejected)
+    deny "BLOCKED: review.md for '${CHANGE_ID}' has verdict 'rejected'. Resolve all findings before committing."
+    ;;
+
+  needs-info)
+    deny "BLOCKED: review.md for '${CHANGE_ID}' has verdict 'needs-info'. Supply the missing evidence / clarification before committing."
     ;;
 
   *)
-    deny "BLOCKED: review.md for '${CHANGE_ID}' has unknown status '${PRIMARY_STATUS}'. Valid values: approved, escalate, changes-requested."
+    deny "BLOCKED: review.md for '${CHANGE_ID}' has unknown verdict '${PRIMARY_VERDICT}'. Valid values: approved, rejected, needs-info."
     ;;
 esac
 
