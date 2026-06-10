@@ -10,6 +10,7 @@ Der Sub-Layer ist eine organisatorische Klammer; **OCI-Distribution erfolgt pro 
 |---|---|---|---|
 | [`crossplane`](components/crossplane/) | 0 | Crossplane-Operator (Helm) — bringt CRDs | `oci://.../lifecycle/crossplane:vX.Y.Z` |
 | [`ipxe`](components/ipxe/) | 0 | iPXE-Server-Stub (Namespace + Labels, Inhalt in Issue #28) | `oci://.../lifecycle/ipxe:vX.Y.Z` |
+| [`booter`](components/booter/) | 0 | proxyDHCP/PXE-Responder (`siderolabs/booter`), ergänzt `ipxe` (Design-B-Hybrid, ADR-0005) | `oci://.../lifecycle/booter:vX.Y.Z` |
 | [`providers`](components/providers/) | 10 | provider-opentofu + Pipeline functions | `oci://.../lifecycle/providers:vX.Y.Z` |
 | [`compositions`](components/compositions/) | 20 | `XCluster`-XRD + Composition (3-Step-Pipeline) | `oci://.../lifecycle/compositions:vX.Y.Z` |
 | [`crossview`](components/crossview/) | 30 | Crossplane-Visualisierungs-Dashboard (crossplane-contrib) | `oci://.../lifecycle/crossview:vX.Y.Z` |
