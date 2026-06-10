@@ -1,0 +1,85 @@
+# Dex — OIDC identity broker (capability identity-oidc, ADR-0010).
+# Migrated from talos-platform-base/kubernetes/base/infrastructure/dex/ per the
+# v1.0.0 substrate split (base#90). Layer-2 default values for talos-platform-apps.
+#
+# The dex CONFIG (issuer, storage, connectors=EntraID OIDC, staticClients, oauth2)
+# is entirely cluster-specific AND sensitive (connector + static-client secrets),
+# so it is NOT baked here. The workload references a consumer-supplied config
+# Secret by name (`configSecret.create: false` → `dex-config`, key `config.yaml`,
+# ADR-0024 Shape c). See customization.yaml + README "Consumer-supplied config".
+
+metadata:
+  chart: dex
+  repo: https://charts.dexidp.io
+  version: 0.24.0  # appVersion v2.x; pinned (chart.lock parity with base#90)
+  # >>> VERIFY the current chart at push (`helm search repo dexidp/dex`).
+  namespace: dex
+
+values:
+  # HA: two replicas + PDB (migrated from base). NOTE: with replicaCount > 1 the
+  # consumer's config.yaml MUST use a SHARED storage backend (storage.type
+  # `kubernetes` CRDs or `postgres`) — `memory` is per-pod and breaks auth-code
+  # exchange across replicas. See README "Storage".
+  replicaCount: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  # Config is consumer-owned (Shape c): reference an EXISTING secret instead of
+  # creating one from inline `config`. The catalog ships NO dex config + NO
+  # secrets (base Hard-Constraint). The consumer creates `dex-config` (key
+  # `config.yaml`) via SOPS (seeder) / Vault+ESO (office-lab) before sync.
+  configSecret:
+    create: false
+    name: dex-config
+  config: {}
+
+  # ServiceAccount + RBAC are needed when the consumer picks
+  # `storage.type: kubernetes` (dex manages its own CRDs). Left enabled so the
+  # workload is storage-backend-agnostic.
+  serviceAccount:
+    create: true
+  rbac:
+    create: true
+
+  # Gateway-API at the consumer (base Hard-Constraint: no Ingress) → ClusterIP,
+  # ingress off. The consumer fronts dex with an HTTPRoute on the Cilium Gateway
+  # (the public issuer host lives in the consumer's config.yaml + HTTPRoute).
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+  https:
+    enabled: false  # TLS terminates at the Gateway, not in-pod
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Restricted-PSA-compliant (matches the namespace audit/warn level).
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+  podSecurityContext:
+    runAsNonRoot: true
+
+  # readOnlyRootFilesystem → dex needs a writable /tmp.
+  volumes:
+    - name: tmp
+      emptyDir: {}
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp

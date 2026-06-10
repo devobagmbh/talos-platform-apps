@@ -1,0 +1,11 @@
+# dex needs only a standard Cilium-networked Talos cluster + the consumer-supplied
+# dex-config secret. No base version-coupling line (per #71). The storage backend
+# (storage.type kubernetes CRDs / postgres) is a consumer config.yaml choice, not
+# a hard catalog require — so cnpg-postgres is NOT listed here (unlike harbor).
+requires: {}
+provides:
+  - name: dex
+    apis:
+      - dex@0.24.0  # dexidp/dex helm chart (appVersion v2.x)
+    capabilities:
+      - id: identity-oidc  # OIDC broker federating EntraID (ADR-0010)
