@@ -113,6 +113,18 @@ Only after Tier 1 is green (or with the green/red state recorded), judge:
   (`required.*: []`, `provided_*: {}`) makes the freeze-line check *vacuously*
   true and renders+lints clean — verify the emptiness genuinely reflects a
   cluster-agnostic component, not a hollow pass.
+- **Namespace ownership & PSA posture** — every `Namespace` object the component
+  declares (`manifests/*.yaml`) carries a `pod-security.kubernetes.io/enforce` label
+  whose value is the strictest level the rendered workloads satisfy: a workload whose
+  pod sets `runAsNonRoot` + `seccompProfile: RuntimeDefault` and whose containers set
+  `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` must be `restricted`,
+  not a looser level (under-labelling is a finding); `restricted` on a workload that
+  lacks that securityContext is an admission-reject footgun (also a finding). If the
+  component runs workloads in a namespace it does NOT declare (shared / consumer-owned
+  per the sole-claimant rule), confirm it ships no `Namespace` object and documents the
+  owner + required PSA level in its README. A dedicated-namespace component that ships
+  no `Namespace` at all is a finding the deterministic gate cannot see — the conftest
+  policy only checks declared namespaces, not their absence.
 - **Capability mapping** — each `provides[].capabilities[].id` exists in
   `catalog/capability-index.yaml` and the `swap_class` matches the index entry.
 - **README ↔ artifact agreement** — sync-wave, OCI path, listed capabilities,
