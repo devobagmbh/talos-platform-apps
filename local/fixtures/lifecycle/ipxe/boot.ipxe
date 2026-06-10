@@ -1,0 +1,24 @@
+#!ipxe
+# Lokale Demo-boot.ipxe — zeigt das Muster: Talos bootet, und das OCI-Installer-
+# Image (machine.install.image) kommt aus der lokalen harbor-Pull-Through-Cache
+# (ADR-0012). In prod überschreibt der Konsument die ipxe-boot-scripts-ConfigMap
+# mit den echten Boot-Skripten (Schematic-ID, Kernel-Args, machine-config-URL).
+#
+# Boot-Assets (kernel/initramfs) liefert die Talos Image Factory (HTTP); das
+# OCI-Installer-Image zieht Talos beim Install aus harbor (gecacht von ghcr.io).
+set arch        amd64
+set talos       v1.13.3
+set schematic   376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba
+set factory     https://factory.talos.dev/image/${schematic}/${talos}
+set installer   harbor.localhost.direct/ghcr/siderolabs/installer:${talos}
+
+echo ============================================================
+echo  Talos ${talos} (${arch})
+echo  installer (machine.install.image) via harbor: ${installer}
+echo  boot assets via factory: ${factory}
+echo ============================================================
+
+kernel ${factory}/kernel-${arch} talos.platform=metal console=tty0 console=ttyS0 \
+  talos.config=https://REPLACE-ME.invalid/config.yaml
+initrd ${factory}/initramfs-${arch}.xz
+boot

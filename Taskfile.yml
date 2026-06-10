@@ -1370,3 +1370,30 @@ tasks:
       echo "  kubectl --context admin@talos-platform-apps get xcluster xcluster-test"
       echo "  kubectl --context admin@talos-platform-apps get workspace.opentofu.m.upbound.io"
       echo "  crossplane beta trace xcluster.platform.devoba.de/xcluster-test"
+
+  local:harbor:proxy:
+    desc: 'harbor Pull-Through-Proxy auf ghcr.io anlegen (z. B. für das Talos-Installer-Image): task local:harbor:proxy'
+    summary: |
+      Legt (idempotent) einen harbor Registry-Endpoint + ein Proxy-Cache-Project
+      `ghcr` → https://ghcr.io an (ADR-0012 harbor-as-registry-proxy). Danach cacht
+      harbor Pulls von ghcr.io beim ersten Zugriff, z. B.:
+        harbor.localhost.direct/ghcr/siderolabs/installer:v1.13.3
+      Voraussetzung: harbor läuft (task local:dev -- registry/harbor) + ist Healthy.
+    cmd: |
+      H="https://harbor.localhost.direct"
+      pw=$(kubectl --context admin@talos-platform-apps -n harbor get secret harbor-runtime-secret -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d)
+      [ -n "$pw" ] || { echo "ERROR: harbor-runtime-secret nicht da — erst harbor hochziehen (task local:dev -- registry/harbor)"; exit 1; }
+      A="admin:${pw}"
+      if [ "$(curl -sf -u "$A" "$H/api/v2.0/registries?name=ghcr" | jq 'length')" = "0" ]; then
+        curl -sS -u "$A" -X POST "$H/api/v2.0/registries" -H 'Content-Type: application/json' \
+          -d '{"name":"ghcr","type":"docker-registry","url":"https://ghcr.io","insecure":false}' >/dev/null
+        echo "✓ Registry-Endpoint ghcr (→ https://ghcr.io) angelegt"
+      else echo "✓ Registry-Endpoint ghcr existiert"; fi
+      rid=$(curl -sf -u "$A" "$H/api/v2.0/registries?name=ghcr" | jq -r '.[0].id')
+      if [ "$(curl -sf -u "$A" "$H/api/v2.0/projects?name=ghcr" | jq 'length')" = "0" ]; then
+        curl -sS -u "$A" -X POST "$H/api/v2.0/projects" -H 'Content-Type: application/json' \
+          -d "{\"project_name\":\"ghcr\",\"registry_id\":${rid},\"metadata\":{\"public\":\"true\"}}" >/dev/null
+        echo "✓ Proxy-Project ghcr angelegt"
+      else echo "✓ Proxy-Project ghcr existiert"; fi
+      echo "✓ Talos-Installer via harbor: harbor.localhost.direct/ghcr/siderolabs/installer:<tag>"
+      echo "  Test:  curl -su admin:<pw> https://harbor.localhost.direct/v2/ghcr/siderolabs/installer/manifests/v1.13.3"
