@@ -1,0 +1,13 @@
+# Lokaler Helm-Values-Overlay für Crossview — NUR lokale Test-Umgebung.
+# Wird von local:dev / local:publish via EXTRA_VALUES an `task render:one`
+# gegeben (späteres --values gewinnt). CI/prod rendert OHNE diesen Overlay und
+# behält den Platzhalter aus helm/crossview.yaml (in prod liefert der Konsument
+# Host/CORS + Dex-OIDC, ADR-0023/0024 Shape b).
+#
+# CORS-Origin = Post-SSO-Login-Redirect-Ziel + erlaubter Browser-Origin. Lokal
+# auf den Gateway-Host, damit die UI hinter https://crossview.localhost.direct
+# funktioniert (statt localhost:5173).
+config:
+  server:
+    cors:
+      origin: https://crossview.localhost.direct
