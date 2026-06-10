@@ -1,2 +1,3 @@
 components:
-  - cnpg   # sync-wave 0 — Operator + CRDs + Defaults
+  - cnpg            # sync-wave 0 — CloudNativePG operator + CRDs (capability cnpg-postgres)
+  - valkey-operator # sync-wave 0 — hyperspike/valkey-operator + CRD (capability redis-managed via Valkey)

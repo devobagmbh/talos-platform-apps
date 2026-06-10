@@ -7,9 +7,7 @@ description: >-
   Änderungen an Vault-/SOPS-Strukturen, cosign-Identity, Kyverno-Policies,
   RBAC-Manifesten, NetworkPolicies/CCNPs, Container-Image-Scanning, Secret-Mounts
   in Workflows. Read-only.
-tools:
-  write: false
-  edit: false
+tools: Read, Grep, Glob
 ---
 
 <example>

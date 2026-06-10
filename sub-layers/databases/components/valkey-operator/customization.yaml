@@ -1,0 +1,17 @@
+# Customization Contract v2 (ADR-0024). The valkey-operator workload (CRD
+# valkeys.hyperspike.io, controller-manager Deployment, RBAC, namespace
+# valkey-operator-system) is the signed, pre-rendered artifact — never
+# consumer-patched. There is NO operator-level consumer ref: concrete `Valkey`
+# CRs (with their auth Secret + storage) are consumer-owned and live in the
+# consuming app's sub-layer / the cluster repo (e.g. harbor's cache, #84).
+freeze_line:
+  workload: rendered/manifest.yaml # CRD + controller-manager + RBAC + namespace — frozen
+provided_refs: {} # operator needs no consumer-supplied secret/configmap
+provided_selectors: {} # no consumer-labeled CRs at the operator level
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0" # brings the Valkey CRD that consuming apps need before their CRs
+external_dependencies: [] # no cert-manager (no webhooks); cert-manager only if a Valkey CR sets tls:true
