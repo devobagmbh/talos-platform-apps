@@ -1,0 +1,14 @@
+# Local Helm-values overlay for dex — LOCAL test env only. Passed to
+# `task render:one` via EXTRA_VALUES by local:dev / local:publish (later --values
+# wins). CI/prod renders WITHOUT this overlay (catalog default is replicaCount 2).
+#
+# Single-node local cluster + memory storage (set in the dex-config fixture):
+# replicaCount MUST be 1 — two replicas with memory storage break the OAuth2
+# code→token exchange across pods (the demo login would fail ~50% of the time).
+replicaCount: 1
+
+# With a single replica the PDB (minAvailable 1) leaves 0 allowed disruptions,
+# which Argo reports as Degraded ("InsufficientPods"). Meaningless at 1 replica →
+# disable it locally. Prod keeps it (catalog default: replicaCount 2 → 1 disruption).
+podDisruptionBudget:
+  enabled: false
