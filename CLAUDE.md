@@ -68,6 +68,21 @@ Disziplin steht inline im jeweiligen Agent-Body, die Rules erinnern nur den Edit
 - **Permissions-Allowlist** — reduziert Permission-Prompts (Bash, Read, Edit, Write, Glob, Grep, Agent + ausgewählte `mcp__github__*`-Tools).
 - **Keine Hook-Bindungen aktiv** — siehe „Hooks"-Sektion oben.
 
+### Host-permission interaction & shell
+
+- **`sub-layers/secrets/` is secret-management *tooling*, not secret material.**
+  Its components (external-secrets, vault, cert-manager, sealed-secrets, …) are
+  Helm wrappers for secret-management tools; the directory holds no real secrets
+  (those are SOPS-encrypted via `.sops.yaml`). Secret-protection patterns keyed on
+  the literal token `secrets` — a `Read(…secrets/**)` deny glob, a Bash regex on
+  `secrets\.`, a basename glob — false-positive on this taxonomy and can silently
+  blind the read-only reviewers *and* the orchestrator (a `permissions.deny` Read
+  rule is inherited by every read-only subagent). Narrow such a pattern to
+  file-level (`.env`/`secrets.*`/`*.pem`/`*.key`), never a bare `secrets` path
+  segment; never perpetuate a per-read `git show` workaround.
+- **zsh expansion before `:`** — write `"${A}:${B}"`, not `$A:$B`; bare `$A:$B`
+  trips zsh "bad substitution" (`:` is a parameter-expansion modifier).
+
 ### Context Architecture
 
 - Alle geteilten operativen Konventionen leben in `AGENTS.md`.
