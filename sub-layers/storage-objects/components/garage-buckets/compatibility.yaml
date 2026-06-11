@@ -1,5 +1,4 @@
 requires:
-  talos-platform-base: ">=v0.4.0 <v1.0.0"
   storage-objects/garage: ">=v0.1.0"  # Garage-API
   secrets/external-secrets: ">=v0.1.0"  # ExternalSecret für Access-Keys
 
