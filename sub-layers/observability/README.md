@@ -1,6 +1,6 @@
 # Sub-Layer `observability`
 
-LGTM-A-Stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only).
+LGTM-A-Stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only) + Hubble (Cilium network-flow visibility).
 
 OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subset (Seeder = Operator + Alloy-Forwarder, Office-Lab = Vollstack).
 
@@ -14,8 +14,11 @@ OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subs
 | [`tempo`](components/tempo/) | 10 | Helm `grafana/tempo-distributed` | `oci://.../observability/tempo:vX.Y.Z` |
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
+| [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 
 Wave 0: Operator + CRDs. Wave 10: drei Storage-Endpoints (alle gegen Garage). Wave 20: Collector + UI (brauchen Endpoints aus Wave 10).
+
+`hubble` ist orthogonal zum LGTM-A-Stack (Netzwerk-Flow-Sichtbarkeit aus dem Cilium-Substrat, nicht Logs/Metrics/Traces) und hängt nur vom Cilium-Agent-Hubble-Server ab — siehe [`components/hubble/`](components/hubble/) für die Substrat-Precondition.
 
 Bidirektionale Watchdog-AlertmanagerConfig (Seeder ↔ Office-Lab) lebt aktuell als Cross-Cluster-Resource im Konsumenten-Repo — sobald Issue #36 implementiert ist, kann das eine eigene `observability/watchdog`-Komponente werden.
 

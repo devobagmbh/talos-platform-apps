@@ -5,3 +5,4 @@ components:
   - tempo                   # sync-wave 10 — braucht Garage-Bucket
   - alloy                   # sync-wave 20 — braucht Loki/Mimir/Tempo-Endpoints
   - grafana                 # sync-wave 20 — Datasources zeigen auf Loki/Mimir/Tempo
+  - hubble                  # sync-wave 0  — Cilium network-flow visibility (relay/ui); independent of LGTM, needs the Cilium-agent Hubble server

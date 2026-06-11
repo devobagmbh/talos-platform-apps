@@ -125,6 +125,14 @@ capabilities:
       - {name: kube-prometheus-stack, status: active, swap_class: drop-in}  # Alertmanager
       - {name: grafana-oncall, status: considered, swap_class: drop-in}
 
+  # — Observability: Network ——————————————————————————————————
+  - id: network-observability
+    name: Network-Flow-Visibility (L3/L4/L7)
+    domain: observability
+    implementations:
+      - {name: hubble, status: active, swap_class: drop-in}  # Cilium flow aggregation (relay) + UI
+      - {name: retina, status: considered, swap_class: drop-in}
+
   # — Secrets / PKI ———————————————————————————————————————————
   - id: secret-sync
     name: External-Secret-Sync in den Cluster
