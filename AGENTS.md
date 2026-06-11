@@ -138,12 +138,18 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 
   ```yaml
   requires:
-    talos-platform-base: ">=v0.4.0 <v1.0.0"
-    lifecycle/crossplane: ">=v0.1.0"   # andere Komponente desselben Repos
+    # NO talos-platform-base line. apps does NOT depend on the substrate
+    # (ADR-0009, #71): base & apps are co-equal inputs the consumer integrates.
+    # Declare ONLY catalog-internal component deps + capability requirements;
+    # the consumer maps capabilities to concrete base/apps versions.
+    lifecycle/crossplane: ">=v0.1.0"   # another component in THIS repo
+    cnpg-postgres: "*"                 # a capability (id from catalog/capability-index.yaml)
   provides:
     - name: <component>
       apis:
         - <chart-name>@<chart-version>
+      capabilities:
+        - id: <capability-id>          # if this component implements a capability
   ```
 
 - **Sub-Layer-`compatibility.yaml`** ist ein Aggregate, das die Komponenten listet:

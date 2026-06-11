@@ -1,5 +1,4 @@
 requires:
-  talos-platform-base: ">=v0.4.0 <v1.0.0"
   # Capability deps (#84): Harbor no longer embeds DB/Redis. Postgres comes from
   # the cnpg-postgres capability (databases/cnpg), Redis from redis-managed
   # (databases/valkey-operator). The concrete CNPG `Cluster` + `Valkey` CRs are
