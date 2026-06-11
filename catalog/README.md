@@ -31,13 +31,15 @@ derselben Capability, kein Consumer-Rewrite.
 ## capability-first `compatibility.yaml` (erweitert #57)
 
 Das Schema aus #57 bleibt erhalten; capability-first ergänzt es **additiv** —
-`requires:` (Versions-Kompatibilität) bleibt unverändert, `provides[]` bekommt
-eine `capabilities`-Liste:
+`requires:` enthält nur noch **katalog-interne** Komponenten-Deps + Capability-IDs
+(KEINE `talos-platform-base`-Zeile, #71/ADR-0009: apps hängt nicht vom Substrat ab),
+`provides[]` bekommt eine `capabilities`-Liste:
 
 ```yaml
 # sub-layers/<sub-layer>/components/<component>/compatibility.yaml
-requires:
-  talos-platform-base: ">=v0.4.0 <v1.0.0"   # unverändert (#57): Versions-Range
+requires: {}                                 # KEINE talos-platform-base-Zeile (#71, ADR-0009):
+                                             # apps hängt nicht vom Substrat ab. Hier stehen nur
+                                             # katalog-interne Komponenten-Deps + Capability-IDs.
 provides:
   - name: kube-prometheus-stack             # Tool/Chart-Name (unverändert, #57)
     capabilities:                            # NEU: welche Capabilities dieses Tool implementiert
