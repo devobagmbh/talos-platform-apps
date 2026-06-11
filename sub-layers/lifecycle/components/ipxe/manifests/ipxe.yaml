@@ -152,11 +152,11 @@ kind: Service
 metadata:
   name: ipxe
   namespace: ipxe
-  annotations:
-    # Cilium LB-IPAM assigns an IP from the 'seeder' pool (the
-    # CiliumLoadBalancerIPPool lives in the consumer repo — cluster-specific IP layout).
-    io.cilium/lb-ipam-pool: seeder
   labels:
+    # Cilium LB-IPAM assigns an IP from the 'seeder' pool. Pool selection is a
+    # LABEL match — the CiliumLoadBalancerIPPool.serviceSelector selects on Service
+    # labels, NOT annotations. The pool lives in the consumer repo (cluster IP layout).
+    io.cilium/lb-ipam-pool: seeder
     app.kubernetes.io/name: ipxe
     platform.devoba.de/component: ipxe
 spec:
