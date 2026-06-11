@@ -12,6 +12,7 @@ Siehe [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform
 
 | Komponente | sync-wave | Quelle | OCI |
 |---|---|---|---|
+| [`cert-manager`](components/cert-manager/) | 0 | Helm `cert-manager` @ jetstack v1.20.2 — TLS-Issuance-Controller + CRDs | `oci://.../secrets/cert-manager:vX.Y.Z` |
 | [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` | `oci://.../secrets/external-secrets:vX.Y.Z` |
 | [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate-Manifeste | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
 | [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA-`ClusterIssuer`, CA-Key via ESO aus Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |

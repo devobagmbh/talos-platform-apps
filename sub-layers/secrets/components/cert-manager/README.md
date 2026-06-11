@@ -38,6 +38,28 @@ adds, in its Argo overlay:
 - any PNI labels (`platform.io/provide.*`, `consume.*`, `network-profile`,
   the `vault-ca-distribution` wiring) — these are consumer-composition concerns.
 
+## Operational notes
+
+### Consumer RBAC — leader-election lease
+
+`global.leaderElection.namespace: kube-system` means the controller's
+leader-election `Lease` lives in `kube-system`, not in the `cert-manager`
+namespace. A consumer cluster running cert-manager under **namespace-scoped**
+RBAC must therefore grant the controller `get`/`create`/`update`/`watch` on
+`lease` objects in `kube-system` — or override `global.leaderElection.namespace`
+to `cert-manager` in its overlay so the lease stays inside the component's own
+namespace.
+
+### Disaster recovery
+
+cert-manager keeps **no persistent state**: it is controller-only — no
+PersistentVolume, no StatefulSet. The durable state is the consumer's
+`Certificate` / `ClusterIssuer` (and the issued Secret) objects, which are
+etcd-backed and recovered through a normal etcd restore. After an etcd restore
+to an *earlier* snapshot, orphaned in-flight `CertificateRequest` / `Order`
+objects may need manual deletion; cert-manager re-issues them on the next
+reconciliation.
+
 ## Consumer obligations (out of scope here)
 
 `ClusterIssuer`, `Issuer`, and `Certificate` CRs are the consumer's TLS policy —
