@@ -11,8 +11,10 @@ running `/build-catalog-component`. Grounded in the live repo — verify against
 For `sub-layers/<sub-layer>/components/<component>/`, the builder writes exactly:
 
 - `README.md` — what ships, consumer obligations, sync-wave, OCI path
-  (`ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>:<component>-vX.Y.Z`),
-  related ADRs. English (platform policy 2026-06-03).
+  (`ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>`, published tag
+  `X.Y.Z` — `task push` strips the leading `v` (`chart_version="${tag#v}"`), so the
+  OCI *registry* tag is the bare SemVer; the *git* tag is the distinct
+  `<sub-layer>/<component>-vX.Y.Z`), related ADRs. English (platform policy 2026-06-03).
 - `compatibility.yaml` — `requires:` (version ranges of other catalog components,
   `<sub-layer>/<component>: ">=vX.Y.Z"`) and `provides:` (`- name:`, `apis:`
   `[<chart>@<version>]`, `capabilities:` `[{id, swap_class}]`).

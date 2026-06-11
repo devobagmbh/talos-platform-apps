@@ -51,6 +51,21 @@ result block or successfully retrieved via WebFetch. Never cite a URL
 reconstructed from memory, even when the domain looks canonical
 (`arxiv.org`, vendor docs); your memory of a URL is not evidence it exists.
 
+## Coverage, absence, and universality claims
+
+Before reporting that something is **missing/absent** ("no ADR exists for X",
+"the repo has no Y") or that a convention holds **universally** ("every component
+does Z", "all N files follow pattern P"), verify it exhaustively against the
+actual tree — a `grep`/`find`/`git grep` across the full corpus, not an inference
+from the handful of files you happened to read. A partial read is never evidence
+of absence or universality. When you cannot search exhaustively, downgrade the
+claim ("not found in the files I checked", confidence `low`) rather than asserting
+absence or "every". For an absence claim about a repo **not in your working tree**
+(talos-platform-base, talos-platform-docs are separate repos — a `git grep` here
+cannot reach them), say explicitly "not verifiable from this checkout" rather than
+emitting a bare absence claim, even at low confidence — a downstream reader may act
+on it as authoritative.
+
 ## Where you search (in order)
 
 1. **This repo** — `sub-layers/<name>/README.md`, `AGENTS.md`, existing
