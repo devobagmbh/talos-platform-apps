@@ -16,7 +16,7 @@ body:
         - databases
         - dns
         - lifecycle
-        - monitoring
+        - observability
         - registry
         - secrets
         - storage-objects
@@ -42,7 +42,7 @@ body:
     id: tag
     attributes:
       label: Betroffenes OCI-Tag (falls relevant)
-      placeholder: "monitoring-v0.3.1"
+      placeholder: "observability/loki-v0.3.1"
     validations:
       required: false
 

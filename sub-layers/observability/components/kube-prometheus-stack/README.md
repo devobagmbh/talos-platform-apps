@@ -1,4 +1,4 @@
-# Komponente `monitoring/kube-prometheus-stack`
+# Komponente `observability/kube-prometheus-stack`
 
 Helm `prometheus-community/kube-prometheus-stack` mit **Prometheus disabled** (Mimir ersetzt es). Liefert ausschließlich Operator + CRDs (`ServiceMonitor`, `PodMonitor`, `PrometheusRule`, `AlertmanagerConfig`) und den Alertmanager.
 
@@ -11,7 +11,7 @@ Helm `prometheus-community/kube-prometheus-stack` mit **Prometheus disabled** (M
 ## OCI
 
 ```
-oci://ghcr.io/devobagmbh/talos-platform-apps/monitoring/kube-prometheus-stack:vX.Y.Z
+oci://ghcr.io/devobagmbh/talos-platform-apps/observability/kube-prometheus-stack:vX.Y.Z
 ```
 
 ## Konsumiert von

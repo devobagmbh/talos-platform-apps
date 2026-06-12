@@ -66,7 +66,7 @@ These patterns are visible in the existing code and codified in `AGENTS.md`:
 ## Domain knowledge you need
 
 - **Sub-layers are brackets**: `automation`, `databases`, `lifecycle`,
-  `observability` (the directory is currently named `monitoring`), `registry`,
+  `observability`, `registry`,
   `secrets`, `storage-objects`, plus the capability-driven `identity`,
   `network`, `compute`, `storage-block`, `security`. Each holds 1-N
   independently versioned components. See `sub-layers/<name>/README.md` for the
