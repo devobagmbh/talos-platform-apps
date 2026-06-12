@@ -1,6 +1,6 @@
-# Komponente `monitoring/tempo`
+# Komponente `observability/mimir`
 
-Helm `grafana/tempo-distributed` — Trace-Storage, Garage-S3-Backend (`tempo-blocks`-Bucket).
+Helm `grafana/mimir-distributed` — Metric-Storage, Garage-S3-Backend (`mimir-blocks`-Bucket). Ersetzt Cluster-lokales Prometheus.
 
 **Skelett** — Implementation in Issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
 
@@ -11,7 +11,7 @@ Helm `grafana/tempo-distributed` — Trace-Storage, Garage-S3-Backend (`tempo-bl
 ## OCI
 
 ```
-oci://ghcr.io/devobagmbh/talos-platform-apps/monitoring/tempo:vX.Y.Z
+oci://ghcr.io/devobagmbh/talos-platform-apps/observability/mimir:vX.Y.Z
 ```
 
 ## Verwandte ADRs

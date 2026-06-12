@@ -39,7 +39,7 @@ jobs:
                 "databases": "area:database",
                 "dns": "area:dns",
                 "lifecycle": "area:lifecycle",
-                "monitoring": "area:monitoring",
+                "observability": "area:observability",
                 "registry": "area:registry",
                 "secrets": "area:secrets",
                 "storage-objects": "area:storage",

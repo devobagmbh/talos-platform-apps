@@ -2,7 +2,7 @@
 
 Closes #<!-- Issue-Nummer -->
 
-**Betroffener Sub-Layer:** <!-- automation/databases/dns/lifecycle/monitoring/registry/secrets/storage-objects oder „cross-cutting" -->
+**Betroffener Sub-Layer:** <!-- automation/databases/dns/lifecycle/observability/registry/secrets/storage-objects oder „cross-cutting" -->
 
 <!-- Kurzbeschreibung — was ändert sich und warum? -->
 
@@ -24,7 +24,7 @@ Closes #<!-- Issue-Nummer -->
 
 ## Commit-Style
 
-- [ ] Conventional Commits mit Sub-Layer-Scope (`feat(monitoring): …`, `fix(dns): …`, `chore(automation): …`)
+- [ ] Conventional Commits mit Sub-Layer-Scope (`feat(observability): …`, `fix(dns): …`, `chore(automation): …`)
 - [ ] Bei Breaking Changes: `BREAKING CHANGE:`-Footer im Commit + Hinweis im PR-Body
 
 ## Hinweise

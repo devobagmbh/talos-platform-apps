@@ -5,7 +5,7 @@
 /sub-layers/automation/               @robertschneiderdevoba
 /sub-layers/databases/                @robertschneiderdevoba
 /sub-layers/lifecycle/                @robertschneiderdevoba
-/sub-layers/monitoring/               @robertschneiderdevoba
+/sub-layers/observability/            @robertschneiderdevoba
 /sub-layers/registry/                 @robertschneiderdevoba
 /sub-layers/secrets/                  @robertschneiderdevoba
 /sub-layers/storage-objects/          @robertschneiderdevoba

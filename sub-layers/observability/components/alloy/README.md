@@ -1,4 +1,4 @@
-# Komponente `monitoring/alloy`
+# Komponente `observability/alloy`
 
 Helm `grafana/alloy` — DaemonSet als unified Telemetry-Collector (ersetzt Promtail). Sources: kubernetes-pods, journald, otelhttp. Sinks: Loki (Logs), Mimir (Metrics), Tempo (Traces).
 
@@ -11,7 +11,7 @@ Helm `grafana/alloy` — DaemonSet als unified Telemetry-Collector (ersetzt Prom
 ## OCI
 
 ```
-oci://ghcr.io/devobagmbh/talos-platform-apps/monitoring/alloy:vX.Y.Z
+oci://ghcr.io/devobagmbh/talos-platform-apps/observability/alloy:vX.Y.Z
 ```
 
 ## Verwandte ADRs

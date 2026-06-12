@@ -65,10 +65,10 @@ policies/
 task scan
 
 # Nur ein Sub-Layer
-task scan -- monitoring
+task scan -- observability
 
 # Direkt mit conftest
-conftest test sub-layers/monitoring/rendered/ --policy policies/
+conftest test sub-layers/observability/rendered/ --policy policies/
 
 # Policy-Selbsttests (testdata/ gegen erwartete Outcomes)
 conftest verify --policy policies/

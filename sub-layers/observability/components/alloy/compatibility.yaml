@@ -1,7 +1,7 @@
 requires:
-  monitoring/loki: ">=v0.1.0" # Log-Sink
-  monitoring/mimir: ">=v0.1.0" # Metric-Sink
-  monitoring/tempo: ">=v0.1.0" # Trace-Sink
+  observability/loki: ">=v0.1.0" # Log-Sink
+  observability/mimir: ">=v0.1.0" # Metric-Sink
+  observability/tempo: ">=v0.1.0" # Trace-Sink
 provides:
   - name: alloy
     apis: [] # wird mit Issue #17 befüllt

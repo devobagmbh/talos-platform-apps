@@ -1,4 +1,4 @@
-# Komponente `monitoring/grafana`
+# Komponente `observability/grafana`
 
 Helm `grafana/grafana` — Dashboards + Alerts-UI. Datasources auf Loki/Mimir/Tempo, OIDC via Dex.
 
@@ -11,7 +11,7 @@ Helm `grafana/grafana` — Dashboards + Alerts-UI. Datasources auf Loki/Mimir/Te
 ## OCI
 
 ```
-oci://ghcr.io/devobagmbh/talos-platform-apps/monitoring/grafana:vX.Y.Z
+oci://ghcr.io/devobagmbh/talos-platform-apps/observability/grafana:vX.Y.Z
 ```
 
 ## Konsumiert von
