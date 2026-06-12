@@ -64,9 +64,17 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    If the plan entry carries `capability: null` (a tracked pre-build action),
    confirm the index entry now exists before building; if it does not, stop and
    surface — the plan's pre-build action was not completed.
-5. Confirm every `external_dependencies` / `requires:` target already exists in
-   the tree. If a dependency is missing, stop and surface it — build the
-   dependency first (sequencing per CONVENTIONS.md / the plan's `build_order`).
+5. Confirm every `external_dependencies` / `requires:` target already exists **on
+   `origin/main`** — the ref the worktree (step 6) is built from, so the check
+   matches the tree the build will actually see. (A bare "exists in the tree" probe
+   reads the *current checkout*, which can pass on stale or un-pushed local content
+   the fresh `origin/main` worktree will not have — an un-merged dependency living
+   only on its own `catalog-build/<slug>` branch is invisible on `origin/main` and
+   in the worktree alike; that is the merge-gate.) Run `git fetch origin` first,
+   then probe each dependency's component directory on `origin/main`
+   (`git ls-tree -r origin/main --name-only | grep -q '^sub-layers/<sl>/components/<c>/'`).
+   If a dependency is missing, stop and surface it — build the dependency first
+   (sequencing per CONVENTIONS.md / the plan's `build_order`).
 6. `WT="$(task worktree:create -- <sub-layer>/<component> | tail -1)"` then
    `cd "$WT"`. This creates the isolated worktree
    (`.claude/worktrees/<slug>`, slug = `<sub-layer>-<component>`) on branch
