@@ -64,9 +64,45 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    If the plan entry carries `capability: null` (a tracked pre-build action),
    confirm the index entry now exists before building; if it does not, stop and
    surface — the plan's pre-build action was not completed.
-5. Confirm every `external_dependencies` / `requires:` target already exists in
-   the tree. If a dependency is missing, stop and surface it — build the
-   dependency first (sequencing per CONVENTIONS.md / the plan's `build_order`).
+5. Confirm every **component-form** dependency target already exists **on
+   `origin/main`** — the ref the worktree (step 6) is built from, so the check
+   matches the tree the build will actually see. (A bare "exists in the tree" probe
+   reads the *current checkout*, which can pass on stale or un-pushed local content
+   the fresh `origin/main` worktree will not have — an un-merged dependency living
+   only on its own `catalog-build/<slug>` branch is invisible on `origin/main` and
+   in the worktree alike; that is the merge-gate.) Classify each
+   `external_dependencies` / `requires:` target before probing:
+   - **Component-form** — a value matching `^[a-z0-9-]+/[a-z0-9-]+$` (every
+     `external_dependencies` entry, which the schema already constrains to this
+     shape; a `requires:` key of `<sl>/<c>` form). Directory-probe it (below).
+   - **Capability-form** — a bare id with no `/` (e.g. `cnpg-postgres`,
+     `redis-managed`). Not directory-checked (see below).
+   - **Anything else** — a `requires:` key with 2+ slashes, a regex metacharacter,
+     a quote, or whitespace. Note `compatibility.yaml` `requires:` keys are **not**
+     schema-validated (only `external_dependencies` is), so this validation is the
+     orchestrator's job, not the schema's: treat such a key as malformed — surface
+     it and stop; never interpolate an unvalidated value into the probe pattern.
+   Probe from the **main clone root**, not a worktree; if the cwd is not a valid
+   catalog checkout (e.g. left inside a removed worktree by a prior iteration),
+   surface and stop rather than probing the wrong object DB. Run `git fetch origin`
+   first, then for each component-form target probe its directory on `origin/main`:
+   `git ls-tree -r origin/main --name-only | grep -q '^sub-layers/<sl>/components/<c>/'`
+   (the trailing slash is load-bearing — it rejects a prefix sibling such as
+   `crossplane` vs `crossplane-providers`). If a component dependency is missing,
+   stop and surface it — build it first (sequencing per CONVENTIONS.md / the plan's
+   `build_order`).
+   **Capability-form keys are deliberately not gated here.** A capability id names a
+   contract, not a tree path: the requiring component renders against that contract
+   independently, and the capability is satisfied at consumer-integration time — the
+   consumer deploys the provider component (e.g. `databases/cnpg` for
+   `cnpg-postgres`) plus the concrete CR, which is consumer-owned per the requiring
+   component's own `compatibility.yaml` notes. The provider component has its own
+   independent build and is **not** a render-time input to this one, so there is no
+   build-time tree dependency to probe (probing the bare id would false-stall — it
+   has no `<sl>/<c>` split). (`catalog/capability-index.yaml` catalogues the id —
+   probe it as an optional typo sanity-check on the required id; it is not a
+   merge-gate. This is distinct from step 4, which reads the index for the
+   component's *own provided* capability, not its required ones.)
 6. `WT="$(task worktree:create -- <sub-layer>/<component> | tail -1)"` then
    `cd "$WT"`. This creates the isolated worktree
    (`.claude/worktrees/<slug>`, slug = `<sub-layer>-<component>`) on branch
