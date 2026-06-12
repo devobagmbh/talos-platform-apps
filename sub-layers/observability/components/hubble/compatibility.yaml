@@ -1,0 +1,14 @@
+# Hubble observability workloads (relay + UI + cert rotation), isolated from the
+# Cilium chart. Hubble is NOT in the Cilium seed (base disables it for a
+# deterministic inlineManifest render — talos-platform-base#121/#122); it is
+# delivered Day-2 from this catalog instead.
+requires: {} # No catalog-component or capability deps. The Cilium-agent Hubble
+             # server (enable-hubble=true on :4244) is a SUBSTRATE precondition, not
+             # a catalog dependency — it is documented in the README, not declared
+             # here. `requires:` carries only component-refs (<sub-layer>/<component>)
+             # and capability-ids; a substrate setting is neither.
+provides:
+  - name: hubble
+    apis: [] # populated with the capability-registry wiring issue
+    capabilities:
+      - {id: network-observability, swap_class: drop-in} # flow visibility (relay) + UI
