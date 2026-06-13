@@ -135,6 +135,11 @@ Nicht ohne explizite Maintainer-Freigabe relaxen.
 - **Pro Komponente**: `README.md` (Pflicht: Inhalt + OCI-Pfad + sync-wave + ADR-Verweise), `compatibility.yaml` (Pflicht: requires/provides), `customization.yaml` (Pflicht: ADR-0024 v2 freeze-line contract, validiert gegen `schemas/customization.schema.json`), `helm/` oder `manifests/` (Inhalt).
 - **Konsumenten-Trennung**: dieses Repo enthält Defaults und shared-Values. Cluster-spezifisches (Replica-Counts, VIPs, OIDC-Issuer-URLs) gehört in die Konsumenten-Repos.
 - **Argo-Application-Definitionen leben im Konsumenten-Cluster-Repo**, nicht hier. Pro Komponente eine `Application`-CR mit `argocd.argoproj.io/sync-wave`-Annotation. Für lokale End-to-End-Tests gibt es `local/argo-apps/<sub-layer>/<component>.yaml`-Templates im apps-Repo.
+- **CRD management — strict B** (talos-platform-docs ADR-0028). Every component that ships chart-provided CustomResourceDefinitions publishes a **separate** `<sub-layer>/<component>-crds` OCI artifact next to its workload artifact; the consumer wires **two** Argo `Application`s — the `-crds` app at `sync-wave -1` with `Prune=false`, then the workload. No inline CRDs in the workload artifact, no per-component inline-vs-separate choice.
+  - A `crd-bearing: true` marker (in `customization.yaml` / `compatibility.yaml`) drives the split and is the build gate's oracle: `^kind: CustomResourceDefinition` count **> 0** in the `-crds` artifact **and** **== 0** in the workload artifact.
+  - The build splits deterministically: `yq 'select(.kind == "CustomResourceDefinition")'` over the combined render output (covers both helm- and raw-manifest-sourced CRDs).
+  - CR-cascade protection is the **Argo layer** — `argocd.argoproj.io/sync-options: Prune=false` on the `-crds` app (authoritative). `helm.sh/resource-policy: keep` is the Helm layer and is **not** honored by Argo for its own prune decisions. `ServerSideApply=true` clears the 262 KB annotation limit on large CRDs.
+  - **Out of scope:** operator-installed CRDs (Crossplane providers / XRDs) — handled by the existing sync-wave readiness model, not by this convention.
 - **`compatibility.yaml` pro Komponente** deklariert die Komponenten-Abhängigkeiten:
 
   ```yaml
