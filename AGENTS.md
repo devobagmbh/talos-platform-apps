@@ -7,7 +7,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 ## Repository Purpose
 
-`talos-platform-apps` ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform. **Alles, was nicht Substrat ist** (nicht in `talos-platform-base`), lebt hier und wird als signierte OCI-Artefakte publiziert. Consumer-Cluster-Repos (Seeder, Office-Lab) **bedienen sich aus dem Katalog** — sie referenzieren per Tag genau die Komponenten, die sie brauchen. Arbeitsteilung: **Base = Substrat (Talos + Cilium + ArgoCD + cert-approver), Apps = Katalog (alles Übrige), Consumer = Komposition.**
+`talos-platform-apps` ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform. **Alles, was nicht Substrat ist** (nicht in `talos-platform-base`), lebt hier und wird als signierte OCI-Artefakte publiziert. Consumer-Cluster-Repos **bedienen sich aus dem Katalog** — sie referenzieren per Tag genau die Komponenten, die sie brauchen. Arbeitsteilung: **Base = Substrat (Talos + Cilium + ArgoCD + cert-approver), Apps = Katalog (alles Übrige), Consumer = Komposition.**
 
 **Granularität**: Die OCI-Distribution-Unit ist die **Komponente**, der Sub-Layer ist eine organisatorische Klammer (Verzeichnis-Gruppierung). Siehe ADR-0009 § OCI-Granularität. Sub-Layer als Klammer (Stand 2026-06-03, Taxonomie-Entscheid #16): `automation`, `databases`, `lifecycle`, `observability` (vormals `monitoring`), `registry`, `secrets`, `storage-objects` plus die capability-getriebenen `identity`, `network`, `compute`, `storage-block`, `security` — innerhalb jedes Sub-Layers leben 1-N Komponenten als eigenständig versionierte OCI-Artefakte. `kube-prometheus-stack` ist ein *Stack* (Komposition aus Einzel-Apps), keine eigene Komponente.
 
@@ -15,7 +15,7 @@ Maschinenlesbare Konventionen für AI-Agenten und menschliche Maintainer.
 
 - Cluster-Identität (Node-IPs, Hostnamen, TLS-Cert-CNs)
 - Echte Secrets (Vault-Tokens, age-Keys, Passwords)
-- Cluster-spezifische Helm-Overrides (gehören in `talos-seeder-cluster` und `talos-office-lab-cluster`)
+- Cluster-spezifische Helm-Overrides (gehören in die Konsumenten-Cluster-Repos)
 - Runnable Cluster oder kubeconfigs
 
 ## Project Structure
@@ -86,6 +86,7 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 - **YAML**: 2-Space-Indent, keine Tabs, Block-Style bevorzugen
 - **Verzeichnisname == Identität**: `sub-layers/lifecycle/components/crossplane/` produziert OCI-Pfad `<registry>/lifecycle/crossplane` mit Git-Tag-Pattern `lifecycle/crossplane-vX.Y.Z`
 - **README pro Sub-Layer UND pro Komponente**: Sub-Layer-README listet die Komponenten + sync-wave-Reihenfolge; Komponenten-README beschreibt Inhalt + OCI-Pfad + sync-wave + ADR-Verweise.
+- **Dokumentations-Standard**: Wie Docs, READMEs und Manifest-Kommentare geschrieben werden (MUST/MAY/MUST-NOT/NEED-NOT pro Doc-Klasse; nie einen konkreten Consumer benennen; Manifest-Kommentar-Policy) regelt [`DOCUMENTATION.md`](DOCUMENTATION.md) — die SOT fürs Doc-Authoring. Jede Doc-Änderung wird semantisch dagegen reviewt.
 - **Language**: **English everywhere** — code, comments, READMEs, and docs. Platform policy (2026-06-03): only `talos-platform-docs` stays German; every other repo (`talos-platform-base`, `talos-platform-apps`, the consumer cluster repos) is English throughout, code AND docs. Helm values/code follow upstream (English). Existing German component READMEs are migrated incrementally — new/edited files are English.
 - **Versionierung pro Komponente**: SemVer (`<sub-layer>/<component>-vMAJ.MIN.PATCH`). Jede Komponente hat einen unabhängigen Lifecycle.
 
@@ -97,7 +98,7 @@ Dieses Repo hat keinen Live-Cluster. Validierung ist Render- und Policy-fokussie
 - `task render -- <sub-layer>` produziert valide YAML gegen den jeweiligen Default-Werten-Stack
 - Schema-Konformität wird via `kubeconform` geprüft
 - Cosign-/Provenance-Signing wird in der GHA-Pipeline keyless verifiziert (`cosign verify`)
-- Echte Cluster-Verifikation gehört in die Konsumenten-Repos (`talos-seeder-cluster`, `talos-office-lab-cluster`)
+- Echte Cluster-Verifikation gehört in die Konsumenten-Repos
 
 ## Commits & Pull Requests
 
