@@ -48,6 +48,9 @@ snyk-results.sarif
 # Runtime state (subagent briefs/summaries, progress.json, transient logs)
 .work/
 
+# Scratch / planning notes (not part of the published catalog, not linted)
+Plans/
+
 # Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
 !.claude/reviews/.gitkeep
 .mkcert-registry/

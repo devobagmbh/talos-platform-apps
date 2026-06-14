@@ -170,7 +170,11 @@ tasks:
     desc: YAML- und Markdown-Lint
     cmds:
       - yamllint -c .yamllint.yaml sub-layers/ Taskfile.yml .github/
-      - markdownlint --config .markdownlint.yaml '**/*.md' --ignore .devbox --ignore .direnv
+      # markdown: lint tracked files only (`git ls-files`). The old `**/*.md` glob
+      # scanned every .md on disk — 266 files, 168 of them inside the gitignored
+      # `.claude/worktrees/` build copies plus untracked scratch (Plans/). Tracked
+      # files are exactly the published docs and stay DRY with .gitignore.
+      - markdownlint --config .markdownlint.yaml $(git ls-files '*.md')
 
   lint:rendered:
     desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
