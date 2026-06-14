@@ -4,6 +4,7 @@ paths:
   - ".claude/agents/**"
   - ".claude/hooks/**"
   - ".claude/workflows/**"
+  - "**/DOCUMENTATION.md"
 ---
 
 # Review & Convergence Discipline
@@ -60,9 +61,10 @@ exact cap (the plan loop caps at 3 review rounds / ≤2 revisions; the build loo
 at 2 rework iterations) — and after the cap, residual findings surface to the
 operator.
 
-## Harness-evolution review (edits to `.claude/**`)
+## Harness-evolution review (edits to `.claude/**` + `DOCUMENTATION.md`)
 
-Edits to agents, skills, hooks, workflows, or rules are harness-evolution: review
+Edits to agents, skills, hooks, workflows, rules, or the root documentation-authoring
+standard (`DOCUMENTATION.md`) are harness-evolution: review
 them with a **2-round minimum** — R1 parallel personas (a constructive reviewer +
 an adversarial stress pass), then R2 on the reworked artifact. R1's
 self-attribution misses regressions that R2 catches. On a mixed diff (a harness
