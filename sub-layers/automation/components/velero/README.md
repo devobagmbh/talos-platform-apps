@@ -1,12 +1,12 @@
-# Komponente `automation/velero`
+# Component `automation/velero`
 
-Velero (Helm `vmware-tanzu/velero`) mit Restic — Backup von K8s-Ressourcen und PVCs nach DS720+-Garage (S3).
+Velero (Helm `vmware-tanzu/velero`) with Restic — backup of K8s resources and PVCs to the DS720+ Garage (S3).
 
-**Skelett** — Implementation in Issue [#16](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+automation).
+**Skeleton** — implementation in issue [#16](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+automation).
 
-## Sync-Wave
+## Sync-wave
 
-`0` — kein Inter-Komponenten-Dependency.
+`0` — no inter-component dependency.
 
 ## OCI
 
@@ -14,11 +14,11 @@ Velero (Helm `vmware-tanzu/velero`) mit Restic — Backup von K8s-Ressourcen und
 oci://ghcr.io/devobagmbh/talos-platform-apps/automation/velero:vX.Y.Z
 ```
 
-## Konsumiert von
+## Consumed by
 
-- Ein Bootstrap-/Control-Plane-Konsument — Backups von tf-state, ArgoCD-Config, Harbor
-- Ein Workload-Konsument — Vollbackup
+- A bootstrap / control-plane consumer — backups of tf-state, ArgoCD config, Harbor
+- A workload consumer — full backup
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0008 — Backup-Strategy (Tier-2 via DS720+/Garage)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
+- [ADR-0008 — Backup-Strategy (tier-2 via DS720+/Garage)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)

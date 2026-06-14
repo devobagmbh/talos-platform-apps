@@ -1,24 +1,24 @@
-# Sub-Layer `automation`
+# Sub-layer `automation`
 
-Velero (Cluster-Backup). Dependency-Update-Automation läuft über **GitHub Dependabot** (nativ, `.github/dependabot.yml`) — kein self-hosted Renovate im Katalog (Entscheidung 2026-06-10).
+Velero (cluster backup). Dependency-update automation runs through **GitHub Dependabot** (native, `.github/dependabot.yml`) — no self-hosted Renovate in the catalog (decision 2026-06-10).
 
-OCI-Distribution pro Komponente (ADR-0009).
+OCI distribution per component (ADR-0009).
 
-## Komponenten
+## Components
 
-| Komponente | sync-wave | Quelle | OCI |
+| Component | sync-wave | Source | OCI |
 |---|---|---|---|
-| [`velero`](components/velero/) | 0 | Helm `vmware-tanzu/velero` mit Restic | `oci://.../automation/velero:vX.Y.Z` |
+| [`velero`](components/velero/) | 0 | Helm `vmware-tanzu/velero` with Restic | `oci://.../automation/velero:vX.Y.Z` |
 
-## Konsumiert von
+## Consumed by
 
-- Jeder Konsumenten-Cluster, der Backups braucht — `velero`
+- Any consumer cluster that needs backups — `velero`
 
-## Backlog-Issue
+## Backlog issue
 
-[#16 — Sub-Layer `automation/`: Renovate + Velero](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+automation)
+[#16 — Sub-layer `automation/`: Renovate + Velero](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+automation)
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0008 — Backup-Strategy (Tier-2 via DS720+/Garage)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
+- [ADR-0008 — Backup-Strategy (tier-2 via DS720+/Garage)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

@@ -1,40 +1,40 @@
-# Sub-Layer `secrets`
+# Sub-layer `secrets`
 
-External-Secrets-Operator (ESO) als Sync-Mechanismus zwischen Vault (Layer 3, cluster-spezifisch) und Kubernetes-Workloads.
+External Secrets Operator (ESO) as the sync mechanism between Vault (layer 3, cluster-specific) and Kubernetes workloads.
 
-## Layer-Zuordnung
+## Layer assignment
 
-Dieser Sub-Layer ist **Schicht 2 (Modulkatalog)** und enthält ausschließlich den ESO-Operator + ESO-Defaults. **Vault-Cluster-Instance, Policies und KV-Pfade leben in Schicht 3 (`<consumer-repo>`)**, nicht hier. Damit bleibt der Modulkatalog frei von cluster-Identität und Vault-Konsumenten-Spezifika.
+This sub-layer is **layer 2 (module catalog)** and contains only the ESO operator + ESO defaults. **The Vault cluster instance, policies, and KV paths live in layer 3 (`<consumer-repo>`)**, not here. This keeps the module catalog free of cluster identity and Vault-consumer specifics.
 
-Siehe [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md) für die Two-Lane-Begründung (SOPS = Cluster-Maintenance, Vault = Workload-Secrets).
+See [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md) for the two-lane rationale (SOPS = cluster maintenance, Vault = workload secrets).
 
-## Komponenten
+## Components
 
-| Komponente | sync-wave | Quelle | OCI |
+| Component | sync-wave | Source | OCI |
 |---|---|---|---|
-| [`cert-manager`](components/cert-manager/) | 0 | Helm `cert-manager` @ jetstack v1.20.2 — TLS-Issuance-Controller + CRDs | `oci://.../secrets/cert-manager:vX.Y.Z` |
+| [`cert-manager`](components/cert-manager/) | 0 | Helm `cert-manager` @ jetstack v1.20.2 — TLS issuance controller + CRDs | `oci://.../secrets/cert-manager:vX.Y.Z` |
 | [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` | `oci://.../secrets/external-secrets:vX.Y.Z` |
-| [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate-Manifeste | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
-| [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA-`ClusterIssuer`, CA-Key via ESO aus Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |
+| [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate manifests | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
+| [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA `ClusterIssuer`, CA key via ESO from Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |
 
-Wave 0 bringt die CRDs (`ExternalSecret`, `ClusterSecretStore`). Wave 10 die default `ClusterSecretStore`-Resources `vault-local` (in-cluster-Vault-Konsument) und `vault-office-lab-remote` (cross-cluster-Vault-Konsument); konkrete Vault-Endpoints werden in Layer 3 überschrieben. Wave 20 den CA-`ClusterIssuer`, der TLS-Leaf-Certs für `*.office-lab.devoba.de` aus der Devoba-eigenen CA signiert (CA-Root via Jamf in den Client-Trust ausgerollt; Planungsupdate 2026-05-27 — ersetzt den entfallenen `dns`-Sub-Layer mit ACME-DNS01).
+Wave 0 brings the CRDs (`ExternalSecret`, `ClusterSecretStore`). Wave 10 the default `ClusterSecretStore` resources `vault-local` (in-cluster Vault consumer) and `vault-office-lab-remote` (cross-cluster Vault consumer); concrete Vault endpoints are overridden in layer 3. Wave 20 the CA `ClusterIssuer`, which signs TLS leaf certs for `*.office-lab.devoba.de` from the Devoba-owned CA (CA root rolled out into the client trust via Jamf; planning update 2026-05-27 — replaces the dropped `dns` sub-layer with ACME-DNS01).
 
-**Nicht in diesem Sub-Layer**: Vault-Helm-Release, Vault-Policies, Vault-KV-Strukturen, Vault-Auth-Method-Config.
+**Not in this sub-layer**: Vault Helm release, Vault policies, Vault KV structures, Vault auth-method config.
 
-## Konsumiert von
+## Consumed by
 
-- Ein Konsument mit entferntem Vault — `external-secrets` + cross-cluster `ClusterSecretStore: vault-office-lab-remote` (AppRole/JWT-Auth zum entfernten Vault)
-- Ein Konsument mit in-cluster-Vault — `external-secrets` + lokaler `ClusterSecretStore: vault-local` (Kubernetes-Auth)
+- A consumer with a remote Vault — `external-secrets` + cross-cluster `ClusterSecretStore: vault-office-lab-remote` (AppRole/JWT auth to the remote Vault)
+- A consumer with an in-cluster Vault — `external-secrets` + local `ClusterSecretStore: vault-local` (Kubernetes auth)
 
-Der Stage-0-Bootstrap nutzt **kein** ESO — nur SOPS (siehe ADR-0011).
+The stage-0 bootstrap uses **no** ESO — only SOPS (see ADR-0011).
 
-## Backlog-Issues
+## Backlog issues
 
-- [#15a — Sub-Layer `secrets/`: ESO + ClusterSecretStore-Defaults](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+secrets)
-- [#32 — Vault-HA Setup](https://github.com/devobagmbh/talos-platform-docs/issues/36) — gehört in `<consumer-repo>`, nicht hier
+- [#15a — Sub-layer `secrets/`: ESO + ClusterSecretStore defaults](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+secrets)
+- [#32 — Vault HA setup](https://github.com/devobagmbh/talos-platform-docs/issues/36) — belongs in `<consumer-repo>`, not here
 
-## Verwandte ADRs
+## Related ADRs
 
 - [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
-- [ADR-0010 — Identity-Provider (Vault-OIDC-Auth via Dex)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
+- [ADR-0010 — Identity-Provider (Vault OIDC auth via Dex)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

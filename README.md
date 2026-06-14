@@ -17,19 +17,19 @@
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-OCI-Sub-Layer der Devoba Talos-Plattform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation` und `observability`. Vorgerenderte Manifeste mit cosign-Signatur, SLSA-v1-Provenance und CycloneDX-SBOM. Von Consumer-Cluster-Repos konsumiert.
+OCI sub-layers of the Devoba Talos platform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation`, and `observability`. Pre-rendered manifests with cosign signature, SLSA v1 provenance, and CycloneDX SBOM. Consumed by consumer-cluster repos.
 
-## Zweck
+## Purpose
 
-Dieses Repo ist der **zentrale Plattform-Katalog** der Devoba Talos-Plattform: **alles, was nicht Substrat ist** (nicht in `talos-platform-base` gehört), lebt hier als eigenständig versionierte, signierte OCI-Artefakte — Helm-Charts + Werte + ggf. Custom-Manifeste, in CI zu fertigen Manifesten vorgerendert. **Consumer-Cluster-Repos bedienen sich aus dem Katalog**, indem sie genau die OCI-Komponenten referenzieren, die sie brauchen (per Tag / Argo `targetRevision`, nicht per Helm-Render zur Apply-Zeit). Arbeitsteilung: **Base = Substrat, Apps = Katalog, Consumer = Komposition** — was nicht Substrat ist, gehört in den Katalog, nie in die Base.
+This repo is the **central platform catalog** of the Devoba Talos platform: **everything that is not substrate** (does not belong in `talos-platform-base`) lives here as independently versioned, signed OCI artifacts — Helm charts + values + optional custom manifests, pre-rendered in CI into final manifests. **Consumer-cluster repos draw from the catalog** by referencing exactly the OCI components they need (by tag / Argo `targetRevision`, not by Helm render at apply time). Division of labor: **Base = substrate, Apps = catalog, Consumer = composition** — whatever is not substrate belongs in the catalog, never in Base.
 
-Begründung: deterministische, reviewbare Deployment-Artefakte mit kryptografischer Supply-Chain-Verifikation. Cluster-Update = Tag-Bump in der Konsumenten-Konfiguration. Siehe [ADR-0009](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md).
+Rationale: deterministic, reviewable deployment artifacts with cryptographic supply-chain verification. A cluster update is a tag bump in the consumer configuration. See [ADR-0009](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md).
 
-## Sub-Layer- und Komponenten-Übersicht
+## Sub-layer and component overview
 
-OCI-Distribution erfolgt **pro Komponente** (ADR-0009 Revision 2026-05-26). Sub-Layer bleibt als Verzeichnis-Klammer und Tag-Namespace.
+OCI distribution is **per component** (ADR-0009, revision 2026-05-26). The sub-layer remains a directory grouping and tag namespace.
 
-| Sub-Layer | Komponenten | Backlog-Issue |
+| Sub-layer | Components | Backlog issue |
 |---|---|---|
 | [`automation`](sub-layers/automation/) | renovate, velero | #16 |
 | [`databases`](sub-layers/databases/) | cnpg | #15 |
@@ -39,21 +39,21 @@ OCI-Distribution erfolgt **pro Komponente** (ADR-0009 Revision 2026-05-26). Sub-
 | [`secrets`](sub-layers/secrets/) | external-secrets, clustersecretstore-defaults | #15a |
 | [`storage-objects`](sub-layers/storage-objects/) | garage, garage-buckets | #13 |
 
-Pro Sub-Layer existiert ein `README.md` mit Komponenten-Tabelle inkl. sync-wave-Reihenfolge. Pro Komponente ein eigenes `README.md` + `compatibility.yaml` mit `requires`-Block (Komponenten-Dependencies inkl. Cross-Sub-Layer wie `databases/cnpg` für Harbor).
+Each sub-layer has a `README.md` with a component table including sync-wave order. Each component has its own `README.md` + `compatibility.yaml` with a `requires` block (component dependencies, including cross-sub-layer ones such as `databases/cnpg` for Harbor).
 
 ## Local Setup
 
-Die Dev-Umgebung läuft komplett über **Devbox** (Nix-basiert) + **direnv**. Damit ist die Tool-Version pro Repo gepinnt und nach `cd` automatisch im PATH — kein globales `brew install` nötig.
+The dev environment runs entirely on **Devbox** (Nix-based) + **direnv**. Tool versions are pinned per repo and on `PATH` automatically after `cd` — no global `brew install` needed.
 
-### Voraussetzungen
+### Prerequisites
 
-| Tool | Version | Installations-Hinweis |
+| Tool | Version | Installation note |
 |---|---|---|
 | **Devbox** | ≥ 0.16 | `curl -fsSL https://get.jetify.com/devbox \| bash` |
-| **direnv** | ≥ 2.36 | macOS: `brew install direnv`; Linux: Distro-Paket. Hook in deine Shell (siehe [direnv.net/docs/hook.html](https://direnv.net/docs/hook.html)) |
-| **git** | ≥ 2.40 | bereits installiert |
+| **direnv** | ≥ 2.36 | macOS: `brew install direnv`; Linux: distro package. Hook it into your shell (see [direnv.net/docs/hook.html](https://direnv.net/docs/hook.html)) |
+| **git** | ≥ 2.40 | already installed |
 
-### Einrichten
+### Setup
 
 ```bash
 git clone git@github.com:devobagmbh/talos-platform-apps.git
@@ -61,52 +61,52 @@ cd talos-platform-apps
 direnv allow
 ```
 
-`direnv allow` löst das `.envrc` aus, das Devbox aktiviert. Beim ersten Aufruf installiert Devbox alle Tools (`helm`, `kubectl`, `cosign`, `oras`, `syft`, `go-task`, `yq`, `jq`, `sops`, `age`) in einen reproduzierbaren Nix-Store. Folge-`cd`s in das Repo schalten die Umgebung automatisch um.
+`direnv allow` triggers the `.envrc`, which activates Devbox. On first invocation Devbox installs all tools (`helm`, `kubectl`, `cosign`, `oras`, `syft`, `go-task`, `yq`, `jq`, `sops`, `age`) into a reproducible Nix store. Subsequent `cd`s into the repo switch the environment automatically.
 
-### Tools, die Devbox bereitstellt
+### Tools provided by Devbox
 
-Siehe `devbox.json`. Versionen werden bei Bedarf in `devbox.lock` gepinnt — Updates erfolgen kontrolliert per `devbox update`.
+See `devbox.json`. Versions are pinned in `devbox.lock` as needed — updates happen in a controlled manner via `devbox update`.
 
-### Tasks (statt make)
+### Tasks (instead of make)
 
-`go-task` ersetzt make. Aufgaben werden in `Taskfile.yml` deklariert (kommt in einer Folge-Iteration). Beispielhafte Targets:
-
-```bash
-task render -- observability         # rendert sub-layers/observability zu rendered/manifest.yaml
-task sign   -- observability v0.1.0  # cosign sign des publizierten OCI-Tags
-task attest -- observability v0.1.0  # SBOM + SLSA-Provenance als Attestations
-task publish -- observability v0.1.0 # render → push → sign → attest in einem Rutsch
-task ci                           # lokale Reproduktion der GHA-Pipeline
-```
-
-### Lokales Live-Testing (Talos + ArgoCD)
-
-Für End-to-End-Tests einzelner Sub-Layer (Render → OCI-Push → Argo-Sync → Apply) gibt es einen prod-konformen **Talos**-Cluster (docker provisioner) — gleiches Substrat wie die Consumer-Cluster (Talos-Nodes, Cilium-CNI, Gateway-API, kube-proxy aus, KubePrism) — mit einer lokalen OCI-Registry hinter `registry.localhost.direct` (mkcert-TLS):
+`go-task` replaces make. Tasks are declared in `Taskfile.yml` (lands in a follow-up iteration). Example targets:
 
 ```bash
-task local:up                                  # Talos + Cilium + Gateway + ArgoCD + Registry-Bridge
-task local:publish -- lifecycle/crossplane 0.0.0-dev  # Komponente in die lokale Registry pushen
-task local:apply   -- lifecycle 0.0.0-dev      # Argo-Applications des Sub-Layers anlegen
-task local:argo:ui                             # https://argocd.localhost.direct öffnen
-task local:down                                # alles abreißen
+task render -- observability         # renders sub-layers/observability to rendered/manifest.yaml
+task sign   -- observability v0.1.0  # cosign sign of the published OCI tag
+task attest -- observability v0.1.0  # SBOM + SLSA provenance as attestations
+task publish -- observability v0.1.0 # render → push → sign → attest in one go
+task ci                           # local reproduction of the GHA pipeline
 ```
 
-Vollständige Architektur, Endpoints, Komponentendetails und Troubleshooting: [`local/README.md`](local/README.md).
+### Local live testing (Talos + ArgoCD)
+
+For end-to-end tests of individual sub-layers (render → OCI push → Argo sync → apply) there is a prod-conformant **Talos** cluster (docker provisioner) — the same substrate as the consumer clusters (Talos nodes, Cilium CNI, Gateway API, kube-proxy off, KubePrism) — with a local OCI registry behind `registry.localhost.direct` (mkcert TLS):
+
+```bash
+task local:up                                  # Talos + Cilium + Gateway + ArgoCD + registry bridge
+task local:publish -- lifecycle/crossplane 0.0.0-dev  # push the component into the local registry
+task local:apply   -- lifecycle 0.0.0-dev      # create the sub-layer's Argo Applications
+task local:argo:ui                             # open https://argocd.localhost.direct
+task local:down                                # tear everything down
+```
+
+Full architecture, endpoints, component details, and troubleshooting: [`local/README.md`](local/README.md).
 
 ### CI
 
-Die produktive Pipeline läuft auf **GitHub Actions** (Workflows unter `.github/workflows/`). Trigger: PRs (Render + Lint, kein Push) und Tag-Push `<sub-layer>-vX.Y.Z` (Render + OCI-Push + cosign-Sign + SBOM-/Provenance-Attest). cosign-Signing erfolgt keyless über die GHA-OIDC-Identity.
+The production pipeline runs on **GitHub Actions** (workflows under `.github/workflows/`). Triggers: PRs (render + lint, no push) and tag push `<sub-layer>-vX.Y.Z` (render + OCI push + cosign sign + SBOM/provenance attest). cosign signing is keyless via the GHA OIDC identity.
 
-**Drei verbindliche CI-Regeln** für dieses und alle weiteren Plattform-Repos:
+**Three binding CI rules** for this and all other platform repos:
 
-1. **Devbox-Cache aktiv**: Jeder Job nutzt `jetify-com/devbox-install-action` mit `enable-cache: true`. Tool-Versionen kommen ausschließlich aus `devbox.json`/`devbox.lock` — keine separaten `actions/setup-go`/`-helm`/`-kubectl`-Steps. Damit ist die CI-Umgebung byte-identisch zur Workstation und Builds sind nach dem ersten Lauf cache-warm.
-2. **Lokal reproduzierbar**: Jeder einzelne Task im `Taskfile.yml` läuft auf der Workstation 1:1 wie in CI. Vor `git push` wird die volle Pipeline lokal durchgespielt (`task ci`). Kein GHA-spezifischer Code in Tasks — Außenlogik (OIDC, Tag-Erkennung, Matrix) bleibt im Workflow.
-3. **Pipeline = dünner Task-Caller**: Workflow-Steps rufen ausschließlich `task <name>` auf. Keine Inline-`helm template`/`oras push`/`cosign sign`-Kommandos im YAML. Wer Pipeline-Verhalten ändern will, ändert den Task — Workflow-Diffs bleiben minimal und review-arm.
+1. **Devbox cache active**: every job uses `jetify-com/devbox-install-action` with `enable-cache: true`. Tool versions come exclusively from `devbox.json`/`devbox.lock` — no separate `actions/setup-go`/`-helm`/`-kubectl` steps. This makes the CI environment byte-identical to the workstation, and builds are cache-warm after the first run.
+2. **Locally reproducible**: every single task in `Taskfile.yml` runs on the workstation exactly as in CI. Before `git push` the full pipeline is replayed locally (`task ci`). No GHA-specific code in tasks — outer logic (OIDC, tag detection, matrix) stays in the workflow.
+3. **Pipeline = thin task caller**: workflow steps only call `task <name>`. No inline `helm template`/`oras push`/`cosign sign` commands in the YAML. Whoever wants to change pipeline behavior changes the task — workflow diffs stay minimal and easy to review.
 
-## Render-/Sign-/Publish-Workflow
+## Render / sign / publish workflow
 
 ```
-Helm-Chart + Values
+Helm chart + values
         │
         ▼
  helm template
@@ -121,30 +121,30 @@ oras push ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>
  cosign sign --yes
         │
         ▼
- syft → CycloneDX-SBOM → cosign attest
+ syft → CycloneDX SBOM → cosign attest
         │
         ▼
- slsa-github-generator → Provenance → cosign attest
+ slsa-github-generator → provenance → cosign attest
 ```
 
-Pipeline-Implementierung folgt in einer separaten Iteration (Task aus Phase 2 des [day-zero-backlog](https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md)).
+Pipeline implementation follows in a separate iteration (a task from phase 2 of the [day-zero-backlog](https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md)).
 
-## Konventionen
+## Conventions
 
-- **Sub-Layer-Versionierung**: SemVer pro Sub-Layer (`<sub-layer>-vMAJ.MIN.PATCH`). Jeder Sub-Layer hat einen unabhängigen Lifecycle.
-- **OCI-Pfade**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` als Manifest, gleicher Pfad für SBOM/Provenance-Attestations.
-- **Signing**: cosign keyless (OIDC via GitHub-Actions-Workflow-Identity). Verifikation in Konsumenten-Clustern via Kyverno-ClusterPolicy `image-verify-platform-oci` (siehe [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22)).
-- **Werte-Trennung**: cluster-spezifische Helm-Values bleiben in den Consumer-Cluster-Repos. Dieser Layer enthält Defaults und shared values.
-- **Sprache**: Deutsch in `README.md` und Doku. Code/Werte folgen Upstream-Konventionen (englisch).
-- **Tools**: alle dev-relevanten Binaries kommen aus Devbox — direktes `brew install <tool>` ist verboten, um Versions-Drift zu vermeiden.
+- **Sub-layer versioning**: SemVer per sub-layer (`<sub-layer>-vMAJ.MIN.PATCH`). Each sub-layer has an independent lifecycle.
+- **OCI paths**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` as the manifest, same path for SBOM/provenance attestations.
+- **Signing**: cosign keyless (OIDC via the GitHub Actions workflow identity). Verification in consumer clusters via the Kyverno ClusterPolicy `image-verify-platform-oci` (see [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22)).
+- **Value separation**: cluster-specific Helm values stay in the consumer-cluster repos. This layer holds defaults and shared values.
+- **Language**: English throughout — code, comments, READMEs, and docs (platform policy 2026-06-03). Code and Helm values follow upstream conventions (English).
+- **Tools**: all dev-relevant binaries come from Devbox — direct `brew install <tool>` is forbidden to avoid version drift.
 
-## Konsumenten
+## Consumers
 
-Consumer-Cluster-Repos (Layer 3) referenzieren die OCI-Komponenten per Tag / Argo `targetRevision` und komponieren daraus ihre Cluster-Konfiguration. Welches Subset ein Consumer konsumiert, lebt im jeweiligen Consumer-Repo, nicht hier.
+Consumer-cluster repos (layer 3) reference the OCI components by tag / Argo `targetRevision` and compose their cluster configuration from them. Which subset a consumer uses lives in the respective consumer repo, not here.
 
-## Verwandte Doku
+## Related docs
 
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
 - [ADR-0012 — Platform-Registry-Proxy (Harbor)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
-- [ADR-0013 — In-Cluster-Registry (Harbor auf beiden Clustern)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
-- [ADR-0015 — Monitoring-Architektur (LGTM-A)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- [ADR-0013 — In-cluster registry (Harbor on both clusters)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
+- [ADR-0015 — Monitoring architecture (LGTM-A)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)

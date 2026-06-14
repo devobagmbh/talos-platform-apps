@@ -1,33 +1,33 @@
-# Sub-Layer `storage-objects`
+# Sub-layer `storage-objects`
 
-Garage als S3-kompatibler Object-Store für tf-state, iPXE-Images, LGTM-A-Backends, Velero-Source und App-Buckets.
+Garage as an S3-compatible object store for tf-state, iPXE images, LGTM-A backends, Velero source, and app buckets.
 
-OCI-Distribution pro Komponente (ADR-0009).
+OCI distribution per component (ADR-0009).
 
-## Komponenten
+## Components
 
-| Komponente | sync-wave | Quelle | OCI |
+| Component | sync-wave | Source | OCI |
 |---|---|---|---|
-| [`garage`](components/garage/) | 0 | Helm `deuxfleurs/garage` (oder custom) | `oci://.../storage-objects/garage:vX.Y.Z` |
-| [`garage-buckets`](components/garage-buckets/) | 10 | Bucket-CRs + ESO-Access-Key-Sync | `oci://.../storage-objects/garage-buckets:vX.Y.Z` |
+| [`garage`](components/garage/) | 0 | Helm `deuxfleurs/garage` (or custom) | `oci://.../storage-objects/garage:vX.Y.Z` |
+| [`garage-buckets`](components/garage-buckets/) | 10 | Bucket CRs + ESO access-key sync | `oci://.../storage-objects/garage-buckets:vX.Y.Z` |
 
-Wave 0 stellt den S3-Endpoint, Wave 10 die Bucket-Definitionen (Bucket + Access-Key via ESO aus Vault).
+Wave 0 provides the S3 endpoint, wave 10 the bucket definitions (bucket + access key via ESO from Vault).
 
-## Konsumiert von
+## Consumed by
 
-- Ein Single-Node-Konsument — Single-Node-Cluster. Buckets: `tf-state`, `ipxe`, `velero-source-seeder`
-- Ein Multi-Node-Konsument — 3-Node-Cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-office-lab`, App-spezifische Buckets
-- **DS720+** — separates Garage-Cluster (Docker-Container auf NAS, KEIN Mitglied der K8s-Cluster). Tier-2-Backup-Ziel mit Buckets `velero-seeder`, `velero-office-lab`. Backup-Invariante: Ziel ≠ Quelle.
+- A single-node consumer — single-node cluster. Buckets: `tf-state`, `ipxe`, `velero-source-seeder`
+- A multi-node consumer — 3-node cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-office-lab`, app-specific buckets
+- **DS720+** — a separate Garage cluster (Docker container on a NAS, NOT a member of the K8s clusters). Tier-2 backup target with buckets `velero-seeder`, `velero-office-lab`. Backup invariant: target ≠ source.
 
-## Backlog-Issue
+## Backlog issue
 
-[#13 — Sub-Layer `storage-objects/`: Garage](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+storage-objects)
+[#13 — Sub-layer `storage-objects/`: Garage](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+storage-objects)
 
-Verwandt: [#7.5 — DS720+-Container-Setup](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DS720%2B), [#40 — Tier-1/2-Backup-Pfade-Validierung](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Backup-Pfade)
+Related: [#7.5 — DS720+ container setup](https://github.com/devobagmbh/talos-platform-apps/issues/?q=DS720%2B), [#40 — Tier-1/2 backup-path validation](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Backup-Pfade)
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0007 — Platform-Object-Store (Garage gewählt)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
-- [ADR-0008 — Backup-Strategy (DS720+/Garage als Tier-2)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
+- [ADR-0007 — Platform-Object-Store (Garage chosen)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
+- [ADR-0008 — Backup-Strategy (DS720+/Garage as tier-2)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
 - [ADR-0006 — TF-State-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

@@ -1,12 +1,12 @@
-# Komponente `observability/alloy`
+# Component `observability/alloy`
 
-Helm `grafana/alloy` — DaemonSet als unified Telemetry-Collector (ersetzt Promtail). Sources: kubernetes-pods, journald, otelhttp. Sinks: Loki (Logs), Mimir (Metrics), Tempo (Traces).
+Helm `grafana/alloy` — DaemonSet as a unified telemetry collector (replaces Promtail). Sources: kubernetes-pods, journald, otelhttp. Sinks: Loki (logs), Mimir (metrics), Tempo (traces).
 
-**Skelett** — Implementation in Issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
+**Skeleton** — implementation in issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
 
-## Sync-Wave
+## Sync-wave
 
-`20` — braucht die drei Storage-Komponenten (Wave 10) als Endpoints. Auf einem Forwarder-only-Konsumenten als reiner Forwarder konfiguriert (Sinks → Endpoints des Full-Stack-Konsumenten).
+`20` — needs the three storage components (wave 10) as endpoints. On a forwarder-only consumer, configured as a pure forwarder (sinks → the full-stack consumer's endpoints).
 
 ## OCI
 
@@ -14,6 +14,6 @@ Helm `grafana/alloy` — DaemonSet als unified Telemetry-Collector (ersetzt Prom
 oci://ghcr.io/devobagmbh/talos-platform-apps/observability/alloy:vX.Y.Z
 ```
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0015 — Monitoring-Architektur](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
