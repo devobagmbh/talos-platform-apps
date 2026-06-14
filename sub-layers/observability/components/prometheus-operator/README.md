@@ -26,7 +26,9 @@ The Prometheus Operator controller framework, and nothing else:
 - the **self-managed admission webhook** — 1 MutatingWebhookConfiguration +
   1 ValidatingWebhookConfiguration, plus 2 `kube-webhook-certgen` **Jobs**
   (createSecret + patchWebhook) that mint and rotate the webhook serving cert,
-- 2 **ServiceMonitor** for the operator's own metrics.
+- 2 **ServiceMonitor** — one for the operator's own metrics, and one for the kubelet
+  node endpoints in `kube-system` (a chart default; it scrapes the kubelet over TLS
+  with `insecureSkipVerify: true`, since the kubelet serves a self-signed cert).
 
 Everything else the chart can emit is disabled in
 [`helm/prometheus-operator.yaml`](helm/prometheus-operator.yaml): **0** CRDs (they
@@ -70,6 +72,34 @@ The consumer cluster repo wires **two** Argo `Application`s — the `-crds` app
    `argocd.argoproj.io/sync-wave: "0"`, which then reconciles against CRDs that
    already exist.
 
+## Admission webhook & bootstrap
+
+The operator's `monitoring.coreos.com` admission webhook is **self-managed** — there is
+no cert-manager dependency. Two `kube-webhook-certgen` Jobs mint and inject the serving
+cert, and they carry Helm hook annotations that ArgoCD maps onto its own sync phases
+([ArgoCD Helm-hook support](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/)):
+
+- the **createSecret** Job (`helm.sh/hook: pre-install,pre-upgrade`) runs as an Argo
+  **PreSync** hook — it creates the TLS `Secret` *before* the main sync applies the
+  operator `Deployment` that mounts it, so the controller never blocks on a missing
+  Secret;
+- the **patchWebhook** Job (`helm.sh/hook: post-install,post-upgrade`) runs as an Argo
+  **PostSync** hook — it patches the webhook `caBundle` once the operator is up.
+
+Both Jobs carry `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`, so
+every sync re-runs them and re-mints the serving cert; cert rotation needs no manual
+step. Consumers **MUST NOT** attach their own `argocd.argoproj.io/hook` annotations to
+this Application: per ArgoCD, defining *any* Argo hook makes it ignore *all* Helm hooks,
+which would collapse the PreSync/PostSync ordering and break the cert bootstrap.
+
+Both webhook configurations ship `failurePolicy: Ignore` (the chart default, left
+unchanged). This is intentional for a monitoring-scoped webhook — an operator restart
+MUST NOT block cluster admission. The trade-off: a malformed `PrometheusRule` or
+`AlertmanagerConfig` submitted while the operator is unavailable is **admitted** rather
+than rejected, surfacing later as an operator reconcile error instead of an admission
+failure. A consumer that wants `failurePolicy: Fail` MUST override it in a consumer-layer
+values patch — it is not a catalog default.
+
 ## Selector-label contract
 
 The chart stamps a `release:` label on the rendered ServiceMonitors (and on the
@@ -104,6 +134,18 @@ and both `kube-webhook-certgen` Job pods set `runAsNonRoot: true` +
 `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` (plus
 `readOnlyRootFilesystem: true`). No pod requires host access, so `restricted` does
 not reject any pod at admission.
+
+## Security posture
+
+The operator `ClusterRole` carries the upstream kube-prometheus-stack default grant set
+— broad verbs on the `monitoring.coreos.com` resources it owns, plus cluster-wide verbs
+on the core `Secret` and `ConfigMap` objects it manages for the Prometheus and
+Alertmanager instances it reconciles. These grants are **inherent to the operator's
+reconcile contract**, not introduced by this catalog component, and the chart exposes no
+narrower scoping at this version. A consumer MAY further constrain the operator's blast
+radius with a `NetworkPolicy` and namespace isolation. No long-lived keys or secret
+material ship in this artifact — the webhook serving cert is minted in-cluster at deploy
+time (see [Admission webhook & bootstrap](#admission-webhook--bootstrap)).
 
 ## Capability
 
