@@ -1,12 +1,12 @@
-# Komponente `observability/grafana`
+# Component `observability/grafana`
 
-Helm `grafana/grafana` — Dashboards + Alerts-UI. Datasources auf Loki/Mimir/Tempo, OIDC via Dex.
+Helm `grafana/grafana` — dashboards + alerts UI. Datasources on Loki/Mimir/Tempo, OIDC via Dex.
 
-**Skelett** — Implementation in Issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
+**Skeleton** — implementation in issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
 
-## Sync-Wave
+## Sync-wave
 
-`20` — braucht Datasource-Endpoints aus Wave 10.
+`20` — needs datasource endpoints from wave 10.
 
 ## OCI
 
@@ -14,12 +14,12 @@ Helm `grafana/grafana` — Dashboards + Alerts-UI. Datasources auf Loki/Mimir/Te
 oci://ghcr.io/devobagmbh/talos-platform-apps/observability/grafana:vX.Y.Z
 ```
 
-## Konsumiert von
+## Consumed by
 
-- **Office-Lab** — Vollstack
-- **Seeder** — nein (Grafana wird auf Office-Lab konsolidiert)
+- A full-stack consumer — full stack
+- A forwarder-only consumer — no (Grafana is consolidated on the full-stack consumer)
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0015 — Monitoring-Architektur](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
 - [ADR-0010 — Identity-Provider](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)

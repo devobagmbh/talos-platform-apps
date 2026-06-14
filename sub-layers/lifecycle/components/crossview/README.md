@@ -2,8 +2,8 @@
 
 [Crossview](https://github.com/crossplane-contrib/crossview) (crossplane-contrib) —
 a web dashboard that **visualizes and inspects Crossplane resources** (XRs, Compositions,
-managed resources, provider state). Read-only by default; useful on the seeder, which is
-the cluster that runs the Crossplane control plane (ADR-0004 / ADR-0022).
+managed resources, provider state). Read-only by default; useful on a consumer that runs
+the Crossplane control plane (ADR-0004 / ADR-0022).
 
 Helm chart `crossview` from `https://crossplane-contrib.github.io/crossview`, pinned to
 **4.4.0**. Ships a read-only `ClusterRole` + ServiceAccount so it can read Crossplane
@@ -27,7 +27,7 @@ Postgres is external (consumer-owned CNPG `Cluster`). **Consumer-owned** (Layer 
 `database.enabled=false` drops the chart's bundled Postgres; `config.database` points the
 app at the consumer CNPG service `crossview-pg-rw:5432` (db `crossview`, user `crossview`,
 `sslmode=require`). The concrete CNPG `Cluster` (`crossview-pg`) + the `crossview-db` secret
-are wired in the consumer repo (seeder). See [`compatibility.yaml`](compatibility.yaml)
+are wired in the consumer repo. See [`compatibility.yaml`](compatibility.yaml)
 `requires: cnpg-postgres`.
 
 ## Sync-wave
@@ -43,8 +43,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/lifecycle/crossview:vX.Y.Z
 
 ## Consumed by
 
-- **Seeder** — yes (the Crossplane control-plane cluster; the dashboard belongs where the XRs live).
-- **office-lab** — optional (office-lab does not run Crossplane in phase 1).
+- A Crossplane control-plane consumer — yes (the dashboard belongs where the XRs live).
+- A consumer not running Crossplane — optional (no Crossplane control plane in phase 1).
 
 ## Related ADRs
 

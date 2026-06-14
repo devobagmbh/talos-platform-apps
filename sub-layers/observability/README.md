@@ -1,12 +1,12 @@
-# Sub-Layer `observability`
+# Sub-layer `observability`
 
-LGTM-A-Stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only) + Hubble (Cilium network-flow visibility).
+LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only) + Hubble (Cilium network-flow visibility).
 
-OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subset (Seeder = Operator + Alloy-Forwarder, Office-Lab = Vollstack).
+OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a forwarder-only consumer = operator + Alloy forwarder, a full-stack consumer = full stack).
 
-## Komponenten
+## Components
 
-| Komponente | sync-wave | Quelle | OCI |
+| Component | sync-wave | Source | OCI |
 |---|---|---|---|
 | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Helm `prometheus-community/prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
 | [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
@@ -18,25 +18,25 @@ OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subs
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 
-Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: Operator-Workload + Hubble. Wave 10: drei Storage-Endpoints (alle gegen Garage). Wave 20: Collector + UI (brauchen Endpoints aus Wave 10).
+Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
 
-`hubble` ist orthogonal zum LGTM-A-Stack (Netzwerk-Flow-Sichtbarkeit aus dem Cilium-Substrat, nicht Logs/Metrics/Traces) und hängt nur vom Cilium-Agent-Hubble-Server ab — siehe [`components/hubble/`](components/hubble/) für die Substrat-Precondition.
+`hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
-Bidirektionale Watchdog-AlertmanagerConfig (Seeder ↔ Office-Lab) lebt aktuell als Cross-Cluster-Resource im Konsumenten-Repo — sobald Issue #36 implementiert ist, kann das eine eigene `observability/watchdog`-Komponente werden.
+The bidirectional watchdog AlertmanagerConfig (between two consumer clusters) currently lives as a cross-cluster resource in the consumer repo — once issue #36 is implemented it can become its own `observability/watchdog` component.
 
-## Konsumiert von
+## Consumed by
 
-- **Office-Lab** — Vollstack
-- **Seeder** — Subset: `kube-prometheus-stack` + `alloy` (Forwarder zu Office-Lab-Endpoints)
+- A full-stack consumer — full stack
+- A forwarder-only consumer — subset: `kube-prometheus-stack` + `alloy` (forwarder to the full-stack consumer's endpoints)
 
-## Backlog-Issue
+## Backlog issue
 
-[#17 — Sub-Layer `observability/`: LGTM-A](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring)
+[#17 — Sub-layer `observability/`: LGTM-A](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring)
 
-Verwandt: [#34 — Office-Lab-LGTM-A-Monitoring-Stack](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Office-Lab-LGTM-A), [#35 — Seeder-LGTM-A-Subset](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-LGTM-A), [#36 — Bidirektionale Watchdog-Webhooks](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Watchdog-Webhooks).
+Related: [#34 — Full-stack LGTM-A monitoring stack](https://github.com/devobagmbh/talos-platform-apps/issues/34), [#35 — LGTM-A forwarder subset](https://github.com/devobagmbh/talos-platform-apps/issues/35), [#36 — Bidirectional watchdog webhooks](https://github.com/devobagmbh/talos-platform-apps/issues/36).
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0015 — Monitoring-Architektur](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
 - [ADR-0007 — Platform-Object-Store](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)

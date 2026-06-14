@@ -4,70 +4,70 @@
 
 ## Claude-Code-Specific Additions
 
-Dieses Repo verfolgt den **mcp-server-Stil**: ein eigenes `.claude/`-Verzeichnis mit Subagents, Hooks und Settings. Anders als `talos-platform-base` (das auf das `kube-agent-harness`-Plugin wartet) liefern wir die Primitives in-tree, damit das Repo sofort autark ist.
+This repo follows the **mcp-server style**: its own `.claude/` directory with subagents, hooks, and settings. Unlike `talos-platform-base` (which waits on the `kube-agent-harness` plugin), we ship the primitives in-tree so the repo is self-contained from the start.
 
 ### Hooks
 
-- `.claude/hooks/require-review.sh` — PreToolUse-Gate für `Bash`-Commits. **Aktuell inaktiv** (nicht in `settings.json` gebunden). Hintergrund: bei 1 Maintainer wäre fail-closed Selbst-Sabotage (Bobby's Bus-Faktor-Kritik, 2026-05-26). Skript bleibt im Repo; Reaktivierung sobald M2 onboardet ist.
-- `.claude/hooks/pre-commit` — klassischer Git-Pre-Commit-Pfad (rendered/-Detection, conventional-commit-Pattern). Ebenfalls dormant.
+- `.claude/hooks/require-review.sh` — PreToolUse gate for `Bash` commits. **Currently inactive** (not bound in `settings.json`). Background: with a single maintainer, fail-closed would be self-sabotage (Bobby's bus-factor critique, 2026-05-26). The script stays in the repo; it is reactivated once M2 onboards.
+- `.claude/hooks/pre-commit` — the classic Git pre-commit path (rendered/ detection, conventional-commit pattern). Also dormant.
 
-### Subagents — 5 Impl/Review-Rollen + 1 Build-Verifier + 2 Plan-Phase-Rollen
+### Subagents — 5 impl/review roles + 1 build verifier + 2 plan-phase roles
 
-Tiered-Review-Modell, adaptiert aus `talos-mcp-server`. Auf **5 Impl/Review-Rollen reduziert (2026-05-26)** — bei 1 Maintainer ist ein 9-Rollen-*Review*-Apparat Theater. Hinzu kommt `catalog-evaluator` als separater Build-Zeit-Verifier: das ist *kein* sechstes Review-Theater, sondern die Judge-Builder-Trennung — ein Agent, der baut *und* sein eigenes Werk verifiziert, ist das dokumentierte Self-Verification-/Self-Preference-Failure (MAST FC3, arXiv:2410.21819 + 2402.08115). Reaktivierung der vollen Review-Hierarchie sobald M2 da ist. Die „5"-Zahl betrifft nur die **Impl/Review**-Achse (die 9→5-Reduktion); die Plan-Phase ist eine separate Achse und bringt das `catalog-planner`/`plan-reviewer`-Paar (unten) hinzu.
+Tiered-review model, adapted from `talos-mcp-server`. **Reduced to 5 impl/review roles (2026-05-26)** — with a single maintainer, a 9-role *review* apparatus is theater. On top of that comes `catalog-evaluator` as a separate build-time verifier: this is *not* a sixth review-theater role but the judge-builder separation — an agent that builds *and* verifies its own work is the documented self-verification/self-preference failure (MAST FC3, arXiv:2410.21819 + 2402.08115). The full review hierarchy is reactivated once M2 arrives. The "5" count concerns only the **impl/review** axis (the 9→5 reduction); the plan phase is a separate axis and adds the `catalog-planner`/`plan-reviewer` pair (below).
 
-Verfügbar in `.claude/agents/`:
+Available in `.claude/agents/`:
 
-- `senior-implementer` — schreibt Code/Manifeste/Helm-Values; hat write+edit+bash
-- `catalog-evaluator` — unabhängiger Build-Zeit-Acceptance-Verifier (deterministischer Gate + Semantik-ACs, Tamper-/Chart-Ref-Check); read+bash, kein write/edit; nie derselbe Kontext, der gebaut hat
-- `staff-reviewer` — Primary Gate vor Commits, triagiert ggf. an Spezialisten
-- `security-reviewer` — Vault/SOPS/cosign/SBOM/RBAC/Policies
-- `operational-safety-reviewer` — Bootstrap-Ordnung, DR-Risiken, Backup-Pfade
-- `researcher` — Recherche im base/anderen Repos, Findings-Synthese
+- `senior-implementer` — writes code/manifests/Helm values; has write+edit+bash
+- `catalog-evaluator` — independent build-time acceptance verifier (deterministic gate + semantic ACs, tamper/chart-ref check); read+bash, no write/edit; never the same context that built it
+- `staff-reviewer` — primary gate before commits, triages to specialists when needed
+- `security-reviewer` — Vault/SOPS/cosign/SBOM/RBAC/policies
+- `operational-safety-reviewer` — bootstrap ordering, DR risks, backup paths
+- `researcher` — research in the base/other repos, findings synthesis
 
-Plan-Phase-Paar (Judge-Builder-Trennung, orchestriert vom `plan-catalog-app`-Skill):
+Plan-phase pair (judge-builder separation, orchestrated by the `plan-catalog-app` skill):
 
-- `catalog-planner` — schreibt den Catalog-App-Plan (Komponenten, Dependency-Graph + build_order, Capability-Mapping, Freeze-Line-Skizze, testbare ACs); Write-Scope nur `.work/plan/`, kein Verdict (Builder-Klasse)
-- `plan-reviewer` — read-only Plan-Reviewer, kanonisches Verdict-Enum; eine Definition bedient konformations- und adversariale Persona (Stance per Brief)
+- `catalog-planner` — writes the catalog-app plan (components, dependency graph + build_order, capability mapping, freeze-line sketch, testable ACs); write scope is `.work/plan/` only, no verdict (builder class)
+- `plan-reviewer` — read-only plan reviewer, canonical verdict enum; one definition serves both the conformance and the adversarial persona (stance per brief)
 
-Aus dem Git-Verlauf bei M2-Onboarding zurückzuholen: `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer`.
+To restore from git history at M2 onboarding: `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer`.
 
 ### Skills + Workflows
 
-In-tree Claude-Code-Primitives für den Catalog-Build (Issues #17–#61), nach aktuellen Claude-Code- + LLM-Best-Practices (deterministischer Gate zuerst, LLM-Judge nur für die Semantik; Builder ≠ Verifier; parallele Personas statt sequenzieller Debatte):
+In-tree Claude Code primitives for the catalog build (issues #17–#61), following current Claude Code + LLM best practices (deterministic gate first, LLM judge only for the semantics; builder ≠ verifier; parallel personas instead of sequential debate):
 
-- **`/ship-catalog-app <app>`** (`.claude/skills/ship-catalog-app/`) — **End-to-End-Orchestrator** für den vollen plan→approve→build-Bogen EINER Catalog-App in einer Session. Reine Orchestrierungsschicht: ruft die zwei Skills unten auf, dupliziert ihre Logik/Conventions NICHT. Drei Invarianten: (1) verpflichtender menschlicher **Plan-Freigabe-Gate** zwischen Plan und N PRs (headless → stop-after-plan); (2) **Merge-Gate mechanisch vorklassifiziert, Build-Skill als Backstop** — eine Komponente mit nicht-nach-`main`-gemergten `external_dependencies` ist `awaiting-merge` und wird nicht attemptet; ship's konservativer Pre-Check ist nur eine Dispatch-Spar-Optimierung vor diesem Backstop — einzige Garantie ist **kein falscher Build** (der autoritative Build-Check stoppt jede unzulässige Komponente); beide Fehlklassifikationen sind unschädlich (Über-Zulassung → verschwendeter Dispatch; false-stall, wenn eine Dependency extern nach dem Fetch gemergt wird → transient, vom Re-run gelöst); (3) **re-run-resumierbar** aus dem beobachteten Git-Status, kein Ship-State-File. Spec/DRY-Quelle: die SKILL.md + die zwei Sub-Skills (kein eigenes CONVENTIONS.md).
-- **`/plan-catalog-app <app>`** (`.claude/skills/plan-catalog-app/`) — plant EINE Catalog-App (1-N Komponenten) durch einen konvergierenden plan→review→revise-Loop: `catalog-planner` schreibt den Plan, `plan-reviewer` reviewt ihn parallel als zwei Personas (konformations + adversarial, cross-model wo möglich), Finding-Ledger, harter Round-Cap 3, explizite Termination (konvergiert oder surfacet Residuals, schleift nie). Output: ein finding-freier Plan unter `.work/plan/<app>/`, den `/build-catalog-component` pro Komponente konsumiert. Planner ≠ Reviewer (Judge-Builder-Trennung). Spec/DRY-Quelle: `CONVENTIONS.md` im Skill-Verzeichnis.
-- **`/build-catalog-component <sub-layer>/<component>`** (`.claude/skills/build-catalog-component/`) — baut EINE Komponente durch builder→verifier→reviewer in getrennten Kontexten; Fix-Loop-Cap 2; Branch + PR, nie Auto-Merge. **Pro-Session-Einheit für parallele unabhängige Sessions**: Phase 1 ruft `task worktree:create -- <sub-layer>/<component>` und arbeitet in einem eigenen git-Worktree (`.claude/worktrees/<slug>`) — mehrere Sessions laufen so parallel auf EINEM Clone (cross-session-sicherer `mkdir`-Lock; Branch-Name = Claim, zweite Session auf dieselbe Komponente schlägt fest fehl). Spec/DRY-Quelle: `CONVENTIONS.md` im Skill-Verzeichnis.
-- **`catalog-fleet`** (`.claude/workflows/catalog-fleet.js`) — **optionaler Single-Operator-Fan-out**: EINE Session fächert N Komponenten auf (build→verify→review als Pipeline, Worktree pro Build via `task worktree:create`, schema-validierter Output, konsolidierter Report). **Primärpfad für Parallelität sind unabhängige Sessions + das Skill (oben)** — der Workflow ist nur für den Ein-Operator-Massen-Fan-out. Shared-File-Integration (capability-index, Sub-Layer-Aggregate) + PR bleiben serialisiert/menschlich. Erfordert expliziten Opt-in (Workflow-Tool).
+- **`/ship-catalog-app <app>`** (`.claude/skills/ship-catalog-app/`) — **end-to-end orchestrator** for the full plan→approve→build arc of ONE catalog app in a single session. A pure orchestration layer: it calls the two skills below and does NOT duplicate their logic/conventions. Three invariants: (1) a mandatory human **plan-approval gate** between the plan and N PRs (headless → stop-after-plan); (2) **merge gate mechanically pre-classified, build skill as backstop** — a component whose `external_dependencies` are not merged to `main` is `awaiting-merge` and is not attempted; ship's conservative pre-check is only a dispatch-saving optimization ahead of this backstop — the sole guarantee is **no wrong build** (the authoritative build check stops every inadmissible component); both misclassifications are harmless (over-admission → wasted dispatch; false-stall when a dependency is merged externally after the fetch → transient, resolved by a re-run); (3) **re-run-resumable** from the observed git status, no ship-state file. Spec/DRY source: the SKILL.md + the two sub-skills (no separate CONVENTIONS.md).
+- **`/plan-catalog-app <app>`** (`.claude/skills/plan-catalog-app/`) — plans ONE catalog app (1-N components) through a converging plan→review→revise loop: `catalog-planner` writes the plan, `plan-reviewer` reviews it in parallel as two personas (conformance + adversarial, cross-model where possible), finding ledger, hard round cap 3, explicit termination (converges or surfaces residuals, never loops). Output: a finding-free plan under `.work/plan/<app>/` that `/build-catalog-component` consumes per component. Planner ≠ reviewer (judge-builder separation). Spec/DRY source: `CONVENTIONS.md` in the skill directory.
+- **`/build-catalog-component <sub-layer>/<component>`** (`.claude/skills/build-catalog-component/`) — builds ONE component through builder→verifier→reviewer in separate contexts; fix-loop cap 2; branch + PR, never auto-merge. **Per-session unit for parallel independent sessions**: Phase 1 calls `task worktree:create -- <sub-layer>/<component>` and works in its own git worktree (`.claude/worktrees/<slug>`) — multiple sessions thus run in parallel on ONE clone (cross-session-safe `mkdir` lock; branch name = claim, a second session on the same component fails hard). Spec/DRY source: `CONVENTIONS.md` in the skill directory.
+- **`catalog-fleet`** (`.claude/workflows/catalog-fleet.js`) — **optional single-operator fan-out**: ONE session fans out N components (build→verify→review as a pipeline, a worktree per build via `task worktree:create`, schema-validated output, consolidated report). **The primary path for parallelism is independent sessions + the skill (above)** — the workflow is only for single-operator mass fan-out. Shared-file integration (capability-index, sub-layer aggregates) + PR stay serialized/human. Requires explicit opt-in (Workflow tool).
 
 ### Rules (repo-local, path-scoped)
 
-`.claude/rules/*.md` tragen die **Editor-Disziplin der Main-Session** für
-Primitive-Edits — repo-lokal und self-contained, geladen via `paths:`-Frontmatter,
-wenn du eine passende Datei liest/editierst (dokumentierter Claude-Code-Mechanismus,
-`memory.md` § „Organize rules with `.claude/rules/`"). Sie ersetzen jede Abhängigkeit
-von einer globalen User-Config:
+`.claude/rules/*.md` carry the **main-session editor discipline** for
+primitive edits — repo-local and self-contained, loaded via `paths:` frontmatter
+when you read/edit a matching file (a documented Claude Code mechanism,
+`memory.md` § "Organize rules with `.claude/rules/`"). They replace any dependency
+on a global user config:
 
-- `agent-conventions.md` (`paths: .claude/agents/**`) — A1 (keine Peer-Namen im
-  Body), A3 (Description = Routing-Surface), Verdict-Schema-Parität,
-  Injection-Hardening-inline, judge≠builder, Evidence-Disziplin.
+- `agent-conventions.md` (`paths: .claude/agents/**`) — A1 (no peer names in the
+  body), A3 (description = routing surface), verdict-schema parity,
+  injection-hardening inline, judge≠builder, evidence discipline.
 - `review-convergence.md` (`paths: .claude/{skills,agents,hooks,workflows}/**`) —
-  konvergierender Review-Loop (parallele cross-model Personas statt sequenzieller
-  Runden, Finding-Ledger, harter Round-Cap, explizite Termination), Escalation-on-
-  critical, Harness-Evolution-2-Runden-Minimum.
-- `self-containment.md` (`paths: .claude/**`) — kein Bezug auf eine persönliche
-  globale Claude-Config; Subagent-Disziplin lebt **inline** im Agent-Body (Subagents
-  laden diese Rules nicht); `task check:primitives` ist der deterministische Gate.
+  converging review loop (parallel cross-model personas instead of sequential
+  rounds, finding ledger, hard round cap, explicit termination), escalation-on-
+  critical, harness-evolution 2-round minimum.
+- `self-containment.md` (`paths: .claude/**`) — no reference to a personal
+  global Claude config; subagent discipline lives **inline** in the agent body (subagents
+  do not load these rules); `task check:primitives` is the deterministic gate.
 
-**Wichtig:** Subagents laden diese Rules NICHT (isolierter Kontext) — runtime-bindende
-Disziplin steht inline im jeweiligen Agent-Body, die Rules erinnern nur den Editor.
+**Important:** subagents do NOT load these rules (isolated context) — runtime-binding
+discipline lives inline in each agent body, the rules only remind the editor.
 
 ### Settings
 
-`.claude/settings.json` enthält:
+`.claude/settings.json` contains:
 
-- **Permissions-Allowlist** — reduziert Permission-Prompts (Bash, Read, Edit, Write, Glob, Grep, Agent + ausgewählte `mcp__github__*`-Tools).
-- **Keine Hook-Bindungen aktiv** — siehe „Hooks"-Sektion oben.
+- **Permissions allowlist** — reduces permission prompts (Bash, Read, Edit, Write, Glob, Grep, Agent + selected `mcp__github__*` tools).
+- **No hook bindings active** — see the "Hooks" section above.
 
 ### Host-permission interaction & shell
 
@@ -86,14 +86,14 @@ Disziplin steht inline im jeweiligen Agent-Body, die Rules erinnern nur den Edit
 
 ### Context Architecture
 
-- Alle geteilten operativen Konventionen leben in `AGENTS.md`.
-- Diese Datei bleibt minimal — nur Claude-Code-spezifische Notes.
-- Hard Constraints aus [`talos-platform-base/AGENTS.md`](https://github.com/Nosmoht/talos-platform-base/blob/main/AGENTS.md) sind in `AGENTS.md` § Hard Constraints aufgegriffen und gelten hier ebenfalls.
+- All shared operational conventions live in `AGENTS.md`.
+- This file stays minimal — only Claude-Code-specific notes.
+- Hard Constraints from [`talos-platform-base/AGENTS.md`](https://github.com/Nosmoht/talos-platform-base/blob/main/AGENTS.md) are captured in `AGENTS.md` § Hard Constraints and apply here as well.
 
 ### Documentation Entry Points
 
-Für die vollständige Architektur-Doku (ADRs, Runbooks, C4): [`talos-platform-docs`](https://github.com/devobagmbh/talos-platform-docs).
+For the full architecture docs (ADRs, runbooks, C4): [`talos-platform-docs`](https://github.com/devobagmbh/talos-platform-docs).
 
-Lokal: `README.md` (Top), `AGENTS.md` (Konventionen), `sub-layers/<name>/README.md` (Sub-Layer-Details).
+Locally: `README.md` (top), `AGENTS.md` (conventions), `sub-layers/<name>/README.md` (sub-layer details).
 
-Vor jedem Edit: Lies `AGENTS.md` + diese Datei + ggf. den Sub-Layer-`README.md`.
+Before every edit: read `AGENTS.md` + this file + the relevant sub-layer `README.md`.

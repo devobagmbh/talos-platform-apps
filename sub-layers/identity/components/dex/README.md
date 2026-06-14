@@ -29,8 +29,8 @@ The workload is **restricted-PSA-compliant** (drop ALL caps, `readOnlyRootFilesy
 The catalog ships **no dex config and no secrets**. The chart is rendered with
 `configSecret.create: false`, so the workload references an existing secret
 **`dex-config`** (key `config.yaml`). The consumer creates it before sync — via
-**SOPS** on the seeder (Vault not yet up) or **Vault + ESO** on office-lab — with a
-`config.yaml` carrying:
+**SOPS** on a consumer whose Vault is not yet up, or **Vault + ESO** on a consumer
+with Vault available — with a `config.yaml` carrying:
 
 ```yaml
 issuer: https://<dex-host>            # cluster-specific public URL (also the HTTPRoute host)

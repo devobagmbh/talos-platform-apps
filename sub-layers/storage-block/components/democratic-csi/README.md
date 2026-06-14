@@ -1,6 +1,6 @@
 # `storage-block/democratic-csi`
 
-NAS-backed iSCSI block storage via **[democratic-csi](https://github.com/democratic-csi/democratic-csi)** (`synology-iscsi` driver) against the Synology DS720+ — the seeder's durable tier for stateful workloads (ADR-0026). Provides the default StorageClass `synology-iscsi-storage`.
+NAS-backed iSCSI block storage via **[democratic-csi](https://github.com/democratic-csi/democratic-csi)** (`synology-iscsi` driver) against the Synology DS720+ — a consumer's durable tier for stateful workloads (ADR-0026). Provides the default StorageClass `synology-iscsi-storage`.
 
 - **OCI path:** `ghcr.io/devobagmbh/talos-platform-apps/storage-block/democratic-csi`
 - **sync-wave:** `0` (storage substrate — Ready before stateful consumers like harbor, wave 30)
@@ -31,4 +31,4 @@ The catalog ships **no credentials**. The consumer supplies a Secret `synology-i
 
 ## Related ADRs
 
-- **ADR-0026** — single central Harbor on the seeder + NAS block storage; the CSI choice for the durable tier.
+- **ADR-0026** — single central Harbor + NAS block storage; the CSI choice for the durable tier.

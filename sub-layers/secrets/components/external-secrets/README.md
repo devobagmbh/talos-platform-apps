@@ -7,7 +7,7 @@ Kubernetes Secrets, and — via the **generators** — mints/refreshes provider
 tokens.
 
 `installCRDs: true` brings the full CRD set, **including `GithubAccessToken`** —
-the generator the seeder uses to mint/refresh the private-GHCR pull credential
+the generator a consumer uses to mint/refresh the private-GHCR pull credential
 without a PAT ([ADR-0025](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0025-argocd-credentials-no-pat.md)).
 
 ## Contents
@@ -17,8 +17,8 @@ without a PAT ([ADR-0025](https://github.com/devobagmbh/talos-platform-docs/blob
 ## Sync-wave
 
 `0` here (catalog default — brings the CRDs). A consumer that depends on ESO at
-bootstrap (e.g. the seeder's GHCR token) deploys it in an **earlier** wave
-(the seeder uses `-10`) so ESO is up before the components that need it.
+bootstrap (e.g. a GHCR token at bootstrap) deploys it in an **earlier** wave
+(such a consumer uses `-10`) so ESO is up before the components that need it.
 
 ## OCI
 
@@ -28,11 +28,12 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/secrets/external-secrets:vX.Y.Z
 
 ## Consumed by
 
-- **Seeder** — yes: the GHCR `GithubAccessToken` generator (ADR-0025) + later
-  cross-cluster `ClusterSecretStore` to the office-lab Vault.
-- **office-lab** — yes: local Vault `ClusterSecretStore` (Kubernetes auth).
+- A consumer whose Vault is remote — yes: the GHCR `GithubAccessToken` generator
+  (ADR-0025) + later cross-cluster `ClusterSecretStore` to the remote Vault.
+- A consumer whose Vault is in-cluster — yes: local Vault `ClusterSecretStore`
+  (Kubernetes auth).
 
-The Stage-0 seeder bootstrap does **not** use ESO — only SOPS (+ the one-shot
+The Stage-0 bootstrap does **not** use ESO — only SOPS (+ the one-shot
 GHCR token mint bridges until ESO is up).
 
 ## Related ADRs

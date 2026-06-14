@@ -195,8 +195,12 @@ NOT-LOCALLY-VERIFIABLE (a skip is not a pass) and GHA must re-resolve the
 
 - `task sign` (cosign keyless, GHA-OIDC only),
 - `task push` (OCI push to GHCR, auth only),
-- chart-ref resolution when offline (deferred to GHA),
-- ArgoCD deployability (needs a live cluster).
+- chart-ref resolution when offline (deferred to GHA).
+
+ArgoCD deployability is **locally verifiable** on the prod-shaped local Talos
+cluster (`task local:up` → `task local:publish` → `task local:apply` → Argo sync —
+see `AGENTS.md §Testing Guidelines`); it is recorded NOT-LOCALLY-VERIFIABLE only
+when no container runtime is available, then deferred to GHA + the consumer repos.
 
 These belong to the GHA pipeline and the consumer cluster repos. The verify step
 records them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is
