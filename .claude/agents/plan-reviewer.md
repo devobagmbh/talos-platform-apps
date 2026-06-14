@@ -101,7 +101,8 @@ findings; never fabricate a spec from the plan.
    component provides a swappable capability whose id is not yet indexed — the plan
    names the intended id and records a **pre-build blocker** in `open_questions[]`
    (the index PR merges before that component builds); a silent `# TODO` or an
-   invented index row is a finding. **No-capability**: `capability` is `null` — the
+   invented index row is a finding. **No-capability**: `capability` is the object
+   `{id: null, swap_class: null}` (never a bare `capability: null` scalar) — the
    component provides no swappable capability (apis-only foundational; e.g. a
    provider-exclusive CRD framework, precedent `lifecycle/providers`); the built
    component carries `capabilities: []` (no `# TODO`) and declares `provides[].apis`.

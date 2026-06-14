@@ -51,9 +51,9 @@ components:
       repo: <helm-repo-url>
       name: <chart-name>
       version: <vX.Y.Z>                    # pinned; never a range, never :latest
-    capability:                            # see §6: a named id (present in index) OR null = no swappable capability
-      id: <capability-id>                  # null when no swappable capability applies (apis-only foundational component)
-      swap_class: drop-in | label-move | data-migration | rewrite-required | consumer-change   # null when id is null
+    capability:                            # ALWAYS the {id, swap_class} object — never a bare `capability: null`; §6 keys 3 states on capability.id:
+      id: <capability-id>                  #   in index = mapped | non-null, not-yet-indexed (+ open_questions blocker) = pending-index | null = no-capability (apis-only)
+      swap_class: drop-in | label-move | data-migration | rewrite-required | consumer-change   # null only when id is null (no-capability)
     sync_wave: "<int>"                     # string, regex ^-?[0-9]+$
     external_dependencies: ["<sub-layer>/<component>", ...]  # regex ^[a-z0-9-]+/[a-z0-9-]+$
     freeze_line_sketch:                    # SKETCH only — NOT the customization.yaml contract (see note)
@@ -157,16 +157,19 @@ is a finding):
      exists, and a **mapped-state finding** (missing index entry) when it does not.
      `capability.id: null` paired with an `open_questions[]` index blocker is
      malformed (the null contradicts the blocker's swappable intent) — surface it.
-   - **No-capability** — `capability` is `null` (`{id: null, swap_class: null}`):
-     the component provides **no swappable capability**. This is a deliberate design
+   - **No-capability** — `capability` is the object `{id: null, swap_class: null}`
+     (both sub-fields null — never a bare `capability: null` scalar, so the build
+     handoff always has a `capability.id` to branch on): the component provides **no
+     swappable capability**. This is a deliberate design
      state, NOT a pending action — e.g. a provider-exclusive CRD framework whose API
      group has no alternative implementation (precedent: `lifecycle/providers`). The
      build does **no** index check and proceeds; the component declares its chart
      under `provides[].apis` and carries `provides[].capabilities: []` **without** a
-     `# TODO:`. Non-vacuity: `null` is valid only when no existing index capability
-     fits **and** the component genuinely is not a swappable-interface provider — a
-     real swappable capability left unmapped, or a not-yet-indexed one dodged as
-     `null` instead of the pending-index state above, is a finding.
+     `# TODO:`. Non-vacuity: `capability.id: null` is valid only when no existing
+     index capability fits **and** the component genuinely is not a
+     swappable-interface provider — a real swappable capability left unmapped, or a
+     not-yet-indexed one dodged into no-capability instead of the pending-index state
+     above, is a finding.
 7. **Freeze-line coherence (and non-vacuity).** The `freeze_line_sketch` is
    internally consistent: declared `required.*` keys correspond to the
    consumer-config shapes the workload will actually expose (ADR-0024 v2: workload
