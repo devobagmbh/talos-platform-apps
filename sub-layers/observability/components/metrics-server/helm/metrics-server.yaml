@@ -1,0 +1,65 @@
+# metrics-server — Kubernetes Resource Metrics API (HPA + `kubectl top`).
+# Layer-2 default values for talos-platform-apps. This component is
+# cluster-agnostic: it carries NO consumer-specific config (replica count, HA
+# topology, and PNI labels are consumer-overlay concerns — see customization.yaml
+# and the README §Consumer obligations).
+#
+# Chart 3.13.1 already ships the Talos-required kubelet flags in its defaultArgs
+# and a restricted-compliant container securityContext. We set both EXPLICITLY
+# here (explicit-not-inherited pattern) so a future chart bump cannot silently
+# drop them. The chart leaves podSecurityContext empty, so the pod-level
+# restricted predicates (runAsNonRoot + seccompProfile) are set here explicitly
+# to satisfy `pod-security.kubernetes.io/enforce: restricted` on the namespace.
+
+metadata:
+  chart: metrics-server
+  repo: https://kubernetes-sigs.github.io/metrics-server/
+  version: 3.13.1 # bare SemVer — NO leading 'v' (--version v3.13.1 fails to resolve)
+  # appVersion 0.8.1 → image tag registry.k8s.io/.../metrics-server:v0.8.1 (chart
+  # appVersion pin, NEVER :latest; never overridden here). base pinned 3.12.2;
+  # this catalog component upgrades to 3.13.1 (latest stable). VERIFY at push
+  # (`helm show chart metrics-server --repo <repo> --version 3.13.1`).
+  namespace: metrics-server
+
+values:
+  # Talos requires these explicitly (Kubelet does not serve on the default port):
+  #   --kubelet-preferred-address-types — reach Kubelets by InternalIP/ExternalIP/Hostname
+  #   --kubelet-use-node-status-port     — use the Kubelet's advertised status port
+  # Overriding defaultArgs replaces the whole list, so the chart's other defaults
+  # (--cert-dir, --metric-resolution) are repeated here to keep them.
+  defaultArgs:
+    - --cert-dir=/tmp
+    - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+    - --kubelet-use-node-status-port
+    - --metric-resolution=15s
+
+  # No cert-manager TLS wiring exists for metrics-server in base or this component;
+  # metrics-server serves a self-signed cert, so the aggregation layer must skip
+  # verification. This is the correct and complete posture for standard Talos.
+  apiService:
+    insecureSkipTLSVerify: true
+
+  # Pod-level restricted predicates. The chart's podSecurityContext defaults to {}
+  # (the pod template renders no pod-level securityContext), so set them here so
+  # the rendered pod template satisfies `enforce: restricted` at the pod scope.
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container-level restricted predicates. The chart already sets all four by
+  # default; pinned explicitly here so a future chart bump cannot weaken them.
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+
+  # NOTE: no `replicas:` key. Replica count / HA topology is a consumer-overlay
+  # concern (cluster-specific per AGENTS.md §Hard Constraints); the catalog leaves
+  # it at the chart default (1). The consumer overrides it in its Argo overlay.
