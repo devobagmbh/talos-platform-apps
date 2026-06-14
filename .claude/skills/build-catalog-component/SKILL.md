@@ -59,11 +59,23 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    capability), surface the contradiction and stop — the plan may be stale (it is
    transient, gitignored, and is not auto-regenerated when the issue changes); the
    operator reconciles (re-plan or confirm). Do not silently prefer the plan.
-4. Read `catalog/capability-index.yaml` for the component's capability + swap_class,
-   and one existing component of the same kind (helm vs manifests) as a template.
-   If the plan entry carries `capability: null` (a tracked pre-build action),
-   confirm the index entry now exists before building; if it does not, stop and
-   surface — the plan's pre-build action was not completed.
+4. Read `catalog/capability-index.yaml` for the component's capability, and one
+   existing component of the same kind (helm vs manifests) as a template. Branch on
+   the plan's `capability.id` (the three states in plan-CONVENTIONS §6):
+   - **`capability.id` is set (non-null)** — confirm that id exists in the index
+     before building; if it does not, **stop and surface** (the index entry — a
+     pre-existing one, or a pending-index pre-build PR named in the plan's
+     `open_questions[]` — must be present first). The built component declares
+     `provides[].capabilities: [{id, swap_class}]`.
+   - **`capability.id` is null** — a deliberate **no-capability** (apis-only) state,
+     NOT a pending action. Do **no** index check; proceed. The component declares its
+     chart under `provides[].apis` and carries `provides[].capabilities: []` (no
+     `# TODO:`) — precedent `lifecycle/providers`.
+
+   When no plan entry covers the component (a direct-from-issue build, step 3),
+   there is no `capability.id` to branch on: apply the **no-plan** sub-case in
+   build-CONVENTIONS §Capability mapping — `capabilities: []` with a `# TODO:` if a
+   genuinely-needed capability is not yet indexed.
 5. Confirm every **component-form** dependency target already exists **on
    `origin/main`** — the ref the worktree (step 6) is built from, so the check
    matches the tree the build will actually see. (A bare "exists in the tree" probe
