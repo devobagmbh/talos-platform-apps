@@ -12,6 +12,10 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "0"
+    # Do NOT add an argocd.argoproj.io/hook annotation here: per ArgoCD, defining
+    # any Argo hook on the Application makes it ignore ALL Helm hooks, which would
+    # collapse the kube-webhook-certgen PreSync(create-secret)/PostSync(patch-webhook)
+    # ordering and leave the admission webhook without a valid caBundle.
   labels:
     platform.devoba.de/local-test: "true"
     platform.devoba.de/sub-layer: observability

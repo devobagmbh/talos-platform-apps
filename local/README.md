@@ -88,7 +88,7 @@ The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on 
 - **Rootful machine** (the decisive prerequisite): `podman machine set --rootful`, then restart the machine. This is what makes the Talos node bootstrap at all.
 - **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error.
 - **VM size ≥ 6–8 GiB**: `podman machine set --memory 8192`. The default 2 GiB OOMs once Cilium + ArgoCD + a few components are up (same reason as the VM-headroom note above).
-- **Host ports**: the validated run mapped the NodePorts to high host ports (`8080:30080`, `8443:30443`) instead of `80`/`443` (a rootless-origin Podman setup cannot bind `< 1024`), so the Argo/registry endpoints carry the high port.
+- **Host ports**: the validated run mapped the NodePorts to high host ports (`8080:30080`, `8443:30443`) instead of `80`/`443`, so the Argo/registry endpoints carry the high port. (Binding the privileged `80`/`443` ports was not exercised in this run.)
 
 Docker Desktop, Colima, and Orbstack provision a rootful daemon by default and need none of these. Validated end-to-end on 2026-06-14 (issue #168).
 
