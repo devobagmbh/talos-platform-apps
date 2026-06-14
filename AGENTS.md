@@ -92,13 +92,14 @@ Voraussetzung: Devbox + direnv. Nach `direnv allow` ist alle Tools im PATH.
 
 ## Testing Guidelines
 
-Dieses Repo hat keinen Live-Cluster. Validierung ist Render- und Policy-fokussiert:
+Validierung ist primär Render- und Policy-fokussiert; für End-to-End-Deployability gibt es zusätzlich einen prod-geformten lokalen Talos-Cluster (`task local:up`):
 
 - `task lint` muss vor jedem PR-Open grün sein
 - `task render -- <sub-layer>` produziert valide YAML gegen den jeweiligen Default-Werten-Stack
 - Schema-Konformität wird via `kubeconform` geprüft
 - Cosign-/Provenance-Signing wird in der GHA-Pipeline keyless verifiziert (`cosign verify`)
-- Echte Cluster-Verifikation gehört in die Konsumenten-Repos
+- **Lokale E2E-Deployability** (ArgoCD-Sync einer Komponente) ist über den lokalen Cluster verifizierbar: `task local:up` → `task local:publish -- <sub-layer>/<component> <tag>` → `task local:apply -- <sub-layer> <tag>` (Argo synct aus der lokalen Registry). Auf einer rootless-podman-Workstation braucht das rootful podman (`podman machine set --rootful`), ≥ 6 GiB VM, `DOCKER_HOST` auf den podman-Socket und ggf. hohe Host-Ports (< 1024 nicht bindbar) — siehe [`local/README.md`](local/README.md) + Issue #168. Ohne Container-Runtime bleibt der Render-/Policy-Pfad der Fallback.
+- Verifikation gegen echte Produktions-Cluster gehört weiterhin in die Konsumenten-Repos
 
 ## Commits & Pull Requests
 
