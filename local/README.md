@@ -10,11 +10,11 @@
 [![Helm](https://img.shields.io/badge/Helm-v3-0F1689?style=flat-square&logo=helm)](https://helm.sh/)
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 
-A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing: the same substrate as the seeder/office-lab clusters — Talos nodes, Cilium CNI, Gateway-API, kube-proxy off, KubePrism in front of the API — plus a local OCI registry with Gateway exposure and mkcert TLS. The full **render → push → Argo-sync → apply** loop runs on the laptop before a tag is pushed to the production OCI path.
+A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing: the same substrate as the consumer clusters — Talos nodes, Cilium CNI, Gateway-API, kube-proxy off, KubePrism in front of the API — plus a local OCI registry with Gateway exposure and mkcert TLS. The full **render → push → Argo-sync → apply** loop runs on the laptop before a tag is pushed to the production OCI path.
 
 ## Purpose and design principles
 
-- **Identical to prod where it matters.** This is **Talos**, not kind: real Talos nodes (`ghcr.io/siderolabs/talos:v1.13.3`), `cni: none` + Cilium, kube-proxy disabled, KubePrism on `127.0.0.1:7445`, ArgoCD as the pull-based apply mechanism. What works here works on the seeder, because it *is* the seeder's substrate — not a Kubernetes look-alike.
+- **Identical to prod where it matters.** This is **Talos**, not kind: real Talos nodes (`ghcr.io/siderolabs/talos:v1.13.3`), `cni: none` + Cilium, kube-proxy disabled, KubePrism on `127.0.0.1:7445`, ArgoCD as the pull-based apply mechanism. What works here works on a consumer cluster, because it *is* the consumer's substrate — not a Kubernetes look-alike.
 - **API-driven, immutable config.** Talos has no node shell. The registry mirror, CNI/proxy toggles, and KubePrism all live in the machine config ([`talos-patch.yaml`](talos-patch.yaml)) applied at `talosctl cluster create`, exactly as on a real node — no `docker exec node` containerd hot-patching.
 - **No `localhost` hostnames.** Everything runs over `*.localhost.direct` (public DNS wildcard pointing at `127.0.0.1`) with an mkcert wildcard cert, so Argo, the Helm OCI client and the browser behave exactly as they would against a real cluster.
 - **Bootstrap without chicken-and-egg.** The OCI backing store is its own Docker container (`kind-registry`), not a pod in the cluster, so the registry exists *before* the cluster lives and Argo can pull artifacts on the first sync. (The `kind-registry` name is historical — it is a plain `registry:2` container, unrelated to the kind binary; the name is kept so cert SANs and the in-cluster Service DNS stay stable.)
@@ -77,9 +77,20 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 ## Prerequisites
 
 - **Devbox shell active** for the repo, so `talosctl`, `helm`, `kubectl`, `mkcert`, `argocd`, `kubectx`, `envsubst`, `yq` are on PATH. One-time: `direnv allow` in the repo root (or `devbox shell`). A global `devbox global` is **not** enough — `talosctl` and `mkcert` are pinned in the repo profile only. `task local:up` starts with a preflight that verifies exactly these tools and aborts with a clear hint otherwise.
-- Docker Desktop (or Colima/Orbstack) running. The Talos docker provisioner runs the node as a container; the Cilium Gateway is wired via **NodePort + `-p` host-port mappings** — LB-IPAM VIPs are not routable across the Docker NAT on Mac.
+- Docker Desktop, Colima, Orbstack, or **rootful Podman** running (see *Running on Podman* below for the Podman caveats). The Talos docker provisioner runs the node as a container; the Cilium Gateway is wired via **NodePort + `-p` host-port mappings** — LB-IPAM VIPs are not routable across the Docker NAT on Mac.
 - Ports `80` and `443` free on the workstation (no other local HTTP/HTTPS service bound).
 - **VM headroom.** The node is created with **8 GiB / 6 CPU** (`--memory-controlplanes`/`--cpus-controlplanes`; override via `LOCAL_NODE_MEMORY` / `LOCAL_NODE_CPUS`). The talosctl default (2 GiB / 2 CPU) is too small — Cilium + ArgoCD + a few platform components (crossplane, cnpg, …) exhaust it and the apiserver starts timing out. These are limits, not reservations, so they fit a smaller VM until actually used; give the Docker/Colima VM enough memory for what you deploy.
+
+### Running on Podman (instead of Docker Desktop)
+
+The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on **Podman**, but the Talos docker provisioner runs the node as a privileged container with nested services, so it **requires a rootful Podman machine** — rootless cannot write `oom_score_adj` / `/proc/sys` kernel params and the node never finishes bootstrapping. Starting from a default (rootless) Podman machine on macOS, four deltas apply:
+
+- **Rootful machine** (the decisive prerequisite): `podman machine set --rootful`, then restart the machine. This is what makes the Talos node bootstrap at all.
+- **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error.
+- **VM size ≥ 6–8 GiB**: `podman machine set --memory 8192`. The default 2 GiB OOMs once Cilium + ArgoCD + a few components are up (same reason as the VM-headroom note above).
+- **Host ports**: the validated run mapped the NodePorts to high host ports (`8080:30080`, `8443:30443`) instead of `80`/`443`, so the Argo/registry endpoints carry the high port. (Binding the privileged `80`/`443` ports was not exercised in this run.)
+
+Docker Desktop, Colima, and Orbstack provision a rootful daemon by default and need none of these. Validated end-to-end on 2026-06-14 (issue #168).
 
 ## Quickstart
 
@@ -148,7 +159,7 @@ task local:dev -- registry/harbor
 
 It does an initial build and then **watches** `sub-layers/<sub-layer>/components/<component>/`. On every save it automatically runs `render → package → push` (local registry, a fresh `0.0.0-dev.<epoch>` tag) and hard-refreshes the component's Argo `Application`; the app's `syncPolicy.automated` then applies the change.
 
-- **Brings up fixtures.** Consumer-owned things the catalog doesn't ship (the actual DB/cache instance + runtime secrets, ADR-0023/0024) come from `local/fixtures/<sub-layer>/<component>/` — CR manifests (e.g. a CNPG `Cluster`) + a `secrets.yaml` whose secrets are **generated at apply time** (no values in the repo; a DB password is copied from CNPG's auto-secret). So `task local:dev -- lifecycle/crossview` first ensures the cnpg operator (dep), then a `crossview-pg` CNPG `Cluster` + the `crossview-db`/`crossview-runtime-secret` secrets, then crossview reaches Healthy. Disable with `LOCAL_DEV_SKIP_FIXTURES=1`. `task local:fixtures -- <comp>` runs it standalone. **Local-only** — in prod these are consumer-owned (seeder repo). Needs a working StorageClass → `local:up` installs local-path-provisioner (see Quickstart step).
+- **Brings up fixtures.** Consumer-owned things the catalog doesn't ship (the actual DB/cache instance + runtime secrets, ADR-0023/0024) come from `local/fixtures/<sub-layer>/<component>/` — CR manifests (e.g. a CNPG `Cluster`) + a `secrets.yaml` whose secrets are **generated at apply time** (no values in the repo; a DB password is copied from CNPG's auto-secret). So `task local:dev -- lifecycle/crossview` first ensures the cnpg operator (dep), then a `crossview-pg` CNPG `Cluster` + the `crossview-db`/`crossview-runtime-secret` secrets, then crossview reaches Healthy. Disable with `LOCAL_DEV_SKIP_FIXTURES=1`. `task local:fixtures -- <comp>` runs it standalone. **Local-only** — in prod these are consumer-owned (the consumer repo). Needs a working StorageClass → `local:up` installs local-path-provisioner (see Quickstart step).
 - **`Ctrl-C` tears down.** Skaffold-style: stopping the watcher removes what this component *is* — its Argo `Application`, HTTPRoute, and fixtures (CR instances + generated secrets). Dependency operators (cnpg, crossplane) stay (expensive to redeploy). `LOCAL_DEV_KEEP=1` keeps everything; `task local:down` removes the whole cluster.
 
 - **Fresh tag per iteration.** ArgoCD caches OCI charts by digest, so re-pushing the *same* tag would not be re-pulled. Each save gets a new `0.0.0-dev.<epoch>` tag, which guarantees a clean re-pull — no manual `--hard-refresh`, no tag bookkeeping.
@@ -212,7 +223,7 @@ kubectl -n ipxe port-forward svc/ipxe 18080:8080 &
 curl -s http://localhost:18080/boot.ipxe          # references harbor.localhost.direct/ghcr/siderolabs/installer
 ```
 
-Both are **local-only** (proxy project + boot.ipxe): in prod the seeder owns the Harbor proxy config and the real boot scripts (ADR-0012/0023).
+Both are **local-only** (proxy project + boot.ipxe): in prod the consumer owns the Harbor proxy config and the real boot scripts (ADR-0012/0023).
 
 ## Iteration and cleanup
 
@@ -251,6 +262,12 @@ The mkcert CA stays in the system trust after `local:down` (re-install is idempo
 **`talosctl cluster create` fails or hangs.**
 Check Docker is running and ports 80/443 are free. Inspect the node via the talosconfig under `~/.talos/clusters/talos-platform-apps/`. A full reset is `task local:down && task local:up` (create is not idempotent — the task skips create when `talosctl cluster show` already lists the cluster).
 
+**`talosctl cluster create` skips creation forever after a crashed run.**
+A failed create can leave a partial state directory under `~/.talos/clusters/<name>/` with no `state.yaml`. `talosctl cluster destroy` cannot clean it (it needs the state file), and create keeps skipping while the directory exists. Remove it manually — `rm -rf ~/.talos/clusters/talos-platform-apps` — then `task local:up`.
+
+**Wrong kube-context — guard before any `local:apply`.**
+`task local:apply` is a `kubectl apply` against the **current** context. When the workstation kubeconfig also holds real (production / consumer) contexts, assert the local one first: `kubectl config current-context` MUST read `admin@talos-platform-apps` before applying. Never run a context-less apply against a shared kubeconfig (tracked in issue #172).
+
 **Cilium hangs on install**, CoreDNS does not start.
 Cilium without kube-proxy needs `k8sServiceHost`. On Talos this is KubePrism at `localhost:7445` (machine config). If KubePrism is not up, `talosctl --nodes <ip> service` shows the node services; confirm `cluster.proxy.disabled` and `cni: none` landed (a typo in `talos-patch.yaml` silently falls back to defaults).
 
@@ -283,7 +300,7 @@ Argo cannot pull the artifact. Check the Service DNS: `kubectl -n registry get e
 
 - **No LoadBalancer IPs.** Cilium has `l2announcements.enabled: true` but no `CiliumLoadBalancerIPPool`/`CiliumL2AnnouncementPolicy` — on Mac, LB VIPs are not reachable across the Docker NAT. Routing goes through the NodePort bridge only.
 - **No cosign/SBOM signing.** The local publish path renders + packages + pushes; signing and attestation run in CI (`task publish` with GHA OIDC). The local workflow is explicitly "test Helm values", not "validate supply chain".
-- **No Dex, no RBAC mapping.** ArgoCD runs with the local admin (`argocd-initial-admin-secret`). Identity federation is a Layer-3 office-lab concern.
+- **No Dex, no RBAC mapping.** ArgoCD runs with the local admin (`argocd-initial-admin-secret`). Identity federation is a Layer-3 consumer concern.
 - **No Velero backup.** Local data is ephemeral by definition.
 - **No Cilium-as-inlineManifest.** Cilium is installed post-boot via Helm (easy to tweak `cilium-values.yaml`); the substrate (Talos + `cni: none` + KubePrism) is faithful. Delivering Cilium inside the machine config like `talos-platform-base` does is a possible future tightening.
 - **No `qemu` provisioner.** Full-VM local Talos needs KVM/Linux; the docker provisioner is the Mac/Docker-Desktop path.
@@ -293,4 +310,4 @@ Argo cannot pull the artifact. Check the Service DNS: `kubectl -n registry get e
 - [Top `README.md`](../README.md) — repo overview + sub-layers
 - [`AGENTS.md`](../AGENTS.md) — conventions (Taskfile rules, Hard Constraints)
 - [ADR-0009 — Platform layer model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — why Helm-chart-wrapper OCI as the distribution format
-- [ADR-0014 — Gateway-API + Cilium for office-lab/seeder](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-gateway-api.md) — the prod equivalent of this setup
+- [ADR-0014 — Gateway-API + Cilium for the consumer clusters](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-gateway-api.md) — the prod equivalent of this setup
