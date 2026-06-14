@@ -62,6 +62,14 @@ unconditional posture — confirmed against the rendered pod template (pod
 
 The catalog ships **only** the `enforce` level and the ownership labels.
 
+The chart's RBAC (read `ClusterRole`s + `ClusterRoleBinding`s + a `kube-system`
+`RoleBinding` for `extension-apiserver-authentication`) grants cluster-wide
+`get/list/watch` on `nodes`, `nodes/metrics`, and `pods`, plus `namespaces` and
+`configmaps` for aggregation-layer health. The `namespaces`/`configmaps` grants
+are upstream chart defaults (kubernetes-sigs `metrics-server` 3.13.1) and are not
+narrowable at the helm-wrapper layer — noted here for consumers auditing
+cluster RBAC.
+
 ## Consumer obligations (out of scope here)
 
 Per ADR-0027, the **consumer** adds the following in its Argo overlay — this
@@ -89,6 +97,15 @@ catalog component ships none of them:
 needs only the Kubernetes control-plane API, so it deploys early (like
 `observability/hubble`). A consumer needing it earlier at bootstrap deploys it in
 an earlier wave from its own overlay.
+
+**Bootstrap considerations (consumer-relevant):** the aggregated `APIService`
+`v1beta1.metrics.k8s.io` is registered as soon as Argo applies it but returns
+`503` until the Deployment Pod is Ready — a transient, self-healing window of
+roughly the Pod start-up time. `kubectl top` and the HPA simply retry; a consumer
+component that requires HPA metrics *at* bootstrap should pin itself to a later
+wave. Replica count defaults to the chart's `1`; a consumer needing
+metrics-API availability across Pod restarts (rolling image updates) should set
+`replicas: 2` (and/or a `PodDisruptionBudget`) in its Argo values overlay.
 
 ## OCI
 
