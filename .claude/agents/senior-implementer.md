@@ -47,7 +47,7 @@ These patterns are visible in the existing code and codified in `AGENTS.md`:
   Renaming the org path is a breaking change requiring consumer coordination.
 - **Helm values separation**: defaults + shared values live here;
   cluster-specific values (replica counts, VIPs, OIDC issuer URLs) belong in the
-  consumer repos (`talos-seeder-cluster` / `talos-office-lab-cluster`).
+  consumer cluster repos.
 - **Conventional Commits** with sub-layer or component scope:
   `feat(databases/cnpg): …`, `fix(storage-block/democratic-csi): …`,
   `chore(automation): …`. Breaking changes carry a `BREAKING CHANGE:` footer.
@@ -70,7 +70,7 @@ These patterns are visible in the existing code and codified in `AGENTS.md`:
   `secrets`, `storage-objects`, plus the capability-driven `identity`,
   `network`, `compute`, `storage-block`, `security`. Each holds 1-N
   independently versioned components. See `sub-layers/<name>/README.md` for the
-  component list, consumers (Seeder / Office-Lab / both), and referenced ADRs.
+  component list, abstract consumer obligations, and referenced ADRs.
 - **PNI v2 capability-first** (from the upstream base): capability selectors,
   not tool-name selectors, in NetworkPolicies / Cilium CCNPs. Reserved labels
   (`platform.io/provide.*`, `capability-provider.*`) only via producer charts /

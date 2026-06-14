@@ -55,11 +55,30 @@ defect the evaluator catches.
 
 ## Capability mapping
 
-Each `provides[].capabilities[].id` MUST exist in `catalog/capability-index.yaml`;
-`swap_class` MUST match that index entry (`drop-in` | `label-move` |
-`data-migration` | `rewrite-required` | `consumer-change`). If the capability is
-not yet in the index, carry `capabilities: []` with a `# TODO:` comment naming
-the follow-up — do not invent an index entry inside the component.
+A component's `provides[].capabilities` takes one of two shapes, set by the plan's
+`capability.id` (build-skill Phase 1 step 4 / plan-CONVENTIONS §6):
+
+- **`capabilities: [{id, swap_class}]`** — the plan names a capability id. That id
+  MUST exist in `catalog/capability-index.yaml` and `swap_class` MUST match the
+  index entry's active implementation (`drop-in` | `label-move` | `data-migration` |
+  `rewrite-required` | `consumer-change`). If the id is absent from the index at
+  build time, the build stops (Phase 1 step 4) — do **not** ship `capabilities: []`
+  as a workaround for a capability the component genuinely provides.
+- **`capabilities: []`** — the component provides no swappable capability. Two
+  legitimate sub-cases:
+  - **No-capability by design (apis-only)** — the plan's `capability` is
+    `{id: null, swap_class: null}` (e.g. a provider-exclusive CRD framework;
+    precedent: `lifecycle/providers`).
+    Carry `capabilities: []` **without** a `# TODO:` and declare the chart under
+    `provides[].apis`. It is a design state, not a deferral.
+  - **No-plan build-time discovery** — building directly from an issue (no plan
+    entry) when a genuinely-needed capability is not yet in the index: carry
+    `capabilities: []` with a `# TODO:` naming the follow-up. (With a plan, that
+    case is the **pending-index** state instead — plan-CONVENTIONS §6.)
+
+Never invent an index entry inside the component (do not edit
+`catalog/capability-index.yaml`; that is the serialized shared-file integration
+step, Phase 6).
 
 ## Namespace & Pod Security Admission (PSA)
 
@@ -191,7 +210,7 @@ Claude Code sessions run in parallel on a single clone:
 - The `.git`-mutating steps (fetch + worktree add/remove/prune) run under a
   `mkdir`-atomic lock (portable — macOS has no `flock`), so concurrent
   `worktree:create`/`worktree:remove` from separate sessions cannot corrupt the
-  shared `.git`. A stale lock (>2 min, dead session) is auto-reclaimed.
+  shared `.git`. A stale lock (>5 min, or a dead holder PID) is auto-reclaimed.
 - **Branch name = claim.** A second session calling `worktree:create` for a
   component whose `catalog-build/<slug>` branch already exists fails fast
   ("already claimed"). One component, one session. Re-running for an existing
@@ -205,6 +224,26 @@ render / lint / commit run unlocked in parallel (each worktree has its own index
 `.claude/worktrees/` is gitignored. The optional `catalog-fleet` workflow (one
 operator, autonomous fan-out across many components in ONE session) uses these
 same `worktree:*` targets for its serial pre-step.
+
+`task worktree:create` is the ONE build-isolation mechanism. Do NOT substitute the
+harness `EnterWorktree` for build isolation — it is a separate, session-local
+mechanism whose only role here is a background-session write workaround for the
+**plan** phase (gitignored `.work/` writes), never the build phase. Build
+operations go through `task` (render / lint / ci / validate:contract / scan);
+direct CLI is for non-build inspection + VCS only, drawn **by effect** — `helm show
+chart` (metadata) is fine, but `helm template` / `helm show values`→hand-copy is
+rendering-by-effect and must go through `task render:one`.
+
+**Background-session caveat (cwd divergence).** In a background session that used
+`EnterWorktree`, a dispatched subagent may resolve the *shared checkout* as its cwd
+while the orchestrator works in the worktree — so a subagent's direct `git ls-tree`
+/ `helm show` (or any relative-path read) can read the wrong tree. The Taskfile
+anchor fixes worktree *placement*, not this read-cwd divergence; the two are
+independent. Contain it by (a) passing subagents **absolute paths** for every
+`.work/` artifact and keeping the worktree + shared-checkout copies synced, and (b)
+running the build phase in a **foreground** session (no `EnterWorktree` → no
+divergence). The plan phase is background-safe (only `.work/` writes); the build
+phase is not.
 
 ## Sequencing
 

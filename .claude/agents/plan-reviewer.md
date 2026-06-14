@@ -93,13 +93,25 @@ findings; never fabricate a spec from the plan.
    of `build_order` you verify by reasoning over the declared edges; for a
    non-trivial graph, state your reasoning in the finding so a second reader can
    check it.
-6. **Capability coherence** — each `capability.id` exists in
-   `catalog/capability-index.yaml`, and the `swap_class` matches the **active
-   implementation** (`status: active`) for that id (the index keys `swap_class`
-   per implementation — match the active one, not just any). OR the capability is
-   `null`: approvable only if the plan records it in `open_questions[]` as a
-   **required pre-build action** (the index entry must be added before that
-   component builds); a silent `# TODO` or an invented index entry is a finding.
+6. **Capability coherence** — a component's `capability` is in one of three states
+   (keyed on whether `capability.id` is null). **Mapped**: `capability.id` is set,
+   exists in `catalog/capability-index.yaml`, and `swap_class` matches the **active
+   implementation** (`status: active`) for that id (the index keys `swap_class` per
+   implementation — match the active one, not just any). **Pending-index**: the
+   component provides a swappable capability whose id is not yet indexed — the plan
+   names the intended id and records a **pre-build blocker** in `open_questions[]`
+   (the index PR merges before that component builds); a silent `# TODO` or an
+   invented index row is a finding. **No-capability**: `capability` is the object
+   `{id: null, swap_class: null}` (never a bare `capability: null` scalar) — the
+   component provides no swappable capability (apis-only foundational; e.g. a
+   provider-exclusive CRD framework, precedent `lifecycle/providers`); the built
+   component carries `capabilities: []` (no `# TODO`) and declares `provides[].apis`.
+   Findings: a real swappable capability left unmapped, OR a not-yet-indexed one
+   dodged as `null` instead of the pending-index state (with no `open_questions`
+   blocker), OR a `null` whose component genuinely IS a swappable-interface provider.
+   Disambiguation: a non-null `capability.id` absent from the index is **pending-index**
+   when a matching `open_questions[]` blocker exists, else a **mapped-state finding**;
+   `capability.id: null` paired with such a blocker is malformed — surface it.
 7. **Freeze-line coherence (non-vacuity)** — the `freeze_line_sketch` `required.*`
    keys are consistent with the consumer-config shapes the workload can expose.
    An all-empty sketch (`shapes: []`, every `required.*` empty) is acceptable

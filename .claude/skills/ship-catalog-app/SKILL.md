@@ -139,6 +139,14 @@ prior iteration's build `cd`s into a per-component worktree and removes it at th
 end, which can leave the cwd in a deleted directory, and step 1's probes below are
 `git`/`gh` calls that fail from a removed cwd:
 
+> **Background-session note.** The plan phase (Phase 1–2) is background-safe (only
+> gitignored `.work/` writes). The build phase is NOT: it uses `task worktree:create`
+> (the one build-isolation mechanism — never substitute `EnterWorktree` for it), and
+> dispatched subagents in a background `EnterWorktree` session can resolve the shared
+> checkout instead of the worktree. Run the build phase in a **foreground** session,
+> or apply the absolute-path + sync containment — see `build-catalog-component`
+> CONVENTIONS §"Background-session caveat".
+
 1. **Classify by observed git state** (no build dispatch yet):
    - **done** — `sub-layers/<sub-layer>/components/<component>/` exists on
      `origin/main` (`git ls-tree -r origin/main --name-only`, against the

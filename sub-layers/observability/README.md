@@ -8,6 +8,7 @@ OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subs
 
 | Komponente | sync-wave | Quelle | OCI |
 |---|---|---|---|
+| [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Helm `prometheus-community/prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
 | [`kube-prometheus-stack`](components/kube-prometheus-stack/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (Prometheus disabled) | `oci://.../observability/kube-prometheus-stack:vX.Y.Z` |
 | [`loki`](components/loki/) | 10 | Helm `grafana/loki` (distributed) | `oci://.../observability/loki:vX.Y.Z` |
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` | `oci://.../observability/mimir:vX.Y.Z` |
@@ -16,7 +17,7 @@ OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subs
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 
-Wave 0: Operator + CRDs. Wave 10: drei Storage-Endpoints (alle gegen Garage). Wave 20: Collector + UI (brauchen Endpoints aus Wave 10).
+Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: Operator-Workload + Hubble. Wave 10: drei Storage-Endpoints (alle gegen Garage). Wave 20: Collector + UI (brauchen Endpoints aus Wave 10).
 
 `hubble` ist orthogonal zum LGTM-A-Stack (Netzwerk-Flow-Sichtbarkeit aus dem Cilium-Substrat, nicht Logs/Metrics/Traces) und hängt nur vom Cilium-Agent-Hubble-Server ab — siehe [`components/hubble/`](components/hubble/) für die Substrat-Precondition.
 
