@@ -15,6 +15,7 @@ OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subs
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
+| [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 
 Wave 0: Operator + CRDs. Wave 10: drei Storage-Endpoints (alle gegen Garage). Wave 20: Collector + UI (brauchen Endpoints aus Wave 10).
 
