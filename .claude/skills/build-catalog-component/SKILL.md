@@ -120,6 +120,17 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    (`.claude/worktrees/<slug>`, slug = `<sub-layer>-<component>`) on branch
    `catalog-build/<slug>` under the cross-session lock. All later phases operate
    inside `$WT`. (Fails fast if another session already claimed the component.)
+7. **Pin `$findings_file` now — the single evaluator-evidence path for the whole
+   run.** Both inputs are settled at this point: `<N>` is the run's issue-number
+   argument (resolved in step 3, or absent) and `<slug>` is fixed from step 6. Set
+   it once: `.work/issue-<N>/evaluator-findings.md` **if** an issue number was
+   supplied, **else** `.work/build-<slug>/evaluator-findings.md`. Every later phase
+   uses this one value **unchanged** — the Phase-3 clear/write, the evaluator brief,
+   the Phase-4 fixer brief, every Phase-5 reviewer brief, the Phase-6 re-dispatch,
+   and the completion read — and **never re-derives the path-form choice
+   downstream**. Re-deriving it per-site (especially if an issue number only
+   appears mid-run, e.g. at the Phase-7 `Closes`/`Refs` decision) is the desync
+   that laundered a stale `pass` in earlier revisions.
 
 ## Phase 2 — Build (dispatch `senior-implementer`, isolated)
 
@@ -147,18 +158,16 @@ name, and the **external spec** (issue ACs +
 resolution, tamper-check) then the semantic ACs (freeze-line consistency,
 non-vacuity, capability mapping, README↔artifact agreement, AC-by-AC verdict). It
 returns the structured verdict from its output schema. **Brief it to WRITE that
-verdict to the one findings path `$findings_file`** —
-`.work/issue-<N>/evaluator-findings.md` when the issue number is known, else
-`.work/build-<slug>/evaluator-findings.md` (it is Bash-capable) — and to reply
-with `verdict:` + that path. **Pin `$findings_file` once, the moment Phase 1
-resolves the issue number, and use that one value everywhere**: it is what the
-orchestrator clears below, what the evaluator brief names, what every Phase-5
-reviewer brief points at, and what the completion predicate reads. A path that
-desyncs across those sites (clear `build-<slug>` but point the reviewer at a stale
-`issue-<N>`) is how a stale `pass` survives the clear. The value is relative to
-`$WT`: every clear, write, and read runs from inside the worktree (Phase 1
-`cd "$WT"`; all later phases operate there), so the one string resolves to one
-file — re-derive it inside `$WT`, never from the main clone's cwd.
+verdict to the pinned `$findings_file`** (from Phase 1 step 7; it is Bash-capable)
+and to reply with `verdict:` + that path. That one pinned value is used unchanged
+everywhere — what the orchestrator clears below, what this evaluator brief names,
+what every Phase-5 reviewer brief points at, and what the completion predicate
+reads; recomputing the path-form choice at any of those sites (clear `build-<slug>`
+but point the reviewer at a stale `issue-<N>`) is how a stale `pass` survives the
+clear, so reference the pin, never recompute it. The value is relative to `$WT`:
+every clear, write, and read runs from inside the worktree (Phase 1 `cd "$WT"`; all
+later phases operate there), so the one string resolves to one file — never from
+the main clone's cwd.
 
 **Evaluator-evidence freshness protocol — applies to *every* evaluator dispatch
 (this Phase-3 one and the Phase-6 step-2 re-dispatch alike):** `.work/` is
@@ -203,10 +212,12 @@ after that, surface residual findings to the user and stop.
 ## Phase 5 — Review (parallel personas, single-pass default)
 
 Once the evaluator passes, dispatch reviewers in parallel. **Each reviewer brief
-carries the evaluator-findings file path** (`.work/issue-<N>/evaluator-findings.md`,
-from Phase 3) as immutable validation evidence — the Tier-1 gate already ran, the
-reviewer does not re-run it — plus the external spec (issue ACs +
-`AGENTS.md §Hard Constraints`):
+carries the pinned `$findings_file`** (Phase 1 step 7 — the same value the Phase-3
+protocol cleared and the evaluator wrote, `issue-<N>` or `build-<slug>`, never a
+re-hardcoded `issue-<N>` literal, which would desync on a no-issue direct build
+and brief the reviewer at an absent path) as immutable validation evidence — the
+Tier-1 gate already ran, the reviewer does not re-run it — plus the external spec
+(issue ACs + `AGENTS.md §Hard Constraints`):
 
 - `staff-reviewer` always (primary gate + triage).
 - `security-reviewer` if the component touches secrets (path under
@@ -324,8 +335,11 @@ working tree is removed, which releases the slot for another session.
 
 ## Completion predicate
 
-Done = evaluator `verdict: pass` (deterministic gate green + locally-verifiable
-ACs pass) + reviewer critical/high cleared + Phase-6 re-verification green (the
+Done = evaluator `verdict: pass` **read from the pinned `$findings_file`**, not
+from the reply channel (a reply that claims pass with no/empty evidence file is
+unverified per the Phase-3 freshness protocol) (deterministic gate green +
+locally-verifiable ACs pass) + reviewer critical/high cleared + Phase-6
+re-verification green (the
 component is evaluator-verified at its **pre-aggregate** HEAD; the Phase-6
 aggregate edit is out of the evaluator's scope by contract — deterministically
 shape-cross-checked locally and carried to the authoritative human PR review,
