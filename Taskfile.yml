@@ -174,7 +174,9 @@ tasks:
       # scanned every .md on disk — 266 files, 168 of them inside the gitignored
       # `.claude/worktrees/` build copies plus untracked scratch (Plans/). Tracked
       # files are exactly the published docs and stay DRY with .gitignore.
-      - markdownlint --config .markdownlint.yaml $(git ls-files '*.md')
+      # Null-delimited | xargs -0 (matching lint:rendered below) keeps paths intact
+      # under word-splitting; -r skips the run when no .md is tracked.
+      - git ls-files -z '*.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
   lint:rendered:
     desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml

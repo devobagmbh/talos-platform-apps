@@ -49,7 +49,7 @@ snyk-results.sarif
 .work/
 
 # Scratch / planning notes (not part of the published catalog, not linted)
-Plans/
+/Plans/
 
 # Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
 !.claude/reviews/.gitkeep
