@@ -1,5 +1,6 @@
 components:
-  - kube-prometheus-stack   # sync-wave 0  — Operator + CRDs (ServiceMonitor, PrometheusRule, AlertmanagerConfig)
+  - prometheus-operator-crds  # sync-wave -1 — strict-B CRDs artifact (ADR-0028): the monitoring.coreos.com CRDs, before the operator workload
+  - kube-prometheus-stack   # sync-wave 0  — legacy operator-only placeholder (disposition tracked in #38; the strict-B CRDs now live in prometheus-operator-crds)
   - loki                    # sync-wave 10 — braucht Garage-Bucket
   - mimir                   # sync-wave 10 — braucht Garage-Bucket
   - tempo                   # sync-wave 10 — braucht Garage-Bucket
