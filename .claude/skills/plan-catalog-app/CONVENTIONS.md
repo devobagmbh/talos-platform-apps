@@ -51,9 +51,9 @@ components:
       repo: <helm-repo-url>
       name: <chart-name>
       version: <vX.Y.Z>                    # pinned; never a range, never :latest
-    capability:                            # null + a TODO note if not yet in the index
-      id: <capability-id>
-      swap_class: drop-in | label-move | data-migration | rewrite-required | consumer-change
+    capability:                            # see §6: a named id (present in index) OR null = no swappable capability
+      id: <capability-id>                  # null when no swappable capability applies (apis-only foundational component)
+      swap_class: drop-in | label-move | data-migration | rewrite-required | consumer-change   # null when id is null
     sync_wave: "<int>"                     # string, regex ^-?[0-9]+$
     external_dependencies: ["<sub-layer>/<component>", ...]  # regex ^[a-z0-9-]+/[a-z0-9-]+$
     freeze_line_sketch:                    # SKETCH only — NOT the customization.yaml contract (see note)
@@ -136,16 +136,37 @@ is a finding):
    `external_dependencies` target either already exists in the tree
    (`sub-layers/<sl>/components/<c>/`) OR appears earlier in `build_order`. A
    dependency that is neither is a blocking finding (the build would stall).
-6. **Capability coherence.** Each `capability.id` exists in
-   `catalog/capability-index.yaml`, and the component's `swap_class` matches the
-   **active implementation** (`status: active`) for that id — the index keys
-   `swap_class` per implementation, so "matches the index" means the active
-   implementation's value, not any implementation's. OR the capability is `null`:
-   permitted but a **tracked required pre-build action** — the index entry MUST be
-   added (a serialized integration step) *before* that component builds, or the
-   build phase's evaluator will reject it. Record it in `open_questions[]` as a
-   pre-build blocker, never as a silent `# TODO:`; never invent an index entry
-   inside the plan.
+6. **Capability coherence.** A component's `capability` is in exactly one of three
+   states; the state — keyed on whether `capability.id` is null — decides what the
+   build does:
+   - **Mapped** — `capability.id` is set and exists in
+     `catalog/capability-index.yaml`, and `swap_class` matches the **active
+     implementation** (`status: active`) for that id (the index keys `swap_class`
+     per implementation, so "matches the index" means the active implementation's
+     value, not any implementation's). The built component declares
+     `provides[].capabilities: [{id, swap_class}]`.
+   - **Pending-index** — the component DOES provide a swappable capability, but that
+     capability id is **not yet** in the index. Name the **intended** id in
+     `capability.id` (naming the id is not "inventing an index entry" — that
+     prohibition is on writing the full index row into the component) and record a
+     **pre-build blocker** in `open_questions[]`: a separate PR adds the index entry
+     and MUST merge before this component builds. Never a silent `# TODO:`. The
+     build verifies the id is in the index and **stops-and-surfaces if it is still
+     absent**. Disambiguating the two non-null states: a `capability.id` absent from
+     the index is **pending-index** when a matching `open_questions[]` blocker
+     exists, and a **mapped-state finding** (missing index entry) when it does not.
+     `capability.id: null` paired with an `open_questions[]` index blocker is
+     malformed (the null contradicts the blocker's swappable intent) — surface it.
+   - **No-capability** — `capability` is `null` (`{id: null, swap_class: null}`):
+     the component provides **no swappable capability**. This is a deliberate design
+     state, NOT a pending action — e.g. a provider-exclusive CRD framework whose API
+     group has no alternative implementation (precedent: `lifecycle/providers`). The
+     build does **no** index check and proceeds; the component declares its chart
+     under `provides[].apis` and carries `provides[].capabilities: []` **without** a
+     `# TODO:`. Non-vacuity: `null` is valid only when no existing index capability
+     fits **and** the component genuinely is not a swappable-interface provider — a
+     real swappable capability left unmapped, or a not-yet-indexed one dodged as
+     `null` instead of the pending-index state above, is a finding.
 7. **Freeze-line coherence (and non-vacuity).** The `freeze_line_sketch` is
    internally consistent: declared `required.*` keys correspond to the
    consumer-config shapes the workload will actually expose (ADR-0024 v2: workload
