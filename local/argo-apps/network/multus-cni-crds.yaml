@@ -1,0 +1,49 @@
+# Argo Application for network/multus-cni-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the k8s.cni.cncf.io NetworkAttachmentDefinition
+# CRD ships as its own OCI artifact, synced at sync-wave -1 ahead of the multus
+# controller workload (wave 0).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: network-multus-cni-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: network
+    platform.devoba.de/component: multus-cni-crds
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/network
+    chart: multus-cni-crds
+    targetRevision: ${TAG}
+    helm:
+      releaseName: multus-cni-crds
+  destination:
+    server: https://kubernetes.default.svc
+    # The NetworkAttachmentDefinition CRD is cluster-scoped; the destination
+    # namespace is nominal. kube-system is where the multus workload lands; it is
+    # substrate-managed, so this Application never creates or manages it.
+    namespace: kube-system
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRD is never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # NetworkAttachmentDefinition CRs (and break running multi-NIC pods).
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: unlike
+      # automated.prune:false above (which only suppresses automated cycles), this
+      # syncOption blocks pruning on BOTH automated and manual sync-with-prune, so a
+      # UI "Sync + Prune" cannot garbage-collect the live NAD CRs.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit on large CRDs.
+      - ServerSideApply=true
