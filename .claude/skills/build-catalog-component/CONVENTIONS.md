@@ -167,10 +167,13 @@ overrides.
 
 `task ci` bundles 1–2 + 4 (lint → render → lint:rendered → conftest-verify →
 conftest); `validate:contract` and chart-ref resolution run alongside it. The
-evaluator persists its verdict to `.work/issue-<N>/evaluator-findings.md`; that
-file is the reviewers' immutable validation-evidence input — a narrative "it
-passed" with no file makes a reviewer correctly return `needs-info` and burns a
-round.
+evaluator persists its verdict to the **single `$findings_file` pinned in Phase 1**
+(`SKILL.md` step 7) — `.work/issue-<N>/evaluator-findings.md` when an issue number
+was supplied, else `.work/build-<slug>/evaluator-findings.md` — never a re-derived
+or fixed `issue-<N>` path, which would desync on a no-issue direct build or a
+resumed session. That file is the reviewers' immutable validation-evidence input —
+a narrative "it passed" with no file makes a reviewer correctly return `needs-info`
+and burns a round.
 
 **What a green gate actually proves (be honest about its reach):** YAML parses,
 images are pinned, the customization contract matches its schema, and known-core
