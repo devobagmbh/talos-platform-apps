@@ -55,11 +55,30 @@ defect the evaluator catches.
 
 ## Capability mapping
 
-Each `provides[].capabilities[].id` MUST exist in `catalog/capability-index.yaml`;
-`swap_class` MUST match that index entry (`drop-in` | `label-move` |
-`data-migration` | `rewrite-required` | `consumer-change`). If the capability is
-not yet in the index, carry `capabilities: []` with a `# TODO:` comment naming
-the follow-up — do not invent an index entry inside the component.
+A component's `provides[].capabilities` takes one of two shapes, set by the plan's
+`capability.id` (build-skill Phase 1 step 4 / plan-CONVENTIONS §6):
+
+- **`capabilities: [{id, swap_class}]`** — the plan names a capability id. That id
+  MUST exist in `catalog/capability-index.yaml` and `swap_class` MUST match the
+  index entry's active implementation (`drop-in` | `label-move` | `data-migration` |
+  `rewrite-required` | `consumer-change`). If the id is absent from the index at
+  build time, the build stops (Phase 1 step 4) — do **not** ship `capabilities: []`
+  as a workaround for a capability the component genuinely provides.
+- **`capabilities: []`** — the component provides no swappable capability. Two
+  legitimate sub-cases:
+  - **No-capability by design (apis-only)** — the plan's `capability` is
+    `{id: null, swap_class: null}` (e.g. a provider-exclusive CRD framework;
+    precedent: `lifecycle/providers`).
+    Carry `capabilities: []` **without** a `# TODO:` and declare the chart under
+    `provides[].apis`. It is a design state, not a deferral.
+  - **No-plan build-time discovery** — building directly from an issue (no plan
+    entry) when a genuinely-needed capability is not yet in the index: carry
+    `capabilities: []` with a `# TODO:` naming the follow-up. (With a plan, that
+    case is the **pending-index** state instead — plan-CONVENTIONS §6.)
+
+Never invent an index entry inside the component (do not edit
+`catalog/capability-index.yaml`; that is the serialized shared-file integration
+step, Phase 6).
 
 ## Namespace & Pod Security Admission (PSA)
 
