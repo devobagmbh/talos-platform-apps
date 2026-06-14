@@ -200,7 +200,7 @@ Claude Code sessions run in parallel on a single clone:
 - The `.git`-mutating steps (fetch + worktree add/remove/prune) run under a
   `mkdir`-atomic lock (portable — macOS has no `flock`), so concurrent
   `worktree:create`/`worktree:remove` from separate sessions cannot corrupt the
-  shared `.git`. A stale lock (>2 min, dead session) is auto-reclaimed.
+  shared `.git`. A stale lock (>5 min, or a dead holder PID) is auto-reclaimed.
 - **Branch name = claim.** A second session calling `worktree:create` for a
   component whose `catalog-build/<slug>` branch already exists fails fast
   ("already claimed"). One component, one session. Re-running for an existing
@@ -214,6 +214,26 @@ render / lint / commit run unlocked in parallel (each worktree has its own index
 `.claude/worktrees/` is gitignored. The optional `catalog-fleet` workflow (one
 operator, autonomous fan-out across many components in ONE session) uses these
 same `worktree:*` targets for its serial pre-step.
+
+`task worktree:create` is the ONE build-isolation mechanism. Do NOT substitute the
+harness `EnterWorktree` for build isolation — it is a separate, session-local
+mechanism whose only role here is a background-session write workaround for the
+**plan** phase (gitignored `.work/` writes), never the build phase. Build
+operations go through `task` (render / lint / ci / validate:contract / scan);
+direct CLI is for non-build inspection + VCS only, drawn **by effect** — `helm show
+chart` (metadata) is fine, but `helm template` / `helm show values`→hand-copy is
+rendering-by-effect and must go through `task render:one`.
+
+**Background-session caveat (cwd divergence).** In a background session that used
+`EnterWorktree`, a dispatched subagent may resolve the *shared checkout* as its cwd
+while the orchestrator works in the worktree — so a subagent's direct `git ls-tree`
+/ `helm show` (or any relative-path read) can read the wrong tree. The Taskfile
+anchor fixes worktree *placement*, not this read-cwd divergence; the two are
+independent. Contain it by (a) passing subagents **absolute paths** for every
+`.work/` artifact and keeping the worktree + shared-checkout copies synced, and (b)
+running the build phase in a **foreground** session (no `EnterWorktree` → no
+divergence). The plan phase is background-safe (only `.work/` writes); the build
+phase is not.
 
 ## Sequencing
 
