@@ -9,6 +9,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | Component | sync-wave | Source | OCI |
 |---|---|---|---|
 | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Helm `prometheus-community/prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
+| [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
 | [`kube-prometheus-stack`](components/kube-prometheus-stack/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (Prometheus disabled) | `oci://.../observability/kube-prometheus-stack:vX.Y.Z` |
 | [`loki`](components/loki/) | 10 | Helm `grafana/loki` (distributed) | `oci://.../observability/loki:vX.Y.Z` |
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` | `oci://.../observability/mimir:vX.Y.Z` |

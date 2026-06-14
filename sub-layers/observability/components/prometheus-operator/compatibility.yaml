@@ -1,0 +1,24 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for the Prometheus Operator. This is the
+# controller half; the CRD half is the SEPARATE component
+# `observability/prometheus-operator-crds`. There is deliberately NO
+# `crd-bearing: true` marker here — that marker belongs ONLY on the -crds half; this
+# workload renders 0 CustomResourceDefinitions (the build gate asserts == 0 here,
+# > 0 in the -crds artifact).
+requires:
+  # The monitoring.coreos.com CRDs must exist before the controller comes up (the
+  # operator's RBAC + admission webhook reference them). The -crds artifact lands at
+  # Argo sync-wave -1, this workload at 0.
+  observability/prometheus-operator-crds: ">=v0.1.0"
+
+# apis-only, NO capability — `capabilities: []` is the deliberate design, NOT a
+# deferral, so there is no `# TODO:`. The monitoring.coreos.com group is
+# provider-exclusive (the Prometheus Operator's own API surface, not a swappable
+# capability with alternative implementations), and the operational capabilities
+# (metrics-scrape / -storage / -query / alert-routing) belong to the Prometheus
+# INSTANCE (issue #20), not to this controller framework. Precedent for
+# apis-only-no-TODO: lifecycle/providers.
+provides:
+  - name: prometheus-operator
+    apis:
+      - kube-prometheus-stack@86.2.3  # operator-only mode; appVersion v0.91.0
+    capabilities: []
