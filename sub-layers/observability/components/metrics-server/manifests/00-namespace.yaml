@@ -1,0 +1,26 @@
+# The component's own namespace. metrics-server is the sole occupant (dedicated
+# namespace, deliberately relocated from kube-system by the base migration —
+# "capability-first refactor"), so this component ships the Namespace object — a
+# shipped manifest takes precedence over Argo `managedNamespaceMetadata`, making
+# the PSA posture authoritative and self-contained (see the build skill's
+# CONVENTIONS.md § Namespace & PSA, and talos-platform-docs ADR-0027).
+#
+# enforce: restricted — metrics-server is a stateless aggregator with no host
+# access. Confirmed against the rendered manifest: the Deployment pod template
+# sets pod securityContext runAsNonRoot:true + seccompProfile RuntimeDefault, and
+# the container sets allowPrivilegeEscalation:false + capabilities.drop:[ALL]
+# (+ readOnlyRootFilesystem:true, runAsNonRoot:true), so it is fully
+# restricted-compliant.
+#
+# The consumer adds — per ADR-0027 — the PNI labels (platform.io/provide.*,
+# network-*) and the pod-security.kubernetes.io/enforce-version pin (its cluster
+# minor), plus audit/warn modes, in its Argo overlay; the catalog ships neither
+# (they are consumer-composition concerns). See the README §Consumer obligations.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metrics-server
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: metrics-server

@@ -1,0 +1,14 @@
+# metrics-server needs only the Kubernetes control-plane API (the aggregation
+# layer + Kubelets) — a substrate precondition the consumer integrates, not a
+# catalog component edge or capability dep (ADR-0009, #71). No base
+# version-coupling line. `requires:` carries only component-refs and
+# capability-ids, so it is empty here.
+requires: {}
+provides:
+  - name: metrics-server
+    apis:
+      - metrics-server@3.13.1 # kubernetes-sigs metrics-server chart (Resource Metrics API)
+    capabilities:
+      # Resource-Metrics-API (HPA + kubectl top) — id from catalog/capability-index.yaml;
+      # drop-in: consumer can substitute keda-metrics-adapter without selector/config changes.
+      - {id: hpa-metrics, swap_class: drop-in}
