@@ -12,7 +12,7 @@
 
 ## Operator vs. CR
 
-Diese Komponente liefert **nur den Operator** (CRD + controller-manager + RBAC + ns `valkey-operator-system`). Konkrete `Valkey`-CRs sind **consumer-owned** (ADR-0024) und gehören in den jeweiligen App-Sub-Layer / das Cluster-Repo — z.B. Harbors Cache (apps #84, seeder-Wiring).
+Diese Komponente liefert **nur den Operator** (CRD + controller-manager + RBAC + ns `valkey-operator-system`). Konkrete `Valkey`-CRs sind **consumer-owned** (ADR-0024) und gehören in den jeweiligen App-Sub-Layer / das Cluster-Repo — z.B. Harbors Cache (apps #84, Wiring im Konsumenten-Repo).
 
 ## Talos / Single-Node
 

@@ -1,11 +1,11 @@
 # Komponente `lifecycle/ipxe`
 
-HTTP-Server für statische iPXE-Boot-Assets. Wird vom DHCP-Boot-Pfad der Office-Lab-Nodes als Next-Boot-URL referenziert und liefert die Talos-Initial-Boot-Konfig (Kernel-Cmdline → `machine-config`-URL).
+HTTP-Server für statische iPXE-Boot-Assets. Wird vom DHCP-Boot-Pfad der Konsumenten-Cluster-Nodes als Next-Boot-URL referenziert und liefert die Talos-Initial-Boot-Konfig (Kernel-Cmdline → `machine-config`-URL).
 
 ## Architektur
 
 ```
-Office-Lab-Node (PXE-Boot)
+Konsumenten-Node (PXE-Boot)
    │
    │ 1. DHCP: gibt 'next-server' + 'filename' zurück
    ▼
@@ -32,14 +32,14 @@ Der iPXE-Server selbst läuft als minimaler nginx im Cluster und serviert aussch
 |---|---|
 | `Namespace ipxe` | Komponenten-Boundary, Labels für Sub-Layer-Selektion |
 | `ServiceAccount ipxe` | Identity für das Deployment (kein RBAC nötig — nur statische Files) |
-| `ConfigMap ipxe-boot-scripts` | Default-Skelett mit Platzhalter-`boot.ipxe`. Wird im Konsumenten-Repo (`talos-seeder-cluster`) mit den echten Boot-Skripten überschrieben |
+| `ConfigMap ipxe-boot-scripts` | Default-Skelett mit Platzhalter-`boot.ipxe`. Wird im Konsumenten-Repo (`<consumer-repo>`) mit den echten Boot-Skripten überschrieben |
 | `ConfigMap ipxe-nginx` | nginx-Site-Config: Listen 8080, `Content-Type: text/plain` für `.ipxe`-Files |
 | `Deployment ipxe` | nginx 1.27-alpine, non-root (UID 101), readOnlyRootFilesystem, alle Capabilities dropped |
 | `Service ipxe` | LoadBalancer auf Port 8080, `io.cilium/lb-ipam-pool: seeder` |
 
 ## Cluster-spezifische Konfiguration
 
-Im `talos-platform-apps` lebt nur das Default-Skelett. Das Konsumenten-Repo (`talos-seeder-cluster`, Layer 3) liefert:
+Im `talos-platform-apps` lebt nur das Default-Skelett. Das Konsumenten-Repo (`<consumer-repo>`, Layer 3) liefert:
 
 - **Echte `ipxe-boot-scripts`-ConfigMap** mit den `.ipxe`-Files (Talos-Image-URL, Kernel-Args, `machine-config`-URL pro Hardware-Variante).
 - **`CiliumLoadBalancerIPPool` namens `seeder`** mit der VIP-Range, aus der die LB-IPAM-Annotation eine konkrete IP bekommt.

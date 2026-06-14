@@ -19,8 +19,8 @@ Sync-Wave folgt der CRD-Bootstrap-Reihenfolge: Wave 0 erzeugt die Crossplane-CRD
 
 ## Konsumiert von
 
-- **Seeder** — exklusiv. Office-Lab-Provisionierung läuft vom Seeder aus.
-- **Office-Lab** — nein (Office-Lab provisioniert keine weiteren Cluster, vorerst).
+- Ein provisionierender Control-Plane-Konsument — exklusiv. Die Child-Cluster-Provisionierung läuft von hier aus.
+- Provisionierte Child-Cluster — nein (sie provisionieren vorerst keine weiteren Cluster).
 
 ## Render-Konvention
 
@@ -47,7 +47,7 @@ Eingabe-Konvention pro Komponente:
 
 [#12 — Sub-Layer `lifecycle/`: Crossplane + iPXE](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+lifecycle)
 
-Vorgelagert: [#11 — OpenTofu-Modul `talos-cluster` schreiben](https://github.com/devobagmbh/talos-platform-apps/issues/?q=OpenTofu-Modul+talos-cluster) — das Modul wird vom `Workspace` referenziert und liegt im Konsumenten-Repo (`talos-seeder-cluster/stage-1/modules/talos-cluster/`), nicht hier.
+Vorgelagert: [#11 — OpenTofu-Modul `talos-cluster` schreiben](https://github.com/devobagmbh/talos-platform-apps/issues/?q=OpenTofu-Modul+talos-cluster) — das Modul wird vom `Workspace` referenziert und liegt im Konsumenten-Repo (`<consumer-repo>/stage-1/modules/talos-cluster/`), nicht hier.
 
 ## Verwandte ADRs
 

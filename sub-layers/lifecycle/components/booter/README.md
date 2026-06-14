@@ -39,7 +39,7 @@ chainload to. Both are needed for an offline-capable bare-metal boot.
 |---|---|
 | `Namespace booter` | Component boundary. PSA `privileged` — proxyDHCP needs hostNetwork + UDP < 1024. |
 | `ServiceAccount booter` | Identity for the Deployment (no RBAC needed). |
-| `ConfigMap booter-config` | Default skeleton with a placeholder proxyDHCP config. The consumer repo (`talos-seeder-cluster`) overrides `.data` with the real config. |
+| `ConfigMap booter-config` | Default skeleton with a placeholder proxyDHCP config. The consumer repo (`<consumer-repo>`) overrides `.data` with the real config. |
 | `Deployment booter` | `siderolabs/booter` pinned to `v0.3.1`, `hostNetwork: true`, caps reduced to `NET_BIND_SERVICE` + `NET_RAW` (not privileged), singleton (`replicas: 1`, `Recreate`). |
 
 No `Service` object: proxyDHCP communicates over the host network (raw L2
@@ -48,7 +48,7 @@ broadcast), so a ClusterIP/LoadBalancer Service would not carry its traffic.
 ## Consumer-supplied config
 
 The catalog ships only the workload shell + a documented placeholder. The
-consumer cluster repo (`talos-seeder-cluster`, Layer 3) supplies:
+consumer cluster repo (`<consumer-repo>`, Layer 3) supplies:
 
 - **Real `booter-config` ConfigMap** — boot interface/VLAN, the iPXE binaries to
   serve (BIOS `undionly.kpxe` / UEFI `ipxe.efi`), the `lifecycle/ipxe` HTTP

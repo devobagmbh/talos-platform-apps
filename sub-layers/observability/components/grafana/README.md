@@ -16,8 +16,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/observability/grafana:vX.Y.Z
 
 ## Konsumiert von
 
-- **Office-Lab** — Vollstack
-- **Seeder** — nein (Grafana wird auf Office-Lab konsolidiert)
+- Ein Full-Stack-Konsument — Vollstack
+- Ein Forwarder-only-Konsument — nein (Grafana wird auf dem Full-Stack-Konsumenten konsolidiert)
 
 ## Verwandte ADRs
 

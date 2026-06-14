@@ -2,7 +2,7 @@
 
 LGTM-A-Stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only) + Hubble (Cilium network-flow visibility).
 
-OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subset (Seeder = Operator + Alloy-Forwarder, Office-Lab = Vollstack).
+OCI-Distribution pro Komponente (ADR-0009). Konsumenten-Cluster wählen das Subset (ein Forwarder-only-Konsument = Operator + Alloy-Forwarder, ein Full-Stack-Konsument = Vollstack).
 
 ## Komponenten
 
@@ -21,18 +21,18 @@ Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monit
 
 `hubble` ist orthogonal zum LGTM-A-Stack (Netzwerk-Flow-Sichtbarkeit aus dem Cilium-Substrat, nicht Logs/Metrics/Traces) und hängt nur vom Cilium-Agent-Hubble-Server ab — siehe [`components/hubble/`](components/hubble/) für die Substrat-Precondition.
 
-Bidirektionale Watchdog-AlertmanagerConfig (Seeder ↔ Office-Lab) lebt aktuell als Cross-Cluster-Resource im Konsumenten-Repo — sobald Issue #36 implementiert ist, kann das eine eigene `observability/watchdog`-Komponente werden.
+Bidirektionale Watchdog-AlertmanagerConfig (zwischen zwei Konsumenten-Clustern) lebt aktuell als Cross-Cluster-Resource im Konsumenten-Repo — sobald Issue #36 implementiert ist, kann das eine eigene `observability/watchdog`-Komponente werden.
 
 ## Konsumiert von
 
-- **Office-Lab** — Vollstack
-- **Seeder** — Subset: `kube-prometheus-stack` + `alloy` (Forwarder zu Office-Lab-Endpoints)
+- Ein Full-Stack-Konsument — Vollstack
+- Ein Forwarder-only-Konsument — Subset: `kube-prometheus-stack` + `alloy` (Forwarder zu den Endpoints des Full-Stack-Konsumenten)
 
 ## Backlog-Issue
 
 [#17 — Sub-Layer `observability/`: LGTM-A](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring)
 
-Verwandt: [#34 — Office-Lab-LGTM-A-Monitoring-Stack](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Office-Lab-LGTM-A), [#35 — Seeder-LGTM-A-Subset](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Seeder-LGTM-A), [#36 — Bidirektionale Watchdog-Webhooks](https://github.com/devobagmbh/talos-platform-apps/issues/?q=Watchdog-Webhooks).
+Verwandt: [#34 — Full-Stack-LGTM-A-Monitoring-Stack](https://github.com/devobagmbh/talos-platform-apps/issues/34), [#35 — LGTM-A-Forwarder-Subset](https://github.com/devobagmbh/talos-platform-apps/issues/35), [#36 — Bidirektionale Watchdog-Webhooks](https://github.com/devobagmbh/talos-platform-apps/issues/36).
 
 ## Verwandte ADRs
 

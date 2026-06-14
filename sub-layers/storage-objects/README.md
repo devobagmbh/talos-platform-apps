@@ -15,8 +15,8 @@ Wave 0 stellt den S3-Endpoint, Wave 10 die Bucket-Definitionen (Bucket + Access-
 
 ## Konsumiert von
 
-- **Seeder** — Single-Node-Cluster. Buckets: `tf-state`, `ipxe`, `velero-source-seeder`
-- **Office-Lab** — 3-Node-Cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-office-lab`, App-spezifische Buckets
+- Ein Single-Node-Konsument — Single-Node-Cluster. Buckets: `tf-state`, `ipxe`, `velero-source-seeder`
+- Ein Multi-Node-Konsument — 3-Node-Cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-office-lab`, App-spezifische Buckets
 - **DS720+** — separates Garage-Cluster (Docker-Container auf NAS, KEIN Mitglied der K8s-Cluster). Tier-2-Backup-Ziel mit Buckets `velero-seeder`, `velero-office-lab`. Backup-Invariante: Ziel ≠ Quelle.
 
 ## Backlog-Issue

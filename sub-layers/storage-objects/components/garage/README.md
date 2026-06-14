@@ -16,8 +16,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/storage-objects/garage:vX.Y.Z
 
 ## Konsumiert von
 
-- **Seeder** — Single-Node-Cluster
-- **Office-Lab** — 3-Node-Cluster
+- Ein Single-Node-Konsument — Single-Node-Cluster
+- Ein Multi-Node-Konsument — 3-Node-Cluster
 - **DS720+** — separates Cluster, Tier-2-Backup-Ziel (KEIN Mitglied des K8s-Clusters)
 
 ## Verwandte ADRs

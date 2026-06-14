@@ -16,8 +16,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/observability/kube-prometheus-stack
 
 ## Konsumiert von
 
-- **Office-Lab** — Vollstack (Alertmanager lokal)
-- **Seeder** — Subset: nur Operator + Alertmanager-Watchdog
+- Ein Full-Stack-Konsument — Vollstack (Alertmanager lokal)
+- Ein Forwarder-only-Konsument — Subset: nur Operator + Alertmanager-Watchdog
 
 ## Verwandte ADRs
 

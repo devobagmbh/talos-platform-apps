@@ -1,6 +1,6 @@
 # Komponente `secrets/clustersecretstore-defaults`
 
-Boilerplate für `ClusterSecretStore`-Resources: `vault-local` (Office-Lab) und `vault-office-lab-remote` (Seeder, cross-cluster). Konkrete Vault-Endpoints + Auth-Refs werden im Konsumenten-Cluster-Repo (Layer 3) überschrieben.
+Boilerplate für `ClusterSecretStore`-Resources: `vault-local` (in-cluster-Vault-Konsument) und `vault-office-lab-remote` (cross-cluster-Vault-Konsument). Konkrete Vault-Endpoints + Auth-Refs werden im Konsumenten-Cluster-Repo (Layer 3) überschrieben.
 
 **Skelett** — Implementation in Issue [#15a](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+secrets).
 

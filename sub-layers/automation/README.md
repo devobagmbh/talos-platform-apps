@@ -12,8 +12,7 @@ OCI-Distribution pro Komponente (ADR-0009).
 
 ## Konsumiert von
 
-- **Seeder** — `velero`
-- **Office-Lab** — `velero`
+- Jeder Konsumenten-Cluster, der Backups braucht — `velero`
 
 ## Backlog-Issue
 

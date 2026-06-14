@@ -1,6 +1,6 @@
 # Component `lifecycle/providers`
 
-Crossplane provider **and function** packages for child-cluster provisioning (e.g. office-lab).
+Crossplane provider **and function** packages for child-cluster provisioning.
 
 | Package | Kind | Version | Purpose |
 |---|---|---|---|

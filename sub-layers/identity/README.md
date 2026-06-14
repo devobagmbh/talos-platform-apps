@@ -23,14 +23,14 @@ consumer cluster manifests.
 
 ## Consumed by
 
-- **Seeder** — own dex instance (`argocd-seeder`, `harbor-seeder`,
+- A control-plane consumer — own dex instance (`argocd-seeder`, `harbor-seeder`,
   `kubelogin-seeder` static clients).
-- **office-lab** — own dex instance (argocd, harbor, grafana, vault, kubelogin,
+- A workload consumer — own dex instance (argocd, harbor, grafana, vault, kubelogin,
   alertmanager, kubevirt-manager static clients).
 
-Two independent dex instances run platform-wide (one per cluster), both federating
-the same EntraID tenant via separate app registrations — an auth outage in one
-cluster never blocks login in the other.
+Each consumer runs its own dex instance, all federating the same EntraID tenant via
+separate app registrations — an auth outage in one cluster never blocks login in
+another.
 
 ## Render convention
 
