@@ -62,6 +62,25 @@ marker and the build gate's oracle (`kind: CustomResourceDefinition` count **> 0
 here, **== 0** in the workload artifact). Its workload counterpart is
 `observability/prometheus-operator`.
 
+## Upgrading CRD schemas
+
+When this artifact is bumped to a chart version that changes CRD schemas, the
+consumer's Argo sync applies the new schema in-place (ServerSideApply). Two
+hazards to check before syncing a new version:
+
+- **Validation tightening** — if a newer CRD adds or tightens field validation,
+  existing `monitoring.coreos.com` CRs that violate the new rules are **not**
+  auto-migrated; the operator may enter a reconciliation error loop. Check the
+  upstream prometheus-operator changelog for validation changes and audit existing
+  CRs before syncing.
+- **Field removal** — because the consumer app runs `Prune=false`, fields/CRDs
+  the chart removes are **not** auto-pruned from the cluster; removal needs manual
+  intervention. Never assume a chart downgrade or field drop reconciles itself.
+
+CRD upgrades are forward-compatible by convention (the operator supports the
+served versions), but a major operator bump (`v0.x` API churn) warrants a
+controller-drain check in the consumer repo's runbook.
+
 ## Capability
 
 apis-only, **no capability** — `capabilities: []`. The `monitoring.coreos.com`
