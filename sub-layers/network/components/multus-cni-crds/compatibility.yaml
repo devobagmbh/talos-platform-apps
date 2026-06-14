@@ -22,5 +22,5 @@ requires: {}
 provides:
   - name: multus-cni-crds
     apis:
-      - network-attachment-definitions.k8s.cni.cncf.io@v1  # k8s.cni.cncf.io/v1 NetworkAttachmentDefinition (multus-cni v4.2.4)
+      - k8s.cni.cncf.io/NetworkAttachmentDefinition@v1  # NetworkAttachmentDefinition CRD, k8s.cni.cncf.io/v1 (multus-cni v4.2.4)
     capabilities: []
