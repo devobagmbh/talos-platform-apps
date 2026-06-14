@@ -1,0 +1,52 @@
+# Argo Application for observability/prometheus-operator (local test environment).
+# Strict-B workload half (ADR-0028): the operator controller only — every
+# instance/exporter/scraper is disabled, the monitoring.coreos.com CRDs come
+# from the separate prometheus-operator-crds artifact (sync-wave -1).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-prometheus-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    # The admission-webhook caBundle is bootstrapped by the chart's kube-webhook-certgen
+    # Helm hooks (PreSync create-secret / PostSync patch-webhook), which ArgoCD honors
+    # automatically. Keep those chart hook resources intact — read the component README's
+    # bootstrap section before changing the sync configuration of this Application.
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: prometheus-operator
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/observability
+    chart: prometheus-operator
+    targetRevision: ${TAG}
+    helm:
+      releaseName: prometheus-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  # K8s 1.32+ adds .status.terminatingReplicas to Deployment.status; Argo's
+  # structured-merge-diff caches the old OpenAPI schema and cannot type the
+  # field ("field not declared in schema"). Ignoring is safe — status fields
+  # are not Argo-managed.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true

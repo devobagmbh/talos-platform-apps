@@ -1,6 +1,6 @@
 # Component `lifecycle/compositions`
 
-`CompositeResourceDefinition` `XCluster` + its `Composition` for child-cluster provisioning (e.g. office-lab).
+`CompositeResourceDefinition` `XCluster` + its `Composition` for child-cluster provisioning.
 
 `XCluster` is the platform-internal API. **Crossplane v2:** the XRD is `apiextensions.crossplane.io/v2`, `scope: Namespaced` — the consumer creates a namespaced `XCluster` directly (no v1 claim). **Arch B (DRY):** that `XCluster` is **thin** — `clusterName` + `tofuModuleSource`. It does **not** carry cluster identity (nodes/classes/versions). That identity lives once in the consumer's committed `cluster.yaml`, read by the consumer's self-contained `stage-1/` tofu root — the **same root** the Stage-0 laptop `tofu apply` runs. Update = edit `cluster.yaml` once, never the `XCluster` too.
 
