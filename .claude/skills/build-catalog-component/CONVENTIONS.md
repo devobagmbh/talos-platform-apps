@@ -145,7 +145,13 @@ declared chart ref. The gate and the acceptance spec are outside the builder's
 reach by design — editing them to pass is the documented reward-hacking failure
 mode.
 Shared-file aggregation (capability-index, sub-layer lists) is a separate,
-serialized integration step, never a parallel builder's job.
+serialized integration step, never a parallel builder's job. That step lands **on
+the component PR branch** (same PR, hubble #154 precedent) and is owned by the
+build skill's Phase 6, which re-verifies the result — the component-scoped
+`catalog-evaluator` never sees the aggregates, so its `pass` says nothing about
+them. A plan that lists the aggregate updates as `out_of_scope` "after the
+component PR merges" is a stale convenience the Phase-6 on-branch placement
+overrides.
 
 ## Verification chain
 
@@ -160,7 +166,14 @@ serialized integration step, never a parallel builder's job.
    `:latest` image tags.
 
 `task ci` bundles 1–2 + 4 (lint → render → lint:rendered → conftest-verify →
-conftest); `validate:contract` and chart-ref resolution run alongside it.
+conftest); `validate:contract` and chart-ref resolution run alongside it. The
+evaluator persists its verdict to the **single `$findings_file` pinned in Phase 1**
+(`SKILL.md` step 7) — `.work/issue-<N>/evaluator-findings.md` when an issue number
+was supplied, else `.work/build-<slug>/evaluator-findings.md` — never a re-derived
+or fixed `issue-<N>` path, which would desync on a no-issue direct build or a
+resumed session. That file is the reviewers' immutable validation-evidence input —
+a narrative "it passed" with no file makes a reviewer correctly return `needs-info`
+and burns a round.
 
 **What a green gate actually proves (be honest about its reach):** YAML parses,
 images are pinned, the customization contract matches its schema, and known-core
