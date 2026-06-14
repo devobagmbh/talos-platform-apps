@@ -130,10 +130,12 @@ Only after Tier 1 is green (or with the green/red state recorded), judge:
 - **README ↔ artifact agreement** — sync-wave, OCI path, listed capabilities,
   and consumer obligations in `README.md` match `customization.yaml` +
   `compatibility.yaml` + the rendered manifest. Doc drift is a finding.
-- **Documentation conformance** — the component `README.md` and its manifest
-  comments conform to `DOCUMENTATION.md` (no specific consumer named in prose;
-  the manifest-comment policy respected). Judge against that file as the single
-  oracle; a violation is a finding.
+- **Documentation conformance** — the component `README.md` and its inline
+  comments in every file class `DOCUMENTATION.md` governs — `helm/*.yaml` (incl.
+  its helm-docs `# --` value descriptions), `manifests/*.yaml`, `customization.yaml`,
+  `compatibility.yaml` — conform to `DOCUMENTATION.md` (no specific consumer named in
+  prose; the manifest-comment policy respected). Judge against that file as the single
+  oracle for the governed-file list too; a violation is a finding.
 - **AC-by-AC verdict** — map each issue acceptance criterion to PASS / FAIL /
   NOT-LOCALLY-VERIFIABLE with cited evidence (command+exit or file:line).
   cosign signing, OCI push, and ArgoCD deployability are

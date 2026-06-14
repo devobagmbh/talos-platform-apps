@@ -3,6 +3,7 @@ paths:
   - ".claude/skills/**"
   - ".claude/agents/**"
   - ".claude/hooks/**"
+  - ".claude/rules/**"
   - ".claude/workflows/**"
   - "**/DOCUMENTATION.md"
 ---
