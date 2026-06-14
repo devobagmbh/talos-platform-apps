@@ -1,0 +1,3 @@
+components:
+  - multus-cni-crds  # sync-wave -1 — strict-B CRDs artifact (ADR-0028): the NetworkAttachmentDefinition CRD, before the Multus controller
+  # multus-cni (sync-wave 0 — strict-B workload artifact) is added by its own PR (issue #53); the workload implements the secondary-network-attachment capability.
