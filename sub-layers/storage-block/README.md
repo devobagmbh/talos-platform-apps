@@ -8,7 +8,7 @@ is the component; this directory is the organisational bracket (ADR-0009).
 
 | Component | sync-wave | Purpose |
 |---|---|---|
-| [`democratic-csi`](components/democratic-csi/) | 0 | NAS-backed iSCSI block storage (Synology DSM) via democratic-csi — **Talos-native (nsenter)**; the seeder's durable tier for stateful workloads (ADR-0026) |
+| [`democratic-csi`](components/democratic-csi/) | 0 | NAS-backed iSCSI block storage (Synology DSM) via democratic-csi — **Talos-native (nsenter)**; a consumer's durable tier for stateful workloads (ADR-0026) |
 | [`synology-csi`](components/synology-csi/) | 0 | **DEPRECATED** — the official Synology CSI; does **not** work on Talos (iscsiadm via `chroot /host` fails — no host userland). Superseded by `democratic-csi`; kept for reference. |
 
 ## Notes

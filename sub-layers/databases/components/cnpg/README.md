@@ -23,7 +23,7 @@ consumer-supplied secrets, config files, or env to run, so `provided_refs` and e
 
 **Consumer-owned** (Layer 3), set in the consumer overlay rather than the catalog:
 
-- **Operator HA** — `replicaCount` (single on a small lab, leader-elected HA on the seeder).
+- **Operator HA** — `replicaCount` (single on a small lab, leader-elected HA on a control-plane cluster).
 - **PodMonitor** — `monitoring.podMonitorEnabled=true` (off in the catalog default; it renders
   a `monitoring.coreos.com/PodMonitor` whose CRD is not guaranteed at sync-wave 0).
 - **The `Cluster` CRs themselves** — including their database credentials — which the consumer
@@ -42,8 +42,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/databases/cnpg:cnpg-vX.Y.Z
 
 ## Consumed by
 
-- **Seeder** — no Postgres consumer currently planned.
-- **office-lab** — consumers are Dex, Harbor, PowerDNS, and workload apps.
+- A consumer with no Postgres consumer — the operator may be present with no `Cluster` CRs.
+- A consumer with database workloads — consumers are Dex, Harbor, PowerDNS, and workload apps.
 
 ## Security trade-off — cluster-wide operator
 

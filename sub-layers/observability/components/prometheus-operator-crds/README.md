@@ -100,8 +100,8 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/observability/prometheus-operator-c
 
 ## Consumed by
 
-- **Office-Lab** — yes (full LGTM-A + Prometheus Operator stack).
-- **Seeder** — yes (operator subset: the Prometheus Operator + Alloy forwarder).
+- A full-stack consumer — yes (full LGTM-A + Prometheus Operator stack).
+- A forwarder-only consumer — yes (operator subset: the Prometheus Operator + Alloy forwarder).
 
 Wherever `observability/prometheus-operator` runs, this CRDs artifact is a hard
 prerequisite (Argo sync-wave -1).

@@ -3,7 +3,7 @@
 NAS-backed **iSCSI block-storage CSI** for the platform (SynologyOpenSource/synology-csi,
 MPL-2.0). Provisions Kubernetes PVCs as iSCSI LUNs on a Synology DSM NAS, so
 stateful workloads survive a node rebuild — the durable tier lives off-node.
-Driving use case: the seeder's single-node Harbor (Postgres/registry) per
+Driving use case: a single-node consumer's Harbor (Postgres/registry) per
 [ADR-0026](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0026-central-harbor-nas-block-storage.md).
 
 ## What this ships (vendored upstream `v1.3.0`, `deploy/kubernetes/v1.20`)

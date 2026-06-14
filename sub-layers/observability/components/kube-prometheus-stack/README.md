@@ -1,12 +1,12 @@
-# Komponente `observability/kube-prometheus-stack`
+# Component `observability/kube-prometheus-stack`
 
-Helm `prometheus-community/kube-prometheus-stack` mit **Prometheus disabled** (Mimir ersetzt es). Liefert ausschließlich Operator + CRDs (`ServiceMonitor`, `PodMonitor`, `PrometheusRule`, `AlertmanagerConfig`) und den Alertmanager.
+Helm `prometheus-community/kube-prometheus-stack` with **Prometheus disabled** (Mimir replaces it). Ships only the operator + CRDs (`ServiceMonitor`, `PodMonitor`, `PrometheusRule`, `AlertmanagerConfig`) and the Alertmanager.
 
-**Skelett** — Implementation in Issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
+**Skeleton** — implementation in issue [#17](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+monitoring).
 
-## Sync-Wave
+## Sync-wave
 
-`0` — bringt die CRDs, die alle anderen Monitoring-Komponenten als ServiceMonitor-/PrometheusRule-Quellen nutzen.
+`0` — ships the CRDs that all other monitoring components use as ServiceMonitor / PrometheusRule sources.
 
 ## OCI
 
@@ -14,11 +14,11 @@ Helm `prometheus-community/kube-prometheus-stack` mit **Prometheus disabled** (M
 oci://ghcr.io/devobagmbh/talos-platform-apps/observability/kube-prometheus-stack:vX.Y.Z
 ```
 
-## Konsumiert von
+## Consumed by
 
-- **Office-Lab** — Vollstack (Alertmanager lokal)
-- **Seeder** — Subset: nur Operator + Alertmanager-Watchdog
+- A full-stack consumer — full stack (Alertmanager local)
+- A forwarder-only consumer — subset: operator + Alertmanager watchdog only
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0015 — Monitoring-Architektur](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
