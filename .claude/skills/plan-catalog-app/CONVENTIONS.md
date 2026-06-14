@@ -130,7 +130,12 @@ is a finding):
 3. **Single interpretation (R3).** Two competent builders reading the plan produce
    the same component. No plausible competing scope is left open.
 4. **Bounded scope (R4).** The plan states what is in scope and, where relevant,
-   what is explicitly out of scope (`out_of_scope[]`).
+   what is explicitly out of scope (`out_of_scope[]`). **Sub-layer aggregate
+   updates** (the sub-layer `README.md` component list + `compatibility.yaml`) are
+   NOT `out_of_scope` and NOT a post-merge follow-up — they are the build phase's
+   Phase-6 on-branch integration step, landed in the component PR (hubble #154
+   precedent). Do not list them in `out_of_scope` as "after the component PR
+   merges"; reference them, if at all, as a build-phase Phase-6 step.
 5. **Resolvable dependency graph.** `build_order` is a valid topological sort:
    the graph (from `external_dependencies` + sync_wave) is acyclic, and every
    `external_dependencies` target either already exists in the tree
