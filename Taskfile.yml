@@ -834,23 +834,34 @@ tasks:
         exit 1
       fi
       slug="${component_id%/*}-${component_id#*/}"
-      wt=".claude/worktrees/${slug}"
+      # Anchor ALL paths + git ops to the MAIN worktree root (cwd-independent), fail-closed.
+      # `git worktree list` always prints the MAIN worktree first, as an absolute path, from
+      # any cwd inside the repo (including a linked worktree) and regardless of the git-dir
+      # layout (--separate-git-dir / GIT_DIR override) — unlike dirname(--git-common-dir),
+      # which only holds when .git sits directly under the root. The guard REFUSES a
+      # non-absolute/empty result (outside a repo, broken git) rather than falling back to
+      # cwd — a cwd-relative lock would let two sessions in different cwds see two distinct
+      # physical locks and break cross-session mutual exclusion.
+      root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
+      case "$root" in /*) ;; *) echo "worktree:create: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
+      wt="$root/.claude/worktrees/${slug}"
+      lock="$root/.claude/worktrees/.lock"
       branch="catalog-build/${slug}"
-      mkdir -p .claude/worktrees
+      mkdir -p "$root/.claude/worktrees"
       # acquire cross-session lock (mkdir is atomic on POSIX; no flock on macOS).
       # Staleness is PID-liveness-based: a held lock is reclaimed only if its
       # recorded holder process is dead — so a slow `git fetch` under the lock is
       # never stolen mid-operation. The >5min age check is a last-resort fallback
       # for the rare window where the pid file was not yet written.
       waited=0
-      until mkdir .claude/worktrees/.lock 2>/dev/null; do
-        holder="$(cat .claude/worktrees/.lock/pid 2>/dev/null || true)"
+      until mkdir "$lock" 2>/dev/null; do
+        holder="$(cat "$lock/pid" 2>/dev/null || true)"
         if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-          rm -rf .claude/worktrees/.lock 2>/dev/null || true   # holder process is dead
+          rm -rf "$lock" 2>/dev/null || true   # holder process is dead
           continue
         fi
-        if [ -n "$(find .claude/worktrees/.lock -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
-          rm -rf .claude/worktrees/.lock 2>/dev/null || true   # >5min, no live pid
+        if [ -n "$(find "$lock" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+          rm -rf "$lock" 2>/dev/null || true   # >5min, no live pid
           continue
         fi
         waited=$((waited + 1))
@@ -860,8 +871,8 @@ tasks:
         fi
         sleep 0.5
       done
-      trap 'rm -rf .claude/worktrees/.lock 2>/dev/null || true' EXIT  # go-task sh: EXIT only; kill/crash covered by PID-liveness reclaim above
-      echo "$$" > .claude/worktrees/.lock/pid 2>/dev/null || true
+      trap 'rm -rf "$lock" 2>/dev/null || true' EXIT  # go-task sh: EXIT only; kill/crash covered by PID-liveness reclaim above
+      echo "$$" > "$lock/pid" 2>/dev/null || true
       # idempotent reuse: dir exists and is on the expected branch
       if [ -d "$wt" ]; then
         cur="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -873,13 +884,13 @@ tasks:
         exit 1
       fi
       # claim check: branch exists (local or remote) without our worktree -> owned elsewhere
-      if git show-ref --verify --quiet "refs/heads/${branch}" \
-         || git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+      if git -C "$root" show-ref --verify --quiet "refs/heads/${branch}" \
+         || git -C "$root" ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
         echo "worktree:create: component ${component_id} already claimed (branch ${branch} exists) — another session owns it" >&2
         exit 1
       fi
-      git fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing origin/main" >&2
-      git worktree add "$wt" -b "$branch" origin/main >/dev/null
+      git -C "$root" fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing origin/main" >&2
+      git -C "$root" worktree add "$wt" -b "$branch" origin/main >/dev/null
       (cd "$wt" && pwd)
 
   worktree:remove:
@@ -891,17 +902,23 @@ tasks:
         exit 1
       fi
       slug="${component_id%/*}-${component_id#*/}"
-      wt=".claude/worktrees/${slug}"
-      mkdir -p .claude/worktrees
+      # Anchor to the MAIN worktree root, fail-closed (same method as worktree:create;
+      # MUST derive $root identically so remove-from-a-different-cwd cannot orphan a
+      # worktree+branch — branch == claim, a stranded claim permanently stalls the component).
+      root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
+      case "$root" in /*) ;; *) echo "worktree:remove: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
+      wt="$root/.claude/worktrees/${slug}"
+      lock="$root/.claude/worktrees/.lock"
+      mkdir -p "$root/.claude/worktrees"
       waited=0
-      until mkdir .claude/worktrees/.lock 2>/dev/null; do
-        holder="$(cat .claude/worktrees/.lock/pid 2>/dev/null || true)"
+      until mkdir "$lock" 2>/dev/null; do
+        holder="$(cat "$lock/pid" 2>/dev/null || true)"
         if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
-          rm -rf .claude/worktrees/.lock 2>/dev/null || true
+          rm -rf "$lock" 2>/dev/null || true
           continue
         fi
-        if [ -n "$(find .claude/worktrees/.lock -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
-          rm -rf .claude/worktrees/.lock 2>/dev/null || true
+        if [ -n "$(find "$lock" -maxdepth 0 -mmin +5 2>/dev/null)" ]; then
+          rm -rf "$lock" 2>/dev/null || true
           continue
         fi
         waited=$((waited + 1))
@@ -911,22 +928,25 @@ tasks:
         fi
         sleep 0.5
       done
-      trap 'rm -rf .claude/worktrees/.lock 2>/dev/null || true' EXIT  # go-task sh: EXIT only; kill/crash covered by PID-liveness reclaim above
-      echo "$$" > .claude/worktrees/.lock/pid 2>/dev/null || true
+      trap 'rm -rf "$lock" 2>/dev/null || true' EXIT  # go-task sh: EXIT only; kill/crash covered by PID-liveness reclaim above
+      echo "$$" > "$lock/pid" 2>/dev/null || true
       if [ -d "$wt" ]; then
         if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && [ "${FORCE:-}" != "1" ]; then
           echo "worktree:remove: $wt has uncommitted changes — commit/push them first, or re-run with FORCE=1" >&2
           exit 1
         fi
-        git worktree remove --force "$wt"
+        git -C "$root" worktree remove --force "$wt"
       fi
-      git worktree prune
+      git -C "$root" worktree prune
       echo "removed worktree $wt (branch catalog-build/${slug} kept; delete with: git branch -D catalog-build/${slug})"
 
   worktree:list:
     desc: Aktive Komponenten-Worktrees auflisten
     cmd: |
-      git worktree list | grep '.claude/worktrees/' || echo "(no active component worktrees)"
+      # `git worktree list` is cwd-independent — same list (absolute paths) from any cwd
+      # inside the repo, including a linked worktree — so no main-root anchor is needed here.
+      # `\.` escapes the regex dot so the filter matches the literal `.claude/worktrees/` path.
+      git worktree list | grep '\.claude/worktrees/' || echo "(no active component worktrees)"
 
   # --- Housekeeping ---
 
