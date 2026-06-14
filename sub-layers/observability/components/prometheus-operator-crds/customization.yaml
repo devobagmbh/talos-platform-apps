@@ -1,0 +1,16 @@
+# Customization Contract v2 (ADR-0024). Strict-B CRDs artifact (ADR-0028): the
+# rendered workload is purely cluster-scoped monitoring.coreos.com CRDs. CRDs have
+# NO consumer config surface — no env, no config files, no secrets, no selector
+# CRs — so this component is fully cluster-agnostic: every provided/required shape
+# is empty. The CRDs land at sync-wave -1, before the controller (wave 0).
+freeze_line:
+  workload: rendered/manifest.yaml  # the 10 monitoring.coreos.com CRDs — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "-1"
+external_dependencies: []
