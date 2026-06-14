@@ -137,10 +137,7 @@ Pipeline implementation follows in a separate iteration (a task from phase 2 of 
 - **Value separation**: cluster-specific Helm values stay in the consumer-cluster repos. This layer holds defaults and shared values.
 - **Language**: English throughout — code, comments, READMEs, and docs (platform policy 2026-06-03). Code and Helm values follow upstream conventions (English).
 - **Tools**: all dev-relevant binaries come from Devbox — direct `brew install <tool>` is forbidden to avoid version drift.
-
-## Consumers
-
-Consumer-cluster repos (layer 3) reference the OCI components by tag / Argo `targetRevision` and compose their cluster configuration from them. Which subset a consumer uses lives in the respective consumer repo, not here.
+- **Consumer composition**: consumer-cluster repos (layer 3) reference the OCI components by tag / Argo `targetRevision` and compose their cluster configuration from them. Which subset a consumer uses lives in the respective consumer repo, not here.
 
 ## Related docs
 
