@@ -17,7 +17,7 @@
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-OCI sub-layers of the Devoba Talos platform: `lifecycle`, `storage-objects`, `registry`, `databases`, `secrets`, `automation`, and `observability`. Pre-rendered manifests with cosign signature, SLSA v1 provenance, and CycloneDX SBOM. Consumed by consumer-cluster repos.
+OCI sub-layers of the Devoba Talos platform: `automation`, `databases`, `identity`, `lifecycle`, `network`, `observability`, `registry`, `secrets`, `storage-block`, and `storage-objects`. Pre-rendered manifests with cosign signature, SLSA v1 provenance, and CycloneDX SBOM. Consumed by consumer-cluster repos.
 
 ## Purpose
 
@@ -33,10 +33,13 @@ OCI distribution is **per component** (ADR-0009, revision 2026-05-26). The sub-l
 |---|---|---|
 | [`automation`](sub-layers/automation/) | renovate, velero | #16 |
 | [`databases`](sub-layers/databases/) | cnpg | #15 |
+| [`identity`](sub-layers/identity/) | dex | #47 |
 | [`lifecycle`](sub-layers/lifecycle/) | crossplane, ipxe, providers, compositions | #12 |
+| [`network`](sub-layers/network/) | multus-cni-crds | #48 |
 | [`observability`](sub-layers/observability/) | kube-prometheus-stack, loki, mimir, tempo, alloy, grafana | #17 |
 | [`registry`](sub-layers/registry/) | harbor | #14 |
 | [`secrets`](sub-layers/secrets/) | external-secrets, clustersecretstore-defaults | #15a |
+| [`storage-block`](sub-layers/storage-block/) | democratic-csi, synology-csi | #50 |
 | [`storage-objects`](sub-layers/storage-objects/) | garage, garage-buckets | #13 |
 
 Each sub-layer has a `README.md` with a component table including sync-wave order. Each component has its own `README.md` + `compatibility.yaml` with a `requires` block (component dependencies, including cross-sub-layer ones such as `databases/cnpg` for Harbor).
