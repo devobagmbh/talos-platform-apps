@@ -19,7 +19,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 
-Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
+Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
