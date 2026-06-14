@@ -1,0 +1,26 @@
+# Strict-B CRDs artifact (ADR-0028) for multus-cni. The CRD is cluster-scoped
+# (the NetworkAttachmentDefinition resource itself is Namespaced, but the CRD
+# object depends on nothing in the catalog) → requires is empty.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
+# workload half is `network/multus-cni`. The build gate uses this marker to assert
+# kind: CustomResourceDefinition count > 0 here (and == 0 in the workload
+# artifact). compatibility.yaml has no schema, so the extra top-level field is
+# permitted.
+crd-bearing: true
+
+requires: {}
+
+# apis-only, NO capability. The k8s.cni.cncf.io NetworkAttachmentDefinition CRD
+# is the API surface (schema), not the swappable operational capability. The
+# capability `secondary-network-attachment` is provided by the workload artifact
+# `network/multus-cni` (the controller DaemonSet that implements the CNI
+# delegation), not by the CRD schema. Carrying capabilities: [] here is the
+# deliberate design (precedent: observability/prometheus-operator-crds and
+# lifecycle/providers, both apis-only with no capability), NOT a deferral — so no
+# `# TODO:` here.
+provides:
+  - name: multus-cni-crds
+    apis:
+      - network-attachment-definitions.k8s.cni.cncf.io@v1  # k8s.cni.cncf.io/v1 NetworkAttachmentDefinition (multus-cni v4.2.4)
+    capabilities: []
