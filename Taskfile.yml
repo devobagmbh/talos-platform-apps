@@ -230,7 +230,7 @@ tasks:
       exit $fail
 
   check:primitives:
-    desc: 'Self-containment + A1 + verdict-schema-consistency of the .claude/ primitives'
+    desc: 'Self-containment + A1 + verdict-schema + doc-conformance + harness-evolution-path parity of the .claude/ primitives'
     summary: |
       Deterministic hygiene gate for the repo-local Claude Code primitives
       (agents/skills/workflows/hooks). All checks fail-closed:
@@ -252,6 +252,18 @@ tasks:
             this check); BOTH commit hooks (require-review.sh, pre-commit) must
             read `verdict` (never the retired `status`); the live workflow must
             dispatch both contracts with the canonical enums.
+        (d) doc-conformance scope parity — DOCUMENTATION.md AND both reviewer
+            prompts (catalog-evaluator, staff-reviewer) must each name every
+            governed inline-comment file class (the canonical four; a hardcoded
+            floor — a NEW class needs a one-line add here, deliberately NOT derived
+            from DOCUMENTATION.md prose since a benign reflow could silently swap the
+            oracle). PR #165 review: the prompts had narrowed to "manifest comments".
+        (e) harness-evolution path parity — review-convergence.md's paths:
+            FRONTMATTER (only) must carry a trigger glob for every canonical
+            primitive dir (agents/skills/hooks/workflows/rules) PLUS
+            **/DOCUMENTATION.md — a hardcoded floor, NOT "whatever the body names".
+            Caught the missing .claude/rules/** (PR #165 finding #2): the body said
+            rule edits are harness-evolution but the trigger did not load on them.
       Honest limits (NOT covered — by design or deferred): the agent-enum check
       normalizes whitespace then matches the value sequence exactly (catches dropped
       OR added values), but harvests only column-0 lowercase-kebab `verdict:` lines —
@@ -268,7 +280,15 @@ tasks:
       It also greps the JS dispatch-prompt enum, not the JS parser semantics (the
       parser is deliberately tolerant → 'errored'); it checks hook case-arm presence,
       not that each arm denies; the forgeable `reviewer-role` self-assertion is a
-      known dormant-hook residual (see Plans/ + the hooks' own notes).
+      known dormant-hook residual (see Plans/ + the hooks' own notes). (d)/(e) are
+      accidental-drift guards over a hardcoded canonical floor (a NEW governed class
+      or primitive dir needs a one-line add here — chosen over prose-derivation, which
+      a benign reflow can silently mis-derive into a green check over the wrong set).
+      (d) matches each class token as a fixed substring, so a prompt that keeps the
+      token while flipping its scoping verb (an "out of scope: X" line) would
+      false-pass; (e) scans only the frontmatter block, but a quoted glob mention there
+      still satisfies it. Both fail-closed on a missing governing file; neither defends
+      an adversarial edit — the semantic backstop is the 2-round harness-evolution review.
     cmd: |
       set -uo pipefail
       fail=0
@@ -318,6 +338,54 @@ tasks:
         done
       done
       [ "$sc" = 0 ] && echo "✓ verdict-schema consistent across agents/workflow/both hooks" || fail=1
+
+      # (d) doc-conformance scope parity — DOCUMENTATION.md AND both reviewer prompts
+      #     must each name every governed inline-comment file class. The class set is
+      #     the canonical floor below (hardcoded, like (e)'s dir set; a NEW governed
+      #     class in DOCUMENTATION.md needs a one-line add here). Hardcoding avoids
+      #     deriving the oracle from fragile prose position — a benign reflow of
+      #     DOCUMENTATION.md could otherwise make the check validate the WRONG/half set
+      #     and still report green. Class tokens are quoted literals (helm/*.yaml is a
+      #     glob) so the for-list never pathname-expands. Fail-closed on a missing file.
+      dc=0
+      for cls in 'helm/*.yaml' 'manifests/*.yaml' 'customization.yaml' 'compatibility.yaml'; do
+        for f in DOCUMENTATION.md .claude/agents/catalog-evaluator.md .claude/agents/staff-reviewer.md; do
+          if [ -f "$f" ] && grep -qF "$cls" "$f"; then :; else
+            echo "✗ doc-conformance: $f omits governed inline-comment class '$cls'"
+            dc=1
+          fi
+        done
+      done
+      [ "$dc" = 0 ] && echo "✓ doc-conformance: governed inline-comment classes present in DOCUMENTATION.md + both prompts (presence tripwire; scoping is review-judged)" || fail=1
+
+      # (e) harness-evolution path parity — review-convergence.md's paths: FRONTMATTER
+      #     must carry a trigger glob for every canonical primitive dir (the five below)
+      #     plus the documentation standard, else a harness-evolution edit there does not
+      #     load the 2-round reminder (PR #165 finding #2: .claude/rules/** was missing).
+      #     The glob set is the fixed canonical floor (a NEW primitive dir needs a
+      #     one-line add); the check asserts a floor, NOT "whatever the body names". Only
+      #     the frontmatter block is scanned, so a body prose mention cannot satisfy it.
+      #     Fail-closed on a missing file.
+      #     A malformed frontmatter (no line-1 `---`, or no closing `---`) fails
+      #     closed: the awk exits nonzero rather than over-capturing body prose (so a
+      #     body glob mention cannot satisfy a dropped frontmatter glob).
+      rc=.claude/rules/review-convergence.md
+      he=0
+      if [ ! -f "$rc" ]; then
+        echo "✗ harness-evolution: $rc is missing"
+        he=1
+      elif fm=$(awk 'NR==1{if($0!="---") exit 2; next} $0=="---"{found=1; exit 0} {print} END{if(!found) exit 3}' "$rc"); then
+        for glob in '.claude/agents/**' '.claude/skills/**' '.claude/hooks/**' '.claude/workflows/**' '.claude/rules/**' '**/DOCUMENTATION.md'; do
+          if printf '%s\n' "$fm" | grep -qF "\"$glob\""; then :; else
+            echo "✗ harness-evolution: $rc frontmatter paths: omits \"$glob\""
+            he=1
+          fi
+        done
+      else
+        echo "✗ harness-evolution: $rc has no well-formed YAML frontmatter (--- … ---)"
+        he=1
+      fi
+      [ "$he" = 0 ] && echo "✓ harness-evolution: review-convergence.md frontmatter carries every canonical primitive-dir + DOCUMENTATION.md glob" || fail=1
 
       if [ "$fail" != 0 ]; then echo ""; echo "check:primitives FAILED"; fi
       exit $fail
