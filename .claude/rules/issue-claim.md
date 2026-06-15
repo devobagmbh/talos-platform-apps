@@ -67,9 +67,9 @@ construction:
    `edit`. The single-`status:` invariant only removes labels seen in the `view`,
    so a label that appears after it can leave two `status:` labels until corrected.
 
-The **label is the claim SOT.** `project-sync.yml` mirrors the label into Project
-#3 asynchronously and may lag or reorder — never read the project board to decide
-a claim; read the label.
+The **label is the claim SOT.** `project-sync.yml` mirrors the label into the org
+Project (#3) asynchronously and may lag or reorder — never read the project board
+to decide a claim; read the label.
 
 ## Single `status:` label invariant
 
