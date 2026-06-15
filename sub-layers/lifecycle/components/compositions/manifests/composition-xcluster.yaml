@@ -54,7 +54,16 @@ spec:
               spec:
                 forProvider:
                   source: Remote
-                  module: ""  # patched from spec.tofuModuleSource (the stage-1 root git URL)
+                  module: ""  # patched from spec.tofuModuleSource (the consumer REPO-ROOT git URL)
+                  # Check out the WHOLE repo and run tofu in the `tofu/` subdir, NOT a
+                  # `//tofu` go-getter subdir fetch. The consumer root reads repo-root-
+                  # relative files (cluster.yaml, bootstrap/argocd/*, the *.sops.yaml the
+                  # local-execs decrypt) via `${path.module}/../…`; a subdir-only fetch
+                  # drops those (observe fails: file "./../cluster.yaml" not found). So
+                  # tofuModuleSource is the repo root (no `//tofu`) and the root lives at
+                  # `tofu/` by platform convention (seeder, office-lab). See provider-
+                  # opentofu Configuration.md § relative-path module references.
+                  entrypoint: tofu
                   # Default OFF: env[] below injects four secrets (sops_age_key,
                   # tf_encryption_passphrase, AWS_*); verbose tofu CLI logging can surface
                   # their values in the provider-opentofu pod logs. Consumers opt in
