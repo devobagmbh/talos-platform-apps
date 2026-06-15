@@ -97,6 +97,17 @@ an on-disk conftest policy in this repo:
    policy in this repo governs this posture; the consumer cluster's Pod Security
    Admission level for `kube-system` (substrate-managed) must permit it.
 
+3. **ClusterRole scope (upstream-faithful wildcard).** The `multus` `ClusterRole`
+   grants `resources: ["*"], verbs: ["*"]` on the single `k8s.cni.cncf.io` API
+   group — the **verbatim upstream Multus v4.2.4 grant**. It is confined to that
+   one CNI API group (which today holds only `NetworkAttachmentDefinition`) and
+   grants no access to `secrets`, no cluster-admin, and nothing in other API
+   groups (the only other rules are `pods`/`pods/status` get+update and `events`
+   create+patch+update). This is an accepted property of the verbatim migration,
+   not a defect. A consumer that wants strict least-privilege MAY tighten the rule
+   to `resources: ["network-attachment-definitions"]` with the explicit verb set,
+   accepting divergence from the signed upstream artifact.
+
 ## Sync-wave
 
 `0` — the controller lands after the CRD half (`network/multus-cni-crds`, wave -1).
