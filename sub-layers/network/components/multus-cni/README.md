@@ -81,11 +81,14 @@ an on-disk conftest policy in this repo:
 
    This download happens **outside the cosign-signed artifact boundary** — the
    binaries are NOT covered by the OCI artifact's signature/SBOM. The init step is
-   idempotent (skips if `macvlan`/`tuning`/`static`/`bridge` already exist on the
+   idempotent (skips only when all five plugins
+   `macvlan`/`ipvlan`/`tuning`/`static`/`bridge` are already present on the
    host). Air-gapped or supply-chain-strict consumers MUST provide one of:
    - a mirror serving that exact URL, OR
    - a pre-staged `/opt/cni/bin/` on every node (the host hostPath the DaemonSet
-     writes to), OR
+     writes to) — it MUST stage **all five** plugins; a partial pre-stage that
+     omits any one (e.g. `ipvlan`) re-triggers the missing-plugin download path
+     and reproduces the earlier missing-`ipvlan` failure, OR
    - a custom init image bundling the binaries (replacing the `busybox:1.37`
      init-container).
 

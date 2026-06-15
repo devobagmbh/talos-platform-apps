@@ -53,21 +53,32 @@ spec:
               mountPropagation: Bidirectional
         # Install macvlan/ipvlan — not bundled in Talos v1.8+.
         # Downloads from containernetworking/plugins upstream release.
-        # Idempotent: skips only when all five plugins (macvlan, ipvlan,
-        # tuning, static, bridge) are already present on host.
+        # Idempotent: a single $plugins list drives the guard, the tar
+        # extraction args, and the echo, so they can never drift apart;
+        # downloads only when any of the five plugins is missing on host.
         - name: install-cni-plugins
           image: busybox:1.37
           command:
             - /bin/sh
             - -c
             - |
-              if [ ! -f /host/opt/cni/bin/macvlan ] || [ ! -f /host/opt/cni/bin/ipvlan ] || [ ! -f /host/opt/cni/bin/tuning ] || [ ! -f /host/opt/cni/bin/static ] || [ ! -f /host/opt/cni/bin/bridge ]; then
+              # Idempotent: download only if any of the five plugins is missing.
+              # Single source for the plugin set — the guard, the tar args, and the
+              # echo all derive from $plugins, so they can never drift apart.
+              plugins="macvlan ipvlan tuning static bridge"
+              missing=
+              for p in $plugins; do
+                [ -f "/host/opt/cni/bin/$p" ] || missing=1
+              done
+              if [ -n "$missing" ]; then
                 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+                set --
+                for p in $plugins; do set -- "$@" "./$p"; done
                 wget -qO- "https://github.com/containernetworking/plugins/releases/download/v1.9.1/cni-plugins-linux-${ARCH}-v1.9.1.tgz" \
-                  | tar xzf - -C /host/opt/cni/bin ./macvlan ./ipvlan ./tuning ./static ./bridge
-                echo "Installed macvlan, ipvlan, tuning, static, and bridge to /opt/cni/bin"
+                  | tar xzf - -C /host/opt/cni/bin "$@"
+                echo "Installed $plugins to /opt/cni/bin"
               else
-                echo "All CNI plugins already present, skipping"
+                echo "All CNI plugins ($plugins) already present, skipping"
               fi
           resources:
             requests:
