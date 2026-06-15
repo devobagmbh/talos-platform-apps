@@ -99,6 +99,36 @@ neither of which needs host access.
 > That is a deliberate consumer override / future component variant, not the default
 > frozen workload shipped here.
 
+## RBAC posture
+
+The component ships the chart's default cluster-scoped read `ClusterRole`
+(`rbac.create: true`). It grants **read-only** (`get`/`list`/`watch`, never write)
+on the resources Alloy's discovery, log, and metrics components consult — including
+cluster-wide read on **`secrets`** and `configmaps`.
+
+The cluster-wide `secrets` read is **functionally required by the `metrics-scrape`
+capability**, not incidental: `prometheus.operator.*` scrape targets
+(`ServiceMonitor`/`PodMonitor`) that use secret-based auth — `basicAuth`,
+`bearerTokenSecret`, or TLS material from a Secret — require Alloy to read those
+Secrets. The chart emits one static RBAC superset covering every Alloy component
+rather than scoping per enabled pipeline, so the catalog ships the upstream-correct
+RBAC for the declared capability rather than a narrowed, chart-drifting custom role.
+
+Posture and bounding controls (the access is broad-but-bounded, accepted
+deliberately — CWE-250 reviewed):
+
+- **Read-only** — no `create`/`update`/`patch`/`delete`/`*`; Alloy cannot mutate
+  cluster state.
+- **`restricted` PSA** on the pod (see above) + the SA token is the pod's only
+  credential.
+- **Consumer NetworkPolicy** (consumer-owned) bounds Alloy's egress.
+- **Least-privilege opt-in** — a consumer that does **not** scrape secret-authed
+  targets MAY narrow this `ClusterRole` in its overlay (drop `secrets`/`configmaps`);
+  the catalog default keeps the full capability rather than silently reducing it.
+
+The role also includes the chart's `nodes/pods` sub-resource (read-only,
+node-local pod discovery) — a chart default; harmless read-only and left as-is.
+
 ## Sync-wave
 
 `20` — Alloy forwards to the three sink storage components (Loki/Mimir/Tempo, wave
