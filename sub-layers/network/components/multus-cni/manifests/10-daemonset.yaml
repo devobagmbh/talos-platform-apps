@@ -53,14 +53,15 @@ spec:
               mountPropagation: Bidirectional
         # Install macvlan/ipvlan — not bundled in Talos v1.8+.
         # Downloads from containernetworking/plugins upstream release.
-        # Idempotent: skips if macvlan already present on host.
+        # Idempotent: skips only when all five plugins (macvlan, ipvlan,
+        # tuning, static, bridge) are already present on host.
         - name: install-cni-plugins
           image: busybox:1.37
           command:
             - /bin/sh
             - -c
             - |
-              if [ ! -f /host/opt/cni/bin/macvlan ] || [ ! -f /host/opt/cni/bin/tuning ] || [ ! -f /host/opt/cni/bin/static ] || [ ! -f /host/opt/cni/bin/bridge ]; then
+              if [ ! -f /host/opt/cni/bin/macvlan ] || [ ! -f /host/opt/cni/bin/ipvlan ] || [ ! -f /host/opt/cni/bin/tuning ] || [ ! -f /host/opt/cni/bin/static ] || [ ! -f /host/opt/cni/bin/bridge ]; then
                 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
                 wget -qO- "https://github.com/containernetworking/plugins/releases/download/v1.9.1/cni-plugins-linux-${ARCH}-v1.9.1.tgz" \
                   | tar xzf - -C /host/opt/cni/bin ./macvlan ./ipvlan ./tuning ./static ./bridge
