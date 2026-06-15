@@ -1,0 +1,20 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for multus-cni. The thin Multus
+# controller DaemonSet + RBAC. The CRD half is the SEPARATE component
+# `network/multus-cni-crds` (sync-wave -1) — this workload carries 0 CRDs.
+#
+# requires the -crds artifact: the multus ClusterRole grants `k8s.cni.cncf.io/*`
+# (the NetworkAttachmentDefinition API group) and the controller reconciles those
+# CRs, so the CRD must be established first (strict-B ordering, ADR-0028).
+requires:
+  network/multus-cni-crds: ">=v0.1.0"
+
+# Provides the swappable operational capability `secondary-network-attachment`
+# (catalog/capability-index.yaml: active impl multus-cni, swap_class
+# rewrite-required) — the controller that implements the CNI delegation, not the
+# CRD schema (which is the apis-only -crds half).
+provides:
+  - name: multus-cni
+    apis:
+      - multus-cni@v4.2.4  # thin Multus controller DaemonSet, upstream v4.2.4
+    capabilities:
+      - {id: secondary-network-attachment, swap_class: rewrite-required}
