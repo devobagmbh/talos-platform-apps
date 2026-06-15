@@ -41,8 +41,8 @@ requires: {}                                 # KEINE talos-platform-base-Zeile (
                                              # apps hängt nicht vom Substrat ab. Hier stehen nur
                                              # katalog-interne Komponenten-Deps + Capability-IDs.
 provides:
-  - name: mimir                             # Tool/Chart-Name (unverändert, #57) — Einzelkomponente,
-                                            # KEIN Component-Stack (ADR-0009 §OCI-Granularität)
+  - name: mimir                             # tool/chart name (#57) — a single component,
+                                            # NOT a component stack (ADR-0009 §OCI-Granularität)
     capabilities:                            # NEU: welche Capabilities dieses Tool implementiert
       - {id: metrics-storage, swap_class: data-migration}
       - {id: metrics-query,   swap_class: drop-in}
