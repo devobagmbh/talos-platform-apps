@@ -35,6 +35,18 @@ values:
     # DaemonSet: node-local collection. One Alloy pod per node.
     type: daemonset
 
+    # Writable storage for the restricted (readOnlyRootFilesystem: true) workload.
+    # An emptyDir is writable even with a read-only root filesystem because it is a
+    # mounted volume, not part of the root fs — this is the canonical restricted-PSA
+    # pattern for a process that needs scratch/WAL space. The matching volumeMount at
+    # the storagePath (/tmp/alloy) lives under alloy.mounts.extra above. emptyDir is
+    # ephemeral (cleared on pod restart), which is correct for Alloy's default WAL —
+    # `storagePath` data is documented as lost between reboots.
+    volumes:
+      extra:
+        - name: alloy-storage
+          emptyDir: {}
+
   alloy:
     # Shape (b) freeze-line: do NOT create an in-chart ConfigMap. Reference the
     # EXISTING consumer-supplied ConfigMap `alloy-config` (key `config.alloy`). The
@@ -56,14 +68,27 @@ values:
     mounts:
       varlog: false
       dockercontainers: false
+      # Mount the writable emptyDir (declared under controller.volumes.extra below)
+      # at the storagePath /tmp/alloy. This is the container-side half of the
+      # restricted-compatible writable-storage pattern: with readOnlyRootFilesystem
+      # the entire root fs (including /tmp) is read-only, so Alloy can only write its
+      # WAL/data under a separately-mounted writable volume. `mounts.extra` adds the
+      # volumeMount to the alloy container only (the chart's config-reloader sidecar
+      # does not receive it and does not need a writable storage path).
+      extra:
+        - name: alloy-storage
+          mountPath: /tmp/alloy
 
     # Container-level restricted predicates for the Alloy container. The chart leaves
     # alloy.securityContext empty by default; set explicitly (explicit-not-inherited)
     # so the rendered container satisfies `enforce: restricted` and a future chart
-    # bump cannot weaken it. Alloy writes its WAL/data under storagePath (/tmp/alloy),
-    # which a read-only root filesystem still allows via the default emptyDir-less
-    # /tmp; readOnlyRootFilesystem is therefore safe for the default (no host mount)
-    # posture.
+    # bump cannot weaken it. Alloy writes its WAL/data under storagePath (/tmp/alloy);
+    # readOnlyRootFilesystem makes the whole root filesystem (including /tmp) read-only,
+    # so the writable storage path is provided by the alloy-storage emptyDir mounted
+    # above (controller.volumes.extra + alloy.mounts.extra) — NOT by /tmp itself, which
+    # is read-only under readOnlyRootFilesystem unless a volume is mounted there. With
+    # that mount in place, readOnlyRootFilesystem: true is the correct restricted-
+    # compatible posture for the default (no host mount) workload.
     securityContext:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
