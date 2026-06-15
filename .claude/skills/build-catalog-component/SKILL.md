@@ -59,6 +59,16 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    capability), surface the contradiction and stop — the plan may be stale (it is
    transient, gitignored, and is not auto-regenerated when the issue changes); the
    operator reconciles (re-plan or confirm). Do not silently prefer the plan.
+
+   **Claim the issue now — duplicate-work gate (before the dependency probes and
+   the worktree, the earliest point `<N>` is settled).** Read and apply
+   `.claude/rules/issue-claim.md` (the shared claim protocol): a foreign live claim
+   hard-stops here (`already-claimed`); otherwise you become the claim owner. The
+   GitHub label is the only cross-clone signal — `task worktree:create` (step 6) is
+   a single-clone lock whose branch reaches the remote only at PR time (Phase 7),
+   so two operators on two clones would otherwise build the same component in
+   parallel until the first push. A no-issue direct build claims nothing; the
+   worktree branch-claim is then its only backstop.
 4. Read `catalog/capability-index.yaml` for the component's capability, and one
    existing component of the same kind (helm vs manifests) as a template. Branch on
    the plan's `capability.id` (the three states in plan-CONVENTIONS §6):
@@ -332,6 +342,17 @@ list when no steer is given.
 Once the PR is open (the branch is on the remote), free the local worktree with
 `task worktree:remove -- <sub-layer>/<component>` — the branch is kept, only the
 working tree is removed, which releases the slot for another session.
+
+**Move the issue off the claim — owner only (`.claude/rules/issue-claim.md`).**
+If this build became the claim owner (step 3) and the PR is open, transition per
+the protocol: `status: needs-review` for a **single-deliverable** issue — but if a
+matched plan's `source == <N>` introduces **more than one** component (this is a
+multi-component app), leave `status: in-progress` for the orchestrator/operator to
+finalize the epic, do not flip it after one component. If the issue was already
+`in-progress` at step 3 (an orchestrator owns it), leave the status untouched. If
+the build did **not** complete (paused, evaluator `fail` after its cap, declined
+PR), leave `status: in-progress` and report it. A no-issue build transitions
+nothing. (`Closes #N`/`Refs #N` on merge does the final close.)
 
 ## Completion predicate
 
