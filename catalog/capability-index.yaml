@@ -52,14 +52,12 @@ capabilities:
     name: Prometheus-Format-Metrics-Scrape
     domain: observability
     implementations:
-      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}
       - {name: grafana-alloy, status: active, swap_class: drop-in}
       - {name: victoria-metrics-agent, status: considered, swap_class: drop-in}
   - id: metrics-storage
     name: Zeitreihen-Speicher für Metrics
     domain: observability
     implementations:
-      - {name: kube-prometheus-stack, status: active, swap_class: data-migration}
       - {name: mimir, status: active, swap_class: data-migration}
       - {name: victoria-metrics, status: considered, swap_class: data-migration}
       - {name: thanos, status: considered, swap_class: data-migration}
@@ -67,7 +65,7 @@ capabilities:
     name: PromQL-Query-Endpoint
     domain: observability
     implementations:
-      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}
+      - {name: mimir, status: active, swap_class: drop-in}
       - {name: thanos-query, status: considered, swap_class: drop-in}
 
   # — Observability: Logs —————————————————————————————————————

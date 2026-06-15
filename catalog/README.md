@@ -41,13 +41,11 @@ requires: {}                                 # KEINE talos-platform-base-Zeile (
                                              # apps hängt nicht vom Substrat ab. Hier stehen nur
                                              # katalog-interne Komponenten-Deps + Capability-IDs.
 provides:
-  - name: kube-prometheus-stack             # Tool/Chart-Name (unverändert, #57)
+  - name: mimir                             # tool/chart name (#57) — a single component,
+                                            # NOT a component stack (ADR-0009 §OCI-Granularität)
     capabilities:                            # NEU: welche Capabilities dieses Tool implementiert
-      - {id: metrics-scrape,  swap_class: drop-in}
       - {id: metrics-storage, swap_class: data-migration}
       - {id: metrics-query,   swap_class: drop-in}
-      - {id: alert-routing,   swap_class: drop-in}
-      - {id: dashboards,      swap_class: label-move}
     apis: []                                 # #57: API-/Chart-Versionen
 ```
 
