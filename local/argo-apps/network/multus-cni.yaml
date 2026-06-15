@@ -1,0 +1,46 @@
+# Argo Application for network/multus-cni (local test environment).
+# Strict-B WORKLOAD half (ADR-0028): the thin Multus controller DaemonSet + RBAC,
+# synced at sync-wave 0 — after the network-multus-cni-crds artifact (wave -1) so
+# the controller's RBAC (k8s.cni.cncf.io/*) resolves against an existing CRD.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: network-multus-cni
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: network
+    platform.devoba.de/component: multus-cni
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/network
+    chart: multus-cni
+    targetRevision: ${TAG}
+    helm:
+      releaseName: multus-cni
+  destination:
+    server: https://kubernetes.default.svc
+    # kube-system is substrate-managed (base layer); this Application deploys the
+    # DaemonSet + RBAC into it but never creates or manages the namespace itself
+    # (CreateNamespace=false below).
+    namespace: kube-system
+
+  syncPolicy:
+    # The workload IS prunable (unlike the -crds half): removing the artifact
+    # should garbage-collect the controller DaemonSet + RBAC. CR-cascade
+    # protection lives on the -crds Application (Prune=false), not here.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # kube-system already exists (substrate) — never create it from this app.
+      - CreateNamespace=false
+      # ServerSideApply for consistency with the strict-B -crds half and to avoid
+      # client-side annotation-size limits.
+      - ServerSideApply=true
