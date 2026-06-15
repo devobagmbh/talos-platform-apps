@@ -6,19 +6,21 @@ name: contract-validate
 # out per component. A dedicated job does NOT couple unfinished components to the
 # render/lint pipeline — it only validates components that already carry a
 # customization.yaml (task validate:contract reports the rest without failing).
-# Runs only when contracts, the schema, or rendered manifests change.
+#
+# Runs on EVERY PR to main — intentionally NOT path-filtered. This job is a
+# REQUIRED status check (branch protection on main: required_status_checks =
+# [ci, validate-contract]). A path-filtered required check never reports on a PR
+# that touches none of the filtered paths, so GitHub blocks that PR forever
+# waiting for a status that never arrives (e.g. .claude/- or docs-only PRs). The
+# job is a trivial green no-op when no customization.yaml changed — it validates
+# the existing contracts and reports the rest without failing — so always running
+# adds one cheap check, never a coupling to unfinished components.
 #
 # Convention (AGENTS.md § CI-Konventionen): pipeline = thin task caller.
 
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'sub-layers/*/components/*/customization.yaml'
-      - 'sub-layers/*/components/*/rendered/manifest.yaml'
-      - 'schemas/customization.schema.json'
-      - 'Taskfile.yml'
-      - '.github/workflows/contract-validate.yml'
 
 permissions:
   contents: read
