@@ -8,6 +8,7 @@ OCI distribution per component (ADR-0009). Concrete `Cluster`/`Valkey` CRs (Dex,
 
 | Component | sync-wave | Source | OCI |
 |---|---|---|---|
+| [`cnpg-crds`](components/cnpg-crds/) | -1 | vendored CRDs (CloudNativePG `cloudnative-pg` 0.28.2, strict-B per ADR-0028) | `oci://.../databases/cnpg-crds:vX.Y.Z` |
 | [`cnpg`](components/cnpg/) | 0 | Helm `cnpg/cloudnative-pg` + Devoba defaults | `oci://.../databases/cnpg:vX.Y.Z` |
 | [`valkey-operator`](components/valkey-operator/) | 0 | vendored `install.yaml` (hyperspike/valkey-operator v0.0.61) | `oci://.../databases/valkey-operator:vX.Y.Z` |
 
