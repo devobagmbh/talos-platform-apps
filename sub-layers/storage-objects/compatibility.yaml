@@ -1,3 +1,4 @@
 components:
-  - garage           # sync-wave 0  — Operator + StatefulSet
+  - garage-crds      # sync-wave -1 — GarageNode CRD (strict-B CRD half, ADR-0028)
+  - garage           # sync-wave 0  — garage S3 StatefulSet
   - garage-buckets   # sync-wave 10 — Bucket-Definitionen + Access-Keys via ESO
