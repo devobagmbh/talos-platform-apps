@@ -1,0 +1,26 @@
+# Strict-B CRDs artifact (ADR-0028) for databases/cnpg. The 10 postgresql.cnpg.io
+# CRDs are cluster-scoped objects that depend on nothing in the catalog → requires
+# is empty.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
+# workload half is `databases/cnpg`. The build gate uses this marker to assert
+# kind: CustomResourceDefinition count > 0 here (and == 0 in the workload
+# artifact). compatibility.yaml has no schema, so the extra top-level field is
+# permitted.
+crd-bearing: true
+
+requires: {}
+
+# apis-only, NO capability. The postgresql.cnpg.io CRDs are the API surface
+# (schemas), not the swappable operational capability. The capability
+# `cnpg-postgres` (managed instanced PostgreSQL) is provided by the workload
+# artifact `databases/cnpg` (the operator Deployment + RBAC + webhooks that
+# reconcile the Cluster/Backup/etc. CRs), not by the CRD schemas. Carrying
+# capabilities: [] here is the deliberate design (precedent:
+# network/multus-cni-crds and observability/prometheus-operator-crds, both
+# apis-only with no capability), NOT a deferral — so no `# TODO:` here.
+provides:
+  - name: cnpg-crds
+    apis:
+      - postgresql.cnpg.io/Cluster@v1  # primary CRD kind, representative postgresql.cnpg.io/v1 API-group entry (cloudnative-pg 0.28.2)
+    capabilities: []
