@@ -51,6 +51,17 @@ spec:
               # (the seeder's XCluster + secrets live in crossplane-system).
               apiVersion: opentofu.m.upbound.io/v1beta1
               kind: Workspace
+              metadata:
+                annotations:
+                  # provider-opentofu selects the tofu WORKSPACE from the MR's
+                  # external-name (workspace.go: tofu.Workspace(ctx, meta.GetExternalName)).
+                  # Without this it defaults to the composed name (e.g. talos-seeder) →
+                  # a NAMED workspace → state at env:/<name>/<key>, a SEPARATE state from
+                  # the Stage-0 laptop run (which uses the DEFAULT workspace → bare <key>).
+                  # That made the runner ignore the adopted state and plan a fresh CREATE
+                  # (new PKI) instead of adopting. Pin to `default` so the in-cluster run
+                  # uses the SAME state the laptop wrote (clusters/<cluster>/terraform.tfstate).
+                  crossplane.io/external-name: default
               spec:
                 forProvider:
                   source: Remote
