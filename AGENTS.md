@@ -124,7 +124,7 @@ These **MUST NOT** be relaxed without explicit maintainer approval.
 - **No direct `kubectl apply` against clusters** from this repo. This repo publishes OCI artifacts; cluster apply runs via Argo in the consumer repos.
 - **No real secrets in the repo** — not even in tests. `.sops.yaml.tmpl` stays a template until issue #3 delivers the four age recipients.
 - **No `make` target** — the convention is go-task. Anyone who submits a `Makefile`: review will reject it.
-- **Do not commit render output** — `rendered/` is gitignored. Checked via the `pre-commit` hook.
+- **Do not commit render output** — `rendered/` is gitignored. Checked via the lefthook `no-rendered` pre-commit job.
 - **No `.envrc.local`** in the repo — direnv local overrides stay local.
 - **Do not commit `.claude/` with personalized settings** — `settings.local.json` is gitignored.
 - **OCI paths hardcoded**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>:<tag>` — renaming the org path requires coordination with all consumers.

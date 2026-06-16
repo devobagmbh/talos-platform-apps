@@ -1,0 +1,64 @@
+# lefthook — Git-hook orchestrator (Layer A). Pure command-runner: it invokes
+# ONLY devbox-provided binaries and `task` targets, and manages NO toolchain of
+# its own. Two consequences this design buys:
+#   - devbox.json stays the single tool-version source of truth (AGENTS.md CI
+#     rule 1). The previous .pre-commit-config.yaml pinned gitleaks/yamllint/
+#     markdownlint at versions diverging from devbox.json (its managed python/node
+#     envs build their own copies) — a second, drifting tool set. lefthook removes
+#     that drift by construction.
+#   - the check LOGIC (Layer B) lives in the Taskfile ("Logic lives in the
+#     Taskfile"), so the orchestrator is swappable — the capability is not.
+#
+# Setup after clone (inside the devbox shell): `lefthook install`
+# Run all pre-commit jobs manually:            `lefthook run pre-commit`
+# Deliberate bypass (rare, e.g. cross-component refactor): `git commit --no-verify`
+
+pre-commit:
+  parallel: true
+  jobs:
+    # release-please correctness: one commit = one component (path-based mapping).
+    - name: single-component
+      run: task lint:commit-scope
+
+    # YAML + Markdown lint (devbox yamllint + markdownlint, via the task caller).
+    - name: lint
+      run: task lint
+
+    # Secret detection over staged changes (subsumes detect-private-key).
+    # Same .gitleaks.toml allowlist as the CI backstop (task scan:secrets) so the
+    # hook and the server-side scan agree on what is exempt (local/fixtures/).
+    - name: secrets
+      run: gitleaks git --staged --config .gitleaks.toml --no-banner --redact
+
+    # Trailing whitespace, space-before-tab, and conflict markers in staged hunks
+    # (subsumes trailing-whitespace + check-merge-conflict).
+    - name: whitespace-and-conflicts
+      # --no-pager is REQUIRED: lefthook runs jobs in a PTY, so a bare `git diff`
+      # launches the pager (less) and hangs the hook forever. git diff in a pipe
+      # or $(...) is safe (stdout is not a TTY there).
+      run: git --no-pager diff --cached --check
+
+    # Hard constraint: rendered/ output is gitignored and must never be committed.
+    - name: no-rendered
+      run: test -z "$(git diff --cached --name-only | grep -E '^sub-layers/.+/rendered/')"
+      fail_text: "rendered/ output must not be committed (see .gitignore)"
+
+    # Convention: the build tool is go-task, never make.
+    - name: no-makefile
+      run: test -z "$(git diff --cached --name-only | grep -E '(^|/)Makefile$')"
+      fail_text: "no Makefile — the convention is go-task (Taskfile.yml)"
+
+    # Block accidentally added large blobs (subsumes check-added-large-files, 500KB).
+    - name: no-large-files
+      run: |
+        big=$(git diff --cached --name-only --diff-filter=A | while IFS= read -r f; do
+          [ -f "$f" ] || continue
+          [ "$(wc -c < "$f")" -gt 512000 ] && echo "$f"
+        done)
+        [ -z "$big" ] || { echo "large files (>500KB):"; echo "$big"; exit 1; }
+
+commit-msg:
+  jobs:
+    # Conventional Commit syntax — {1} is the commit message file git passes.
+    - name: conventional-commit
+      run: task lint:commit-msg -- {1}

@@ -1,0 +1,25 @@
+# gitleaks configuration — secret-detection CI backstop (ADR-0032 §Residual e).
+#
+# The lefthook pre-commit `secrets` job scans only staged hunks and is bypassable
+# via `git commit --no-verify`; `task scan:secrets` (security-scan.yml) is the
+# server-side backstop that scans the full committed history.
+#
+# Allowlist: local/fixtures/ holds ONLY dummy values for the `task local:*` E2E
+# cluster (see local/README.md). Per AGENTS.md Hard Constraint "No real secrets in
+# the repo — not even in tests", real secrets are forbidden there too, so the
+# generic-api-key matches on these fixtures are false positives. The catalog code
+# (sub-layers/) is fully scanned — only the fixtures directory is exempt.
+#
+# SECURITY NOTE: this is a PATH allowlist — any future file under local/fixtures/
+# is also exempt. The contract is that local/fixtures/ never holds a real secret
+# (it is laptop-only test material). A leaked real credential MUST NOT be placed
+# there; use SOPS (.sops.yaml) for anything sensitive.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "local E2E test fixtures — dummy values only (AGENTS.md: no real secrets even in tests)"
+paths = [
+  '''local/fixtures/''',
+]

@@ -14,7 +14,6 @@
     "yamllint@latest",
     "markdownlint-cli@latest",
     "go-task@latest",
-    "pre-commit@latest",
     "yq@latest",
     "jq@latest",
     "sops@latest",
@@ -26,12 +25,13 @@
     "mkcert@latest",
     "check-jsonschema@latest",
     "watchexec@latest",
-    "crossplane-cli@latest"
+    "crossplane-cli@latest",
+    "lefthook@latest"
   ],
   "shell": {
     "init_hook": [
       "echo 'talos-platform-apps devbox-shell aktiv — \"task --list\" für verfügbare Tasks'",
-      "if [ -f .pre-commit-config.yaml ] && [ ! -f .git/hooks/pre-commit ]; then echo 'Hinweis: pre-commit-Hooks noch nicht installiert. Ausführen: pre-commit install --install-hooks'; fi"
+      "if [ -f lefthook.yml ] && [ ! -f .git/hooks/pre-commit ]; then echo 'Note: git hooks not yet installed. Run: lefthook install'; fi"
     ],
     "scripts": {}
   }
