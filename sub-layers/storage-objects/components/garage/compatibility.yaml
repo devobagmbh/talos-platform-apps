@@ -1,6 +1,7 @@
-requires: {}
+requires: {} # garage has no catalog-component or capability dependencies
 provides:
   - name: garage
-    apis: [] # wird mit Issue #13 befüllt
+    apis:
+      - garage@0.9.3
     capabilities:
       - {id: s3-object, swap_class: drop-in}

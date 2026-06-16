@@ -1,0 +1,75 @@
+# Garage — S3-compatible object store (s3-object capability). Layer-2 default
+# values for talos-platform-apps. This component ships a single-replica garage
+# StatefulSet plus its S3 and admin API services; the runtime config (garage.toml)
+# and the RPC secret are 100% consumer-owned at the freeze line and supplied via
+# the refs declared in customization.yaml — never baked here.
+#
+# Cluster-specific bits (replication factor, listener VIP / Service type override,
+# storage class + PVC sizing, node placement, topology labels, and the
+# kubernetesSkipCrd override) are consumer-owned (Layer 3) and live in the consumer
+# overlay, not here.
+
+metadata:
+  # -- Upstream chart name. NO published HTTP Helm repo exists for garage; the
+  # vendored tarball under vendor/garage-0.9.3.tgz is the MANDATORY render source
+  # (task render:one uses the local archive automatically). The repo URL below is a
+  # SOURCE REFERENCE only — it is the upstream git project, not a helm-pullable repo.
+  chart: garage
+  repo: https://github.com/deuxfleurs-org/garage
+  version: "0.9.3" # appVersion v2.3.0; packaged from deuxfleurs-org/garage git tag v2.3.0
+  namespace: garage
+
+values:
+  garage:
+    # -- The garage.toml runtime config is CONSUMER-OWNED: name a ConfigMap the
+    # consumer authors (key `garage.toml`) so the chart skips rendering its own
+    # ConfigMap and the workload mounts the consumer's. Setting this is what moves
+    # garage.toml across the freeze line — see customization.yaml required.config_files.
+    existingConfigMap: garage-config
+    # -- The cluster RPC secret is CONSUMER-OWNED: name a Secret the consumer
+    # authors (key `rpcSecret`) so the chart skips generating a random secret and the
+    # init container reads the consumer's value. See customization.yaml required.secret_keys.
+    existingRpcSecret: garage-runtime-secret
+    # -- Keep upstream's runtime CRD model: the garage binary is granted a ClusterRole
+    # to create the GarageNode CRD (garagenodes.deuxfleurs.fr) at runtime via the
+    # integrated Kubernetes discovery. A consumer that pre-applies the GarageNode CRD
+    # out-of-band SHOULD set this to true in its overlay to drop the cluster-scoped
+    # grant — that is a consumer Layer-3 decision, not a catalog default. See README.
+    kubernetesSkipCrd: false
+
+  # -- Pin the garage image to the chart's appVersion (v2.3.0) explicitly rather than
+  # relying on the chart default, so the published manifest carries a concrete,
+  # non-:latest tag that does not drift on a values-only edit (no_latest_image_tag policy).
+  image:
+    repository: dxflrs/amd64_garage
+    tag: v2.3.0
+    pullPolicy: IfNotPresent
+
+  deployment:
+    kind: StatefulSet
+    # -- Single replica is the cluster-agnostic catalog default. Multi-node garage
+    # (and the matching replication factor) is a consumer Layer-3 topology decision.
+    replicaCount: 1
+
+  # -- Persistence is DISABLED by default so the catalog artifact is cluster-agnostic:
+  # with this off the chart mounts emptyDir for meta + data (no StorageClass assumed).
+  # A consumer that wants durable storage enables persistence and supplies a
+  # storageClass + PVC sizing in its overlay (Layer 3).
+  persistence:
+    enabled: false
+
+  # -- Both the S3 API and the web/admin endpoints stay ClusterIP in the catalog
+  # default. Exposing garage externally (LoadBalancer + listener VIP, or an Ingress)
+  # is a consumer Layer-3 decision.
+  service:
+    type: ClusterIP
+
+  # -- Conservative resource requests/limits for a single-node default. garage is a
+  # storage daemon, so the memory limit is sized to avoid a noisy-neighbor on a small
+  # cluster; consumers running a serious deployment raise these in their overlay.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
