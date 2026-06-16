@@ -1,6 +1,8 @@
 name: security-scan
 
 # Security-Scans über alle Sub-Layer:
+#   - gitleaks: secret-scan over the full committed history (backstop to the
+#               lefthook pre-commit hook, which is staged-only + --no-verify-bypassable)
 #   - trivy:    Vulnerability-Scan der referenzierten Container-Images + Helm-Charts
 #   - conftest: Rego-Policies gegen rendered Manifeste (policies/)
 #
@@ -26,6 +28,22 @@ permissions:
   pull-requests: write
 
 jobs:
+  gitleaks:
+    name: gitleaks (secret-scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+        with:
+          fetch-depth: 0  # full history: `gitleaks git` scans all commits, not just HEAD
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.15.0
+        with:
+          enable-cache: true
+
+      - name: gitleaks secret-scan (backstop to the lefthook pre-commit hook)
+        run: devbox run -- task scan:secrets
+
   trivy:
     name: trivy
     runs-on: ubuntu-latest
