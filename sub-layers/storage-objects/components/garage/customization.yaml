@@ -1,11 +1,13 @@
 # Customization Contract v2 (ADR-0024). Garage's workload (the StatefulSet,
-# Services, ServiceAccount, and the cluster-scoped RBAC for runtime Kubernetes
-# discovery) is the signed, pre-rendered artifact. The freeze line splits ownership:
-# the workload is catalog-owned and never consumer-patched; the runtime config
-# (garage.toml) and the cluster RPC secret are 100% consumer-owned and supplied via
-# the refs below. The catalog sets the chart's existingConfigMap / existingRpcSecret
+# Services, ServiceAccount, and the narrow cluster-scoped RBAC for the GarageNode
+# k8s peer discovery) is the signed, pre-rendered artifact. The freeze line splits
+# ownership: the workload is catalog-owned and never consumer-patched; the runtime
+# config (garage.toml) and the cluster RPC secret are 100% consumer-owned and supplied
+# via the refs below. The catalog sets the chart's existingConfigMap / existingRpcSecret
 # to these names so the chart renders NO ConfigMap and NO Secret of its own — the
 # workload references the consumer's instead (verified against rendered/manifest.yaml).
+# The GarageNode CRD ships as the separate strict-B artifact storage-objects/garage-crds
+# (sync-wave -1), declared in external_dependencies below.
 freeze_line:
   workload: rendered/manifest.yaml # StatefulSet + Services + RBAC — never consumer-patched
 provided_refs:
@@ -26,4 +28,5 @@ required:
     - rpcSecret # init container reads garage-runtime-secret key `rpcSecret` via secretKeyRef
   selector_crs: []
 sync_wave: "0" # foundational: ships the S3 endpoint every bucket consumer needs
-external_dependencies: [] # no catalog-component dependency; consumer maps storage to a StorageClass
+external_dependencies:
+  - storage-objects/garage-crds # strict-B CRD half (sync-wave -1) — must be established first

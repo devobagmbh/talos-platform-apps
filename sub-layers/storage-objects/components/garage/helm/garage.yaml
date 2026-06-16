@@ -5,9 +5,8 @@
 # the refs declared in customization.yaml — never baked here.
 #
 # Cluster-specific bits (replication factor, listener VIP / Service type override,
-# storage class + PVC sizing, node placement, topology labels, and the
-# kubernetesSkipCrd override) are consumer-owned (Layer 3) and live in the consumer
-# overlay, not here.
+# storage class + PVC sizing, node placement, topology labels) are consumer-owned
+# (Layer 3) and live in the consumer overlay, not here.
 
 metadata:
   # -- Upstream chart name. NO published HTTP Helm repo exists for garage; the
@@ -30,19 +29,32 @@ values:
     # authors (key `rpcSecret`) so the chart skips generating a random secret and the
     # init container reads the consumer's value. See customization.yaml required.secret_keys.
     existingRpcSecret: garage-runtime-secret
-    # -- Keep upstream's runtime CRD model: the garage binary is granted a ClusterRole
-    # to create the GarageNode CRD (garagenodes.deuxfleurs.fr) at runtime via the
-    # integrated Kubernetes discovery. A consumer that pre-applies the GarageNode CRD
-    # out-of-band SHOULD set this to true in its overlay to drop the cluster-scoped
-    # grant — that is a consumer Layer-3 decision, not a catalog default. See README.
-    kubernetesSkipCrd: false
+    # -- Drop the broad cluster-wide CRD-creation grant. With this true the chart's
+    # ClusterRole omits the `apiextensions.k8s.io/customresourcedefinitions`
+    # create/patch rule (gated on `kubernetesSkipCrd == false` upstream; CWE-269,
+    # least-privilege) — the GarageNode CRD ships instead as the separate strict-B
+    # artifact `storage-objects/garage-crds` at sync-wave -1 (ADR-0028). The narrow
+    # `deuxfleurs.fr/garagenodes` grant the k8s peer-discovery needs is ungated and
+    # stays. NOT a consumer-overridable knob anymore: the CRD is catalog-managed.
+    kubernetesSkipCrd: true
 
   # -- Pin the garage image to the chart's appVersion (v2.3.0) explicitly rather than
   # relying on the chart default, so the published manifest carries a concrete,
   # non-:latest tag that does not drift on a values-only edit (no_latest_image_tag policy).
+  # `dxflrs/amd64_garage` is the garage project's OWN upstream Docker Hub namespace
+  # (the deuxfleurs/garage maintainers' official image), not a third-party mirror.
   image:
     repository: dxflrs/amd64_garage
     tag: v2.3.0
+    pullPolicy: IfNotPresent
+
+  # -- Pin the init image to a concrete busybox release (upstream chart default is the
+  # floating `busybox:stable`). The init container only runs sed substitution of the
+  # RPC secret into garage.toml, so a minimal busybox suffices; pinning a concrete tag
+  # keeps the published manifest reproducible (no_latest_image_tag policy intent).
+  initImage:
+    repository: busybox
+    tag: "1.37.0"
     pullPolicy: IfNotPresent
 
   deployment:
@@ -53,8 +65,9 @@ values:
 
   # -- Persistence is DISABLED by default so the catalog artifact is cluster-agnostic:
   # with this off the chart mounts emptyDir for meta + data (no StorageClass assumed).
-  # A consumer that wants durable storage enables persistence and supplies a
-  # storageClass + PVC sizing in its overlay (Layer 3).
+  # A consumer that wants durable storage MUST enable persistence and supply a
+  # storageClass + PVC sizing in its overlay (Layer 3) — otherwise all stored objects
+  # are lost on the first pod restart. See README § Consumer obligations.
   persistence:
     enabled: false
 
@@ -63,6 +76,29 @@ values:
   # is a consumer Layer-3 decision.
   service:
     type: ClusterIP
+
+  # -- readinessProbe against the garage admin API health endpoint (containerPort 3903,
+  # name `admin`; `/health` is the chart's documented probe target). Gating wave-0
+  # "Healthy" on the admin /health means Argo reports Healthy only once the S3 API is
+  # serving, not merely that the process started. Templated by the chart via
+  # `{{- with .Values.readinessProbe }}`.
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 3903
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  # -- livenessProbe against the same admin /health endpoint, with a longer grace
+  # window so a slow start or a transient compaction stall does not trigger a restart
+  # loop. Templated by the chart via `{{- with .Values.livenessProbe }}`.
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 3903
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    failureThreshold: 3
 
   # -- Conservative resource requests/limits for a single-node default. garage is a
   # storage daemon, so the memory limit is sized to avoid a noisy-neighbor on a small

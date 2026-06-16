@@ -1,4 +1,13 @@
-requires: {} # garage has no catalog-component or capability dependencies
+# Strict-B WORKLOAD artifact (ADR-0028) for garage. The garage StatefulSet +
+# Services + RBAC. The CRD half is the SEPARATE component
+# `storage-objects/garage-crds` (sync-wave -1) — this workload carries 0 CRDs
+# (the catalog sets `garage.kubernetesSkipCrd: true`).
+#
+# requires the -crds artifact: the garage ClusterRole grants
+# `deuxfleurs.fr/garagenodes` and the binary reconciles GarageNode CRs for k8s peer
+# discovery, so the GarageNode CRD must be established first (strict-B ordering).
+requires:
+  storage-objects/garage-crds: ">=v0.1.0"
 provides:
   - name: garage
     apis:

@@ -1,0 +1,17 @@
+# Customization Contract v2 (ADR-0024). Strict-B CRDs artifact (ADR-0028): the
+# rendered workload is purely the Namespaced GarageNode CRD (deuxfleurs.fr). A CRD
+# schema has NO consumer config surface — no env, no config files, no secrets, no
+# selector CRs — so this component is fully cluster-agnostic: every provided/required
+# shape is empty. The CRD lands at sync-wave -1, before the garage workload
+# (storage-objects/garage, wave 0).
+freeze_line:
+  workload: rendered/manifest.yaml  # the GarageNode CRD — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "-1"
+external_dependencies: []
