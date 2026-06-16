@@ -97,6 +97,12 @@ this workload:
 2. The workload Application **`storage-objects/garage`** at sync-wave 0, which then
    comes up against a `GarageNode` CRD that already exists.
 
+If a consumer omits the `garage-crds` Application, garage still starts and can
+serve S3, but its Kubernetes peer-discovery reconciler fails (the `GarageNode` API
+is unknown) — a silent degradation, **not** a crash and **not** data corruption.
+Multi-node layouts require the CRD to be present before nodes can register, so both
+Applications MUST be wired for any multi-node deployment.
+
 ## Scaling from single to multi-node
 
 Order matters when growing from the single-replica default. A wrong order risks
@@ -123,6 +129,14 @@ new config to take effect.
 
 `0` — foundational: it ships the StatefulSet and the S3 endpoint that every bucket
 consumer depends on. The `garage-crds` half precedes it at sync-wave -1.
+
+The shipped `readinessProbe` polls the admin API `/health` on port 3903, which
+reports **process** readiness (the daemon is up and the RPC stack is initialised) —
+it does **not** guarantee **S3-API functional** readiness. On a fresh cluster the S3
+endpoint only serves reads/writes after the consumer has applied a garage layout
+(`garage layout apply`). A wave-0 "Healthy" therefore means "garage is running", not
+"S3 is serving"; a consumer SHOULD ensure a layout is applied before bucket-consuming
+workloads at later sync-waves issue S3 calls.
 
 ## Namespace & Pod Security
 
