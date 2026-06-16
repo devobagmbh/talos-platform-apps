@@ -208,7 +208,13 @@ capabilities:
     single_impl: true   # NVIDIA-gepinnt; AMD/Intel wären Geschwister-Capabilities
     requires_hardware_features: [nvidia-gpu, iommu-enabled]   # Layer C (base)
     implementations:
-      - {name: nvidia-stack, status: active, swap_class: rewrite-required}  # nvidia-device-plugin + nvidia-dcgm-exporter
+      # nvidia-stack = nvidia-device-plugin + nvidia-dcgm-exporter. The capability
+      # domain stays `compute` (logical axis). Component sub-layer (OCI/organizational
+      # axis) is orthogonal per AGENTS.md: nvidia-device-plugin ships from
+      # sub-layers/compute, while nvidia-dcgm-exporter ships from sub-layers/observability
+      # (decision #16, issue #61 — it is a Prometheus exporter, CNCF "Monitoring").
+      # This capability→implementation mapping is unaffected by that component-location split.
+      - {name: nvidia-stack, status: active, swap_class: rewrite-required}
   - id: vm-runtime
     name: VM-Workload-Runtime
     domain: compute
