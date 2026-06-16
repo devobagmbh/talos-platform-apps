@@ -1,0 +1,26 @@
+# Strict-B CRDs artifact (ADR-0028) for garage. Ships ONLY the GarageNode
+# CustomResourceDefinition (garagenodes.deuxfleurs.fr). The GarageNode CR is
+# Namespaced, but the CRD object itself depends on nothing in the catalog →
+# requires is empty. The workload counterpart of this strict-B pair is
+# `storage-objects/garage` (sync-wave 0), which carries 0 CRDs.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair. The
+# build gate uses this marker to assert kind: CustomResourceDefinition count > 0
+# here (and == 0 in the workload artifact). compatibility.yaml has no schema, so
+# the extra top-level field is permitted.
+crd-bearing: true
+
+requires: {}
+
+# apis-only, NO capability. The deuxfleurs.fr GarageNode CRD is the API surface
+# (schema), not the swappable operational capability. The capability `s3-object` is
+# provided by the workload artifact `storage-objects/garage` (the garage StatefulSet
+# that serves the S3 API), not by the CRD schema. Carrying capabilities: [] here is
+# the deliberate design (precedent: network/multus-cni-crds and
+# observability/prometheus-operator-crds, both apis-only with no capability), NOT a
+# deferral — so no `# TODO:` here.
+provides:
+  - name: garage-crds
+    apis:
+      - deuxfleurs.fr/GarageNode@v1  # GarageNode CRD, deuxfleurs.fr/v1 (garage v2.3.0)
+    capabilities: []

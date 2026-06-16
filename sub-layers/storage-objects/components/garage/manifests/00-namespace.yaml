@@ -1,0 +1,21 @@
+# Garage's own namespace. garage is the sole catalog occupant (dedicated
+# namespace), so this component ships the Namespace object — a shipped manifest
+# takes precedence over Argo `managedNamespaceMetadata`, making the PSA posture
+# authoritative and self-contained (see the build skill's CONVENTIONS.md
+# § Namespace & PSA).
+#
+# enforce: baseline — NOT relaxable upward to restricted: the rendered garage pod
+# does NOT satisfy restricted. The pod securityContext sets runAsNonRoot but omits
+# seccompProfile: RuntimeDefault, and neither container sets
+# allowPrivilegeEscalation: false (they set capabilities.drop: [ALL] +
+# readOnlyRootFilesystem only). restricted would reject the pods at admission.
+# baseline is the strictest level this workload provably satisfies; tightening to
+# restricted requires the consumer to inject the missing securityContext fields.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garage
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage
