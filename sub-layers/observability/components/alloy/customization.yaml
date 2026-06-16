@@ -1,0 +1,35 @@
+# Customization Contract v2 (ADR-0024). The Grafana Alloy DaemonSet (+ Service/SA/
+# RBAC/Namespace) is the signed, pre-rendered workload. Alloy is NOT cluster-agnostic:
+# its pipeline — the sources and the three sink endpoints (Loki/Mimir/Tempo) — is
+# cluster-specific and differs per consumer. So the CONFIG is a single
+# consumer-authored Shape (b) file: the consumer supplies the `alloy-config`
+# ConfigMap with a `config.alloy` key; the workload mounts it at /etc/alloy and runs
+# /etc/alloy/config.alloy. The signed workload is never patched.
+#
+# Shape (b) vs (c): for the default same-cluster full-stack consumer the sink
+# endpoints need no auth, so a plain ConfigMap (Shape b) is correct. A consumer
+# forwarding to CROSS-CLUSTER sinks needing bearer/basic-auth credentials moves the
+# credential portion to its own Shape (c) Secret (dex precedent) — credentials are
+# never shipped in a plain ConfigMap. See README §Consumer obligations.
+#
+# Config-mount mechanism verified against chart 1.10.0 templates (containers/
+# _agent.yaml mounts the `config` volume at /etc/alloy and runs
+# /etc/alloy/<configMap.key>; controllers/_pod.yaml binds the `config` volume to the
+# ConfigMap named by configMap.name; _config.tpl resolves name=alloy-config,
+# key=config.alloy from the helm values) — required.config_files maps to a real
+# volumeMount + the file the alloy process reads.
+freeze_line:
+  workload: rendered/manifest.yaml  # DaemonSet/Service/SA/RBAC + Namespace — never consumer-patched
+provided_refs:
+  config: alloy-config  # Shape (b): the full Alloy pipeline config (config.alloy)
+provided_selectors: {}  # no operator-assembled config / consumer-labeled CRs
+required:
+  env_keys: []
+  config_files:  # Shape (b) — the consumer authors the full config.alloy (sources + sinks)
+    - path: /etc/alloy/config.alloy
+      ref: alloy-config
+      key: config.alloy
+  secret_keys: []
+  selector_crs: []
+sync_wave: "20"
+external_dependencies: []  # Loki/Mimir/Tempo are deploy-time sinks (compatibility.yaml requires:), not build deps
