@@ -1,0 +1,47 @@
+# Argo Application for storage-objects/garage (local test environment).
+# Strict-B WORKLOAD half (ADR-0028): the garage S3 StatefulSet + Services + RBAC,
+# synced at sync-wave 0 — after the storage-objects-garage-crds artifact (wave -1)
+# so the daemon's k8s peer-discovery resolves against an existing GarageNode CRD.
+# The workload ships its own `garage` Namespace (manifests/00-namespace.yaml) with
+# the PSA enforce label, so CreateNamespace=false (the shipped manifest is the
+# source of truth, not Argo managedNamespaceMetadata).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage-objects-garage
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/storage-objects
+    chart: garage
+    targetRevision: ${TAG}
+    helm:
+      releaseName: garage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: garage
+
+  syncPolicy:
+    # The workload IS prunable (unlike the -crds half): removing the artifact
+    # should garbage-collect the StatefulSet + Services + RBAC. CR-cascade
+    # protection lives on the -crds Application (Prune=false), not here.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The artifact ships its own `garage` Namespace manifest; do not let Argo
+      # create it via managedNamespaceMetadata (the shipped manifest wins).
+      - CreateNamespace=false
+      # ServerSideApply for consistency with the strict-B -crds half and to avoid
+      # client-side annotation-size limits.
+      - ServerSideApply=true

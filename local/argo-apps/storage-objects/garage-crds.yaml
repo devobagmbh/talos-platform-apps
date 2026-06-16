@@ -1,0 +1,49 @@
+# Argo Application for storage-objects/garage-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the deuxfleurs.fr/GarageNode CRD ships as its own
+# OCI artifact, synced at sync-wave -1 ahead of the garage workload (wave 0) so the
+# garage daemon's k8s peer-discovery (kubernetesSkipCrd: true) finds the CRD present.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage-objects-garage-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-crds
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/storage-objects
+    chart: garage-crds
+    targetRevision: ${TAG}
+    helm:
+      releaseName: garage-crds
+  destination:
+    server: https://kubernetes.default.svc
+    # The GarageNode CRD object is cluster-scoped; the destination namespace is
+    # nominal. garage is where the workload lands; this Application never creates
+    # or manages that namespace (CreateNamespace=false below).
+    namespace: garage
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRD is never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # GarageNode CRs (and break the cluster's peer discovery).
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: unlike
+      # automated.prune:false above (which only suppresses automated cycles), this
+      # syncOption blocks pruning on BOTH automated and manual sync-with-prune, so a
+      # UI "Sync + Prune" cannot garbage-collect the live GarageNode CRs.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit on large CRDs.
+      - ServerSideApply=true
