@@ -1,0 +1,32 @@
+# Customization Contract v2 (ADR-0024). Garage's workload (the StatefulSet,
+# Services, ServiceAccount, and the narrow cluster-scoped RBAC for the GarageNode
+# k8s peer discovery) is the signed, pre-rendered artifact. The freeze line splits
+# ownership: the workload is catalog-owned and never consumer-patched; the runtime
+# config (garage.toml) and the cluster RPC secret are 100% consumer-owned and supplied
+# via the refs below. The catalog sets the chart's existingConfigMap / existingRpcSecret
+# to these names so the chart renders NO ConfigMap and NO Secret of its own — the
+# workload references the consumer's instead (verified against rendered/manifest.yaml).
+# The GarageNode CRD ships as the separate strict-B artifact storage-objects/garage-crds
+# (sync-wave -1), declared in external_dependencies below.
+freeze_line:
+  workload: rendered/manifest.yaml # StatefulSet + Services + RBAC — never consumer-patched
+provided_refs:
+  config: garage-config # Shape (b): ConfigMap carrying garage.toml, mounted into the init container
+  secret: garage-runtime-secret # Shape (c): Secret carrying the cluster RPC secret
+provided_selectors: {} # no operator-assembled config in this artifact
+required:
+  env_keys: []
+  config_files:
+    # The init container mounts the consumer ConfigMap's garage.toml at /mnt/garage.toml
+    # (subPath garage.toml), substitutes the RPC secret, and writes the processed file to
+    # the emptyDir at /etc/garage.toml that the main container reads. The consumer-owned
+    # reference is therefore the /mnt/garage.toml mount of the garage-config ConfigMap.
+    - path: /mnt/garage.toml
+      ref: garage-config
+      key: garage.toml
+  secret_keys:
+    - rpcSecret # init container reads garage-runtime-secret key `rpcSecret` via secretKeyRef
+  selector_crs: []
+sync_wave: "0" # foundational: ships the S3 endpoint every bucket consumer needs
+external_dependencies:
+  - storage-objects/garage-crds # strict-B CRD half (sync-wave -1) — must be established first

@@ -1511,6 +1511,11 @@ tasks:
       tag="${2:?usage: task local:apply -- <sub-layer> <tag>}"
       chart_version="${tag#v}"
       apps_dir="local/argo-apps/${sub_layer}"
+      # Pin the LOCAL Talos test cluster explicitly — NEVER the operator's current
+      # kube-context, which may be a real/shared cluster. Applying Argo apps to the
+      # wrong cluster is a cross-cluster footgun (all other local:* tasks pin this
+      # context for the same reason).
+      KC="kubectl --context admin@talos-platform-apps"
 
       if [ ! -d "$apps_dir" ]; then
         echo "ERROR: ${apps_dir} existiert nicht"
@@ -1522,17 +1527,17 @@ tasks:
         component=$(basename "$tmpl" .yaml)
         TAG="$chart_version" \
           REGISTRY="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps" \
-          envsubst < "$tmpl" | kubectl apply -f -
+          envsubst < "$tmpl" | $KC apply -f -
         echo "  ✓ ${sub_layer}/${component} → Argo-App '${sub_layer}-${component}'"
         # Lokale HTTPRoute mit applien, falls die Komponente eine UI hat (nur lokal).
         route="local/http-routes/${sub_layer}/${component}.yaml"
         if [ -f "$route" ]; then
-          kubectl apply -f "$route" >/dev/null
+          $KC apply -f "$route" >/dev/null
           echo "    🌐 https://${component}.localhost.direct"
         fi
       done
       echo "✓ Sub-Layer ${sub_layer} angelegt (Tag ${chart_version})"
-      echo "  Sync-Status: kubectl -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
+      echo "  Sync-Status: ${KC} -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
 
   local:deps:
     desc: 'Transitive Katalog-Abhängigkeiten einer Komponente in Install-Reihenfolge: task local:deps -- <sub-layer>/<component>'
