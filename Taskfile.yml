@@ -711,7 +711,7 @@ tasks:
   scan:secrets:
     desc: gitleaks secret-scan over the full committed history (CI backstop to the lefthook hook)
     summary: |
-      Server-side secret-detection backstop (ADR-0029 §Residual e). The lefthook
+      Server-side secret-detection backstop (ADR-0032 §Residual e). The lefthook
       `secrets` pre-commit job scans only staged hunks and is bypassable via
       `git commit --no-verify`; this scans the full git history on every PR/push.
       The .gitleaks.toml allowlist exempts local/fixtures/ (dummy E2E values only,

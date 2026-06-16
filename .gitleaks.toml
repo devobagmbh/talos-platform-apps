@@ -1,4 +1,4 @@
-# gitleaks configuration — secret-detection CI backstop (ADR-0029 §Residual e).
+# gitleaks configuration — secret-detection CI backstop (ADR-0032 §Residual e).
 #
 # The lefthook pre-commit `secrets` job scans only staged hunks and is bypassable
 # via `git commit --no-verify`; `task scan:secrets` (security-scan.yml) is the
