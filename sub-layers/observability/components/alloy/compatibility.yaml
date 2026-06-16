@@ -1,10 +1,13 @@
 requires:
-  observability/loki: ">=v0.1.0" # Log-Sink
-  observability/mimir: ">=v0.1.0" # Metric-Sink
-  observability/tempo: ">=v0.1.0" # Trace-Sink
+  # Runtime sink components (deploy-time ordering for the Argo Application, not
+  # build-time deps): Alloy forwards to these. A Helm wrapper renders independently
+  # of whether they exist in-tree.
+  observability/loki: ">=v0.1.0"  # log sink
+  observability/mimir: ">=v0.1.0"  # metric sink
+  observability/tempo: ">=v0.1.0"  # trace sink
 provides:
   - name: alloy
-    apis: [] # wird mit Issue #17 befüllt
+    apis: [alloy@1.10.0]
     capabilities:
       - {id: logs-collect, swap_class: label-move}
       - {id: metrics-scrape, swap_class: drop-in}
