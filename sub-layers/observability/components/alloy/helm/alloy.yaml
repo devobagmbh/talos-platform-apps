@@ -1,0 +1,132 @@
+# alloy — Grafana Alloy, the unified telemetry collector (logs, metrics, traces).
+# Layer-2 default values for talos-platform-apps. Deployed as a node-local
+# DaemonSet, Alloy replaces Promtail as the platform log collector and additionally
+# scrapes Prometheus-format metrics and receives OTLP traces.
+#
+# Freeze-line (ADR-0024 v2, Shape b): the WORKLOAD (this rendered DaemonSet) is
+# catalog-owned and signed; the CONFIG is 100% consumer-owned. The consumer authors
+# the `alloy-config` ConfigMap (key `config.alloy`) carrying the pipeline — sources
+# and the three sink endpoints (Loki/Mimir/Tempo), which are cluster-specific. The
+# workload mounts that ConfigMap at /etc/alloy and runs /etc/alloy/config.alloy
+# (verified against chart templates `containers/_agent.yaml` + `controllers/_pod.yaml`
+# + `_config.tpl`, version 1.10.0). See customization.yaml + README §Consumer
+# obligations.
+
+metadata:
+  chart: alloy
+  repo: https://grafana.github.io/helm-charts
+  version: 1.10.0  # bare SemVer — NO leading 'v' (--version v1.10.0 fails to resolve)
+  # appVersion v1.17.0 → image tag docker.io/grafana/alloy:v1.17.0 (chart appVersion
+  # pin, NEVER :latest; never overridden here). VERIFY at push
+  # (`helm show chart alloy --repo <repo> --version 1.10.0`) that 1.10.0 is still
+  # current stable.
+  namespace: alloy
+
+values:
+  # The chart's `crds` subchart defaults to create: true and would render the
+  # monitoring.grafana.com PodLogs CRD into the workload. This component ships NO
+  # CRDs (strict-B / ADR-0028 does not apply), so disable CRD creation explicitly.
+  # A consumer needing the PodLogs CRD wires it as a separate concern; the rendered
+  # workload MUST contain zero kind: CustomResourceDefinition.
+  crds:
+    create: false
+
+  controller:
+    # DaemonSet: node-local collection. One Alloy pod per node.
+    type: daemonset
+
+    # Writable storage for the restricted (readOnlyRootFilesystem: true) workload.
+    # An emptyDir is writable even with a read-only root filesystem because it is a
+    # mounted volume, not part of the root fs — this is the canonical restricted-PSA
+    # pattern for a process that needs scratch/WAL space. The matching volumeMount at
+    # the storagePath (/tmp/alloy) lives under alloy.mounts.extra above. emptyDir is
+    # ephemeral (cleared on pod restart), which is correct for Alloy's default WAL —
+    # `storagePath` data is documented as lost between reboots.
+    volumes:
+      extra:
+        - name: alloy-storage
+          emptyDir: {}
+
+  alloy:
+    # Shape (b) freeze-line: do NOT create an in-chart ConfigMap. Reference the
+    # EXISTING consumer-supplied ConfigMap `alloy-config` (key `config.alloy`). The
+    # `config` volume mounts it at /etc/alloy; the alloy process runs
+    # /etc/alloy/config.alloy. The consumer owns the whole file (sources + the three
+    # sink endpoints); the signed workload is never patched.
+    configMap:
+      create: false
+      name: alloy-config
+      key: config.alloy
+
+    # No host mounts. The default catalog workload collects pod logs through the
+    # Kubernetes API (loki.source.kubernetes) + the chart RBAC, and receives OTLP
+    # over the network — neither needs host access, so the workload satisfies the
+    # `restricted` PSA level. journald / direct /var/log collection would require
+    # hostPath mounts (mounts.varlog / mounts.dockercontainers) and a more permissive
+    # PSA; that is a deliberate consumer override / future variant, NOT the default
+    # frozen workload. See README §Namespace & Pod Security.
+    mounts:
+      varlog: false
+      dockercontainers: false
+      # Mount the writable emptyDir (declared under controller.volumes.extra below)
+      # at the storagePath /tmp/alloy. This is the container-side half of the
+      # restricted-compatible writable-storage pattern: with readOnlyRootFilesystem
+      # the entire root fs (including /tmp) is read-only, so Alloy can only write its
+      # WAL/data under a separately-mounted writable volume. `mounts.extra` adds the
+      # volumeMount to the alloy container only (the chart's config-reloader sidecar
+      # does not receive it and does not need a writable storage path).
+      extra:
+        - name: alloy-storage
+          mountPath: /tmp/alloy
+
+    # Container-level restricted predicates for the Alloy container. The chart leaves
+    # alloy.securityContext empty by default; set explicitly (explicit-not-inherited)
+    # so the rendered container satisfies `enforce: restricted` and a future chart
+    # bump cannot weaken it. Alloy writes its WAL/data under storagePath (/tmp/alloy);
+    # readOnlyRootFilesystem makes the whole root filesystem (including /tmp) read-only,
+    # so the writable storage path is provided by the alloy-storage emptyDir mounted
+    # above (controller.volumes.extra + alloy.mounts.extra) — NOT by /tmp itself, which
+    # is read-only under readOnlyRootFilesystem unless a volume is mounted there. With
+    # that mount in place, readOnlyRootFilesystem: true is the correct restricted-
+    # compatible posture for the default (no host mount) workload.
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 473
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+  # Container-level restricted predicates for the config-reloader sidecar
+  # (prometheus-config-reloader, pinned to a digest by the chart — never :latest).
+  # The chart leaves configReloader.securityContext empty; set explicitly so BOTH
+  # containers in the pod satisfy the restricted container predicates.
+  configReloader:
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 473
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+  # Pod-level restricted predicates. The chart leaves global.podSecurityContext
+  # empty (the pod template renders no pod-level securityContext), so set them here
+  # so the rendered pod template satisfies `enforce: restricted` at the pod scope.
+  global:
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
+  # NOTE: no `controller.replicas` / tolerations / nodeSelector keys. Replica count
+  # is ignored for a DaemonSet; node scheduling (control-plane tolerations,
+  # nodeSelector) is a cluster-specific consumer-overlay concern (AGENTS.md §Hard
+  # Constraints). The catalog leaves them at the chart defaults; the consumer sets
+  # tolerations in its Argo values overlay to schedule Alloy on tainted nodes.
