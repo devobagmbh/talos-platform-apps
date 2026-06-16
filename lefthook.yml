@@ -49,10 +49,18 @@ pre-commit:
       fail_text: "no Makefile — the convention is go-task (Taskfile.yml)"
 
     # Block accidentally added large blobs (subsumes check-added-large-files, 500KB).
+    # Carve-out: strict-B CRDs artifacts (ADR-0028) vendor large upstream CRD
+    # schemas as raw manifests — e.g. CloudNativePG's clusters.postgresql.cnpg.io
+    # CRD alone is ~541 KB, the full set ~1.36 MB. These are DELIBERATELY vendored,
+    # not accidental blobs, so the strict-B -crds manifest path is exempt. The path
+    # shape is narrow (a component dir suffixed `-crds`, under `manifests/`); a
+    # non-CRD blob hidden there is still caught by the build gate's crd-bearing
+    # oracle (0 non-CRD objects in a -crds artifact) and human PR review.
     - name: no-large-files
       run: |
         big=$(git diff --cached --name-only --diff-filter=A | while IFS= read -r f; do
           [ -f "$f" ] || continue
+          case "$f" in sub-layers/*/components/*-crds/manifests/*) continue ;; esac
           [ "$(wc -c < "$f")" -gt 512000 ] && echo "$f"
         done)
         [ -z "$big" ] || { echo "large files (>500KB):"; echo "$big"; exit 1; }
