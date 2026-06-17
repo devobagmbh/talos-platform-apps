@@ -70,12 +70,24 @@ The catalog ships **only** the `enforce` level and the ownership labels.
 ## Cluster-wide read RBAC (consumer-relevant)
 
 The chart ships a `ClusterRole` + `ClusterRoleBinding` granting cluster-wide
-`get/list/watch` on most core and apps/batch/networking object kinds (Pods, Nodes,
-Deployments, ReplicaSets, DaemonSets, StatefulSets, Jobs, CronJobs, Services,
-Ingresses, ConfigMaps, Secrets metadata, …) — this read access over the whole
-cluster is **inherent** to kube-state-metrics generating object-state series and
-is **not narrowable** at the Helm-wrapper layer. Consumers auditing cluster RBAC
-should note this broad read grant.
+**`list`/`watch` only** (no `get`, no write verbs) on most core and
+apps/batch/networking object kinds (Pods, Nodes, Deployments, ReplicaSets,
+DaemonSets, StatefulSets, Jobs, CronJobs, Services, Ingresses, ConfigMaps,
+Secrets, …) — this read access over the whole cluster is **inherent** to
+kube-state-metrics generating object-state series and is **not narrowable** at the
+Helm-wrapper layer. Consumers auditing cluster RBAC should note this broad read
+grant. Two aspects are consumer-owned mitigations:
+
+- **Secret enumeration** — the `secrets` grant is `list`/`watch` **only** (no
+  `get`), so kube-state-metrics enumerates Secret names/labels/annotations to emit
+  the `kube_secret_*` series but **cannot read Secret values**. A consumer that
+  considers even metadata enumeration unacceptable disables it in its Argo overlay
+  via the exporter's `--resources=` arg (omit `secrets`), trading away the
+  `kube_secret_*` metrics.
+- **ServiceAccount token** — the pod mounts its SA token to call the API server. On
+  Kubernetes ≥ 1.22 / Talos this is a **bound, short-TTL projected token**
+  (BoundServiceAccountTokenVolume), not a long-lived Secret token, so a compromised
+  pod holds only a time-bounded credential scoped to the read-only grant above.
 
 ## Consumer obligations (out of scope here)
 
