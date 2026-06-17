@@ -1,0 +1,42 @@
+# Argo Application for observability/kube-state-metrics (local test environment).
+# kube-state-metrics exporter (kube_* object-state metrics). Ships its own
+# dedicated `kube-state-metrics` namespace (pod-security.kubernetes.io/enforce:
+# restricted) + a cluster-scoped read ClusterRole/ClusterRoleBinding; no CRDs
+# (strict-B N/A). Cluster-agnostic: no consumer-supplied config, so nothing is
+# seeded before this app syncs (unlike alloy, which needs an alloy-config ConfigMap).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-kube-state-metrics
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: kube-state-metrics
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/observability
+    chart: kube-state-metrics
+    targetRevision: ${TAG}
+    helm:
+      releaseName: kube-state-metrics
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-state-metrics
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The artifact ships its own labelled Namespace (sole-claimant rule); Argo
+      # applies Namespaces before namespaced resources, so the PSA label lands
+      # before any pod. CreateNamespace=true is a harmless belt-and-suspenders.
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
