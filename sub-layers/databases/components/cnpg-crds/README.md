@@ -118,10 +118,9 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/databases/cnpg-crds:vX.Y.Z
 
 The git tag is `databases/cnpg-crds-vX.Y.Z` (first release `v0.1.0`); `task push`
 strips the leading `v`, so the OCI registry tag is the bare SemVer. The workload
-`databases/cnpg` **gains** `requires: {databases/cnpg-crds: ">=v0.1.0"}` in its
-companion strict-B refactor (a follow-up PR, sequenced after this CRDs artifact —
-crds-first); until that refactor lands, the `databases/cnpg` artifact on `main`
-still bundles its CRDs inline and carries `requires: {}`.
+`databases/cnpg` carries `requires: {databases/cnpg-crds: ">=v0.1.0"}` and
+`crds.create: false` (its companion strict-B refactor) — it renders zero CRDs and
+depends on this artifact landing first at wave -1.
 
 ## Related ADRs
 

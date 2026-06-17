@@ -1,4 +1,5 @@
-requires: {}
+requires:
+  databases/cnpg-crds: ">=v0.1.0" # strict-B (ADR-0028): the postgresql.cnpg.io CRDs ship separately at wave -1
 provides:
   - name: cnpg
     apis:
