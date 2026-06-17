@@ -197,10 +197,30 @@ NOT-LOCALLY-VERIFIABLE (a skip is not a pass) and GHA must re-resolve the
 - `task push` (OCI push to GHCR, auth only),
 - chart-ref resolution when offline (deferred to GHA).
 
-ArgoCD deployability is **locally verifiable** on the prod-shaped local Talos
-cluster (`task local:up` → `task local:publish` → `task local:apply` → Argo sync —
-see `AGENTS.md §Testing Guidelines`); it is recorded NOT-LOCALLY-VERIFIABLE only
-when no container runtime is available, then deferred to GHA + the consumer repos.
+**ArgoCD deployability — run the local Talos E2E when the cluster is reachable
+(SKILL.md Phase 6.5); do not default to deferral while the cluster is up.** The
+check is gated on reachability, not skipped by default:
+
+- **Reachable** — a **fail-closed** probe `kubectl --context
+  admin@talos-platform-apps get nodes` exits 0 (any non-zero/error = down; NOT
+  `task local:status`, which exits 0 even when the cluster is down): run the E2E
+  per SKILL.md Phase 6.5 — `task local:publish -- <sl>/<c> <tag>` (this component)
+  → `task local:apply -- <sl> <tag>` (sub-layer-wide) → assert the component's own
+  Argo `Application` (`<sl>-<component>`) is `Synced` **and** `Healthy` and its
+  primary rendered resource is present in-cluster → `task local:remove -- <sl>` to
+  tear down (label-scoped; `local:remove` removes only the `Application`, so reclaim
+  the component's orphaned namespaced resources by deleting the dedicated namespace
+  it declares (the `kind: Namespace` in its `manifests/` —
+  `00-namespace.yaml`/`namespace.yaml`) by that declared name, never a
+  chart-default-name cluster delete). Record
+  the result as positive PASS evidence (the AC moves from
+  NOT-LOCALLY-VERIFIABLE to PASS) — feature-correctness `kubeconform` cannot give
+  (it skips unknown CRDs). A new sub-layer/component needs a
+  `local/argo-apps/<sub-layer>/<component>.yaml` Argo Application template first
+  (the #171 observability precedent), authored as part of the step.
+- **Unreachable** (no container runtime / cluster): record ArgoCD deployability
+  NOT-LOCALLY-VERIFIABLE and defer to GHA + the consumer repos. A skip is recorded
+  as NOT-LOCALLY-VERIFIABLE, never silently presented as a pass.
 
 These belong to the GHA pipeline and the consumer cluster repos. The verify step
 records them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is

@@ -124,7 +124,10 @@ is a finding):
    mechanically checkable assertions — e.g. "`task render:one -- <id>` exits 0",
    "`customization.yaml` validates against the schema", "rendered manifest
    contains a Deployment named `<x>`". Reject vague ACs ("works", "is correct",
-   "should consider X").
+   "should consider X"). An AC asserting a concrete *rendered field value* must
+   additionally clear §9 (a well-formed AC the chart default + values-intent cannot
+   satisfy still fails on a conforming build) — R1 checks the AC is checkable, §9
+   checks it is achievable.
 2. **Defined deliverable (R2).** Each component names its artifacts (helm vs
    manifests, the chart or the CRs) and the capability it provides.
 3. **Single interpretation (R3).** Two competent builders reading the plan produce
@@ -188,6 +191,23 @@ is a finding):
    Constraints` (no real secrets, no consumer-specific values like replica counts
    / VIPs / OIDC issuer URLs, no `:latest`, no committed `rendered/`, OCI path
    pinned to `ghcr.io/devobagmbh/talos-platform-apps/<sl>/<c>`).
+9. **Chart-reality grounding (claims and ACs match the chart).** Two coupled
+   checks the reviewer applies:
+   - **Chart-default claims are evidence-backed or `open_questions`.** Any plan
+     statement about a chart's default behaviour relevant to security or admission
+     — a sidecar enabled/disabled by default, the `securityContext` key name +
+     scope and the values it defaults to, the RBAC verb scope it grants — is either
+     backed by `helm show values`/`helm show chart` evidence or carried as an
+     `open_question`. An asserted chart-default with no evidence is a finding (it
+     drove the false "sidecar enabled by default" class).
+   - **An AC asserting a rendered field value carries a values-intent that produces
+     it.** When an `acceptance_criteria[]` entry asserts a concrete rendered value
+     (e.g. every container sets `runAsNonRoot: true`), the per-component
+     chart-values intent MUST pin exactly that value, accounting for the chart's
+     actual default scope — an AC the chart default does not satisfy and no
+     values-pin supplies would FAIL on a correctly-built component (or push the
+     builder to diverge). The reviewer checks AC↔values-intent coherence; a
+     mismatch is a blocking finding.
 
 ## Convergence loop — termination is mandatory
 

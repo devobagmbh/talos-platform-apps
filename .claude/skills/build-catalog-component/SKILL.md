@@ -324,13 +324,95 @@ the aggregate diff it is contractually required to flag as CRITICAL:
 
 Close anything these surface before Phase 7.
 
+## Phase 6.5 — Local ArgoCD E2E (gated on cluster reachability)
+
+ArgoCD deployability is feature-correctness the deterministic gate cannot prove
+(`kubeconform` skips unknown CRDs). Run it locally when — and only when — the
+prod-shaped local Talos cluster is already reachable; do not default to deferral
+while the cluster is up (the recurring gap issue #179 tracks). This is the skill's
+ONLY cluster-mutating phase: an **orchestrator** step in a **foreground** session
+that needs the `admin@talos-platform-apps` kube-context, which the offline
+sandboxed evaluator cannot reach — so the evaluator keeps recording the AC
+NOT-LOCALLY-VERIFIABLE and this step supersedes that verdict when it runs. Its
+safety rests on a **fail-closed** reachability gate, the context pinned to the
+local Talos test cluster (every `task local:*` target pins
+`admin@talos-platform-apps` for the cross-cluster-footgun reason), and a teardown
+that goes through `task local:remove` plus the component's **own declared**
+namespace/route names — never a chart-default-name guess against the cluster.
+
+1. **Reachability gate (fail-closed).** `kubectl --context admin@talos-platform-apps
+   get nodes`. A **non-zero exit or any error** (missing/stale context, unreachable
+   API) means the cluster is down → record ArgoCD deployability
+   NOT-LOCALLY-VERIFIABLE, defer to GHA + consumer, skip to Phase 7; only a clean
+   `get nodes` success proceeds. Do NOT substitute `task local:status` — it ends in
+   `... || true` and exits 0 even with the cluster down (fail-open). Do NOT auto-run
+   `task local:up` (heavy: rootful podman, host ports, VM sizing —
+   operator-initiated only, see `local/README.md`).
+2. **Template precondition (new sub-layer/component).** The E2E needs
+   `local/argo-apps/<sub-layer>/<component>.yaml` (the Argo Application template
+   `task local:apply` envsubst-renders). If absent, author it from an existing one
+   (the #171 observability precedent) as part of this step — it is the local test
+   harness, not a catalog artifact, and lives outside the component dir. It MUST
+   carry the `platform.devoba.de/local-test: "true"` + `platform.devoba.de/sub-layer:
+   <sub-layer>` + `platform.devoba.de/component: <component>` labels (matching the
+   precedent) so the step-5 `task local:remove` finds it. (The existing templates
+   carry no `resources-finalizer`, so `local:remove` deletes only the `Application`,
+   not its resources — step 5 handles the orphans.)
+3. **Publish + apply.** `task local:publish -- <sub-layer>/<component> <tag>`
+   publishes **only this component** to the local registry; `task local:apply --
+   <sub-layer> <tag>` then applies **every** template in
+   `local/argo-apps/<sub-layer>/` (the task is sub-layer-wide). Sibling
+   Applications whose `<tag>` was not published this session render `Unknown` /
+   `OutOfSync` — expected noise, not this component's failure.
+4. **Assert mechanically (scoped to THIS component).** Select the component's own
+   Argo Application — named `<sub-layer>-<component>` — and assert it is `Synced`
+   AND `Healthy`, and that its primary rendered resource exists in-cluster
+   (`kubectl --context admin@talos-platform-apps get <kind>/<name> -n <ns>`). Do
+   not read a sibling's `Unknown`/`OutOfSync` as this component's verdict. Record
+   the command + result as positive PASS evidence; the AC moves from
+   NOT-LOCALLY-VERIFIABLE to PASS. **Environment caveat — with a discriminator:** a
+   cluster-wide Argo↔K8s OpenAPI schema-skew `ComparisonError` makes sync read
+   `Unknown` even for a healthy component. The discriminator between that artifact
+   and a real sync failure is the **in-cluster resource health, not the sync
+   field**: PASS-when-`Unknown` requires `operationState.phase: Succeeded` AND the
+   primary resource genuinely healthy in-cluster (Deployment `Available` / pods
+   `Running` / CRD `Established`). An `Unknown` sync with the resource NOT healthy
+   is a real deployability fail — record it as fail, never PASS.
+5. **Clean up — via task callers + the component's own declared resource names;
+   never delete a cluster resource by a chart-default name.**
+   `task local:remove -- <sub-layer>` deletes the sub-layer's test Argo
+   `Application`s by their `local-test=true,sub-layer=<sub-layer>` labels (a task
+   caller, not inline `kubectl`). It does NOT cascade (the local templates carry no
+   `resources-finalizer`), so reclaim the component's orphaned namespaced resources
+   by deleting the dedicated namespace **the component itself declares** — the
+   `kind: Namespace` object in its `manifests/` (`00-namespace.yaml` by convention;
+   some components, e.g. `identity/dex`, name it `namespace.yaml`). Use its declared
+   `metadata.name` (a build-authored value, NOT a chart-default guess), pinned to the
+   local context:
+   `kubectl --context admin@talos-platform-apps delete namespace <declared-name>`
+   (a component on a shared/foreign namespace ships no `Namespace` object → nothing
+   to delete). A UI component's HTTPRoute (`local/http-routes/<sub-layer>/<component>.yaml`,
+   also applied by `local:apply`) is removed by file if present
+   (`kubectl --context admin@talos-platform-apps delete -f local/http-routes/<sub-layer>/<component>.yaml`).
+   NEVER `kubectl delete clusterrole/namespace <name>` by a chart-default name — it
+   collides with a real workload's; cluster-scoped leftovers
+   (`ClusterRole`/`ClusterRoleBinding`) are benign for the test loop (a re-apply
+   re-adopts them by name) and cleared wholesale by `task local:down`. Teardown keeps
+   the next component's E2E clean.
+
+Record the outcome (PASS-with-evidence or NOT-LOCALLY-VERIFIABLE) for the Phase-7
+PR body. This E2E never gates the PR by itself — a genuine deployability failure
+is a finding to fix; an environment caveat is recorded, not a block.
+
 ## Phase 7 — Done (NOT-SOLO → branch + PR, never auto-merge)
 
 This repo has CODEOWNERS + branch protection. Produce the branch and, with
 explicit user approval, open a PR (`gh pr create`) summarizing: what was built,
 deterministic-gate evidence, evaluator verdict, reviewer verdicts, and the
-**NOT-locally-verifiable** items deferred to GHA/consumer (cosign sign, OCI
-push, ArgoCD deploy). Never merge; a human merges after CI + code-owner review.
+**NOT-locally-verifiable** items deferred to GHA/consumer (cosign sign, OCI push,
+and — when Phase 6.5 did not run because the cluster was unreachable — ArgoCD
+deploy; when Phase 6.5 ran, report its PASS-with-evidence instead). Never merge; a
+human merges after CI + code-owner review.
 
 **`Closes #N` vs `Refs #N`.** When the issue's ACs include items this PR cannot
 satisfy locally — cosign signature present, consumer-deployable via ArgoCD — a
@@ -366,4 +448,5 @@ aggregate edit is out of the evaluator's scope by contract — deterministically
 shape-cross-checked locally and carried to the authoritative human PR review,
 **not** independently agent-verified) + branch pushed + PR opened. The
 not-locally-verifiable items (including the un-agent-verified aggregate) are
-recorded as deferred, never claimed pass.
+recorded as deferred, never claimed pass — **except** ArgoCD deployability when
+Phase 6.5 ran and passed, which is then PASS-with-evidence, not deferred.
