@@ -1,0 +1,51 @@
+# Argo Application for databases/cnpg-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the 10 postgresql.cnpg.io CRDs ship as their own
+# OCI artifact, synced at sync-wave -1 ahead of the CloudNativePG operator workload
+# (databases/cnpg, wave 0).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: databases-cnpg-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: databases
+    platform.devoba.de/component: cnpg-crds
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/databases
+    chart: cnpg-crds
+    targetRevision: ${TAG}
+    helm:
+      releaseName: cnpg-crds
+  destination:
+    server: https://kubernetes.default.svc
+    # The postgresql.cnpg.io CRDs are cluster-scoped; the destination namespace is
+    # nominal. cnpg-system is the operator workload's namespace, shipped by the
+    # databases/cnpg artifact — this -crds Application never creates or manages it
+    # (CreateNamespace=false), and carries no namespaced resources.
+    namespace: cnpg-system
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRDs are never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # postgresql.cnpg.io Cluster/Backup CRs (a data-loss event).
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: unlike
+      # automated.prune:false above (which only suppresses automated cycles), this
+      # syncOption blocks pruning on BOTH automated and manual sync-with-prune, so a
+      # UI "Sync + Prune" cannot garbage-collect the live Cluster/Backup CRs.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit — load-bearing
+      # here: the clusters.postgresql.cnpg.io CRD alone is ~541 KB.
+      - ServerSideApply=true
