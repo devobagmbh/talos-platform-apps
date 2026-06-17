@@ -334,19 +334,41 @@ ONLY cluster-mutating phase: an **orchestrator** step in a **foreground** sessio
 that needs the `admin@talos-platform-apps` kube-context, which the offline
 sandboxed evaluator cannot reach — so the evaluator keeps recording the AC
 NOT-LOCALLY-VERIFIABLE and this step supersedes that verdict when it runs. Its
-safety rests on a **fail-closed** reachability gate, the context pinned to the
-local Talos test cluster (every `task local:*` target pins
-`admin@talos-platform-apps` for the cross-cluster-footgun reason), and a teardown
-that goes through `task local:remove` plus the component's **own declared**
+safety rests on a **fail-closed** reachability + identity gate, the context pinned to
+the local Talos test cluster (the E2E's `task local:apply`/`local:remove` and the
+orchestrator's own `kubectl` calls pin `admin@talos-platform-apps` for the
+cross-cluster-footgun reason — the `local:up` bring-up sub-tasks instead rely on the
+`kubectx` set in `local:cluster:up`, a documented residual, not a per-call pin), and a
+teardown that goes through `task local:remove` plus the component's **own declared**
 namespace/route names — never a chart-default-name guess against the cluster.
 
-1. **Reachability gate (fail-closed).** `kubectl --context admin@talos-platform-apps
-   get nodes`. A **non-zero exit or any error** (missing/stale context, unreachable
-   API) means the cluster is down → record ArgoCD deployability
-   NOT-LOCALLY-VERIFIABLE, defer to GHA + consumer, skip to Phase 7; only a clean
-   `get nodes` success proceeds. Do NOT substitute `task local:status` — it ends in
-   `... || true` and exits 0 even with the cluster down (fail-open). Do NOT auto-run
-   `task local:up` (heavy: rootful podman, host ports, VM sizing —
+1. **Reachability + identity gate (fail-closed).** Both checks must pass; any
+   non-zero/error/absent → record ArgoCD deployability NOT-LOCALLY-VERIFIABLE, defer
+   to GHA + consumer, skip to Phase 7.
+   - **Reachable:** `kubectl --context admin@talos-platform-apps get nodes` succeeds.
+     Not `task local:status` — it ends in `... || true` and exits 0 even with the
+     cluster down (fail-open).
+   - **Identity — confirm this IS the `talos-platform-apps` test cluster, not an
+     aliased/stale context pointing elsewhere.** A fixed context *name* is not enough
+     (a stale/aliased `admin@talos-platform-apps` can resolve to a *different*,
+     reachable cluster that `get nodes` also passes), and the KEP-1755
+     `local-registry-hosting`/`localhost:5001` ConfigMap is NOT sufficient either — it
+     is the community-standard local-registry marker KIND/k3d/minikube also write. Tie
+     the identity to THIS cluster by two fixed signals, **both** required:
+     1. **The Talos docker-provisioner control-plane node is present** — `kubectl
+        --context admin@talos-platform-apps get nodes -o name` lists
+        `talos-platform-apps-controlplane-1`. Match the exact name (or the
+        `-controlplane-` infix) — NOT a loose `contains talos-platform-apps`: Talos
+        uses `-controlplane-`, KIND uses `-control-plane`, so a substring test would
+        wrongly admit a KIND cluster an operator aliased to this context name (the
+        exact threat this gate exists for); a remote/prod cluster has no such node.
+     2. **API server is loopback** — the `talos-platform-apps` cluster's server starts
+        with `https://127.0.0.1:` (how `local:cluster:up` repoints it; a real/shared
+        cluster's never is):
+        `kubectl config view -o jsonpath='{.clusters[?(@.name=="talos-platform-apps")].cluster.server}'`.
+     Either signal failing → the context is NOT the local test cluster → **abort the
+     E2E** (record NOT-LOCALLY-VERIFIABLE; publish/apply/delete nothing).
+   Do NOT auto-run `task local:up` (heavy: rootful podman, host ports, VM sizing —
    operator-initiated only, see `local/README.md`).
 2. **Template precondition (new sub-layer/component).** The E2E needs
    `local/argo-apps/<sub-layer>/<component>.yaml` (the Argo Application template

@@ -201,9 +201,16 @@ NOT-LOCALLY-VERIFIABLE (a skip is not a pass) and GHA must re-resolve the
 (SKILL.md Phase 6.5); do not default to deferral while the cluster is up.** The
 check is gated on reachability, not skipped by default:
 
-- **Reachable** — a **fail-closed** probe `kubectl --context
+- **Reachable + identity-confirmed** — a **fail-closed** probe `kubectl --context
   admin@talos-platform-apps get nodes` exits 0 (any non-zero/error = down; NOT
-  `task local:status`, which exits 0 even when the cluster is down): run the E2E
+  `task local:status`, which exits 0 even when the cluster is down) **AND** the
+  cluster identity is confirmed by two fixed signals — the Talos docker-provisioner
+  node `talos-platform-apps-controlplane-1` (match the `-controlplane-` infix, not a
+  loose substring — KIND uses `-control-plane`) AND the API server loopback
+  `https://127.0.0.1:` (a fixed
+  context *name* alone, or the community-standard `local-registry-hosting` ConfigMap,
+  does not stop an aliased/stale context targeting the wrong cluster; SKILL.md
+  Phase 6.5 step 1): run the E2E
   per SKILL.md Phase 6.5 — `task local:publish -- <sl>/<c> <tag>` (this component)
   → `task local:apply -- <sl> <tag>` (sub-layer-wide) → assert the component's own
   Argo `Application` (`<sl>-<component>`) is `Synced` **and** `Healthy` and its
