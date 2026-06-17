@@ -105,6 +105,7 @@ Validation is primarily render- and policy-focused; for end-to-end deployability
 
 - **Conventional Commits** with sub-layer or component scope: `feat(lifecycle): …`, `feat(lifecycle/crossplane): …`, `fix(secrets): …`, `chore(automation): …`, `docs: …`
 - One commit = one logical unit. Never commit render output (`rendered/`).
+- **Signed commits are mandatory**: `main` enforces branch-protection `required_signatures`. An unsigned commit makes the PR `mergeStateStatus: BLOCKED` and forces an admin override on merge. Configure once per clone with `task setup:signing` (see `README.md` § Commit signing) — distinct from cosign OCI artifact signing. If the signing key is passphrase-protected it MUST be loaded into the ssh-agent, otherwise non-interactive / agent-driven commits fail to sign.
 - **Breaking-change bumps**: a new major tag (`<sub-layer>/<component>-v2.0.0`) requires a `BREAKING CHANGE:` footer in the commit and an entry in the top-level `CHANGELOG.md` (if present).
 - PR body: what changed + why + validation steps (see `.github/PULL_REQUEST_TEMPLATE.md`).
 - PRs should go through **subagent reviews** (see Multi-Agent Coordination below). The `require-review.sh` hook is **deliberately inactive** (not bound in `settings.json`) until M2 onboards — with a single maintainer, fail-closed would be self-sabotage. The hook scripts stay in the repo and are reactivated once a multi-maintainer workflow becomes real.
