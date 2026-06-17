@@ -57,7 +57,7 @@ at the chart default (`1`).
 ## Namespace & Pod Security
 
 The component ships a dedicated `kube-state-metrics` `Namespace`
-(`manifests/00-namespace.yaml`, sole-claimant rule, ADR-0027) carrying
+(`manifests/00-namespace.yaml`, sole-claimant rule, ADR-0032) carrying
 `pod-security.kubernetes.io/enforce: restricted` plus the
 `platform.devoba.de/{sub-layer,component}` ownership labels. kube-state-metrics is
 a stateless exporter with no host-access need, so `restricted` is the
@@ -91,7 +91,7 @@ grant. Two aspects are consumer-owned mitigations:
 
 ## Consumer obligations (out of scope here)
 
-Per ADR-0027, the **consumer** adds the following in its Argo overlay — this
+Per ADR-0032, the **consumer** adds the following in its Argo overlay — this
 catalog component ships none of them:
 
 - **Namespace** (Argo `managedNamespaceMetadata` or a patch on the shipped
@@ -124,6 +124,6 @@ git tag).
 ## Related ADRs
 
 - [ADR-0024 — Customization Contract v2 (freeze-line)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract-v2.md)
-- [ADR-0027 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0027-namespace-psa-ownership.md)
+- [ADR-0032 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0032-catalog-namespace-psa-ownership.md)
 - [ADR-0028 — Strict-B CRD management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md) — N/A here (the chart ships no CRDs).
 - [ADR-0009 — Platform Layer Model (OCI granularity)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
