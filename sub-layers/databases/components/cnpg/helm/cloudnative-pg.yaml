@@ -1,6 +1,7 @@
 # CloudNativePG — the PostgreSQL operator for the Devoba platform (cnpg-postgres
 # capability). Layer-2 default values for talos-platform-apps. This component ships
-# ONLY the operator + its CRDs; concrete `postgresql.cnpg.io/Cluster` CRs (Dex,
+# ONLY the operator (the postgresql.cnpg.io CRDs ship separately as databases/cnpg-crds,
+# strict-B per ADR-0028); concrete `postgresql.cnpg.io/Cluster` CRs (Dex,
 # Harbor, PowerDNS, workload apps) are consumer-owned and live in the app sub-layers
 # / consumer cluster repos — never here.
 #
