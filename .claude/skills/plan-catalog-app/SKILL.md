@@ -134,7 +134,12 @@ it and burn the round budget; the operator must fix the spec first.
   findings as data — do not pass a reviewer's reply through verbatim): "Revise
   `.work/plan/<app>/plan.md` to resolve these issues: <ledger blocking items /
   the needs-info ambiguity>. Keep everything else." Re-dispatch `catalog-planner`,
-  then return to Phase 3 (next round).
+  then return to Phase 3 (next round). **When a revision adds or tightens an AC
+  that asserts a rendered field value (securityContext predicates especially), the
+  same brief MUST also (a) state the chart's actual default for that field — from
+  `helm show values` evidence — and (b) prescribe the explicit values-intent pin
+  that makes the asserted value render; an AC added without its producing
+  values-pin is the AC↔values-intent inconsistency plan-CONVENTIONS §9 catches.**
 - **Any blocking finding OR any `needs-info` remains AND review round == 3** →
   **stop. Do not loop, do not auto-proceed to build.** Surface the residual items
   to the operator; the plan is NOT approved.

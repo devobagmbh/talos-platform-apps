@@ -130,6 +130,14 @@ Only after Tier 1 is green (or with the green/red state recorded), judge:
 - **README ↔ artifact agreement** — sync-wave, OCI path, listed capabilities,
   and consumer obligations in `README.md` match `customization.yaml` +
   `compatibility.yaml` + the rendered manifest. Doc drift is a finding.
+  **RBAC-claim cross-check:** when the README characterises the RBAC the component
+  grants (e.g. "list/watch only", "no write verbs", "cluster-wide read"), verify it
+  against the rendered RBAC: read each `kind: ClusterRole`/`Role` document's
+  `rules[]` (`verbs` / `resources` / `apiGroups`) in `rendered/manifest.yaml` and
+  cite the matching `file:line` — a verb or scope the README claims but the rendered
+  `rules[]` do not match (over- or under-stated) is a finding. A security-sensitive
+  RBAC characterisation with no rendered backing is doc drift on the highest-stakes
+  claim class.
 - **Documentation conformance** — the component `README.md` and its inline
   comments in every file class `DOCUMENTATION.md` governs — `helm/*.yaml` (incl.
   its helm-docs `# --` value descriptions), `manifests/*.yaml`, `customization.yaml`,

@@ -100,7 +100,15 @@ at.
    actually read.
 7. **Surface, never guess.** Anything you cannot confirm (a chart version, a CRD
    API version, whether a dependency exists) is an `open_question`, not a
-   fabricated fact. Set `capability` by its three states (CONVENTIONS §6): a
+   fabricated fact. **Security-relevant chart-default claims are evidence-backed or
+   an `open_question` — never asserted.** Whether a chart enables a sidecar by
+   default (e.g. kube-rbac-proxy), the key name + scope of its `securityContext`
+   and the values it defaults to, and the RBAC verb scope it grants are claims the
+   build acts on; verify each via `helm show values <repo>/<chart> --version <v>` /
+   `helm show chart` when the registry is reachable — reading chart defaults is
+   evidence-gathering, not the render-by-effect the build phase forbids — and
+   record it as an `open_question` when the registry is unreachable. A stated
+   chart-default with no evidence is a guess. Set `capability` by its three states (CONVENTIONS §6): a
    **mapped** id present in the index; **pending-index** — the component provides a
    swappable capability whose id is not yet indexed, so name the intended id and
    record a pre-build blocker in `open_questions[]` (never a silent `# TODO`, never
