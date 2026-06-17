@@ -18,11 +18,13 @@ metadata:
   namespace: cnpg-system
 
 values:
-  # Foundational substrate (sync-wave 0): the operator OWNS the postgresql.cnpg.io
-  # CRDs that every consuming app's Cluster CR depends on. Keep CRD creation in this
-  # artifact so the CRDs land with the operator — no separate CRD-only step.
+  # Strict-B CRD split (ADR-0028): the 10 postgresql.cnpg.io CRDs ship as a SEPARATE
+  # artifact (databases/cnpg-crds, sync-wave -1), not inline with the operator. This
+  # workload renders ZERO CRDs (crds.create: false); the consumer wires the cnpg-crds
+  # Argo Application (Prune=false, ServerSideApply=true) ahead of this operator at
+  # wave 0. The build gate asserts kind:CustomResourceDefinition count == 0 here.
   crds:
-    create: true
+    create: false
 
   # Image tag is intentionally left empty so the chart pins to its appVersion
   # (1.29.1 for chart 0.28.2) — a concrete, pinned tag, never :latest. The catalog's

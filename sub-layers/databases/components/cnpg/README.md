@@ -7,8 +7,11 @@ platform. Implements the **`cnpg-postgres`** capability (managed, instanced Post
 Helm chart `cloudnative-pg` from `https://cloudnative-pg.github.io/charts` (which
 301-redirects to `cloudnative-pg.io/charts`), pinned to **0.28.2** (appVersion **1.29.1**).
 This component ships **only the operator** — its Deployment, Service, RBAC
-(`ClusterRole`/`ClusterRoleBinding`/`ServiceAccount`), the mutating/validating webhooks,
-and the `postgresql.cnpg.io` CRDs (`Cluster`, `Backup`, `ScheduledBackup`, `Pooler`, …).
+(`ClusterRole`/`ClusterRoleBinding`/`ServiceAccount`), and the mutating/validating
+webhooks. Under the **strict-B CRD split** (ADR-0028) the `postgresql.cnpg.io` CRDs
+(`Cluster`, `Backup`, `ScheduledBackup`, `Pooler`, …) ship as a **separate** artifact,
+[`databases/cnpg-crds`](../cnpg-crds/) at sync-wave **-1** — this workload renders
+**zero** CRDs (`crds.create: false`) and `requires` that artifact at `>=v0.1.0`.
 
 Concrete `postgresql.cnpg.io/Cluster` CRs (for Dex, Harbor, PowerDNS, workload apps) are
 **not** part of this artifact — they are consumer-owned and live in the respective app
@@ -16,8 +19,9 @@ sub-layers / consumer cluster repos.
 
 ## Freeze-line (ADR-0024)
 
-The **workload** (operator Deployment/RBAC/webhooks + CRDs) is the signed, pre-rendered
-artifact. The operator is **cluster-agnostic at the freeze line**: it needs no
+The **workload** (operator Deployment/RBAC/webhooks) is the signed, pre-rendered
+artifact (the CRDs are the companion [`databases/cnpg-crds`](../cnpg-crds/) artifact,
+ADR-0028). The operator is **cluster-agnostic at the freeze line**: it needs no
 consumer-supplied secrets, config files, or env to run, so `provided_refs` and every
 `required.*` list are empty.
 
@@ -31,8 +35,35 @@ consumer-supplied secrets, config files, or env to run, so `provided_refs` and e
 
 ## Sync-wave
 
-`0` — foundational substrate: it brings the `postgresql.cnpg.io` CRDs that every consuming
-app's `Cluster` CR depends on, so the operator + CRDs must exist before any consumer Postgres.
+`0` — the operator (Deployment + RBAC + webhooks) starts **after** the
+`postgresql.cnpg.io` CRDs are established at wave **-1** via
+[`databases/cnpg-crds`](../cnpg-crds/), so the API group is registered before the
+operator reconciles any consumer `Cluster` CR. The CRDs no longer ship inline with the
+operator (strict-B, ADR-0028).
+
+## Strict-B consumer wiring (ADR-0028)
+
+This workload requires its CRDs to exist first, so the consumer cluster repo wires
+**two** Argo `Application`s:
+
+1. [`databases/cnpg-crds`](../cnpg-crds/) at `argocd.argoproj.io/sync-wave: "-1"` with
+   `argocd.argoproj.io/sync-options: Prune=false,ServerSideApply=true`. `Prune=false` is
+   the authoritative CR-cascade protection — it stops Argo from deleting a CRD (and
+   cascading the live `Cluster`/`Backup`/`Pooler` CRs, a data-loss event) when the source
+   removes it; `ServerSideApply=true` clears the 262 KB client-side annotation limit on
+   the large CloudNativePG CRDs.
+2. This **`databases/cnpg`** operator Application at sync-wave **0**, which comes up
+   against CRDs that already exist.
+
+**Breaking change.** Versus the previous single-artifact `databases/cnpg` (which bundled
+the CRDs inline), a consumer upgrading MUST add the `databases/cnpg-crds` Application
+before syncing this workload — otherwise the operator has no CRDs to reconcile.
+
+**Version coupling.** The chart pin here (`helm/cloudnative-pg.yaml` `version: 0.28.2`)
+and the `databases/cnpg-crds` vendored-CRD drift anchor (also `cloudnative-pg 0.28.2`)
+MUST be bumped **together** — a chart-version bump requires re-vendoring the cnpg-crds
+manifests in the same change. No mechanical drift check exists (consistent with the
+`network/multus-cni-crds` precedent); the coupling is upheld by convention and review.
 
 ## OCI
 
@@ -68,6 +99,7 @@ consumer-owned namespaces, so this level governs only the operator pods.
 
 ## Related ADRs
 
+- [ADR-0028 — CRD management (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)
 - [ADR-0008 — Backup-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
 - [ADR-0024 — Workload/Config-Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
