@@ -44,9 +44,11 @@ vars:
   # Scope of the guarantee: pinning selects the kubeconfig context *by name*, so a
   # current-context left pointing at a DIFFERENT, differently-named cluster cannot be
   # hit — the common accident this defends against. It does NOT verify the named
-  # context's server: URL: a same-named context entry or a repointed cluster server
-  # is the operator's kubeconfig hygiene, which no --context flag can check. So this
-  # is current-context-drift protection, not cluster-identity verification.
+  # context's server: URL — guarding against a same-named entry or a repointed
+  # cluster server is kubeconfig hygiene the operator owns, which no --context flag
+  # can check (local:cluster:up does add a server-URL self-heal for its own bring-up
+  # path; see its guard). So this is current-context-drift protection, not cluster-
+  # identity verification.
   # Three call classes are intentionally NOT pinned because none selects a running
   # cluster by context: (1) the context bootstrap in local:cluster:up (kubectl config
   # set-cluster / talosctl kubeconfig / kubectx) that CREATES and selects the context
@@ -1131,7 +1133,7 @@ tasks:
     desc: 'Prüft dass alle Tools im PATH sind (sonst hilfreicher Hinweis)'
     cmd: |
       missing=""
-      for t in docker talosctl kubectl helm mkcert envsubst yq; do
+      for t in docker talosctl kubectl kubectx helm mkcert envsubst yq; do
         command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
       done
       if [ -n "$missing" ]; then
@@ -1213,13 +1215,19 @@ tasks:
       done
       kubectx {{.LOCAL_KUBE_CONTEXT}} >/dev/null 2>&1 || true
       echo "warte bis K8s-API antwortet..."
+      ready=false
       for i in $(seq 1 60); do
         if kubectl --context {{.LOCAL_KUBE_CONTEXT}} get --raw='/readyz' >/dev/null 2>&1; then
+          ready=true
           echo "✓ K8s-API ready"
           break
         fi
         sleep 2
       done
+      if [ "$ready" != "true" ]; then
+        echo "ERROR: K8s-API auf Context {{.LOCAL_KUBE_CONTEXT}} nach 60 Versuchen nicht ready — task local:up?"
+        exit 1
+      fi
 
   local:registry:up:
     desc: 'Lokale Docker-Registry auf localhost:5001 mit mkcert-TLS starten (idempotent)'
@@ -1296,10 +1304,26 @@ tasks:
         # node IP (10.5.0.2:6443), which is unreachable from the host, so we
         # repoint the server at the forwarded 6443 port. Node .2 is deterministic
         # in the default 10.5.0.0/24 subnet (.1 = gateway).
-        if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx '{{.LOCAL_KUBE_CONTEXT}}'; then
+        # Guard on the server URL the kube-context actually RESOLVES to: a stale
+        # context named admin@talos-platform-apps (a prior, unrelated cluster that
+        # reused this deterministic default name) would otherwise be trusted as-is,
+        # and every pinned --context call would then hit ITS server. `config view
+        # --minify --context` follows the context to its referenced cluster's server
+        # — so a context pointing at a DIFFERENTLY-named cluster is still caught,
+        # unlike a bare cluster-name lookup. Rebuild whenever that server is not this
+        # container's forwarded loopback port (an absent context yields an empty
+        # server, which also triggers the rebuild). A redundant rebuild is harmless —
+        # talosctl kubeconfig --force + set-cluster are idempotent in outcome.
+        api_port=$(docker port talos-platform-apps-controlplane-1 6443/tcp | head -1 | sed 's/.*://')
+        if [ -z "$api_port" ]; then
+          echo "ERROR: 'docker port talos-platform-apps-controlplane-1 6443/tcp' returned empty — container not running yet? Re-run once local:cluster:up has brought it up."
+          exit 1
+        fi
+        expected_server="https://127.0.0.1:${api_port}"
+        current_server=$(kubectl config view --minify --context {{.LOCAL_KUBE_CONTEXT}} -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)
+        if [ "$current_server" != "$expected_server" ]; then
           talosctl --context talos-platform-apps kubeconfig --force --nodes 10.5.0.2 >/dev/null
-          api_port=$(docker port talos-platform-apps-controlplane-1 6443/tcp | head -1 | sed 's/.*://')
-          kubectl config set-cluster talos-platform-apps --server="https://127.0.0.1:${api_port}"
+          kubectl config set-cluster talos-platform-apps --server="$expected_server"
         fi
         kubectx {{.LOCAL_KUBE_CONTEXT}}
       - |
