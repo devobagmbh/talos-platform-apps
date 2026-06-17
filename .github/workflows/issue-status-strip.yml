@@ -1,0 +1,56 @@
+name: issue-status-strip
+
+# When an issue closes (manually, or via a merged PR's `Closes #N`), strip every
+# `status:` label — a closed issue carries no workflow status. This is the
+# event-driven half of the issue lifecycle: skills set `status: in-progress` on
+# claim (in-session); GitHub Actions clears it at close, when no skill runs.
+# Prevents the fossilization where CLOSED issues keep `status: in-progress`.
+# Label-automation github-script workflow (AGENTS.md CI-conventions carve-out).
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  strip-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.payload.issue.number;
+            // Read fresh (not the stale event payload) so a label added between
+            // the close event and this run is still seen. Paginate so a status:
+            // label past the first 30 is not missed (would silently fossilize).
+            const labels = await github.paginate(
+              github.rest.issues.listLabelsOnIssue,
+              { owner, repo, issue_number, per_page: 100 },
+            );
+            const statusLabels = labels
+              .map(l => l.name)
+              .filter(name => name.startsWith("status: "));
+            for (const name of statusLabels) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number, name,
+                });
+                core.info(`Stripped ${name} from closed issue #${issue_number}`);
+              } catch (err) {
+                // 404 = already gone (benign). Any other failure is surfaced so a
+                // partial strip (issue still fossilized) is not silently swallowed.
+                // Octokit RequestError exposes the code on err.status; check
+                // err.response.status too for defensiveness across wrappers.
+                const code = err.status || (err.response && err.response.status);
+                if (code === 404) {
+                  core.info(`${name} already absent on #${issue_number}`);
+                } else {
+                  core.warning(`removeLabel ${name} failed on #${issue_number}: ${err.message}`);
+                }
+              }
+            }

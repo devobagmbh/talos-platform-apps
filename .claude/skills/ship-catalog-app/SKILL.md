@@ -293,9 +293,12 @@ Report:
   unassign); `stopped-at-plan` → `ready` (release the approved-but-unbuilt app for
   a later pickup); `build-incomplete` / `awaiting-merge` → **leave `in-progress`**
   (the app is unfinished — components remain to fix/build or PRs remain to merge;
-  ship resumes on re-run), report what is pending; `all-done` → `needs-review` for
-  the final human verification (the per-component PRs' `Closes`/`Refs #N` close it
-  on merge).
+  ship resumes on re-run), report what is pending; `all-done` → **leave
+  `in-progress`** — each per-component PR `Closes` its **own component issue**
+  (auto-closed and `status:`-stripped by `issue-status-strip.yml` on merge); the
+  **epic** is closed by a human after final verification, the GHA then stripping
+  its status. Ship never flips the epic to `needs-review` (the close-time strip is
+  GHA-owned — see `.claude/rules/issue-claim.md §End-transition`).
 
 If anything is **awaiting-merge**: name the PR(s) that must be merged and the
 dependent components still waiting, then give the resume action — *merge those

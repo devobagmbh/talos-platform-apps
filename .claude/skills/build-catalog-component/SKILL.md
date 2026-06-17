@@ -436,27 +436,30 @@ and — when Phase 6.5 did not run because the cluster was unreachable — ArgoC
 deploy; when Phase 6.5 ran, report its PASS-with-evidence instead). Never merge; a
 human merges after CI + code-owner review.
 
-**`Closes #N` vs `Refs #N`.** When the issue's ACs include items this PR cannot
-satisfy locally — cosign signature present, consumer-deployable via ArgoCD — a
-merge that auto-closes the issue would close it with those ACs still
-GHA/consumer-pending. Do not auto-pick `Closes`: surface the `Closes` vs
-`Refs #N` choice to the operator, defaulting to `Refs #N` + a noted deferred-AC
-list when no steer is given.
+**`Closes #N` — the component's own issue.** Default to `Closes #N` pointing at
+**this component's own issue** (never the epic). The **human merger is the
+done-gate**: the not-locally-verifiable ACs (cosign signature, OCI push, ArgoCD
+deploy) are deferred to GHA/consumer and listed in the PR body, but they do **not**
+block the close — a human reviews and merges only when satisfied, and the
+`issue-status-strip.yml` GHA clears the issue's `status:` on the resulting close.
+(Do not `Closes` the epic from a component PR; the epic is human-closed after final
+verification — see `.claude/rules/issue-claim.md §End-transition`.)
 
 Once the PR is open (the branch is on the remote), free the local worktree with
 `task worktree:remove -- <sub-layer>/<component>` — the branch is kept, only the
 working tree is removed, which releases the slot for another session.
 
-**Move the issue off the claim — owner only (`.claude/rules/issue-claim.md`).**
-If this build became the claim owner (step 3) and the PR is open, transition per
-the protocol: `status: needs-review` for a **single-deliverable** issue — but if a
-matched plan's `source == <N>` introduces **more than one** component (this is a
-multi-component app), leave `status: in-progress` for the orchestrator/operator to
-finalize the epic, do not flip it after one component. If the issue was already
-`in-progress` at step 3 (an orchestrator owns it), leave the status untouched. If
-the build did **not** complete (paused, evaluator `fail` after its cap, declined
-PR), leave `status: in-progress` and report it. A no-issue build transitions
-nothing. (`Closes #N`/`Refs #N` on merge does the final close.)
+**Leave the issue on the claim — the close-time transition is GHA-owned
+(`.claude/rules/issue-claim.md §End-transition`).** The issue stays
+`status: in-progress` + assignee through the whole PR window: the **PR** carries
+`status: needs-review` (stamped by `pr-needs-review.yml`), and the issue's
+`status:` is stripped by `issue-status-strip.yml` when the merge auto-closes it via
+`Closes #N`. The build skill **never flips the issue to `needs-review`** — leaving
+it `in-progress` preserves a valid foreign-claim signal (§Claim step 3-4 keys on
+`status: in-progress` present). If the build did **not** complete (paused,
+evaluator `fail` after its cap, declined PR), leave `status: in-progress` and
+report it. A no-issue build transitions nothing. (The merge's `Closes #N` does the
+final close; the GHA strips the status.)
 
 ## Completion predicate
 
