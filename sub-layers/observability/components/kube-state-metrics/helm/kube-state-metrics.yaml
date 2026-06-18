@@ -1,0 +1,67 @@
+# kube-state-metrics — Kubernetes object-state metrics exporter (kube_* series).
+# Layer-2 default values for talos-platform-apps. This component is
+# cluster-agnostic: it carries NO consumer-specific config (replica count, HA
+# topology, and PNI labels are consumer-overlay concerns — see customization.yaml
+# and the README §Consumer obligations).
+#
+# Chart 7.5.1 already ships a restricted-compliant pod-level securityContext and
+# container-level containerSecurityContext. We pin both EXPLICITLY here
+# (explicit-not-inherited pattern) so a future chart bump cannot silently weaken
+# the posture that satisfies `pod-security.kubernetes.io/enforce: restricted` on
+# the namespace.
+#
+# NOTE on chart-specific key names (chart 7.5.1, verified via `helm show values`):
+#   - the POD-level key is `securityContext:` (NOT `podSecurityContext:`) and it
+#     carries an `enabled:` gate that must be true for the block to render.
+#   - the CONTAINER-level key is `containerSecurityContext:`.
+# These differ from the metrics-server chart's key names — do not copy blindly.
+
+metadata:
+  chart: kube-state-metrics
+  repo: https://prometheus-community.github.io/helm-charts
+  version: 7.5.1 # bare SemVer — NO leading 'v' (--version v7.5.1 fails to resolve)
+  # appVersion 2.19.1 → image tag registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
+  # (chart appVersion pin, NEVER :latest; never overridden here). VERIFY at push
+  # (`helm show chart kube-state-metrics --repo <repo> --version 7.5.1`).
+  namespace: kube-state-metrics
+
+values:
+  # kube-rbac-proxy sidecar — kept DISABLED (chart default). This yields a
+  # single-container workload (one `kube-state-metrics` container). Enabling it is
+  # a consumer-overlay concern (out of scope here); its image is pinned upstream
+  # (quay.io/brancz/kube-rbac-proxy:vX.Y.Z) so no :latest Hard-Constraint risk
+  # arises if a consumer ever enables it.
+  kubeRBACProxy:
+    enabled: false
+
+  # Pod-level securityContext pins (explicit-not-inherited). The chart key is
+  # `securityContext` (with an `enabled` gate), not `podSecurityContext`. The
+  # chart's defaults are already restricted-compliant; pinned here so a future
+  # chart bump cannot silently weaken the pod-level posture that satisfies
+  # `enforce: restricted` at the pod scope.
+  securityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container-level securityContext pins (explicit-not-inherited). The chart sets
+  # readOnlyRootFilesystem / allowPrivilegeEscalation / capabilities.drop by
+  # default; `runAsNonRoot` + `runAsUser` are NOT set at container scope by the
+  # chart, so they are added EXPLICITLY here so every rendered container satisfies
+  # the restricted check at container scope (not merely inherited from the pod).
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 65534
+    capabilities:
+      drop:
+        - ALL
+
+  # NOTE: no `replicas:` key. Replica count / HA topology is a consumer-overlay
+  # concern (cluster-specific per AGENTS.md §Hard Constraints); the catalog leaves
+  # it at the chart default (1). The consumer overrides it in its Argo overlay.

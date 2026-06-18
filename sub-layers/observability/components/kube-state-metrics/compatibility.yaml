@@ -1,0 +1,16 @@
+# kube-state-metrics needs only the Kubernetes control-plane API (cluster-wide
+# read access via the chart-shipped ClusterRole) — a substrate precondition the
+# consumer integrates, not a catalog component edge or capability dep (ADR-0009,
+# #71). No base version-coupling line. `requires:` carries only component-refs and
+# capability-ids, so it is empty here.
+requires: {}
+provides:
+  - name: kube-state-metrics
+    apis:
+      - kube-state-metrics@7.5.1 # prometheus-community kube-state-metrics chart (kube_* object-state metrics)
+    # No-capability by design (apis-only). kube-state-metrics is the canonical,
+    # sole provider of the kube_* object-state series over a Prometheus /metrics
+    # endpoint — there is no drop-in swap alternative implementing the same
+    # interface, so it provides no swappable capability (precedent:
+    # lifecycle/providers). This is a design state, not a deferral — NO `# TODO:`.
+    capabilities: []
