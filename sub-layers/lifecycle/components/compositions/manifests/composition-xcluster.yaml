@@ -126,6 +126,16 @@ spec:
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.tofuModuleSource
                 toFieldPath: spec.forProvider.module
+              # Per-cluster ClusterProviderConfig → its backendFile pins THIS
+              # cluster's tofu state (Garage bucket/key). The base above defaults
+              # to opentofu-default (seeder self-adoption, key clusters/seeder);
+              # a child cluster MUST point at its own (e.g. opentofu-office-lab,
+              # key clusters/office-lab) or it would run against another cluster's
+              # state and plan to destroy it. The XRD defaults the field to
+              # opentofu-default, so the seeder XCluster keeps its current ref.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.providerConfigName
+                toFieldPath: spec.providerConfigRef.name
               - type: FromCompositeFieldPath
                 fromFieldPath: spec.clusterName
                 toFieldPath: spec.writeConnectionSecretToRef.name
