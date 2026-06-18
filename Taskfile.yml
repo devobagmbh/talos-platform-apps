@@ -35,16 +35,26 @@ vars:
 
   # The kube-context for the LOCAL Talos test cluster — single source of truth for
   # the context name. `talosctl cluster create --name talos-platform-apps` writes
-  # this deterministic default (admin@<cluster-name>). The per-component E2E +
-  # teardown + standalone helper tasks (local:apply/remove/status, local:dev*,
-  # local:fixtures, crossplane:apply, local:argo:uninstall, local:argo:password)
-  # pin it via --context {{.LOCAL_KUBE_CONTEXT}} (helm: --kube-context) so a stray
-  # current-context cannot target a different, reachable cluster. RESIDUAL: the
-  # local:up bring-up sub-tasks (cilium/storage/certs/gateway/argo:install/
-  # registry-bridge) still rely on the `kubectx {{.LOCAL_KUBE_CONTEXT}}` set in
-  # local:cluster:up rather than pinning per call — safe inside the local:up chain,
-  # but running one standalone against a wrong current-context is unguarded;
-  # pinning those per-call is a tracked follow-up.
+  # this deterministic default (admin@<cluster-name>). Every local:* task that
+  # contacts the cluster pins it via --context {{.LOCAL_KUBE_CONTEXT}} (helm:
+  # --kube-context) — the per-component E2E + teardown + standalone helpers AND the
+  # local:up bring-up sub-tasks (cluster:up post-switch apply, cert-manager / cilium
+  # / storage / gateway-api / argo installs, certs, gateway:apply, registry:bridge,
+  # start readiness probe).
+  # Scope of the guarantee: pinning selects the kubeconfig context *by name*, so a
+  # current-context left pointing at a DIFFERENT, differently-named cluster cannot be
+  # hit — the common accident this defends against. It does NOT verify the named
+  # context's server: URL — guarding against a same-named entry or a repointed
+  # cluster server is kubeconfig hygiene the operator owns, which no --context flag
+  # can check (local:cluster:up does add a server-URL self-heal for its own bring-up
+  # path; see its guard). So this is current-context-drift protection, not cluster-
+  # identity verification.
+  # Three call classes are intentionally NOT pinned because none selects a running
+  # cluster by context: (1) the context bootstrap in local:cluster:up (kubectl config
+  # set-cluster / talosctl kubeconfig / kubectx) that CREATES and selects the context
+  # itself; (2) client-side generators (kubectl create … --dry-run=client) that only
+  # render YAML before piping into a pinned apply; (3) helm repo add/update, which
+  # touch the local repo cache, not the cluster.
   LOCAL_KUBE_CONTEXT: admin@talos-platform-apps
 
 tasks:
@@ -1200,7 +1210,7 @@ tasks:
     desc: 'Prüft dass alle Tools im PATH sind (sonst hilfreicher Hinweis)'
     cmd: |
       missing=""
-      for t in docker talosctl kubectl helm mkcert envsubst yq; do
+      for t in docker talosctl kubectl kubectx helm mkcert envsubst yq; do
         command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
       done
       if [ -n "$missing" ]; then
@@ -1282,13 +1292,19 @@ tasks:
       done
       kubectx {{.LOCAL_KUBE_CONTEXT}} >/dev/null 2>&1 || true
       echo "warte bis K8s-API antwortet..."
+      ready=false
       for i in $(seq 1 60); do
-        if kubectl get --raw='/readyz' >/dev/null 2>&1; then
+        if kubectl --context {{.LOCAL_KUBE_CONTEXT}} get --raw='/readyz' >/dev/null 2>&1; then
+          ready=true
           echo "✓ K8s-API ready"
           break
         fi
         sleep 2
       done
+      if [ "$ready" != "true" ]; then
+        echo "ERROR: K8s-API auf Context {{.LOCAL_KUBE_CONTEXT}} nach 60 Versuchen nicht ready — task local:up?"
+        exit 1
+      fi
 
   local:registry:up:
     desc: 'Lokale Docker-Registry auf localhost:5001 mit mkcert-TLS starten (idempotent)'
@@ -1365,10 +1381,26 @@ tasks:
         # node IP (10.5.0.2:6443), which is unreachable from the host, so we
         # repoint the server at the forwarded 6443 port. Node .2 is deterministic
         # in the default 10.5.0.0/24 subnet (.1 = gateway).
-        if ! kubectl config get-contexts -o name 2>/dev/null | grep -qx '{{.LOCAL_KUBE_CONTEXT}}'; then
+        # Guard on the server URL the kube-context actually RESOLVES to: a stale
+        # context named admin@talos-platform-apps (a prior, unrelated cluster that
+        # reused this deterministic default name) would otherwise be trusted as-is,
+        # and every pinned --context call would then hit ITS server. `config view
+        # --minify --context` follows the context to its referenced cluster's server
+        # — so a context pointing at a DIFFERENTLY-named cluster is still caught,
+        # unlike a bare cluster-name lookup. Rebuild whenever that server is not this
+        # container's forwarded loopback port (an absent context yields an empty
+        # server, which also triggers the rebuild). A redundant rebuild is harmless —
+        # talosctl kubeconfig --force + set-cluster are idempotent in outcome.
+        api_port=$(docker port talos-platform-apps-controlplane-1 6443/tcp | head -1 | sed 's/.*://')
+        if [ -z "$api_port" ]; then
+          echo "ERROR: 'docker port talos-platform-apps-controlplane-1 6443/tcp' returned empty — container not running yet? Re-run once local:cluster:up has brought it up."
+          exit 1
+        fi
+        expected_server="https://127.0.0.1:${api_port}"
+        current_server=$(kubectl config view --minify --context {{.LOCAL_KUBE_CONTEXT}} -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null || true)
+        if [ "$current_server" != "$expected_server" ]; then
           talosctl --context talos-platform-apps kubeconfig --force --nodes 10.5.0.2 >/dev/null
-          api_port=$(docker port talos-platform-apps-controlplane-1 6443/tcp | head -1 | sed 's/.*://')
-          kubectl config set-cluster talos-platform-apps --server="https://127.0.0.1:${api_port}"
+          kubectl config set-cluster talos-platform-apps --server="$expected_server"
         fi
         kubectx {{.LOCAL_KUBE_CONTEXT}}
       - |
@@ -1378,7 +1410,7 @@ tasks:
         docker network connect talos-platform-apps kind-registry 2>/dev/null || true
       - |
         # ConfigMap nach KEP-1755 (local-registry-hosting)
-        kubectl apply -f - <<'EOF'
+        kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f - <<'EOF'
         apiVersion: v1
         kind: ConfigMap
         metadata:
@@ -1396,6 +1428,7 @@ tasks:
       helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
       helm repo update jetstack
       helm upgrade --install cert-manager jetstack/cert-manager \
+        --kube-context {{.LOCAL_KUBE_CONTEXT}} \
         --namespace cert-manager --create-namespace \
         --version v1.17.0 \
         --set crds.enabled=true \
@@ -1416,13 +1449,13 @@ tasks:
       kubectl create secret tls mkcert-ca \
         --cert="$caroot/rootCA.pem" --key="$caroot/rootCA-key.pem" \
         -n cert-manager \
-        --dry-run=client -o yaml | kubectl apply -f -
-      kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+        --dry-run=client -o yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
+      kubectl create namespace argocd --dry-run=client -o yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
       kubectl create configmap mkcert-ca \
         --from-file=ca.crt="$caroot/rootCA.pem" \
         -n argocd \
-        --dry-run=client -o yaml | kubectl apply -f -
-      kubectl apply -f local/mkcert-cluster-issuer.yaml
+        --dry-run=client -o yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/mkcert-cluster-issuer.yaml
       echo "✓ mkcert-CA als ClusterIssuer + im argocd-NS bereit"
 
   local:cilium:install:
@@ -1435,6 +1468,7 @@ tasks:
       helm repo add cilium https://helm.cilium.io 2>/dev/null || true
       helm repo update cilium
       helm upgrade --install cilium cilium/cilium \
+        --kube-context {{.LOCAL_KUBE_CONTEXT}} \
         --namespace kube-system \
         --version 1.19.3 \
         --values local/cilium-values.yaml \
@@ -1444,7 +1478,7 @@ tasks:
       # Wartet, bis CoreDNS via Cilium-CNI läuft. 5m statt 2m: beim Erst-Install
       # zieht der Cilium-Agent/Operator/Envoy erst Images, bevor das CNI Pods
       # verdrahtet — 2m war zu knapp und ließ local:up false-negativ failen.
-      kubectl -n kube-system rollout status deployment/coredns --timeout=5m
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n kube-system rollout status deployment/coredns --timeout=5m
 
   local:storage:install:
     desc: 'local-path-provisioner als Default-StorageClass (lokal — Katalog-CSI braucht das NAS)'
@@ -1454,26 +1488,26 @@ tasks:
     # Anpassung: / ist read-only → hostPath nach /var/local-path-provisioner.
     cmd: |
       ver="v0.0.30"
-      kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${ver}/deploy/local-path-storage.yaml"
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${ver}/deploy/local-path-storage.yaml"
       # Talos erzwingt Pod-Security; der Helper-Pod (mountet hostPath) braucht
       # einen privileged-NS, sonst blockt PSA die PVC-Provisionierung.
-      kubectl label namespace local-path-storage pod-security.kubernetes.io/enforce=privileged --overwrite
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} label namespace local-path-storage pod-security.kubernetes.io/enforce=privileged --overwrite
       cfg='{"nodePathMap":[{"node":"DEFAULT_PATH_FOR_NON_LISTED_NODES","paths":["/var/local-path-provisioner"]}]}'
-      kubectl -n local-path-storage patch configmap local-path-config --type merge \
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n local-path-storage patch configmap local-path-config --type merge \
         -p "$(jq -nc --arg c "$cfg" '{data:{"config.json":$c}}')"
       # local-path als Default-StorageClass (CNPG & Co. setzen kein storageClassName)
-      kubectl patch storageclass local-path \
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} patch storageclass local-path \
         -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-      kubectl -n local-path-storage rollout restart deployment/local-path-provisioner
-      kubectl -n local-path-storage rollout status deployment/local-path-provisioner --timeout=2m
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n local-path-storage rollout restart deployment/local-path-provisioner
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n local-path-storage rollout status deployment/local-path-provisioner --timeout=2m
       echo "✓ local-path ist Default-StorageClass"
 
   local:gateway-api:install:
     desc: 'Gateway-API-CRDs installieren (Standard-Channel v1.2.0)'
     cmd: |
-      kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
-      kubectl wait --for=condition=Established crd/gateways.gateway.networking.k8s.io --timeout=2m
-      kubectl wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=2m
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} wait --for=condition=Established crd/gateways.gateway.networking.k8s.io --timeout=2m
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=2m
 
   local:argo:install:
     desc: 'ArgoCD via Helm im Cluster installieren (HTTPRoute auf argocd.localhost.direct)'
@@ -1481,6 +1515,7 @@ tasks:
       helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
       helm repo update argo
       helm upgrade --install argocd argo/argo-cd \
+        --kube-context {{.LOCAL_KUBE_CONTEXT}} \
         --namespace argocd --create-namespace \
         --version 7.7.0 \
         --values local/argocd-values.yaml \
@@ -1489,16 +1524,16 @@ tasks:
   local:gateway:apply:
     desc: 'Gateway + HTTPRoutes apply + Cilium-Gateway-Service auf NodePort patchen'
     cmd: |
-      kubectl create namespace gateway --dry-run=client -o yaml | kubectl apply -f -
-      kubectl apply -f local/gateway.yaml
+      kubectl create namespace gateway --dry-run=client -o yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/gateway.yaml
       # warten bis Cilium den Gateway-Service erzeugt hat
       for i in $(seq 1 30); do
-        if kubectl -n gateway get svc cilium-gateway-localhost-direct >/dev/null 2>&1; then break; fi
+        if kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n gateway get svc cilium-gateway-localhost-direct >/dev/null 2>&1; then break; fi
         echo "  ... warte auf cilium-gateway-localhost-direct ($i/30)"
         sleep 2
       done
       # Patch auf NodePort + feste Ports 30080/30443
-      kubectl -n gateway patch svc cilium-gateway-localhost-direct --type=merge -p '{
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n gateway patch svc cilium-gateway-localhost-direct --type=merge -p '{
         "spec": {
           "type": "NodePort",
           "ports": [
@@ -1507,7 +1542,7 @@ tasks:
           ]
         }
       }'
-      kubectl apply -f local/argocd-route.yaml
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/argocd-route.yaml
       echo "✓ Gateway + ArgoCD-HTTPRoute angewendet"
 
   local:registry:bridge:
@@ -1528,7 +1563,7 @@ tasks:
         exit 1
       fi
       echo "kind-registry-Container IP: $kind_registry_ip"
-      KIND_REGISTRY_IP="$kind_registry_ip" envsubst < local/registry-bridge.yaml | kubectl apply -f -
+      KIND_REGISTRY_IP="$kind_registry_ip" envsubst < local/registry-bridge.yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
       echo "✓ Registry-Bridge angewendet"
       echo "  Workstation-Push:  oci://localhost:5001/talos-platform-apps (mkcert-TLS, SAN: localhost)"
       echo "  Cluster-Pull:      kind-registry.registry.svc.cluster.local:5000/talos-platform-apps (mkcert-TLS, SAN: Service-DNS)"
