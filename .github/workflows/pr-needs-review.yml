@@ -1,28 +1,44 @@
 name: pr-needs-review
 
-# Stamp `status: needs-review` on PRs targeting main so the review queue
-# (`is:pr is:open label:"status: needs-review"`) reflects open PRs awaiting a
-# code-owner review. The label is a COSMETIC queue marker — branch protection,
-# not this label, gates the merge; a failed label-add never blocks a PR.
+# Keep `status: needs-review` in sync with whether a PR is actually awaiting a
+# code-owner review on main, so the review queue
+# (`is:pr is:open label:"status: needs-review"`) stays accurate. The label is a
+# COSMETIC queue marker — branch protection, not this label, gates the merge; a
+# failed label op never blocks a PR.
+# The label is a pure function of PR state: present iff the PR is OPEN, non-draft
+# and targets main. We add or remove on every state transition (open, reopen,
+# ready/draft toggle, base retarget) so converting back to draft or retargeting
+# away from main clears the marker too — an add-only workflow would leave it
+# stale. No `branches:` filter: a retarget AWAY from main must still run (at that
+# point the base is no longer main, so a `branches: [main]` filter would skip the
+# one event that should remove the label); the script gates on `base.ref` instead.
 # Label-automation github-script workflow (AGENTS.md CI-conventions carve-out).
 
 on:
   pull_request:
-    types: [opened, ready_for_review, edited]
-    branches: [main]
+    types: [opened, reopened, ready_for_review, converted_to_draft, edited]
 
 permissions:
   issues: write
   pull-requests: write
 
+# Serialize per PR so a rapid draft<->ready or retarget burst settles on the
+# LAST event's state. Without this, two interleaved runs can complete out of
+# event order and leave the label contradicting the PR (the "pure function of
+# state" invariant holds only under serial execution; cancel-in-progress makes
+# the newest event the surviving run).
+concurrency:
+  group: pr-needs-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   needs-review:
     runs-on: ubuntu-latest
-    # opened / ready_for_review always; `edited` only when the base was
-    # retargeted to main (changes.base set) — not on title/body edits.
+    # Recompute on real state transitions only: open/reopen/ready/draft always;
+    # `edited` only when the base branch was retargeted (changes.base set) — not
+    # on title/body edits.
     if: >-
-      github.event.pull_request.draft == false &&
-      (github.event.action != 'edited' || github.event.changes.base != null)
+      github.event.action != 'edited' || github.event.changes.base != null
     steps:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
         with:
@@ -31,22 +47,44 @@ jobs:
             const pr = context.payload.pull_request;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const label = "status: needs-review";
+            // Desired state: an OPEN, non-draft PR targeting main is awaiting
+            // review; anything else is not. Add when the predicate holds, remove
+            // otherwise — this clears the marker on convert-to-draft and on
+            // retarget-away-from-main, not just on the opening transition.
+            const shouldLabel =
+              pr.state === "open" &&
+              pr.draft === false &&
+              pr.base.ref === "main";
             try {
-              await github.rest.issues.addLabels({
-                owner, repo, issue_number: pr.number,
-                labels: ["status: needs-review"],
-              });
-              core.info(`Labeled PR #${pr.number} status: needs-review`);
+              if (shouldLabel) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: pr.number, labels: [label],
+                });
+                core.info(`Labeled PR #${pr.number} ${label}`);
+              } else {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: pr.number, name: label,
+                });
+                core.info(`Removed ${label} from PR #${pr.number}`);
+              }
             } catch (err) {
+              const code = err.status || (err.response && err.response.status);
+              // Removing an absent label 404s — benign, the PR is already in the
+              // desired (unlabeled) state. The add path never 404s this way.
+              if (!shouldLabel && code === 404) {
+                core.info(`${label} already absent on PR #${pr.number}`);
+                return;
+              }
               // The label is cosmetic; branch protection gates the merge, so
               // never fail the run. Route the annotation severity by token
-              // provenance: a fork PR or a [bot] actor runs with a read-only
+              // provenance: a fork PR or [bot] actor runs with a read-only
               // pull_request token (expected -> warning); a same-repo human
               // failure is unexpected (-> error annotation, still non-failing).
               const restricted =
                 (pr.head.repo && pr.head.repo.fork === true) ||
                 context.actor.endsWith("[bot]");
-              const msg = `addLabels failed for PR #${pr.number}: ${err.message}`;
+              const msg = `label op failed for PR #${pr.number}: ${err.message}`;
               if (restricted) {
                 core.warning(`${msg} (restricted token; branch protection still gates review)`);
               } else {
