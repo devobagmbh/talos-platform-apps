@@ -2,5 +2,6 @@
 # Directory bracket for the sub-layer identity; OCI granularity is per component (ADR-0009).
 
 components:
+  - piraeus-operator-crds # strict-B CRD half — 4 piraeus.io Linstor CRDs (sync-wave -1, ADR-0028); workload half piraeus-operator follows in its own PR
   - democratic-csi # NAS iSCSI block storage, Talos-native (nsenter) — synology-iscsi driver (sync-wave 0)
   - synology-csi # DEPRECATED: official Synology CSI; does NOT work on Talos (chroot /host). Superseded by democratic-csi.
