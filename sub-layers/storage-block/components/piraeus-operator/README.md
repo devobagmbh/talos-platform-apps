@@ -51,10 +51,14 @@ invented pod labels.
 dynamically creates privileged DRBD/LINSTOR **satellite** DaemonSets at runtime —
 those satellite pods are operator-created from a consumer's `LinstorCluster` CR and
 are NOT part of this manifest. The operator's **own** pods (controller-manager,
-gencert) are restricted-compatible — `runAsNonRoot: true` at the pod level and
-`allowPrivilegeEscalation: false` + `readOnlyRootFilesystem: true` on every
-container — but the namespace posture is dictated by the satellite pods the
-operator will later place there.
+gencert) are **hardened but below the PSA `restricted` profile**: they set
+`runAsNonRoot: true` at the pod level and `allowPrivilegeEscalation: false` +
+`readOnlyRootFilesystem: true` on every container, but the upstream manifest sets
+**no** `seccompProfile: RuntimeDefault` and **no** `capabilities.drop: [ALL]`, both
+of which `restricted` requires. They are therefore `baseline`-compatible, not
+`restricted`-compatible. These fields are absent from the verbatim vendored
+manifest and are not patched in here; the namespace posture is in any case dictated
+by the satellite pods the operator will later place there.
 
 This component is the **sole catalog occupant** of `piraeus-datastore` (dedicated
 namespace), so it ships the `Namespace` object; a shipped manifest takes precedence
@@ -76,6 +80,16 @@ cert-manager; it is not required, and `secrets/cert-manager` is not an
 > `LinstorSatelliteConfiguration` CRs. With `failurePolicy: Fail`, the webhook
 > rejects those CRs until its TLS is in place.
 
+The webhook also validates **`StorageClass`** objects (`vstorageclass.kb.io`) and
+carries no `namespaceSelector`/`objectSelector`, so during the boot window — after
+Argo applies the `ValidatingWebhookConfiguration` but before the controller-manager
+pod is Ready and gencert has patched the `caBundle` — any cluster-wide `StorageClass`
+CREATE/UPDATE is rejected too. Consumers SHOULD therefore order any other Argo
+Application that creates `StorageClass` objects (a sibling CSI such as
+`storage-block/democratic-csi`, or consumer `StorageClass` CRs) into a **higher
+sync-wave** (≥ 1) than this operator (wave 0), so those applies do not land inside
+the operator's webhook boot window.
+
 ## Image versions
 
 The `piraeus-operator-image-config` ConfigMap bakes the upstream v2.10.7 defaults
@@ -95,6 +109,13 @@ grants create/delete/get/list/patch/update/watch on
 creates the satellite DaemonSets and their RBAC. It cannot be narrowed without
 breaking the operator; it is documented here for the security reviewer and kept
 verbatim from upstream.
+
+**Accepted risk (by design):** a compromise of the operator pod could write
+arbitrary `ClusterRole`/`ClusterRoleBinding` objects (CWE-269, privilege
+escalation). This grant is upstream-intrinsic and consciously accepted. Consumers
+SHOULD confine the operator's Argo Application to the `piraeus-datastore` namespace
+and MAY run a cluster admission policy (e.g. a Kyverno `restrict-clusteradmin`
+rule) so the operator cannot bind itself cluster-admin.
 
 ## Consumer-required CRs (post-deploy, consumer-owned)
 
