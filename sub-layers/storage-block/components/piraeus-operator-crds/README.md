@@ -76,6 +76,18 @@ changed, the consumer's Argo sync applies the new schema in-place
 removes are **not** auto-pruned from the cluster; removal needs manual intervention.
 A version bump is a separate reviewed change.
 
+A safe schema-remove upgrade follows three steps:
+
+1. Diff the live CRDs against the new artifact server-side before applying:
+   `kubectl diff --server-side -f manifests/00-linstor-crds.yaml`.
+2. For removed fields, apply the new schema explicitly with
+   `kubectl apply --server-side --force-conflicts -f manifests/00-linstor-crds.yaml`
+   (or `kubectl replace -f`) — this overwrites the field-owned schema in-place.
+3. **Never** toggle `Prune=true` on the `-crds` Application while live
+   `LinstorCluster` / `LinstorSatellite` CRs exist: Argo would cascade-delete those
+   CRs and tear down the Linstor storage cluster. Prune a removed CRD only after
+   confirming no live CRs of that type remain.
+
 ## Capability
 
 apis-only, **no capability** — `capabilities: []`. The four Linstor CRDs are the API
