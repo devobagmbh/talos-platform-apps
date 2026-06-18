@@ -66,13 +66,29 @@ direnv allow
 
 `direnv allow` triggers the `.envrc`, which activates Devbox. On first invocation Devbox installs all tools (`helm`, `kubectl`, `cosign`, `oras`, `syft`, `go-task`, `yq`, `jq`, `sops`, `age`) into a reproducible Nix store. Subsequent `cd`s into the repo switch the environment automatically.
 
+### Commit signing (required for merge)
+
+`main` enforces **signed commits** (branch protection `required_signatures`). An unsigned commit makes a PR `mergeStateStatus: BLOCKED` even when review and checks are green — it can then only be merged via an admin override. You MUST therefore sign commits locally before opening a PR. (This is **git commit signing**, distinct from the **cosign OCI artifact signing** done by CI — see [Render / sign / publish workflow](#render--sign--publish-workflow).)
+
+```bash
+task setup:signing   # configure repo-local SSH commit signing; prints the GitHub step
+```
+
+The helper sets the repo-local git config and prints the steps it cannot script. For the green **Verified** badge three conditions MUST hold:
+
+1. The **same** public key is registered on GitHub as a **Signing key** (Settings → SSH and GPG keys → *New SSH key* → key type **Signing Key**) — a separate entry from the Authentication key, even with identical key material.
+2. Your committer email is a **verified** email on that same account.
+3. If the key is **passphrase-protected**, it is loaded into the ssh-agent (`ssh-add --apple-use-keychain <key>` on macOS) — otherwise non-interactive / agent-driven commits fail to sign and are rejected.
+
+**Verify** via the GitHub **Verified** badge on a pushed commit (the authoritative check). The local `git log --show-signature -1` additionally needs a configured `gpg.ssh.allowedSignersFile` to print `Good "git" signature`; without it a correctly-signed commit shows as unverifiable locally even though GitHub accepts it.
+
 ### Tools provided by Devbox
 
 See `devbox.json`. Versions are pinned in `devbox.lock` as needed — updates happen in a controlled manner via `devbox update`.
 
 ### Tasks (instead of make)
 
-`go-task` replaces make. Tasks are declared in `Taskfile.yml` (lands in a follow-up iteration). Example targets:
+`go-task` replaces make. Tasks are declared in `Taskfile.yml`. Example targets:
 
 ```bash
 task render -- observability         # renders sub-layers/observability to rendered/manifest.yaml
