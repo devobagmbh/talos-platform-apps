@@ -159,27 +159,38 @@ way the goal is re-anchored.
 
 ## End-transition
 
-The owner moves the end-status; a deferring sub-skill leaves it to the owner.
-Apply the single-`status:` invariant on every transition. Mapping per skill:
+Advancing transitions split by **who is present at the transition moment**:
 
-- **build-catalog-component** — PR opened → `status: needs-review`. **But** if a
-  matched plan's `source == <N>` introduces **more than one** component (this issue
-  is a multi-component app, not a single deliverable), leave `status: in-progress`
-  for the orchestrator/operator to finalize. **Residual:** the plan lives in
-  gitignored `.work/`, so a clone that never planned cannot see "multi-component"
-  and a direct build handed an **epic** number would flip it after one component.
-  This only happens on a standalone build (in the ship path build is a non-owner
-  and never transitions); mitigate by passing a **component's own** issue to a
-  direct `build-catalog-component` and the **app/epic** issue to `ship-catalog-app`
-  — advisory, not enforced. Build incomplete → leave `status: in-progress`, report.
+- **`status: needs-review` and the close-time strip are owned by GitHub Actions**,
+  not the skills. `pr-needs-review.yml` stamps the **PR** with `status:
+  needs-review` on open; `issue-status-strip.yml` strips **every** `status:` label
+  when the issue closes — including the merge-`Closes #N` auto-close that fires
+  hours after any skill session ended, when no skill is running. The skills
+  therefore **never flip the issue to `needs-review`** (that is what previously
+  left it stuck — the transition had no actor at close time).
+- **In-session releases stay skill-driven** — the owner moves them; a deferring
+  sub-skill leaves them to the owner. Apply the single-`status:` invariant on
+  every transition. Mapping per skill:
+
+- **build-catalog-component** — the issue stays `status: in-progress` + assignee
+  through the whole PR window: the **PR** carries `needs-review` (from the GHA),
+  and the issue's status is stripped by the GHA on close. Leaving the issue
+  `in-progress` rather than flipping it to `needs-review` preserves a valid
+  foreign-claim signal — §Claim step 3-4 keys foreign-claim detection on
+  `status: in-progress` **present**; an issue flipped to `needs-review` would read
+  as *claimable* to a second operator. The PR's `Closes #N` targets the
+  **component's own issue, never the epic**. Build incomplete → leave
+  `status: in-progress`, report.
 - **plan-catalog-app** — not-approved → `status: needs-clarification` (release,
   `--remove-assignee "$me"`); approved → leave `status: in-progress` (the build
   resumes the same claim).
 - **ship-catalog-app** — by precedence stop-reason: `plan-not-approved` →
   `needs-clarification` (release); `stopped-at-plan` → `ready` (release);
   `build-incomplete` / `awaiting-merge` → leave `in-progress` (app unfinished,
-  resumes on re-run); `all-done` → `needs-review` (final human verify/close; the
-  per-component PRs' `Closes`/`Refs #N` close it on merge).
+  resumes on re-run); `all-done` → **leave `in-progress`** — each per-component PR
+  `Closes` its **own component issue** (auto-closed, then GHA-stripped, on merge);
+  the **epic** is closed by a human after final verification (the GHA then strips
+  it). Ship never flips the epic to `needs-review`.
 
 > **Backstop note.** The `task worktree:create` slug is
 > `<sub-layer>-<component>`, which collapses distinct ids like `a/b-c` and

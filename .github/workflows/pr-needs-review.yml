@@ -1,0 +1,55 @@
+name: pr-needs-review
+
+# Stamp `status: needs-review` on PRs targeting main so the review queue
+# (`is:pr is:open label:"status: needs-review"`) reflects open PRs awaiting a
+# code-owner review. The label is a COSMETIC queue marker — branch protection,
+# not this label, gates the merge; a failed label-add never blocks a PR.
+# Label-automation github-script workflow (AGENTS.md CI-conventions carve-out).
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, edited]
+    branches: [main]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  needs-review:
+    runs-on: ubuntu-latest
+    # opened / ready_for_review always; `edited` only when the base was
+    # retargeted to main (changes.base set) — not on title/body edits.
+    if: >-
+      github.event.pull_request.draft == false &&
+      (github.event.action != 'edited' || github.event.changes.base != null)
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            try {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number,
+                labels: ["status: needs-review"],
+              });
+              core.info(`Labeled PR #${pr.number} status: needs-review`);
+            } catch (err) {
+              // The label is cosmetic; branch protection gates the merge, so
+              // never fail the run. Route the annotation severity by token
+              // provenance: a fork PR or a [bot] actor runs with a read-only
+              // pull_request token (expected -> warning); a same-repo human
+              // failure is unexpected (-> error annotation, still non-failing).
+              const restricted =
+                (pr.head.repo && pr.head.repo.fork === true) ||
+                context.actor.endsWith("[bot]");
+              const msg = `addLabels failed for PR #${pr.number}: ${err.message}`;
+              if (restricted) {
+                core.warning(`${msg} (restricted token; branch protection still gates review)`);
+              } else {
+                core.error(`${msg} (same-repo write expected to succeed)`);
+              }
+            }

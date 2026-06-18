@@ -118,6 +118,8 @@ Three rules, project-wide:
 2. **Locally reproducible** — every task runs on the workstation exactly as in CI. Before `git push`, `task ci` runs locally. No GHA-specific code in tasks (`$GITHUB_ACTIONS` checks or similar are forbidden).
 3. **Pipeline = task caller** — workflow steps only call `task <name>`. No inline `helm template`/`oras push`/`cosign sign` commands in the YAML. You change behavior in the task, not in the workflow.
 
+**Label-automation carve-out (rule 3 only; closed set).** Exactly four workflows are inline `actions/github-script` label-automation, *not* build-pipeline steps, and are therefore exempt from rule 3 (they are GitHub-API-only — no devbox, no `task` — and cannot be locally reproduced): `issue-triage.yml`, `project-sync.yml`, `pr-needs-review.yml`, `issue-status-strip.yml`. This is a closed enumeration, not a self-applied "it's label automation" escape hatch — a new workflow joins it only by amending this list. These four are still linted by rule 1/2's `yamllint` (`task lint` lints `.github/`).
+
 ## Hard Constraints (universal cluster invariants)
 
 These **MUST NOT** be relaxed without explicit maintainer approval.
