@@ -9,6 +9,7 @@ is the component; this directory is the organisational bracket (ADR-0009).
 | Component | sync-wave | Purpose |
 |---|---|---|
 | [`piraeus-operator-crds`](components/piraeus-operator-crds/) | -1 | Strict-B CRD half (ADR-0028) — the four `piraeus.io` Linstor CustomResourceDefinitions for the piraeus-operator. Lands before its workload counterpart. |
+| [`piraeus-operator`](components/piraeus-operator/) | 0 | Strict-B workload half — the LINSTOR/DRBD operator (controller-manager + webhook + gencert); provides `block-storage-replicated` (replicated block storage). Requires `piraeus-operator-crds`. |
 | [`democratic-csi`](components/democratic-csi/) | 0 | NAS-backed iSCSI block storage (Synology DSM) via democratic-csi — **Talos-native (nsenter)**; a consumer's durable tier for stateful workloads (ADR-0026) |
 | [`synology-csi`](components/synology-csi/) | 0 | **DEPRECATED** — the official Synology CSI; does **not** work on Talos (iscsiadm via `chroot /host` fails — no host userland). Superseded by `democratic-csi`; kept for reference. |
 
@@ -18,7 +19,9 @@ is the component; this directory is the organisational bracket (ADR-0009).
 - Block vs object: the iSCSI CSI (PVCs) is distinct from `storage-objects/garage`
   (S3). On the DS720+ NAS both coexist — different access paths, same durable tier
   (ADR-0026 § Object vs Block).
-- **Replicated DRBD/LINSTOR** (`block-storage-replicated`) arrives via the
-  piraeus-operator: its strict-B CRD half (`piraeus-operator-crds`, sync-wave -1)
-  ships here now; the operator workload half (`piraeus-operator`, sync-wave 0,
-  capability `block-storage-replicated`) follows in its own component PR.
+- **Replicated DRBD/LINSTOR** (`block-storage-replicated`) is provided by the
+  piraeus-operator strict-B pair: the CRD half (`piraeus-operator-crds`,
+  sync-wave -1) and the operator workload (`piraeus-operator`, sync-wave 0). The
+  consumer wires the `-crds` Argo Application first (`Prune=false`); the actual
+  replicated storage is driven by consumer-authored `LinstorCluster` CRs and needs
+  the DRBD kernel module on the nodes (a substrate-layer prerequisite).

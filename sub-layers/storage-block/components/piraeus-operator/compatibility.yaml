@@ -1,0 +1,26 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for piraeus-operator. Ships the operator
+# workload — Namespace, the controller-manager + gencert Deployments, RBAC, the
+# webhook Service, the ValidatingWebhookConfiguration, and the image-config
+# ConfigMap — and carries 0 CRDs (the four piraeus.io Linstor CRDs ship in the
+# SEPARATE strict-B artifact `storage-block/piraeus-operator-crds`, sync-wave -1).
+#
+# requires the -crds artifact: the operator reconciles LinstorCluster /
+# LinstorSatellite / LinstorSatelliteConfiguration / LinstorNodeConnection CRs and
+# its ValidatingWebhookConfiguration validates them, so the CRD schemas must be
+# established first (strict-B ordering). Same pattern as
+# storage-objects/garage → storage-objects/garage-crds.
+requires:
+  storage-block/piraeus-operator-crds: ">=v0.1.0"
+
+# Provides the swappable capability `block-storage-replicated` — present in
+# catalog/capability-index.yaml with piraeus-operator as the active implementation
+# at swap_class data-migration (replacing the replicated-block backend is a
+# data-migration, not a drop-in). The CRD half is apis-only (no capability); the
+# operational capability lives here in the workload that reconciles those CRs into
+# a replicated DRBD/Linstor storage cluster.
+provides:
+  - name: piraeus-operator
+    apis:
+      - piraeus-operator@v2.10.7
+    capabilities:
+      - {id: block-storage-replicated, swap_class: data-migration}

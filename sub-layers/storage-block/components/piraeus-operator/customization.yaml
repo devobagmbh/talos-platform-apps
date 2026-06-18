@@ -1,0 +1,33 @@
+# Customization Contract v2 (ADR-0024). Strict-B WORKLOAD half (ADR-0028) for the
+# piraeus-operator. The workload (Namespace, the controller-manager + gencert
+# Deployments, RBAC, the webhook Service + ValidatingWebhookConfiguration, and the
+# image-config ConfigMap) is the signed, pre-rendered artifact — catalog-owned,
+# never consumer-patched.
+#
+# The freeze line is genuinely all-empty (NOT a hollow pass): the operator's pod
+# specs carry no cluster-specific URLs, credentials, node addresses, or consumer
+# config references — the vendored manifest is cluster-agnostic. Consumers drive
+# the operator by authoring LinstorCluster / LinstorSatelliteConfiguration CRs
+# (consumer-owned, in the consumer-cluster repo), which the operator reconciles via
+# its controller loop. Those CRs are NOT a selector_crs shape: the operator does
+# not render a label selector against them in its own manifest, it watches them via
+# its reconcile loop (the cnpg / prometheus-operator precedent → selector_crs: [],
+# provided_selectors: {}). An image-version override (e.g. a different
+# linstor-server than the baked v1.33.3) would require a new vendored manifest or a
+# consumer-side Kustomize patch of the image-config ConfigMap — not a freeze-line
+# shape.
+#
+# external_dependencies: the strict-B CRD half storage-block/piraeus-operator-crds
+# (sync-wave -1) must be established before this workload (wave 0).
+freeze_line:
+  workload: rendered/manifest.yaml  # operator workload — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - storage-block/piraeus-operator-crds
