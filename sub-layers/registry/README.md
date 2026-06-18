@@ -27,6 +27,6 @@ Both consumers run Harbor independently.
 
 ## Related ADRs
 
-- [ADR-0012 — Platform-Registry-Proxy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
-- [ADR-0013 — In-cluster registry](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0012 — Platform-Registry-Proxy
+- ADR-0013 — In-cluster registry
+- ADR-0009 — Platform-Layer-Model

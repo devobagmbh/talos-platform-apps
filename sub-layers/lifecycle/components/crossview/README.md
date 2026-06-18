@@ -48,7 +48,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/lifecycle/crossview:vX.Y.Z
 
 ## Related ADRs
 
-- [ADR-0004 — Cluster-Lifecycle-Tooling](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0004-cluster-lifecycle-tooling.md)
-- [ADR-0022 — XCluster-Composition](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0022-xcluster-composition.md)
-- [ADR-0024 — Workload/Config-Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
-- [ADR-0010 — Identity-Provider (Dex OIDC for SSO)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
+- ADR-0004 — Cluster-Lifecycle-Tooling
+- ADR-0022 — XCluster-Composition
+- ADR-0024 — Workload/Config-Freeze-Line
+- ADR-0010 — Identity-Provider (Dex OIDC for SSO)

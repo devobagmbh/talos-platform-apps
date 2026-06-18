@@ -21,5 +21,5 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/observability/grafana:vX.Y.Z
 
 ## Related ADRs
 
-- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
-- [ADR-0010 — Identity-Provider](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
+- ADR-0015 — Monitoring architecture
+- ADR-0010 — Identity-Provider

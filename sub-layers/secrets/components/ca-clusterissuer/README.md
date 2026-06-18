@@ -28,5 +28,5 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/secrets/ca-clusterissuer:vX.Y.Z
 
 ## Verwandte ADRs
 
-- [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
+- ADR-0011 — Secrets-Management
 - ADR-0019 — TLS via eigene CA (Jamf-verteilt) *(neu)*

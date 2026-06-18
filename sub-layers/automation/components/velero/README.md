@@ -21,4 +21,4 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/automation/velero:vX.Y.Z
 
 ## Related ADRs
 
-- [ADR-0008 — Backup-Strategy (tier-2 via DS720+/Garage)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
+- ADR-0008 — Backup-Strategy (tier-2 via DS720+/Garage)

@@ -123,7 +123,7 @@ git tag).
 
 ## Related ADRs
 
-- [ADR-0024 — Customization Contract v2 (freeze-line)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract-v2.md)
-- [ADR-0032 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0032-catalog-namespace-psa-ownership.md)
-- [ADR-0028 — Strict-B CRD management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md) — N/A here (the chart ships no CRDs).
-- [ADR-0009 — Platform Layer Model (OCI granularity)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0024 — Customization Contract v2 (freeze-line)
+- ADR-0032 — Namespace / PSA ownership model
+- ADR-0028 — Strict-B CRD management — N/A here (the chart ships no CRDs).
+- ADR-0009 — Platform Layer Model (OCI granularity)

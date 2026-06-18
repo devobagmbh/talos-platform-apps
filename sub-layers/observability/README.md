@@ -39,6 +39,6 @@ Related: [#34 — Full-stack LGTM-A monitoring stack](https://github.com/devobag
 
 ## Related ADRs
 
-- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
-- [ADR-0007 — Platform-Object-Store](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0015 — Monitoring architecture
+- ADR-0007 — Platform-Object-Store
+- ADR-0009 — Platform-Layer-Model

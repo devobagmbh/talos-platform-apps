@@ -16,4 +16,4 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/observability/tempo:vX.Y.Z
 
 ## Verwandte ADRs
 
-- [ADR-0015 — Monitoring-Architektur](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- ADR-0015 — Monitoring-Architektur

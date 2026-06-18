@@ -51,8 +51,8 @@ Upstream: [#11 — write the OpenTofu module `talos-cluster`](https://github.com
 
 ## Related ADRs
 
-- [ADR-0003 — Bootstrap-Staging](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0003-bootstrap-staging.md)
-- [ADR-0004 — Cluster-Lifecycle-Tooling (Crossplane + provider-terraform)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0004-cluster-lifecycle-tooling.md)
-- [ADR-0005 — Bare-Metal-PXE-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0005-bare-metal-pxe-strategy.md)
-- [ADR-0006 — TF-State-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) (component OCI granularity)
+- ADR-0003 — Bootstrap-Staging
+- ADR-0004 — Cluster-Lifecycle-Tooling (Crossplane + provider-terraform)
+- ADR-0005 — Bare-Metal-PXE-Strategy
+- ADR-0006 — TF-State-Management
+- ADR-0009 — Platform-Layer-Model (component OCI granularity)

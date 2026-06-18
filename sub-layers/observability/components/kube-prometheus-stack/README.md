@@ -21,4 +21,4 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/observability/kube-prometheus-stack
 
 ## Related ADRs
 
-- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- ADR-0015 — Monitoring architecture

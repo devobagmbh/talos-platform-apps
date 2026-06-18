@@ -20,4 +20,4 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/lifecycle/crossplane:vX.Y.Z
 
 ## Verwandte ADRs
 
-- [ADR-0004 — Cluster-Lifecycle-Tooling](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0004-cluster-lifecycle-tooling.md)
+- ADR-0004 — Cluster-Lifecycle-Tooling

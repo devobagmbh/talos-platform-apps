@@ -1,7 +1,7 @@
 # Component `identity/dex`
 
 [Dex](https://dexidp.io/) — the cluster's **OIDC identity broker** (capability
-`identity-oidc`, [ADR-0010](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)).
+`identity-oidc`, ADR-0010).
 Every app with a login authenticates against dex; dex federates the EntraID
 tenant upstream. Migrated from `talos-platform-base/kubernetes/base/infrastructure/dex/`
 per the v1.0.0 substrate split (base#90).
@@ -89,6 +89,6 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/identity/dex:vX.Y.Z
 
 ## Related ADRs
 
-- [ADR-0010 — Identity provider (dex federating EntraID)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
-- [ADR-0023 — Consumer-side value layering](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0023-value-layering.md)
-- [ADR-0024 — Customization contract / workload-config freeze-line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract.md)
+- ADR-0010 — Identity provider (dex federating EntraID)
+- ADR-0023 — Consumer-side value layering
+- ADR-0024 — Customization contract / workload-config freeze-line

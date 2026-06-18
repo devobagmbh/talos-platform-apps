@@ -52,7 +52,7 @@ at the chart default (`1`).
 ## Namespace & Pod Security
 
 The component ships a dedicated `metrics-server` `Namespace`
-(`manifests/00-namespace.yaml`, sole-claimant rule, ADR-0027) carrying
+(`manifests/00-namespace.yaml`, sole-claimant rule, ADR-0032) carrying
 `pod-security.kubernetes.io/enforce: restricted` plus the
 `platform.devoba.de/{sub-layer,component}` ownership labels. metrics-server is a
 stateless aggregator with no host-access need, so `restricted` is the
@@ -72,7 +72,7 @@ cluster RBAC.
 
 ## Consumer obligations (out of scope here)
 
-Per ADR-0027, the **consumer** adds the following in its Argo overlay — this
+Per ADR-0032, the **consumer** adds the following in its Argo overlay — this
 catalog component ships none of them:
 
 - **Namespace** (Argo `managedNamespaceMetadata` or a patch on the shipped
@@ -119,6 +119,6 @@ leading `v`); the corresponding git tag is `observability/metrics-server-v0.1.0`
 
 ## Related ADRs
 
-- [ADR-0024 — Customization Contract v2 (freeze-line)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract-v2.md)
-- [ADR-0027 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0027-namespace-psa-ownership.md)
-- [ADR-0009 — Platform Layer Model (OCI granularity)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0024 — Customization Contract v2 (freeze-line)
+- ADR-0032 — Namespace / PSA ownership model
+- ADR-0009 — Platform Layer Model (OCI granularity)

@@ -18,4 +18,4 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/secrets/clustersecretstore-defaults
 
 ## Related ADRs
 
-- [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
+- ADR-0011 — Secrets-Management

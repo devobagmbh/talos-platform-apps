@@ -57,4 +57,4 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/lifecycle/ipxe:vX.Y.Z
 
 ## Related ADRs
 
-- [ADR-0005 — Bare-Metal-PXE-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0005-bare-metal-pxe-strategy.md)
+- ADR-0005 — Bare-Metal-PXE-Strategy

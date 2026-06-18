@@ -147,6 +147,6 @@ distinct — registry tag vs. SemVer git tag).
 
 ## Related ADRs
 
-- [ADR-0015 — Monitoring architecture](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
-- [ADR-0024 — Customization Contract v2 (freeze-line)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract-v2.md)
-- [ADR-0009 — Platform Layer Model (OCI granularity)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0015 — Monitoring architecture
+- ADR-0024 — Customization Contract v2 (freeze-line)
+- ADR-0009 — Platform Layer Model (OCI granularity)

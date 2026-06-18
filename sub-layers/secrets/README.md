@@ -6,7 +6,7 @@ External Secrets Operator (ESO) as the sync mechanism between Vault (layer 3, cl
 
 This sub-layer is **layer 2 (module catalog)** and contains only the ESO operator + ESO defaults. **The Vault cluster instance, policies, and KV paths live in layer 3 (`<consumer-repo>`)**, not here. This keeps the module catalog free of cluster identity and Vault-consumer specifics.
 
-See [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md) for the two-lane rationale (SOPS = cluster maintenance, Vault = workload secrets).
+See ADR-0011 Secrets-Management for the two-lane rationale (SOPS = cluster maintenance, Vault = workload secrets).
 
 ## Components
 
@@ -35,6 +35,6 @@ The stage-0 bootstrap uses **no** ESO — only SOPS (see ADR-0011).
 
 ## Related ADRs
 
-- [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
-- [ADR-0010 — Identity-Provider (Vault OIDC auth via Dex)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0011 — Secrets-Management
+- ADR-0010 — Identity-Provider (Vault OIDC auth via Dex)
+- ADR-0009 — Platform-Layer-Model

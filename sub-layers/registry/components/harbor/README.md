@@ -67,7 +67,7 @@ Both consumers run Harbor independently (own CNPG `Cluster`, own Valkey instance
 
 ## Related ADRs
 
-- [ADR-0012 — Platform registry proxy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
-- [ADR-0013 — In-cluster registry (Harbor on both clusters)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
-- [ADR-0023 — Consumer-side value layering](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0023-value-layering.md)
-- [ADR-0026 — Harbor persistent storage](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0026-harbor-persistence.md)
+- ADR-0012 — Platform registry proxy
+- ADR-0013 — In-cluster registry (Harbor on both clusters)
+- ADR-0023 — Consumer-side value layering
+- ADR-0026 — Harbor persistent storage

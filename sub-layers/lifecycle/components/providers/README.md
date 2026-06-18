@@ -28,5 +28,5 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/lifecycle/providers:vX.Y.Z
 
 ## Related ADRs
 
-- [ADR-0004 — Cluster-Lifecycle-Tooling](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0004-cluster-lifecycle-tooling.md)
-- [ADR-0006 — TF-State-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
+- ADR-0004 — Cluster-Lifecycle-Tooling
+- ADR-0006 — TF-State-Management

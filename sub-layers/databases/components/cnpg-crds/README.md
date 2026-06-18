@@ -124,6 +124,6 @@ depends on this artifact landing first at wave -1.
 
 ## Related ADRs
 
-- [ADR-0028 — CRD management (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)
-- [ADR-0024 — Workload/Config Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0028 — CRD management (strict B)
+- ADR-0024 — Workload/Config Freeze-Line
+- ADR-0009 — Platform-Layer-Model

@@ -177,6 +177,6 @@ The published registry tag is the bare SemVer (`X.Y.Z`); the git tag follows the
 
 ## Related ADRs
 
-- [ADR-0007 — Platform-Object-Store](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
-- [ADR-0024 — Workload/Config-Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
-- [ADR-0028 — CRD management (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)
+- ADR-0007 — Platform-Object-Store
+- ADR-0024 — Workload/Config-Freeze-Line
+- ADR-0028 — CRD management (strict B)

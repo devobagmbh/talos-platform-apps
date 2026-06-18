@@ -23,5 +23,5 @@ OCI distribution per component (ADR-0009). Concrete `Cluster`/`Valkey` CRs (Dex,
 
 ## Related ADRs
 
-- [ADR-0008 — Backup-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0008 — Backup-Strategy
+- ADR-0009 — Platform-Layer-Model

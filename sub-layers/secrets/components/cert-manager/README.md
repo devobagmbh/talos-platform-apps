@@ -16,7 +16,7 @@ into the catalog as an independently versioned OCI artifact (ADR-0009).
   (`crds.enabled: true` brings the CRDs with the controller;
   `global.leaderElection.namespace: kube-system`).
 - `manifests/00-namespace.yaml` — the dedicated `cert-manager` Namespace carrying
-  the PSA `enforce` label (sole-claimant rule, ADR-0027).
+  the PSA `enforce` label (sole-claimant rule, ADR-0032).
 
 ## Namespace & Pod Security
 
@@ -30,7 +30,7 @@ post-install startupapicheck Job) is provably `restricted`-compliant
 `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`).
 
 The catalog ships **only** the `enforce` level plus the
-`platform.devoba.de/{sub-layer,component}` labels. Per ADR-0027, the **consumer**
+`platform.devoba.de/{sub-layer,component}` labels. Per ADR-0032, the **consumer**
 adds, in its Argo overlay:
 
 - `pod-security.kubernetes.io/enforce-version` — pinned to the consumer cluster's
@@ -86,6 +86,6 @@ OCI registry tag at publish is `0.1.0`; the corresponding git tag is
 
 ## Related ADRs
 
-- [ADR-0024 — Customization Contract v2 (freeze-line)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract-v2.md)
-- [ADR-0009 — Platform Layer Model (OCI granularity)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
-- [ADR-0027 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0027-namespace-psa-ownership.md)
+- ADR-0024 — Customization Contract v2 (freeze-line)
+- ADR-0009 — Platform Layer Model (OCI granularity)
+- ADR-0032 — Namespace / PSA ownership model

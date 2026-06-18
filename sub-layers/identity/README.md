@@ -47,7 +47,7 @@ task publish    -- identity/dex v0.1.0
 
 ## Related ADRs
 
-- [ADR-0010 — Identity provider (dex federating EntraID)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0010-identity-provider.md)
-- [ADR-0009 — Platform layer model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) (per-component OCI granularity)
-- [ADR-0023 — Consumer-side value layering](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0023-value-layering.md)
-- [ADR-0024 — Customization contract](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract.md)
+- ADR-0010 — Identity provider (dex federating EntraID)
+- ADR-0009 — Platform layer model (per-component OCI granularity)
+- ADR-0023 — Consumer-side value layering
+- ADR-0024 — Customization contract

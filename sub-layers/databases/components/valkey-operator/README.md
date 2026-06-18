@@ -45,5 +45,5 @@ For a CR without `anonymousAuth`, the operator automatically creates a Secret of
 
 ## Related ADRs
 
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
-- [ADR-0024 — Customization Contract](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract.md)
+- ADR-0009 — Platform-Layer-Model
+- ADR-0024 — Customization Contract

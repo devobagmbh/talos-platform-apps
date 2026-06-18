@@ -8,7 +8,7 @@ tokens.
 
 `installCRDs: true` brings the full CRD set, **including `GithubAccessToken`** —
 the generator a consumer uses to mint/refresh the private-GHCR pull credential
-without a PAT ([ADR-0025](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0025-argocd-credentials-no-pat.md)).
+without a PAT (ADR-0025).
 
 ## Contents
 
@@ -38,5 +38,5 @@ GHCR token mint bridges until ESO is up).
 
 ## Related ADRs
 
-- [ADR-0011 — Secrets-Management (SOPS + Layer-3 Vault)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
-- [ADR-0025 — ArgoCD-Credentials ohne PAT (GithubAccessToken generator)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0025-argocd-credentials-no-pat.md)
+- ADR-0011 — Secrets-Management (SOPS + Layer-3 Vault)
+- ADR-0025 — ArgoCD-Credentials ohne PAT (GithubAccessToken generator)

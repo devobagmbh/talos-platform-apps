@@ -28,7 +28,7 @@ Related: [#7.5 — DS720+ container setup](https://github.com/devobagmbh/talos-p
 
 ## Related ADRs
 
-- [ADR-0007 — Platform-Object-Store (Garage chosen)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
-- [ADR-0008 — Backup-Strategy (DS720+/Garage as tier-2)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
-- [ADR-0006 — TF-State-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0006-tf-state-management.md)
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- ADR-0007 — Platform-Object-Store (Garage chosen)
+- ADR-0008 — Backup-Strategy (DS720+/Garage as tier-2)
+- ADR-0006 — TF-State-Management
+- ADR-0009 — Platform-Layer-Model

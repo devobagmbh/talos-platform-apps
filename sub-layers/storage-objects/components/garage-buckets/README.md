@@ -16,5 +16,5 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/storage-objects/garage-buckets:vX.Y
 
 ## Verwandte ADRs
 
-- [ADR-0007 — Platform-Object-Store](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0007-platform-object-store.md)
-- [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
+- ADR-0007 — Platform-Object-Store
+- ADR-0011 — Secrets-Management
