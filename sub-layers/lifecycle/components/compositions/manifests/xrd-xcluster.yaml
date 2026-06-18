@@ -53,6 +53,20 @@ spec:
                     'git::https://github.com/devobagmbh/talos-office-lab-cluster.git//stage-1?ref=main'.
                     The SAME root the Stage-0 laptop runs. ArgoCD + Cilium come up
                     as base inlineManifest (deploy_argocd) — tofu-only.
+                providerConfigName:
+                  type: string
+                  default: opentofu-default
+                  description: >-
+                    Name of the cluster-scoped provider-opentofu ClusterProviderConfig
+                    whose backendFile pins THIS cluster's tofu state (Garage
+                    bucket/key). MUST be unique per cluster: the backendFile's
+                    bucket+key is the state location, and the consumer's stage-1
+                    root carries only a PARTIAL `backend "s3" {}` — so two clusters
+                    sharing one ClusterProviderConfig would share one state, and the
+                    second cluster's apply would plan to destroy the first's
+                    resources. Defaults to `opentofu-default` (the seeder
+                    self-adoption config, key clusters/seeder); every child cluster
+                    MUST set its own (e.g. opentofu-office-lab → clusters/office-lab).
               # No secretName field: the per-cluster runner Secret name follows the
               # fixed convention <clusterName>-tofu-secrets (the Composition derives
               # it). Add an override field here AND the matching Composition patches
