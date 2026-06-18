@@ -4,7 +4,7 @@
 die **capability-first**-Schicht: welche stabile Capability eine Komponente
 implementiert und wie austauschbar das implementierende Tool ist.
 
-Modell: [talos-platform-docs ADR-0021 — Capability-Layer-Modell](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0021-capability-layer-model.md).
+Modell: talos-platform-docs ADR-0021 — Capability-Layer-Modell.
 Grundsatz: **Capability = stabile Schnittstelle, Tool = austauschbare
 Implementierung.** Ein Tool-Wechsel ist eine Implementierungs-Änderung hinter
 derselben Capability, kein Consumer-Rewrite.

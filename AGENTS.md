@@ -209,7 +209,7 @@ Before PR open:
 ## References
 
 - [`README.md`](README.md) — top overview + install
-- [`talos-platform-docs/adr/0009-platform-layer-model.md`](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — multi-layer OCI distribution
+- `talos-platform-docs/adr/0009-platform-layer-model.md` — multi-layer OCI distribution
 - [`talos-platform-docs/operations/day-zero-backlog.md`](https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md) — phase plan
 - [`talos-platform-base/AGENTS.md`](https://github.com/Nosmoht/talos-platform-base/blob/main/AGENTS.md) — upstream base conventions (PNI capability contract, Hard Constraints inherited here)
 
@@ -217,5 +217,5 @@ Before PR open:
 
 Operative obligations on this repo that the sections above do not yet spell out (ADR-0009/0024/0028 are already covered above):
 
-- **`external-secrets` must publish the `GithubAccessToken` generator (CRD) enabled** ([talos-platform-docs ADR-0025](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0025-argocd-credentials-no-pat.md)) — the consumer-side GHCR-token refresh path depends on it. ESO stays in the apps catalog (`secrets/external-secrets`), never in base.
-- **Conftest in apps-CI is *the* pre-OCI-push policy gate** ([talos-platform-docs ADR-0018](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md)) — PNI dissolves into Conftest here (apps) plus Kyverno on the consumer cluster. This repo owns the Conftest half (`policies/`), enforcing the sub-layer / chart-source / no-inline-secret / capability-selector / gateway-API-only / no-latest-tag / reserved-label / resource-limit / no-privileged policy set before any OCI push.
+- **`external-secrets` must publish the `GithubAccessToken` generator (CRD) enabled** (talos-platform-docs ADR-0025) — the consumer-side GHCR-token refresh path depends on it. ESO stays in the apps catalog (`secrets/external-secrets`), never in base.
+- **Conftest in apps-CI is *the* pre-OCI-push policy gate** (talos-platform-docs ADR-0018) — PNI dissolves into Conftest here (apps) plus Kyverno on the consumer cluster. This repo owns the Conftest half (`policies/`), enforcing the sub-layer / chart-source / no-inline-secret / capability-selector / gateway-API-only / no-latest-tag / reserved-label / resource-limit / no-privileged policy set before any OCI push.

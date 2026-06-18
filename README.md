@@ -23,7 +23,7 @@ OCI sub-layers of the Devoba Talos platform: `automation`, `databases`, `identit
 
 This repo is the **central platform catalog** of the Devoba Talos platform: **everything that is not substrate** (does not belong in `talos-platform-base`) lives here as independently versioned, signed OCI artifacts — Helm charts + values + optional custom manifests, pre-rendered in CI into final manifests. **Consumer-cluster repos draw from the catalog** by referencing exactly the OCI components they need (by tag / Argo `targetRevision`, not by Helm render at apply time). Division of labor: **Base = substrate, Apps = catalog, Consumer = composition** — whatever is not substrate belongs in the catalog, never in Base.
 
-Rationale: deterministic, reviewable deployment artifacts with cryptographic supply-chain verification. A cluster update is a tag bump in the consumer configuration. See [ADR-0009](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md).
+Rationale: deterministic, reviewable deployment artifacts with cryptographic supply-chain verification. A cluster update is a tag bump in the consumer configuration. See ADR-0009.
 
 ## Sub-layer and component overview
 
@@ -160,7 +160,7 @@ Pipeline implementation follows in a separate iteration (a task from phase 2 of 
 
 ## Related docs
 
-- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
-- [ADR-0012 — Platform-Registry-Proxy (Harbor)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0012-platform-registry-proxy.md)
-- [ADR-0013 — In-cluster registry (Harbor on both clusters)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0013-in-cluster-registry.md)
-- [ADR-0015 — Monitoring architecture (LGTM-A)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0015-monitoring-architecture.md)
+- ADR-0009 — Platform-Layer-Model
+- ADR-0012 — Platform-Registry-Proxy (Harbor)
+- ADR-0013 — In-cluster registry (Harbor on both clusters)
+- ADR-0015 — Monitoring architecture (LGTM-A)

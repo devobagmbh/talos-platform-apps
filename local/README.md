@@ -309,5 +309,5 @@ Argo cannot pull the artifact. Check the Service DNS: `kubectl -n registry get e
 
 - [Top `README.md`](../README.md) — repo overview + sub-layers
 - [`AGENTS.md`](../AGENTS.md) — conventions (Taskfile rules, Hard Constraints)
-- [ADR-0009 — Platform layer model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — why Helm-chart-wrapper OCI as the distribution format
-- [ADR-0014 — Gateway-API + Cilium for the consumer clusters](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-gateway-api.md) — the prod equivalent of this setup
+- ADR-0009 — Platform layer model — why Helm-chart-wrapper OCI as the distribution format
+- ADR-0014 — Gateway-API + Cilium for the consumer clusters — the prod equivalent of this setup
