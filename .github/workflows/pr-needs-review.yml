@@ -5,18 +5,24 @@ name: pr-needs-review
 # (`is:pr is:open label:"status: needs-review"`) stays accurate. The label is a
 # COSMETIC queue marker — branch protection, not this label, gates the merge; a
 # failed label op never blocks a PR.
-# The label is a pure function of PR state: present iff the PR is OPEN, non-draft
-# and targets main. We add or remove on every state transition (open, reopen,
-# ready/draft toggle, base retarget) so converting back to draft or retargeting
-# away from main clears the marker too — an add-only workflow would leave it
-# stale. No `branches:` filter: a retarget AWAY from main must still run (at that
-# point the base is no longer main, so a `branches: [main]` filter would skip the
-# one event that should remove the label); the script gates on `base.ref` instead.
+# The label is present iff the PR is OPEN, non-draft, targets main, AND not yet
+# APPROVED (review still outstanding). It is a function of PR state PLUS review
+# state: we recompute on every state transition (open, reopen, ready/draft toggle,
+# base retarget, CLOSE) and on every review event (submitted, dismissed), so an
+# approval clears the marker, a later dismissal restores it, and a close/merge or
+# convert-to-draft/retarget-away-from-main removes it — an add-only workflow would
+# leave it stale. "Approved" is read from the PR's `reviewDecision` (GraphQL), which
+# folds in CODEOWNERS: it turns APPROVED only once the required code owners approve.
+# No `branches:` filter: a retarget AWAY from main must still run (at that point the
+# base is no longer main, so a `branches: [main]` filter would skip the one event
+# that should remove the label); the script gates on `base.ref` instead.
 # Label-automation github-script workflow (AGENTS.md CI-conventions carve-out).
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, converted_to_draft, edited]
+    types: [opened, reopened, ready_for_review, converted_to_draft, edited, closed]
+  pull_request_review:
+    types: [submitted, dismissed]
 
 permissions:
   issues: write
@@ -28,15 +34,20 @@ permissions:
 # state" invariant holds only under serial execution; cancel-in-progress makes
 # the newest event the surviving run).
 concurrency:
-  group: pr-needs-review-${{ github.event.pull_request.number }}
+  # Per-PR serialization. Fall back to a unique run id if a future non-PR trigger
+  # (schedule / workflow_dispatch) is ever added, so such a run gets its own group
+  # instead of collapsing every PR into the constant `pr-needs-review-` group, which
+  # cancel-in-progress would then thrash. Both current triggers carry a PR number.
+  group: pr-needs-review-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   needs-review:
     runs-on: ubuntu-latest
-    # Recompute on real state transitions only: open/reopen/ready/draft always;
-    # `edited` only when the base branch was retargeted (changes.base set) — not
-    # on title/body edits.
+    # Recompute on real state transitions + review events: open/reopen/ready/draft/
+    # close and review submitted/dismissed always recompute; `edited` only when the
+    # base branch was retargeted (changes.base set) — not on title/body edits. For
+    # non-`edited` events github.event.changes is null, which the expression tolerates.
     if: >-
       github.event.action != 'edited' || github.event.changes.base != null
     steps:
@@ -48,14 +59,45 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const label = "status: needs-review";
-            // Desired state: an OPEN, non-draft PR targeting main is awaiting
-            // review; anything else is not. Add when the predicate holds, remove
-            // otherwise — this clears the marker on convert-to-draft and on
-            // retarget-away-from-main, not just on the opening transition.
-            const shouldLabel =
+            // Queue predicate: an OPEN, non-draft PR targeting main belongs in the
+            // review queue — UNLESS it is already approved. This clears the marker on
+            // convert-to-draft, retarget-away-from-main, and close, not just on open.
+            const queued =
               pr.state === "open" &&
               pr.draft === false &&
               pr.base.ref === "main";
+            let shouldLabel = queued;
+            if (queued) {
+              // `reviewDecision` is not in the webhook payload — query it. It folds in
+              // CODEOWNERS. Keep the marker only while a required review is actually
+              // OUTSTANDING: REVIEW_REQUIRED (awaiting first approval) or
+              // CHANGES_REQUESTED (back with the author, still in the loop). Remove it
+              // on APPROVED (review done) AND on null — null means no CODEOWNER claims
+              // the changed paths, so no review is required and the PR is not awaiting
+              // one. The null arm is dormant today (a catch-all CODEOWNER owns every
+              // path) but becomes live once M2 splits CODEOWNERS and leaves paths
+              // unowned. A query FAILURE degrades to "keep the marker" and never fails
+              // the run (the marker is cosmetic; branch protection gates the merge).
+              try {
+                const res = await github.graphql(
+                  `query($owner:String!,$repo:String!,$num:Int!){
+                     repository(owner:$owner,name:$repo){
+                       pullRequest(number:$num){ reviewDecision }
+                     }
+                   }`,
+                  { owner, repo, num: pr.number },
+                );
+                const decision = res.repository.pullRequest.reviewDecision;
+                shouldLabel =
+                  decision === "REVIEW_REQUIRED" ||
+                  decision === "CHANGES_REQUESTED";
+              } catch (e) {
+                core.warning(
+                  `reviewDecision query failed for PR #${pr.number} (${e.message}); keeping the marker`,
+                );
+                shouldLabel = true;
+              }
+            }
             try {
               if (shouldLabel) {
                 await github.rest.issues.addLabels({
@@ -81,9 +123,16 @@ jobs:
               // provenance: a fork PR or [bot] actor runs with a read-only
               // pull_request token (expected -> warning); a same-repo human
               // failure is unexpected (-> error annotation, still non-failing).
+              // Restricted = the run holds a read-only token, so a write failure is
+              // expected (-> warning, not error). A fork PR always yields a read-only
+              // token. The [bot]-actor heuristic only holds for `pull_request` events,
+              // where context.actor IS the triggering actor; on a `pull_request_review`
+              // event context.actor is the REVIEWER, so a bot reviewer must not
+              // downgrade a genuine same-repo write failure to a warning.
               const restricted =
                 (pr.head.repo && pr.head.repo.fork === true) ||
-                context.actor.endsWith("[bot]");
+                (context.eventName === "pull_request" &&
+                  context.actor.endsWith("[bot]"));
               const msg = `label op failed for PR #${pr.number}: ${err.message}`;
               if (restricted) {
                 core.warning(`${msg} (restricted token; branch protection still gates review)`);
