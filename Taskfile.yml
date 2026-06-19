@@ -1010,6 +1010,11 @@ tasks:
       wt="$root/.claude/worktrees/${slug}"
       lock="$root/.claude/worktrees/.lock"
       branch="catalog-build/${slug}"
+      # BASE_REF: the commit-ish the new worktree branch is based on. Default origin/main
+      # (every ordinary build). A co-build workload half passes BASE_REF=catalog-build/<crds-slug>
+      # so its worktree is STACKED on the just-built crds branch (which carries the crds dir the
+      # workload's stacked PR + local E2E need). Validated below, AFTER the fetch.
+      BASE_REF="${BASE_REF:-origin/main}"
       mkdir -p "$root/.claude/worktrees"
       # acquire cross-session lock (mkdir is atomic on POSIX; no flock on macOS).
       # Staleness is PID-liveness-based: a held lock is reclaimed only if its
@@ -1052,8 +1057,16 @@ tasks:
         echo "worktree:create: component ${component_id} already claimed (branch ${branch} exists) — another session owns it" >&2
         exit 1
       fi
-      git -C "$root" fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing origin/main" >&2
-      git -C "$root" worktree add "$wt" -b "$branch" origin/main >/dev/null
+      git -C "$root" fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing ${BASE_REF}" >&2
+      # A non-default BASE_REF (a co-build crds branch) MUST resolve LOCALLY: co-build is
+      # single-clone foreground — the crds half built its branch in THIS clone (kept after
+      # worktree:remove). A remote-only/absent ref fails closed here rather than silently basing
+      # the workload on the wrong tree. origin/main keeps its existing fetch-fail-tolerant path.
+      if [ "$BASE_REF" != "origin/main" ] && ! git -C "$root" rev-parse --verify --quiet "$BASE_REF" >/dev/null; then
+        echo "worktree:create: base-ref '${BASE_REF}' not found locally — build the crds half first in this clone, or (cross-clone) merge the crds PR and re-run" >&2
+        exit 1
+      fi
+      git -C "$root" worktree add "$wt" -b "$branch" "$BASE_REF" >/dev/null
       (cd "$wt" && pwd)
 
   worktree:remove:

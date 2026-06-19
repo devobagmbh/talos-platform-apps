@@ -33,6 +33,27 @@ the branch name is the claim — a second session on the same component fails fa
 
 Argument: `<sub-layer>/<component>` and optionally the issue number.
 
+**Optional co-build brief block** — set ONLY by `ship-catalog-app` for the workload
+half of a CRD-bearing strict-B pair, so both halves build in one run with no merge
+cycle in between. When the dispatch brief carries it, it is a closed three-key block:
+
+```
+co-build: true
+base-ref: catalog-build/<crds-slug>
+co-built-deps: <sl>/<crds>=catalog-build/<crds-slug>
+```
+
+Contract: extract **only** these three keys (a duplicate key is corruption → surface
+and stop); `co-built-deps` is a **single** entry (one crds dependency per workload);
+the values are `ship`'s deterministic slug, never an agent's reply (trusted, no
+sentinel); each is set-once per dispatch; there is **no version field** — schema
+changes migrate via harness-evolution review updating `ship` + this skill in the same
+PR. Effects are local to step 5, step 6, Phase 6.5, and Phase 7 — **absent ⇒ this
+skill behaves exactly as documented below**, and
+every dependency not named in `co-built-deps` keeps the `origin/main` gate. `ship` is
+the single authority for the co-build decision (it confirmed the crds branch is
+pushed); this skill trusts the block and sanity-checks only its own worktree.
+
 ## Phase 1 — Prep (orchestrator, inline)
 
 1. Read `CONVENTIONS.md` in this skill directory — the build spec.
@@ -113,6 +134,16 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    `crossplane` vs `crossplane-providers`). If a component dependency is missing,
    stop and surface it — build it first (sequencing per CONVENTIONS.md / the plan's
    `build_order`).
+   **Co-build carve-out — only the single target named in the brief's `co-built-deps`.**
+   That target is the `-crds` half built in this same run on the branch named by
+   `base-ref`; `ship` already confirmed that branch is pushed and is the single
+   authority for the decision. Skip the `origin/main` probe for it and instead verify
+   it is present in **your own worktree HEAD** (the worktree is based on the crds
+   branch via `base-ref`, so it is):
+   `git ls-tree -r HEAD --name-only | grep -q '^sub-layers/<sl>/components/<crds>/'`.
+   Absent there ⇒ stop and surface (a broken base — fail closed, exactly like a
+   missing `origin/main` dependency). Every other dependency keeps the `origin/main`
+   probe above verbatim.
    **Capability-form keys are deliberately not gated here.** A capability id names a
    contract, not a tree path: the requiring component renders against that contract
    independently, and the capability is satisfied at consumer-integration time — the
@@ -130,6 +161,11 @@ Argument: `<sub-layer>/<component>` and optionally the issue number.
    (`.claude/worktrees/<slug>`, slug = `<sub-layer>-<component>`) on branch
    `catalog-build/<slug>` under the cross-session lock. All later phases operate
    inside `$WT`. (Fails fast if another session already claimed the component.)
+   **Co-build:** when the brief carries `base-ref`, prefix the call —
+   `WT="$(BASE_REF=<base-ref> task worktree:create -- <sub-layer>/<component> | tail -1)"`
+   — so the worktree is **stacked** on the crds branch and therefore contains the crds
+   dir that step 5's carve-out and Phase 6.5 rely on. `task worktree:create` fails
+   closed if that base ref is not present locally (single-clone foreground only).
 7. **Pin `$findings_file` now — the single evaluator-evidence path for the whole
    run.** Both inputs are settled at this point: `<N>` is the run's issue-number
    argument (resolved in step 3, or absent) and `<slug>` is fixed from step 6. Set
@@ -386,6 +422,16 @@ namespace/route names — never a chart-default-name guess against the cluster.
    `local/argo-apps/<sub-layer>/` (the task is sub-layer-wide). Sibling
    Applications whose `<tag>` was not published this session render `Unknown` /
    `OutOfSync` — expected noise, not this component's failure.
+   **Co-build (workload half).** The workload's CRs need its CRDs in-cluster, and
+   `local:apply` pulls each Application's image from the local registry — so the crds
+   **OCI artifact must be published too** (the crds dir in the worktree is not enough):
+   first `task local:publish -- <sl>/<crds> <tag>`, ensure
+   `local/argo-apps/<sl>/<crds>.yaml` exists at **sync-wave -1** with
+   `argocd.argoproj.io/sync-options: ServerSideApply=true` (large CRDs exceed the
+   262 KB client-side-apply annotation limit), then publish the workload and
+   `local:apply` the sub-layer (Argo orders the crds wave -1 before the workload wave
+   0). If the crds artifact cannot be published, record the workload E2E
+   NOT-LOCALLY-VERIFIABLE rather than asserting against absent CRDs.
 4. **Assert mechanically (scoped to THIS component).** Select the component's own
    Argo Application — named `<sub-layer>-<component>` — and assert it is `Synced`
    AND `Healthy`, and that its primary rendered resource exists in-cluster
@@ -421,6 +467,17 @@ namespace/route names — never a chart-default-name guess against the cluster.
    (`ClusterRole`/`ClusterRoleBinding`) are benign for the test loop (a re-apply
    re-adopts them by name) and cleared wholesale by `task local:down`. Teardown keeps
    the next component's E2E clean.
+   **Co-build:** the co-built CRDs are cluster-scoped and survive `local:remove` (no
+   `resources-finalizer`); delete them by the **declared** `metadata.name` of each
+   `kind: CustomResourceDefinition` in the crds component's `manifests/` (a
+   build-authored value, never a chart-default guess), pinned to the local context —
+   `kubectl --context admin@talos-platform-apps delete crd <declared-name>`. If
+   `manifests/` ships no CRD objects (a helm-sourced crds half), get the names by
+   rendering the crds component (`task render:one -- <sl>/<crds>`, whose source IS in
+   the stacked worktree; `rendered/` itself is gitignored and not carried across the
+   branch stack) and scanning its `CustomResourceDefinition` objects; if neither yields
+   names, record the gap for manual cleanup. Or leave the CRDs deliberately for a
+   subsequent same-session E2E and note that decision.
 
 Record the outcome (PASS-with-evidence or NOT-LOCALLY-VERIFIABLE) for the Phase-7
 PR body. This E2E never gates the PR by itself — a genuine deployability failure
@@ -435,6 +492,16 @@ deterministic-gate evidence, evaluator verdict, reviewer verdicts, and the
 and — when Phase 6.5 did not run because the cluster was unreachable — ArgoCD
 deploy; when Phase 6.5 ran, report its PASS-with-evidence instead). Never merge; a
 human merges after CI + code-owner review.
+
+**Co-build (workload half) — stacked PR.** When this build was dispatched with a
+`base-ref` block, open the PR with `gh pr create --base <base-ref>` (not `main`) so it
+**stacks** on the crds PR's branch — merging it then lands the workload **into the
+crds branch, never directly onto `main`**, so the workload cannot reach `main` before
+its CRDs (the structural ordering guard). The PR body MUST cross-reference the crds PR
+and the required order: *"Depends on the `-crds` half (PR #<crds-PR>); its CRDs are
+reviewed there. Do not retarget this PR to `main` until #<crds-PR> is merged."* The
+crds half opens its PR normally (`--base main`) and notes it is the foundational half
+of the pair. (`ship` reports the required merge order in its Phase-4 summary.)
 
 **`Closes #N` — the component's own issue.** Default to `Closes #N` pointing at
 **this component's own issue** (never the epic). The **human merger is the
