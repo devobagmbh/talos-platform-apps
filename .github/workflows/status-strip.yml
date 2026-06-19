@@ -1,0 +1,82 @@
+name: status-strip
+
+# When an issue OR pull request closes (manually, or via a merged PR's `Closes #N`),
+# strip every `status:` label. The closed state — plus `state_reason`
+# (completed / not_planned) — is the terminal signal; a `status: done` label would
+# be redundant with `is:closed` and would drift on reopen (it persists and silently
+# inverts its meaning), so we REMOVE the in-flight label instead of replacing it.
+# This is the prevailing GitHub-Actions pattern (strip transient labels on close).
+# It is the event-driven half of the lifecycle: skills set `status: in-progress` on
+# claim (in-session); GitHub Actions clears it at close, when no skill runs.
+# Prevents the fossilization where CLOSED issues/PRs keep a `status:` label.
+# On the issue path, each removeLabel emits an `issues: unlabeled` event that
+# project-sync.yml consumes, so the board status stays in sync without a separate
+# trigger here (PR labels are not board-synced, by design).
+# Label-automation github-script workflow (AGENTS.md CI-conventions carve-out).
+
+on:
+  issues:
+    types: [closed]
+  # No `branches:` filter on purpose: it would skip a PR labeled while targeting
+  # main and later retargeted away, fossilizing its label. A close on a never-
+  # labeled PR is a cheap no-op (one read, zero removals), so unfiltered is the
+  # correct-over-quieter choice.
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write          # remove labels from closed issues
+  pull-requests: write   # remove labels from closed pull requests
+
+jobs:
+  strip-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            // One workflow, two events: issues:closed carries payload.issue,
+            // pull_request:closed carries payload.pull_request. Labels live on the
+            // shared issues API for both object types, so the rest is identical.
+            const target = context.payload.issue || context.payload.pull_request;
+            // Both triggers always deliver one of the two, but honor the
+            // never-fail posture if a future trigger delivers neither.
+            if (!target) {
+              core.info("No issue/PR in close payload; nothing to strip.");
+              return;
+            }
+            const issue_number = target.number;
+            // Read fresh (not the stale event payload) so a label added between
+            // the close event and this run is still seen. Paginate so a status:
+            // label past the first 30 is not missed (would silently fossilize).
+            const labels = await github.paginate(
+              github.rest.issues.listLabelsOnIssue,
+              { owner, repo, issue_number, per_page: 100 },
+            );
+            const statusLabels = labels
+              .map(l => l.name)
+              .filter(name => name.startsWith("status: "));
+            for (const name of statusLabels) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number, name,
+                });
+                core.info(`Stripped ${name} from closed #${issue_number}`);
+              } catch (err) {
+                // 404 = already gone (benign). Any other failure is an error
+                // annotation so a partial strip (object still fossilized) is not
+                // silently swallowed; the run still stays green (housekeeping must
+                // not fail on a transient API hiccup). Octokit RequestError exposes
+                // the code on err.status; check err.response.status too for
+                // defensiveness across wrappers.
+                const code = err.status || (err.response && err.response.status);
+                if (code === 404) {
+                  core.info(`${name} already absent on #${issue_number}`);
+                } else {
+                  core.error(`removeLabel ${name} failed on #${issue_number}: ${err.message}`);
+                }
+              }
+            }
