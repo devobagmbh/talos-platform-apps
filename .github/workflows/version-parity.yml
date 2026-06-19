@@ -1,0 +1,48 @@
+name: version-parity
+
+# A7 version-provenance gate (apps#226): declared `version.<sot>` in each
+# compatibility.yaml vs the rendered reality (app.kubernetes.io/version label /
+# image+package tag / CRD group-version). The SOT axis hard-fails; secondary
+# declared axes WARN. The linter skips components not yet migrated to the typed
+# `version` block, so it never couples unfinished components to the gate.
+#
+# Path-filtered: this gate only matters when a version block, the package task,
+# the linter, or a rendered input changes. It is therefore NOT a required status
+# check (a path-filtered required check would block unrelated PRs forever — see
+# contract-validate.yml). To make it required, switch it to run unconditionally.
+#
+# Convention (AGENTS.md § CI-Konventionen): pipeline = thin task caller.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sub-layers/**/compatibility.yaml'
+      - 'sub-layers/**/helm/**'
+      - 'sub-layers/**/manifests/**'
+      - 'sub-layers/**/vendor/**'   # vendored chart .tgz archives change the render too
+      - 'scripts/lint-version-parity.sh'
+      - 'Taskfile.yml'
+      - '.github/workflows/version-parity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  version-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@v0.15.0
+        with:
+          enable-cache: true
+
+      # Renders are gitignored, so render first, then check declared-vs-rendered.
+      # STRICT=1: a migrated component with no rendered manifest is a FAIL here (render
+      # failed), not the WARN that local pre-render runs use.
+      - name: Render + A7 version parity
+        env:
+          STRICT: "1"
+        run: devbox run -- task render lint:version

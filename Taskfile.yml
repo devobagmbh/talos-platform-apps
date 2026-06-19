@@ -275,6 +275,13 @@ tasks:
       [ "$fail" -eq 0 ] || { echo "crd-split: strict-B CRD-count oracle FAILED (see above)" >&2; exit 1; }
       echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
 
+  lint:version:
+    desc: 'A7 parity (apps#226): declared version.<sot> vs rendered reality — needs renders (run after `task render`)'
+    # SOT axis hard-fails; secondary axes WARN. Skips components not yet migrated to the
+    # typed `version` block, so it is safe to run repo-wide during rollout (no coupling to
+    # unfinished components — same discipline as validate:contract).
+    cmd: bash scripts/lint-version-parity.sh
+
   lint:commit-msg:
     desc: 'Conventional-Commit check of a message file: task lint:commit-msg -- <msg-file>'
     summary: |
@@ -1042,6 +1049,7 @@ tasks:
       - task: render
       - task: lint:rendered
       - task: validate:crd-split
+      - task: lint:version
       - task: scan:conftest-verify
       - task: scan:conftest
 
