@@ -9,6 +9,14 @@ requires: {} # No catalog-component or capability deps. The Cilium-agent Hubble
              # and capability-ids; a substrate setting is neither.
 provides:
   - name: hubble
-    apis: [] # populated with the capability-registry wiring issue
+    version:
+      sot: app          # data-plane headline; no chart/app-label exists → A7 matches via image tag (#226 A7)
+      app: v1.19.4      # hubble-relay — the core flow-collection workload (tracks the Cilium minor)
+      artifacts:        # full multi-image cardinality (A3); each render-parity-checked vs image tags
+        - {image: quay.io/cilium/hubble-relay,      version: v1.19.4}
+        - {image: quay.io/cilium/hubble-ui,         version: v0.13.5}
+        - {image: quay.io/cilium/hubble-ui-backend, version: v0.13.5}
+        - {image: quay.io/cilium/certgen,           version: v0.4.3}
+    api_surface: []     # hubble exposes no CRD/API surface (relay gRPC + UI are not catalog APIs)
     capabilities:
       - {id: network-observability, swap_class: drop-in} # flow visibility (relay) + UI

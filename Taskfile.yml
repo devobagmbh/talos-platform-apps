@@ -882,13 +882,23 @@ tasks:
       source_url="${repo_url}"
       component_url="${repo_url}/tree/main/sub-layers/${sub_layer}/components/${component}"
 
+      # appVersion = the real running-app version (A4/A5, apps#226): prefer the declared
+      # version.app (sot=app) from compatibility.yaml; fall back to the packaging tag for
+      # components not yet migrated to the typed `version` block (backward-compatible).
+      compat="${root}/compatibility.yaml"
+      app_version=""
+      if [ -f "$compat" ]; then
+        app_version=$(yq -r '[.provides[].version | select(.sot == "app") | .app] | .[0] // ""' "$compat" 2>/dev/null)
+      fi
+      app_version="${app_version:-$chart_version}"
+
       cat > "$wrapper/Chart.yaml" <<EOF
       apiVersion: v2
       name: ${component}
       description: Pre-rendered Devoba-Platform-Komponente ${component_id}
       type: application
       version: ${chart_version}
-      appVersion: "${chart_version}"
+      appVersion: "${app_version}"
       home: ${component_url}
       sources:
         - ${source_url}
