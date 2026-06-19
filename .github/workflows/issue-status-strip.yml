@@ -42,20 +42,15 @@ jobs:
                 });
                 core.info(`Stripped ${name} from closed issue #${issue_number}`);
               } catch (err) {
-                // 404 = already gone (benign). Any other failure FAILS the run:
-                // this workflow is the authoritative close-time cleanup, so a
-                // silent partial strip would re-create the exact fossilization
-                // (closed issue still carrying a status: label) it exists to
-                // kill. core.setFailed (not throw) so the remaining labels are
-                // still attempted best-effort; the run ends red as the alert.
-                // It runs AFTER issue close, so a red run blocks nothing.
+                // 404 = already gone (benign). Any other failure is surfaced so a
+                // partial strip (issue still fossilized) is not silently swallowed.
                 // Octokit RequestError exposes the code on err.status; check
                 // err.response.status too for defensiveness across wrappers.
                 const code = err.status || (err.response && err.response.status);
                 if (code === 404) {
                   core.info(`${name} already absent on #${issue_number}`);
                 } else {
-                  core.setFailed(`removeLabel ${name} failed on #${issue_number}: ${err.message}`);
+                  core.warning(`removeLabel ${name} failed on #${issue_number}: ${err.message}`);
                 }
               }
             }

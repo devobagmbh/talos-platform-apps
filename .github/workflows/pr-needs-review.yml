@@ -24,8 +24,12 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
 
+# Least-privilege: adding or removing an EXISTING label on a PR needs only
+# pull-requests: write (issues: write would only be required to CREATE a missing
+# label, which `status: needs-review` is not — it is a pre-existing repo label).
+# The reviewDecision GraphQL read needs no extra scope. This workflow only ever
+# touches PR objects (pull_request / pull_request_review events), never an issue.
 permissions:
-  issues: write
   pull-requests: write
 
 # Serialize per PR so a rapid draft<->ready or retarget burst settles on the
