@@ -2,6 +2,17 @@
 # (the template itself). Cluster identity lives in the consumer's committed
 # cluster.yaml, read by the consumer's stage-1 tofu root (Arch B) — the thin
 # XCluster claim only points at that root, it carries no identity.
+#
+# The tofu-state-seed step (OpenTofu #2518 workaround) adds NO new freeze-line
+# config shape: like the Workspace step, it references the per-cluster Secret
+# <clusterName>-tofu-secrets by NAME via runtime composition patches (a
+# consumer-supplied object referenced by convention name), not as one of the
+# four freeze-line config shapes — so provided_refs / required stay empty,
+# consistent with the existing contract. The seed Job's ServiceAccount + RBAC
+# and the two ClusterProviderConfigs (opentofu + kubernetes) are likewise
+# CONSUMER INFRASTRUCTURE referenced by convention name, NOT freeze-line
+# config-shapes — they are documented as consumer obligations in the README,
+# not declared here.
 freeze_line:
   workload: rendered/manifest.yaml # XRD + Composition — never consumer-patched
 provided_refs: {}
@@ -13,4 +24,6 @@ required:
   selector_crs: []
 sync_wave: "20"
 external_dependencies:
+  # lifecycle/providers gains provider-kubernetes via PR #234 (issue #231) —
+  # merge that first; the seed step's Object API depends on it.
   - lifecycle/providers

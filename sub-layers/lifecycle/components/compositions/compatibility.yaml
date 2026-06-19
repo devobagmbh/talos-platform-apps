@@ -1,6 +1,15 @@
 requires:
   lifecycle/crossplane: ">=v0.1.0" # XRD-/Composition-CRDs
-  lifecycle/providers: ">=v0.1.0" # Pipeline-Steps brauchen die Provider
+  # Pipeline steps need the providers + functions. As of the tofu-state-seed
+  # step this now ALSO needs provider-kubernetes (the namespaced
+  # kubernetes.m.crossplane.io/v1alpha1 Object API) in addition to
+  # provider-opentofu and function-patch-and-transform — all delivered by
+  # lifecycle/providers. MERGE ORDER: provider-kubernetes is added to
+  # lifecycle/providers by PR #234 (issue #231); that PR MUST merge before this
+  # component is deployed, otherwise the Object API has no backing provider and
+  # every XCluster reconcile stalls in Observe. The version floor stays the
+  # same (no new minimum is needed beyond that addition).
+  lifecycle/providers: ">=v0.1.0"
 provides:
   - name: xcluster-api
     apis:

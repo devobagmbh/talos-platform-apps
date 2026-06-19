@@ -185,7 +185,354 @@ spec:
                 fromFieldPath: metadata.namespace
                 toFieldPath: status.kubeconfigSecretRef.namespace
 
-    # --- Step 2: derive Ready status (Workspace Ready → XCluster Ready) ---
+    # --- Step 2: seed an empty tofu state when the S3 backend is empty -------
+    # Workaround for OpenTofu #2518: provider-opentofu's Observe runs
+    # `tofu state list`, which ERRORS with "no state" on a *fresh, empty* S3
+    # backend. That error keeps the Workspace stuck in Observe — it never
+    # reaches apply, so a brand-new cluster never bootstraps. This step emits a
+    # ONE-SHOT Job (via a provider-kubernetes Object) that pushes a minimal,
+    # encrypted, EMPTY state ONLY when the backend is definitively empty;
+    # afterward the Workspace's Observe retries (provider backoff) and goes
+    # green. No hard ordering between this Job and the Workspace is needed: the
+    # Workspace simply keeps erroring until the seed lands, then proceeds.
+    #
+    # IDEMPOTENCY / SAFETY (load-bearing — see the embedded script below):
+    #   - The Job is seed-IF-EMPTY: on an already-seeded or in-use backend it is
+    #     a no-op (the guard returns early). Re-running / re-creating it never
+    #     overwrites real state.
+    #   - Two independent guards protect against clobbering live state:
+    #       (1) the script's conservative emptiness check (push only on an
+    #           UNAMBIGUOUSLY empty backend; on ANY error/ambiguity it exits
+    #           non-zero so the Job retries, never pushes on uncertainty), and
+    #       (2) `tofu state push` WITHOUT `-force`, so OpenTofu's own
+    #           serial/lineage check refuses to overwrite a higher-serial remote.
+    #
+    # >>> SECURITY REVIEWER: confirm the embedded `encryption {}` block below is
+    # >>> BYTE-FOR-BYTE the scheme the consumer's stage-1 root uses (pbkdf2 key
+    # >>> provider → aes_gcm method). A mismatch makes the pushed empty state
+    # >>> UNREADABLE by the real apply (decryption failure), which would surface
+    # >>> as a hard apply error rather than silent data loss — but still blocks
+    # >>> bootstrap. Keep the two in lockstep.
+    # >>> OPERATIONAL-SAFETY REVIEWER: confirm the seed-if-empty guard's
+    # >>> emptiness signal (empty/whitespace `tofu state pull` output) is the
+    # >>> correct #2518 signal for the Garage S3 backend, and that the
+    # >>> never-push-on-error stance plus no-`-force` push is sufficient to
+    # >>> guarantee no live state is ever overwritten.
+    - step: seed-tofu-state
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: tofu-state-seed
+            base:
+              # provider-kubernetes, Crossplane v2 NAMESPACED API group. The
+              # composed Object lands in the XCluster's OWN namespace (same v2
+              # local-ref model the Workspace above uses) — so the embedded Job
+              # it creates is co-located with the runner Secret and the
+              # Workspace. We deliberately set NO explicit `namespace:` on the
+              # Object; the embedded Job's metadata.namespace is patched from the
+              # composite's namespace (see patches) so the Job is created in the
+              # XR namespace regardless of provider default-namespace behavior.
+              apiVersion: kubernetes.m.crossplane.io/v1alpha1
+              kind: Object
+              spec:
+                # Shared, consumer-owned kubernetes ClusterProviderConfig
+                # (InjectedIdentity). Unlike the opentofu ClusterProviderConfig
+                # (per-cluster, carries the backend/state location), this one
+                # carries NO per-cluster state, so a single shared config named
+                # `kubernetes-default` serves every XCluster. The namespaced
+                # Object API REQUIRES an explicit kind (ProviderConfig vs
+                # ClusterProviderConfig); we pin the cluster-scoped one.
+                providerConfigRef:
+                  kind: ClusterProviderConfig
+                  name: kubernetes-default
+                forProvider:
+                  manifest:
+                    apiVersion: batch/v1
+                    kind: Job
+                    metadata:
+                      name: ""  # patched: <clusterName>-tofu-state-seed
+                      namespace: ""  # patched: the XR namespace
+                    spec:
+                      # Small retry budget: a transient S3/auth blip should
+                      # retry, but the guard means a real failure (e.g. a
+                      # genuine decryption/permission problem) should not retry
+                      # forever. backoffLimit + a deadline bound the noise.
+                      backoffLimit: 6
+                      activeDeadlineSeconds: 600
+                      # Reap the completed Job after a day so a re-create on the
+                      # same backend is a clean no-op rather than name-conflict.
+                      ttlSecondsAfterFinished: 86400
+                      template:
+                        spec:
+                          restartPolicy: Never
+                          # CONSUMER-OWNED ServiceAccount + RBAC (Layer 3): the
+                          # seed Job needs `get` on clusterproviderconfigs
+                          # (cluster-scoped) to read the backendFile. The
+                          # composition does NOT emit the SA/Role/Binding — that
+                          # would require provider-kubernetes to hold
+                          # RBAC-creation rights (privilege escalation). The
+                          # consumer provisions this SA + a ClusterRole/Binding
+                          # by the convention name. See README § consumer
+                          # obligations.
+                          serviceAccountName: ""  # patched: <clusterName>-tofu-state-seed
+                          securityContext:
+                            runAsNonRoot: true
+                            runAsUser: 65532
+                            runAsGroup: 65532
+                            fsGroup: 65532
+                            seccompProfile:
+                              type: RuntimeDefault
+                          volumes:
+                            - name: workspace
+                              emptyDir: {}
+                          initContainers:
+                            # Read THIS cluster's S3 backend config out of the
+                            # opentofu ClusterProviderConfig (the same backendFile
+                            # the Workspace uses). Read at RUNTIME — the
+                            # composition stays cluster-agnostic (templated only
+                            # from clusterName + providerConfigName; the backend
+                            # bucket/key is never baked into this artifact).
+                            - name: read-backend
+                              image: registry.k8s.io/kubectl:v1.33.1  # pinned (no :latest)
+                              imagePullPolicy: IfNotPresent
+                              command: ["/bin/sh", "-ec"]
+                              args:
+                                - |
+                                  # The opentofu ClusterProviderConfig is the
+                                  # cluster-scoped MR config; .spec.backendFile is
+                                  # the partial `backend "s3" {}` completion
+                                  # (Garage endpoint/bucket/key). Fail hard if it
+                                  # is missing — never init against a wrong/empty
+                                  # backend.
+                                  kubectl get clusterproviderconfig.opentofu.m.upbound.io \
+                                    "${PROVIDER_CONFIG_NAME}" \
+                                    -o jsonpath='{.spec.backendFile}' > /workspace/backend.hcl
+                                  if [ ! -s /workspace/backend.hcl ]; then
+                                    echo "ERROR: backendFile empty for ClusterProviderConfig ${PROVIDER_CONFIG_NAME}" >&2
+                                    exit 1
+                                  fi
+                              env:
+                                - name: PROVIDER_CONFIG_NAME
+                                  value: ""  # patched from spec.providerConfigName
+                              volumeMounts:
+                                - name: workspace
+                                  mountPath: /workspace
+                              securityContext:
+                                allowPrivilegeEscalation: false
+                                readOnlyRootFilesystem: true
+                                capabilities:
+                                  drop: [ALL]
+                          containers:
+                            - name: seed
+                              image: ghcr.io/opentofu/opentofu:1.11.10  # pinned (no :latest)
+                              imagePullPolicy: IfNotPresent
+                              workingDir: /workspace
+                              command: ["/bin/sh", "-ec"]
+                              args:
+                                - |
+                                  # --- Minimal tofu root: ONLY the S3 backend +
+                                  # the state-encryption scheme. No resources,
+                                  # no providers. The encryption block MUST match
+                                  # the consumer stage-1 root's `encryption {}`
+                                  # byte-for-byte (pbkdf2 -> aes_gcm); otherwise
+                                  # the pushed empty state is unreadable by the
+                                  # real apply. SECURITY REVIEWER: confirm.
+                                  cat > main.tf <<'EOF'
+                                  terraform {
+                                    backend "s3" {}
+                                    encryption {
+                                      key_provider "pbkdf2" "default" {
+                                        passphrase = var.tf_encryption_passphrase
+                                      }
+                                      method "aes_gcm" "default" {
+                                        keys = key_provider.pbkdf2.default
+                                      }
+                                      state {
+                                        method = method.aes_gcm.default
+                                      }
+                                    }
+                                  }
+                                  variable "tf_encryption_passphrase" {
+                                    type      = string
+                                    sensitive = true
+                                  }
+                                  EOF
+
+                                  # Complete the partial S3 backend from the
+                                  # ClusterProviderConfig's backendFile (read by
+                                  # the initContainer).
+                                  tofu init -input=false -backend-config=/workspace/backend.hcl
+
+                                  # --- Seed-IF-EMPTY guard (LOAD-BEARING) ------
+                                  # Pull the current remote state. On a fresh,
+                                  # empty backend (#2518) this returns EMPTY
+                                  # output; on an in-use backend it returns the
+                                  # encrypted-then-decrypted state JSON.
+                                  set +e
+                                  pulled="$(tofu state pull 2>/workspace/pull.err)"
+                                  rc=$?
+                                  set -e
+                                  if [ "$rc" -ne 0 ]; then
+                                    # ANY error (auth, network, decryption) is
+                                    # AMBIGUOUS -> never push; exit non-zero so
+                                    # the Job retries. Guard #1.
+                                    # SECURITY (CWE-312): do NOT relay the raw
+                                    # tofu stderr (/workspace/pull.err) into the
+                                    # Job log. A `state pull` decryption/backend
+                                    # error is a Go-SDK path whose masking of the
+                                    # `sensitive` passphrase var is weaker than
+                                    # plan/apply output; Job logs are often
+                                    # scraped cluster-wide -> passphrase-leak
+                                    # surface. The exit code already surfaces the
+                                    # failure; detailed cause is in the
+                                    # provider/pod logs (not the seed Job log).
+                                    echo "tofu state pull failed (rc=$rc); see provider/pod logs; not seeding" >&2
+                                    exit 1
+                                  fi
+
+                                  # Conservative emptiness test: only an EMPTY /
+                                  # whitespace-only pull is treated as the
+                                  # definitive empty-backend signal. Any state
+                                  # body (even serial 0 with no resources) is
+                                  # treated as EXISTING -> no-op. This errs toward
+                                  # NEVER overwriting.
+                                  trimmed="$(printf '%s' "$pulled" | tr -d '[:space:]')"
+                                  if [ -n "$trimmed" ]; then
+                                    echo "remote state already present; nothing to seed (no-op)."
+                                    exit 0
+                                  fi
+
+                                  # Backend is definitively empty -> push a
+                                  # minimal valid v4 state (serial 0, empty
+                                  # resources/outputs). A fresh, unique lineage is
+                                  # generated so OpenTofu adopts it as the initial
+                                  # state.
+                                  # FAIL-CLOSED lineage: read a kernel UUID; if it
+                                  # is unavailable/empty, error out and exit 1
+                                  # rather than substituting a non-UUID fallback.
+                                  # A bare timestamp is NOT a valid UUID and may be
+                                  # rejected at `tofu state push`, leaving the Job
+                                  # permanently failing (silent-stuck bootstrap).
+                                  # exit 1 -> the Job retries with a diagnostic and
+                                  # we never push a malformed-lineage state.
+                                  lineage="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || true)"
+                                  if [ -z "$lineage" ]; then
+                                    echo "could not generate a UUID lineage; not seeding" >&2
+                                    exit 1
+                                  fi
+                                  # Indentation-independent write (printf, not a
+                                  # heredoc): a heredoc's closing EOF must land at
+                                  # column 0 after YAML block-scalar de-indentation,
+                                  # which is fragile under any future re-indent.
+                                  # printf emits the same minimal valid v4 state
+                                  # JSON regardless of indentation. The lineage is
+                                  # concatenated in (rest single-quoted) so no shell
+                                  # metacharacter in the JSON is interpreted.
+                                  printf '%s\n' \
+                                    '{' \
+                                    '  "version": 4,' \
+                                    '  "terraform_version": "1.11.10",' \
+                                    '  "serial": 0,' \
+                                    '  "lineage": "'"$lineage"'",' \
+                                    '  "outputs": {},' \
+                                    '  "resources": [],' \
+                                    '  "check_results": null' \
+                                    '}' > empty.tfstate
+
+                                  # Guard #2: push WITHOUT -force, so OpenTofu's
+                                  # own serial/lineage check is a SECOND barrier
+                                  # against overwriting a higher-serial remote
+                                  # that appeared between the pull and the push.
+                                  tofu state push empty.tfstate
+                                  echo "seeded empty state into the previously-empty backend."
+                              env:
+                                # Secrets only, by explicit key (NOT envFrom) —
+                                # least privilege. The Secret <clusterName>-tofu-
+                                # secrets is the SAME per-cluster Secret the
+                                # Workspace uses (consumer-supplied, Layer 3).
+                                - name: AWS_ACCESS_KEY_ID
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: ""  # patched: <clusterName>-tofu-secrets
+                                      key: aws_access_key_id
+                                - name: AWS_SECRET_ACCESS_KEY
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: ""  # patched
+                                      key: aws_secret_access_key
+                                - name: TF_VAR_tf_encryption_passphrase
+                                  valueFrom:
+                                    secretKeyRef:
+                                      name: ""  # patched
+                                      key: tf_encryption_passphrase
+                              volumeMounts:
+                                - name: workspace
+                                  mountPath: /workspace
+                              securityContext:
+                                allowPrivilegeEscalation: false
+                                # tofu writes main.tf / state into /workspace
+                                # (an emptyDir), not the root FS.
+                                readOnlyRootFilesystem: true
+                                capabilities:
+                                  drop: [ALL]
+            patches:
+              # Object name (and the XR scoping) -> <clusterName>-tofu-state-seed.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: metadata.name
+                transforms:
+                  - type: string
+                    string: { type: Format, fmt: "%s-tofu-state-seed" }
+              # Embedded Job name.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.manifest.metadata.name
+                transforms:
+                  - type: string
+                    string: { type: Format, fmt: "%s-tofu-state-seed" }
+              # Embedded Job namespace = the XR's own namespace. The composed
+              # Object is namespaced (v2), so metadata.namespace is the XR
+              # namespace; mirror it into the embedded manifest so the Job is
+              # created in the same namespace as the runner Secret (LOCAL refs).
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.namespace
+                toFieldPath: spec.forProvider.manifest.metadata.namespace
+              # Consumer-owned ServiceAccount name (convention).
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.serviceAccountName
+                transforms:
+                  - type: string
+                    string: { type: Format, fmt: "%s-tofu-state-seed" }
+              # providerConfigName -> the initContainer's env var (the
+              # `kubectl get clusterproviderconfig <NAME>` argument).
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.providerConfigName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.initContainers[0].env[0].value
+              # Secret name (<clusterName>-tofu-secrets) into each secretKeyRef.
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].env[1].valueFrom.secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.clusterName
+                toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].env[2].valueFrom.secretKeyRef.name
+                transforms:
+                  - type: string
+                    string: { type: Format, fmt: "%s-tofu-secrets" }
+
+    # --- Step 3: derive Ready status (Workspace Ready → XCluster Ready) ------
     - step: ready
       functionRef:
         name: function-auto-ready
