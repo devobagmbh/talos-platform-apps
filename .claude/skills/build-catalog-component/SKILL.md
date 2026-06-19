@@ -499,9 +499,13 @@ human merges after CI + code-owner review.
 crds branch, never directly onto `main`**, so the workload cannot reach `main` before
 its CRDs (the structural ordering guard). The PR body MUST cross-reference the crds PR
 and the required order: *"Depends on the `-crds` half (PR #<crds-PR>); its CRDs are
-reviewed there. Do not retarget this PR to `main` until #<crds-PR> is merged."* The
+reviewed there. Do not retarget this PR to `main` until #<crds-PR> is merged — an
+early retarget pulls the crds diff into this PR and defeats the stacked-PR ordering
+guard, collapsing the strict-B crds/workload separation."* The
 crds half opens its PR normally (`--base main`) and notes it is the foundational half
-of the pair. (`ship` reports the required merge order in its Phase-4 summary.)
+of the pair. (`ship` reports the required merge order in its Phase-4 summary.) This
+note makes the human-dependent step explicit: the guard is structural up to the merge
+button, but an early manual retarget is the one action that silently undoes it.
 
 **`Closes #N` — the component's own issue.** Default to `Closes #N` pointing at
 **this component's own issue** (never the epic). The **human merger is the
