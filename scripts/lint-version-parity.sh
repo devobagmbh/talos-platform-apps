@@ -60,19 +60,22 @@ for compat in "${compat_files[@]}"; do
         # extraction may legitimately be empty (label-less raw manifests) — guard against pipefail
         rendered=$(grep -hoE 'app\.kubernetes\.io/version: "?[^"]+' "$manifest" \
                    | sed -E 's/.*version: "?//' | sort -u | tr '\n' ' ' || true)
-        img_tags=$(grep -hoE 'image: "?[^"@ ]+' "$manifest" | sed -E 's/.*://' | sort -u | tr '\n' ' ' || true)
+        # image tags AND Crossplane spec.package OCI refs (providers/functions carry no image:/label)
+        img_tags=$( { grep -hoE 'image: "?[^"@ ]+' "$manifest"; grep -hoE 'package: "?[^"@ ]+' "$manifest"; } \
+                    | sed -E 's/.*://' | sort -u | tr '\n' ' ' || true)
         if printf ' %s ' "$rendered" | grep -qF " $declared "; then
           echo "OK    [$cid] sot=app declared=$declared ∈ rendered labels{ $rendered}"
         elif printf ' %s ' "$img_tags" | grep -qF " $declared "; then
-          # #226 A7: "app -> app.kubernetes.io/version (+ image tag)" — label-less components (raw manifests) match via image tag
-          echo "OK    [$cid] sot=app declared=$declared ∈ rendered image tags (no app-version label)"
+          # #226 A7: "app -> app.kubernetes.io/version (+ image tag)" — label-less components match via image/package tag
+          echo "OK    [$cid] sot=app declared=$declared ∈ rendered image/package tags (no app-version label)"
         else
           echo "FAIL  [$cid] sot=app declared=$declared NOT in rendered labels{ $rendered} nor image tags"
           fail=1
         fi
         ;;
       crd-schema)
-        rendered_gv=$(yq -r 'select(.kind == "CustomResourceDefinition") | .spec.group + "/" + .spec.versions[].name' \
+        # CustomResourceDefinition AND Crossplane CompositeResourceDefinition (XRD) — both declare a served group/version
+        rendered_gv=$(yq -r 'select(.kind == "CustomResourceDefinition" or .kind == "CompositeResourceDefinition") | .spec.group + "/" + .spec.versions[].name' \
                       "$manifest" 2>/dev/null | sort -u)
         while IFS= read -r s; do
           [ -n "$s" ] && [ "$s" != "null" ] || continue

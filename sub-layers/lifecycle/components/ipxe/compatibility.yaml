@@ -1,6 +1,9 @@
 requires: {}
 provides:
   - name: ipxe-server
-    apis:
-      - ipxe-inline@1.0.0 # custom-Manifest, kein externer Helm-Chart
+    version:
+      sot: none           # consumer-owned glue (A9): an nginx:1.27-alpine shell serving consumer-provided
+                          # iPXE scripts — no versioned upstream software lives here. The fictional
+                          # `ipxe-inline@1.0.0` is dropped. Relocation out of the catalog tracked in apps#196.
+    api_surface: []
     capabilities: [] # TODO: Capability bare-metal-boot definieren (proposed, Vertrag offen)
