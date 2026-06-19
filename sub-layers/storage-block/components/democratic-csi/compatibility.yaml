@@ -6,7 +6,7 @@ provides:
       app: v1.9.5        # democratic-csi driver — the running storage software
       chart: 0.15.1      # democratic-csi helm chart (apis[] had declared this chart version)
       artifacts:
-        - {image: ghcr.io/democratic-csi/democratic-csi,  version: v1.9.5}
-        - {image: ghcr.io/democratic-csi/csi-grpc-proxy,  version: v0.5.7}
+        - {image: ghcr.io/democratic-csi/democratic-csi, version: v1.9.5}
+        - {image: ghcr.io/democratic-csi/csi-grpc-proxy, version: v0.5.7}
     api_surface: []
     capabilities: [] # TODO: define a block-storage / csi-iscsi capability in capability-index (proposed, ADR-0021)

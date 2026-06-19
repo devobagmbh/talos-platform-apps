@@ -50,7 +50,8 @@ fi
 
 for compat in "${compat_files[@]}"; do
   [ -f "$compat" ] || { echo "ERROR $compat not found"; fail=1; continue; }
-  migrated=$(yq -r '[.provides[] | select(has("version"))] | length' "$compat")
+  # (.provides // []) — null-safe under jq-based yq (sub-layer aggregators have no provides)
+  migrated=$(yq -r '[(.provides // [])[] | select(has("version"))] | length' "$compat")
   [ "$migrated" -gt 0 ] || continue
 
   comp_dir="$(dirname "$compat")"
@@ -101,7 +102,7 @@ for compat in "${compat_files[@]}"; do
         ;;
       crd-schema)
         # CustomResourceDefinition AND Crossplane CompositeResourceDefinition (XRD) — both declare a served group/version
-        rendered_gv=$(yq -r 'select(.kind == "CustomResourceDefinition" or .kind == "CompositeResourceDefinition") | .spec.group + "/" + .spec.versions[].name' \
+        rendered_gv=$(yq -r 'select(.kind == "CustomResourceDefinition" or .kind == "CompositeResourceDefinition") | .spec.group + "/" + (.spec.versions // [])[].name' \
                       "$manifest" 2>/dev/null | sort -u)
         while IFS= read -r s; do
           [ -n "$s" ] && [ "$s" != "null" ] || continue
