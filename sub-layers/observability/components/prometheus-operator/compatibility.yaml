@@ -19,6 +19,9 @@ requires:
 # apis-only-no-TODO: lifecycle/providers.
 provides:
   - name: prometheus-operator
-    apis:
-      - kube-prometheus-stack@86.2.3  # operator-only mode; appVersion v0.91.0
+    version:
+      sot: app
+      app: v0.91.0   # real prometheus-operator app; kube-prometheus-stack chart 86.2.3 (rendered label is chart version — misleading; A7 matches v0.91.0 via image tag)
+      chart: 86.2.3
+    api_surface: []
     capabilities: []

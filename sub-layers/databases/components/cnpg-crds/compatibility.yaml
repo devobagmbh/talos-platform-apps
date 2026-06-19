@@ -21,6 +21,9 @@ requires: {}
 # apis-only with no capability), NOT a deferral — so no `# TODO:` here.
 provides:
   - name: cnpg-crds
-    apis:
-      - postgresql.cnpg.io/Cluster@v1  # primary CRD kind, representative postgresql.cnpg.io/v1 API-group entry (cloudnative-pg 0.28.2)
+    version:
+      sot: crd-schema
+      crd_schema: 1.29.1   # postgresql.cnpg.io CRDs vendored from CloudNativePG operator 1.29.1
+    api_surface:
+      - postgresql.cnpg.io/Cluster@v1
     capabilities: []

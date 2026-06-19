@@ -5,7 +5,10 @@
 requires: {}
 provides:
   - name: dex
-    apis:
-      - dex@0.24.0  # dexidp/dex helm chart (appVersion v2.x)
+    version:
+      sot: app
+      app: 2.44.0   # real dex app version (apis[] declared the chart version 0.24.0)
+      chart: 0.24.0
+    api_surface: []
     capabilities:
       - id: identity-oidc  # OIDC broker federating EntraID (ADR-0010)

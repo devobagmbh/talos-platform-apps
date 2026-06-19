@@ -14,7 +14,9 @@ requires:
 # CRD schema (which is the apis-only -crds half).
 provides:
   - name: multus-cni
-    apis:
-      - multus-cni@v4.2.4  # thin Multus controller DaemonSet, upstream v4.2.4
+    version:
+      sot: app
+      app: v4.2.4
+    api_surface: []
     capabilities:
       - {id: secondary-network-attachment, swap_class: rewrite-required}
