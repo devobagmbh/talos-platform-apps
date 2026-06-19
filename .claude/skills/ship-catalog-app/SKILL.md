@@ -295,7 +295,7 @@ Report:
   (the app is unfinished — components remain to fix/build or PRs remain to merge;
   ship resumes on re-run), report what is pending; `all-done` → **leave
   `in-progress`** — each per-component PR `Closes` its **own component issue**
-  (auto-closed and `status:`-stripped by `issue-status-strip.yml` on merge); the
+  (auto-closed and `status:`-stripped by `status-strip.yml` on merge); the
   **epic** is closed by a human after final verification, the GHA then stripping
   its status. Ship never flips the epic to `needs-review` (the close-time strip is
   GHA-owned — see `.claude/rules/issue-claim.md §End-transition`).

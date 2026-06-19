@@ -441,7 +441,7 @@ human merges after CI + code-owner review.
 done-gate**: the not-locally-verifiable ACs (cosign signature, OCI push, ArgoCD
 deploy) are deferred to GHA/consumer and listed in the PR body, but they do **not**
 block the close — a human reviews and merges only when satisfied, and the
-`issue-status-strip.yml` GHA clears the issue's `status:` on the resulting close.
+`status-strip.yml` GHA clears the issue's `status:` on the resulting close.
 (Do not `Closes` the epic from a component PR; the epic is human-closed after final
 verification — see `.claude/rules/issue-claim.md §End-transition`.)
 
@@ -452,9 +452,9 @@ working tree is removed, which releases the slot for another session.
 **Leave the issue on the claim — the close-time transition is GHA-owned
 (`.claude/rules/issue-claim.md §End-transition`).** The issue stays
 `status: in-progress` + assignee through the whole PR window: the **PR** carries
-`status: needs-review` (stamped by `pr-needs-review.yml`), and the issue's
-`status:` is stripped by `issue-status-strip.yml` when the merge auto-closes it via
-`Closes #N`. The build skill **never flips the issue to `needs-review`** — leaving
+`status: needs-review` (stamped by `pr-needs-review.yml`; `status-strip.yml` clears
+it when the PR closes), and the issue's `status:` is stripped by `status-strip.yml`
+when the merge auto-closes it via `Closes #N`. The build skill **never flips the issue to `needs-review`** — leaving
 it `in-progress` preserves a valid foreign-claim signal (§Claim step 3-4 keys on
 `status: in-progress` present). If the build did **not** complete (paused,
 evaluator `fail` after its cap, declined PR), leave `status: in-progress` and

@@ -163,11 +163,12 @@ Advancing transitions split by **who is present at the transition moment**:
 
 - **`status: needs-review` and the close-time strip are owned by GitHub Actions**,
   not the skills. `pr-needs-review.yml` stamps the **PR** with `status:
-  needs-review` on open; `issue-status-strip.yml` strips **every** `status:` label
-  when the issue closes — including the merge-`Closes #N` auto-close that fires
-  hours after any skill session ended, when no skill is running. The skills
-  therefore **never flip the issue to `needs-review`** (that is what previously
-  left it stuck — the transition had no actor at close time).
+  needs-review` on open; `status-strip.yml` strips **every** `status:` label when
+  an issue **or PR** closes — including the merge-`Closes #N` auto-close that fires
+  hours after any skill session ended, when no skill is running, and the PR's own
+  `needs-review` on that same merge. The skills therefore **never flip the issue to
+  `needs-review`** (that is what previously left it stuck — the transition had no
+  actor at close time).
 - **In-session releases stay skill-driven** — the owner moves them; a deferring
   sub-skill leaves them to the owner. Apply the single-`status:` invariant on
   every transition. Mapping per skill:
