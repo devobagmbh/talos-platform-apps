@@ -210,6 +210,71 @@ tasks:
       find sub-layers -path '*/components/*/rendered/manifest.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
+  validate:crd-split:
+    desc: 'Strict-B CRD-count oracle (ADR-0028): -crds artifact renders >0 CRDs + carries crd-bearing:true; its workload half renders 0 CRDs. Assumes `task render` ran.'
+    summary: |
+      The executable form of AGENTS.md "CRD management - strict B" build-gate oracle
+      (previously documented but unimplemented). Keyed STRUCTURALLY on the directory
+      naming + sibling, not on the marker alone:
+        - an `<x>-crds` component MUST carry a line-anchored `crd-bearing: true` AND
+          render >0 CustomResourceDefinition (else: marker missing/typo, or a
+          mislabeled empty crds half);
+        - a workload `<x>` that has an `<x>-crds` sibling MUST render 0 CRDs (the CRDs
+          belong in the -crds artifact: crds.create:false / no inline CRDs).
+      Standalone components (no -crds suffix, no -crds sibling - e.g. crossplane's
+      operator-installed CRDs, ADR-0028 "out of scope") are NOT gated. Operates on
+      rendered/ output, so `task render`/`render:one` must have produced it; a missing
+      rendered/ for a gated component is a failure (run render first). Part of `task ci`.
+    cmd: |
+      set -eu
+      root="$(git rev-parse --show-toplevel)"
+      fail=0
+      for compat in "$root"/sub-layers/*/components/*/compatibility.yaml; do
+        [ -f "$compat" ] || continue
+        comp_dir="$(dirname "$compat")"
+        comp="$(basename "$comp_dir")"
+        sl="$(basename "$(dirname "$(dirname "$comp_dir")")")"
+        id="$sl/$comp"
+        rd="$comp_dir/rendered"
+        # CRD count over the rendered MANIFEST ONLY (rendered/manifest.yaml), never the whole
+        # rendered/ tree: `task package` also writes rendered/chart/templates/manifest.yaml, so a
+        # recursive count would double-count a packaged component (lint:rendered restricts to
+        # manifest.yaml for the same reason). awk always exits 0 -> safe under `set -e`; a missing
+        # manifest yields 0, but the per-arm `[ -f "$manifest" ]` guard is the authoritative
+        # "was it rendered?" check.
+        manifest="$rd/manifest.yaml"
+        crd_count="$(grep -c '^kind: CustomResourceDefinition' "$manifest" 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+        # Marker is column-anchored: a leading-# comment line must NOT match.
+        has_marker=no
+        if grep -Eq '^crd-bearing:[[:space:]]+true[[:space:]]*(#.*)?$' "$compat" 2>/dev/null; then
+          has_marker=yes
+        fi
+        case "$comp" in
+          *-crds)
+            [ "$has_marker" = yes ] || { echo "crd-split: ${id} is a -crds artifact but its compatibility.yaml has no line-anchored 'crd-bearing: true' (marker missing or typo)" >&2; fail=1; }
+            if [ ! -f "$manifest" ]; then
+              echo "crd-split: ${id} (-crds) has no rendered/manifest.yaml - run 'task render' first" >&2; fail=1
+            elif [ "$crd_count" -eq 0 ]; then
+              echo "crd-split: ${id} is a -crds artifact but renders 0 CustomResourceDefinition (mislabeled empty crds half)" >&2; fail=1
+            fi
+            ;;
+          *)
+            # the crd-bearing marker belongs ONLY on a -crds half; a non--crds component
+            # carrying it is a misplaced marker (the co-build oracle keys on it).
+            [ "$has_marker" = no ] || { echo "crd-split: ${id} carries 'crd-bearing: true' but is not a -crds artifact - the marker belongs ONLY on the -crds half" >&2; fail=1; }
+            if [ -d "${root}/sub-layers/${sl}/components/${comp}-crds" ]; then
+              if [ ! -f "$manifest" ]; then
+                echo "crd-split: ${id} (workload half) has no rendered/manifest.yaml - run 'task render' first" >&2; fail=1
+              elif [ "$crd_count" -ne 0 ]; then
+                echo "crd-split: ${id} is the workload half of a strict-B pair but renders ${crd_count} CustomResourceDefinition(s) - CRDs belong in ${comp}-crds (crds.create:false / strip inline CRDs)" >&2; fail=1
+              fi
+            fi
+            ;;
+        esac
+      done
+      [ "$fail" -eq 0 ] || { echo "crd-split: strict-B CRD-count oracle FAILED (see above)" >&2; exit 1; }
+      echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
+
   lint:commit-msg:
     desc: 'Conventional-Commit check of a message file: task lint:commit-msg -- <msg-file>'
     summary: |
@@ -960,12 +1025,13 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + lint + render + scan:conftest)
+    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + lint + render + crd-split + scan:conftest)
     cmds:
       - task: check:primitives
       - task: lint
       - task: render
       - task: lint:rendered
+      - task: validate:crd-split
       - task: scan:conftest-verify
       - task: scan:conftest
 
@@ -1010,6 +1076,14 @@ tasks:
       wt="$root/.claude/worktrees/${slug}"
       lock="$root/.claude/worktrees/.lock"
       branch="catalog-build/${slug}"
+      # BASE_REF: the commit-ish the new worktree branch is based on. Default origin/main applies
+      # only when UNSET (`-`, not `:-`): an explicitly-EMPTY BASE_REF stays empty and fails closed
+      # at the guard below, rather than silently collapsing to origin/main and basing a co-build
+      # workload on main without its stacked crds (an orchestrator slug-derivation-bug guard). A
+      # co-build workload half passes BASE_REF=catalog-build/<crds-slug> so its worktree is STACKED
+      # on the just-built crds branch (which carries the crds dir the workload's stacked PR + local
+      # E2E need). Validated below, AFTER the fetch.
+      BASE_REF="${BASE_REF-origin/main}"
       mkdir -p "$root/.claude/worktrees"
       # acquire cross-session lock (mkdir is atomic on POSIX; no flock on macOS).
       # Staleness is PID-liveness-based: a held lock is reclaimed only if its
@@ -1052,8 +1126,16 @@ tasks:
         echo "worktree:create: component ${component_id} already claimed (branch ${branch} exists) — another session owns it" >&2
         exit 1
       fi
-      git -C "$root" fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing origin/main" >&2
-      git -C "$root" worktree add "$wt" -b "$branch" origin/main >/dev/null
+      git -C "$root" fetch origin --quiet || echo "worktree:create: warning: git fetch failed, using existing ${BASE_REF}" >&2
+      # A non-default BASE_REF (a co-build crds branch) MUST resolve LOCALLY: co-build is
+      # single-clone foreground — the crds half built its branch in THIS clone (kept after
+      # worktree:remove). A remote-only/absent ref fails closed here rather than silently basing
+      # the workload on the wrong tree. origin/main keeps its existing fetch-fail-tolerant path.
+      if [ "$BASE_REF" != "origin/main" ] && ! git -C "$root" rev-parse --verify --quiet "$BASE_REF" >/dev/null; then
+        echo "worktree:create: base-ref '${BASE_REF}' not found locally — build the crds half first in this clone, or (cross-clone) merge the crds PR and re-run" >&2
+        exit 1
+      fi
+      git -C "$root" worktree add "$wt" -b "$branch" "$BASE_REF" >/dev/null
       (cd "$wt" && pwd)
 
   worktree:remove:
