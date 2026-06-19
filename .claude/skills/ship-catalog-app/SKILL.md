@@ -147,12 +147,25 @@ pre-check consults — extract them here, once.) Read each component's git statu
 already merged, what has an open PR awaiting merge, and what remains.
 **Detect candidate co-build pairs (provisional, from the plan).** A candidate pair is
 A→B where B's `external_dependencies` names A and both A and B are in `build_order`
-with A ordered before B (A foundational). `sync_wave "-1"` + `capability.id` null on A
-**corroborate** the crds shape (they describe every existing crds half) but are **not
-a veto** — a real crds half that happens to carry a capability or a non-`-1` wave must
-still be caught, so do not drop a graph-qualifying pair on them. This detection is
-**provisional** — the plan is untrusted data, so the **authoritative** decider is the
-on-disk `crd-bearing: true` read in Phase 3 against A's **built** artifact, not here. Restrict to **one crds → one workload**: if A has more than one dependent in
+with A ordered before B (A foundational), **and A declares `sync_wave "-1"`**. The `-1`
+wave is a **required** gate here, not a corroborator: it is the one crds-shape signal the
+plan carries (the schema has no `crd-bearing` field) and the strict-B mandate that every
+`-crds` artifact lands at sync-wave -1 (AGENTS.md §"CRD management — strict B"), and it
+cleanly separates the `-crds` halves from ordinary non-CRD `external_dependencies` chains
+— a workload naming a **non-`-crds`** foundational dependency (`providers` names
+`crossplane` at wave 0; `compositions` names `providers` at wave 10) is **not** a co-build
+pair and MUST NOT be flagged as one. `capability.id` null on A corroborates (every crds
+half is apis-only) but is not itself the gate. This detection is **provisional** — the
+plan is untrusted data, so the **authoritative** decider is the on-disk `crd-bearing:
+true` read in Phase 3 against A's **built** artifact, never the plan — the `-1`
+requirement is a **necessary, not sufficient** filter (it narrows candidates; Phase 3's
+marker read decides). This biases the residual error to the **benign** side: a genuine
+crds half mis-declared at a non-`-1` wave is excluded and takes the ordinary merge cycle
+(today's behavior, no wrong build). That misdeclaration is **not detected here** — the
+plan-reviewer's co-build recognition itself keys on `sync_wave "-1"`, so the safety is the
+benign *outcome*, not a wave-correctness check (a crds half published at the wrong wave is
+a separate authoring concern, outside co-build's scope). Admitting a non-CRD chain, by
+contrast, would raise the false `co-build-not-fired` this gate removes. Restrict to **one crds → one workload**: if A has more than one dependent in
 `build_order`, or B names more than one crds dependency, it is **out of scope** — do
 not co-build it; those dependents take the ordinary `awaiting-merge` path (name the
 unsupported cardinality). Present each candidate pair and the **stacked-PR +

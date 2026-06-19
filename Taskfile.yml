@@ -1010,11 +1010,14 @@ tasks:
       wt="$root/.claude/worktrees/${slug}"
       lock="$root/.claude/worktrees/.lock"
       branch="catalog-build/${slug}"
-      # BASE_REF: the commit-ish the new worktree branch is based on. Default origin/main
-      # (every ordinary build). A co-build workload half passes BASE_REF=catalog-build/<crds-slug>
-      # so its worktree is STACKED on the just-built crds branch (which carries the crds dir the
-      # workload's stacked PR + local E2E need). Validated below, AFTER the fetch.
-      BASE_REF="${BASE_REF:-origin/main}"
+      # BASE_REF: the commit-ish the new worktree branch is based on. Default origin/main applies
+      # only when UNSET (`-`, not `:-`): an explicitly-EMPTY BASE_REF stays empty and fails closed
+      # at the guard below, rather than silently collapsing to origin/main and basing a co-build
+      # workload on main without its stacked crds (an orchestrator slug-derivation-bug guard). A
+      # co-build workload half passes BASE_REF=catalog-build/<crds-slug> so its worktree is STACKED
+      # on the just-built crds branch (which carries the crds dir the workload's stacked PR + local
+      # E2E need). Validated below, AFTER the fetch.
+      BASE_REF="${BASE_REF-origin/main}"
       mkdir -p "$root/.claude/worktrees"
       # acquire cross-session lock (mkdir is atomic on POSIX; no flock on macOS).
       # Staleness is PID-liveness-based: a held lock is reclaimed only if its
