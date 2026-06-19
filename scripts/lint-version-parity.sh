@@ -28,7 +28,10 @@ if [ "$#" -gt 0 ]; then
   compat_files=()
   for c in "$@"; do compat_files+=("sub-layers/${c%/*}/components/${c#*/}/compatibility.yaml"); done
 else
-  mapfile -t compat_files < <(find sub-layers -name compatibility.yaml -not -path '*/.claude/*' | sort)
+  # portable to bash 3.2 (macOS default) — `mapfile` is bash 4+
+  compat_files=()
+  while IFS= read -r line; do compat_files+=("$line"); done \
+    < <(find sub-layers -name compatibility.yaml -not -path '*/.claude/*' | sort)
 fi
 
 for compat in "${compat_files[@]}"; do
