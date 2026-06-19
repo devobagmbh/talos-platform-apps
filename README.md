@@ -62,21 +62,30 @@ The dev environment runs entirely on **Devbox** (Nix-based) + **direnv**. Tool v
 git clone git@github.com:devobagmbh/talos-platform-apps.git
 cd talos-platform-apps
 direnv allow
+lefthook install   # activate the Git pre-commit / commit-msg hooks (lint, signing, secrets, scope)
 ```
 
 `direnv allow` triggers the `.envrc`, which activates Devbox. On first invocation Devbox installs all tools (`helm`, `kubectl`, `cosign`, `oras`, `syft`, `go-task`, `yq`, `jq`, `sops`, `age`) into a reproducible Nix store. Subsequent `cd`s into the repo switch the environment automatically.
 
+`lefthook install` wires the local Git hooks (`.git/hooks/`) — **required once per clone** so the pre-commit gates (including the commit-signing check below) actually run; without it an unsigned or non-conforming commit is caught only later on the server.
+
 ### Commit signing (required for merge)
 
-`main` enforces **signed commits** (branch protection `required_signatures`). An unsigned commit makes a PR `mergeStateStatus: BLOCKED` even when review and checks are green — it can then only be merged via an admin override. You MUST therefore sign commits locally before opening a PR. (This is **git commit signing**, distinct from the **cosign OCI artifact signing** done by CI — see [Render / sign / publish workflow](#render--sign--publish-workflow).)
+`main` enforces **signed commits** (branch protection `required_signatures`). An unsigned commit makes a PR `mergeStateStatus: BLOCKED` even when review and checks are green. The fix is to **sign the commit** — never to admin-override the gate. (This is **git commit signing**, distinct from the **cosign OCI artifact signing** done by CI — see [Render / sign / publish workflow](#render--sign--publish-workflow).)
+
+Configure signing **once, globally** on your machine. Commit signing is a per-developer, per-machine identity setting — a global config then signs commits in **every** repository, **every** fresh clone, and **every** git worktree automatically, so there is no per-repo or per-clone step to remember:
 
 ```bash
-task setup:signing   # configure repo-local SSH commit signing; prints the GitHub step
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/id_ed25519.pub   # your PUBLIC key (.pub); adjust if your key has a different name
+git config --global commit.gpgsign true
 ```
 
-The helper sets the repo-local git config and prints the steps it cannot script. For the green **Verified** badge three conditions MUST hold:
+> **Note:** `user.signingkey` points at the **public** key (`.pub`), not the private key. Global `commit.gpgsign true` enables signing in **all** your repositories — if you already sign other projects (e.g. with GPG), run the three commands with `--local` inside this clone instead, so your machine-wide `gpg.format`/key are not overwritten.
 
-1. The **same** public key is registered on GitHub as a **Signing key** (Settings → SSH and GPG keys → *New SSH key* → key type **Signing Key**) — a separate entry from the Authentication key, even with identical key material.
+For the green **Verified** badge three conditions MUST additionally hold on GitHub (these are per-account and cannot be scripted from a repo):
+
+1. The **same** public key is registered as a **Signing key** (Settings → SSH and GPG keys → *New SSH key* → key type **Signing Key**) — a separate entry from the Authentication key, even with identical key material.
 2. Your committer email is a **verified** email on that same account.
 3. If the key is **passphrase-protected**, it is loaded into the ssh-agent (`ssh-add --apple-use-keychain <key>` on macOS) — otherwise non-interactive / agent-driven commits fail to sign and are rejected.
 
