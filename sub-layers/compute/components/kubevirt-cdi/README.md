@@ -42,6 +42,15 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 **Zero CustomResourceDefinition objects** — the CRD schema ships in
 `compute/kubevirt-cdi-crds`, not here (strict-B workload half).
 
+> **Operator RBAC provenance.** The `cdi-operator-cluster` `ClusterRole` carries broad
+> grants — including wildcard `resources`/`verbs` on the `cdi.kubevirt.io` API group
+> and `clusterrole`/`clusterrolebinding` write — taken **verbatim** from the upstream
+> `cdi-operator.yaml` v1.62.0. They are part of `cdi-operator`'s documented threat
+> model (it reconciles the full CDI control plane, including the RBAC for its
+> operands) and are **not** narrowed here: hand-narrowing upstream operator RBAC
+> silently breaks reconciliation on the next version bump. Accepted as
+> upstream-verbatim; re-derived on every version re-extraction.
+
 ## The `CDI` CR — a catalog default (consumer-overridable)
 
 This workload ships the `CDI` CR as a **catalog default**, taken verbatim from the
