@@ -5,6 +5,7 @@ Crossplane provider **and function** packages for child-cluster provisioning.
 | Package | Kind | Version | Purpose |
 |---|---|---|---|
 | `provider-opentofu` | Provider | v1.1.3 | runs the consumer's `tofu` root for Talos provisioning (the only provider used by the xcluster Composition). **opentofu**, not terraform: the roots use OpenTofu 1.7+ state encryption that the Terraform-1.5.7-frozen `provider-terraform` cannot run. Ships the namespaced `opentofu.m.upbound.io` API for Crossplane v2. |
+| `provider-kubernetes` | Provider | v1.2.1 | enables Composition-emitted Kubernetes `Object` resources for the XCluster state-seed (the seed Job + ConfigMap). Ships the namespaced `kubernetes.m.crossplane.io/v1alpha1` API for Crossplane v2. |
 | `function-patch-and-transform` | Function | v0.10.6 | **mandatory** for Pipeline mode: maps the thin XCluster spec → Workspace fields |
 | `function-auto-ready` | Function | v0.6.5 | **mandatory**: derives XCluster Ready from the Workspace |
 
@@ -14,7 +15,11 @@ Crossplane provider **and function** packages for child-cluster provisioning.
 
 ## Contents
 
-- `manifests/providers.yaml` — one `Provider` CR (provider-opentofu) + two `Function` CRs, versions pinned.
+- `manifests/providers.yaml` — two `Provider` CRs (provider-opentofu, provider-kubernetes) + two `Function` CRs, versions pinned.
+
+## Consumer obligation
+
+The consumer (Layer 3) MUST supply the `provider-kubernetes` `ClusterProviderConfig` (`credentials.source: InjectedIdentity`) plus the minimal RBAC for the provider ServiceAccount, mirroring how the opentofu `ClusterProviderConfig` is consumer-owned. These cluster-specific bindings do NOT belong in the module catalog.
 
 ## Sync-wave position
 

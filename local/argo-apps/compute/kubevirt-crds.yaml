@@ -1,0 +1,50 @@
+# Argo Application for compute/kubevirt-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the kubevirt.io/KubeVirt operator-config CRD
+# (kubevirts.kubevirt.io) ships as its own OCI artifact, synced at sync-wave -1
+# ahead of the virt-operator workload (wave 0).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-kubevirt-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: kubevirt-crds
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/compute
+    chart: kubevirt-crds
+    targetRevision: ${TAG}
+    helm:
+      releaseName: kubevirt-crds
+  destination:
+    server: https://kubernetes.default.svc
+    # kubevirts.kubevirt.io is cluster-scoped; the destination namespace is
+    # nominal. The kubevirt namespace is created by the workload half (wave 0),
+    # so this -crds app never creates or manages it (CreateNamespace=false).
+    namespace: kubevirt
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRD is never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # VirtualMachine / KubeVirt CRs (and tear down running VMs).
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: unlike
+      # automated.prune:false above (which only suppresses automated cycles), this
+      # syncOption blocks pruning on BOTH automated and manual sync-with-prune, so a
+      # UI "Sync + Prune" cannot garbage-collect the live CRs.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit on the large
+      # KubeVirt CRD.
+      - ServerSideApply=true

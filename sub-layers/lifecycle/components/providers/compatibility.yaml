@@ -5,6 +5,9 @@ provides:
   - name: provider-opentofu
     apis:
       - pkg.crossplane.io/Provider@v1.1.3
+  - name: provider-kubernetes
+    apis:
+      - pkg.crossplane.io/Provider@v1.2.1
   - name: function-patch-and-transform
     apis:
       - pkg.crossplane.io/Function@v0.10.6

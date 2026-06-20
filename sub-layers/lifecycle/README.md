@@ -11,7 +11,7 @@ The sub-layer is an organizational grouping; **OCI distribution is per component
 | [`crossplane`](components/crossplane/) | 0 | Crossplane operator (Helm) — ships CRDs | `oci://.../lifecycle/crossplane:vX.Y.Z` |
 | [`ipxe`](components/ipxe/) | 0 | iPXE server stub (namespace + labels, content in issue #28) | `oci://.../lifecycle/ipxe:vX.Y.Z` |
 | [`booter`](components/booter/) | 0 | proxyDHCP/PXE responder (`siderolabs/booter`), complements `ipxe` (design-B hybrid, ADR-0005) | `oci://.../lifecycle/booter:vX.Y.Z` |
-| [`providers`](components/providers/) | 10 | provider-opentofu + pipeline functions | `oci://.../lifecycle/providers:vX.Y.Z` |
+| [`providers`](components/providers/) | 10 | provider-opentofu + provider-kubernetes + pipeline functions | `oci://.../lifecycle/providers:vX.Y.Z` |
 | [`compositions`](components/compositions/) | 20 | `XCluster` XRD + Composition (3-step pipeline) | `oci://.../lifecycle/compositions:vX.Y.Z` |
 | [`crossview`](components/crossview/) | 30 | Crossplane visualization dashboard (crossplane-contrib) | `oci://.../lifecycle/crossview:vX.Y.Z` |
 

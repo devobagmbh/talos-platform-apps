@@ -1,0 +1,28 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for kubevirt-cdi. Ships the CDI operator
+# workload — the cdi Namespace, the cdi-operator Deployment, the operator RBAC
+# (ServiceAccount, Role/RoleBinding, ClusterRole/ClusterRoleBinding), and the CDI
+# operator-config CR — and carries 0 CRDs (the single cdis.cdi.kubevirt.io CRD ships
+# in the SEPARATE strict-B artifact `compute/kubevirt-cdi-crds`, sync-wave -1). NO
+# crd-bearing marker here (that marks the -crds half only).
+#
+# requires the -crds artifact: the operator reconciles the CDI CR, and the CR is an
+# instance of the cdis.cdi.kubevirt.io CRD, so the CRD schema must be established
+# first (strict-B ordering). Same pattern as
+# storage-block/piraeus-operator -> storage-block/piraeus-operator-crds and the
+# sibling compute/kubevirt -> compute/kubevirt-crds.
+requires:
+  compute/kubevirt-cdi-crds: ">=v0.1.0"
+
+# apis-only, NO capability — capabilities: [] is the deliberate design, not a
+# deferral (so no `# TODO:`). CDI is a supporting infrastructure component bundled
+# into the vm-runtime app (disk-image import for VMs); it is not itself a swappable
+# interface — no consumer would swap CDI out independently of KubeVirt. The plan's
+# capability is {id: null, swap_class: null}, and catalog/capability-index.yaml ties
+# CDI to the vm-runtime entry only as a bundled member (`# kubevirt + kubevirt-cdi`),
+# not as a capability of its own. Same shape as the -crds half (apis-only) and the
+# precedents storage-block/piraeus-operator-crds and observability/prometheus-operator-crds.
+provides:
+  - name: kubevirt-cdi
+    apis:
+      - cdi-operator@v1.62.0
+    capabilities: []
