@@ -1,0 +1,32 @@
+# Customization Contract v2 (ADR-0024). Strict-B WORKLOAD half (ADR-0028) for
+# kubevirt-cdi. The workload (the cdi Namespace, the cdi-operator Deployment,
+# operator RBAC, and the CDI operator-config CR) is the signed, pre-rendered
+# artifact — catalog-owned, never consumer-patched.
+#
+# The freeze line is genuinely all-empty (NOT a hollow pass): the cdi-operator pod
+# spec carries no cluster-specific URLs, credentials, node addresses, or consumer
+# config references — the migrated manifest is cluster-agnostic. The bundled CDI CR
+# is a CATALOG DEFAULT shipped at upstream defaults: spec.config.uploadProxyURLOverride
+# is empty and stays empty (cluster-specific — the consumer sets it in their own Argo
+# overlay when exposing the upload proxy externally). That overlay patch of a catalog
+# default is NOT one of the four config shapes (env / config / secret / selector) the
+# operator reads through provided_refs. The operator does not render a label selector
+# against consumer CRs (it watches the CDI CR via its reconcile loop), so
+# selector_crs: [] / provided_selectors: {} (the cnpg / piraeus-operator / kubevirt
+# precedent). A cdi-operator image-version override would require a new migration of
+# the upstream manifest, not a freeze-line shape.
+#
+# external_dependencies: the strict-B CRD half compute/kubevirt-cdi-crds (sync-wave -1)
+# must be established before this workload (wave 0).
+freeze_line:
+  workload: rendered/manifest.yaml  # cdi-operator workload + CDI CR — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - compute/kubevirt-cdi-crds
