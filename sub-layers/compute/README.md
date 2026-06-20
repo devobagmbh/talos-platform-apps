@@ -12,6 +12,7 @@ bracket (ADR-0009).
 | [`kubevirt-crds`](components/kubevirt-crds/) | -1 | Strict-B CRD half (ADR-0028) — the KubeVirt operator-config `CustomResourceDefinition` (`kubevirts.kubevirt.io`). Lands before its workload counterpart. |
 | [`kubevirt`](components/kubevirt/) | 0 | Strict-B workload half — the virt-operator (Deployment, RBAC, Services, PriorityClass), the `kubevirt` Namespace (PSA `privileged`), and the `KubeVirt` CR; provides `vm-runtime`. Requires `kubevirt-crds`. |
 | [`kubevirt-cdi-crds`](components/kubevirt-cdi-crds/) | -1 | Strict-B CRD half (ADR-0028) — the CDI operator-config `CustomResourceDefinition` (`cdis.cdi.kubevirt.io`, cluster-scoped). Lands before its workload counterpart. |
+| [`kubevirt-cdi`](components/kubevirt-cdi/) | 0 | Strict-B workload half — the CDI operator (Deployment, RBAC), the `cdi` Namespace (PSA `restricted`), and the `CDI` operator-config CR. Requires `kubevirt-cdi-crds`. |
 
 ## Notes
 
