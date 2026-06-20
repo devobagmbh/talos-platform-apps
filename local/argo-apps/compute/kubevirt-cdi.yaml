@@ -1,0 +1,52 @@
+# Argo Application for compute/kubevirt-cdi (local test environment).
+# Strict-B WORKLOAD half (ADR-0028): the CDI operator Deployment + RBAC, the cdi
+# Namespace (PSA enforce: restricted), and the CDI operator-config CR, synced at
+# sync-wave 0 — after the compute-kubevirt-cdi-crds artifact (wave -1) so the CDI CR
+# resolves against an existing cdis.cdi.kubevirt.io CRD.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-kubevirt-cdi
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: kubevirt-cdi
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/compute
+    chart: kubevirt-cdi
+    targetRevision: ${TAG}
+    helm:
+      releaseName: kubevirt-cdi
+  destination:
+    server: https://kubernetes.default.svc
+    # The workload artifact ships its own cdi Namespace object (PSA enforce:
+    # restricted), so this app deploys into it but never auto-creates it
+    # (CreateNamespace=false — the shipped Namespace manifest is authoritative).
+    namespace: cdi
+
+  syncPolicy:
+    # The workload IS prunable (unlike the -crds half): removing the artifact
+    # garbage-collects the operator + CDI CR. CR-cascade protection for the CRD
+    # lives on the -crds Application (Prune=false), not here.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The cdi Namespace is shipped as a manifest in this artifact — never create
+      # it from Argo's CreateNamespace path (it would miss the PSA labels).
+      - CreateNamespace=false
+      # NB: ServerSideApply is deliberately NOT set here (unlike the -crds half).
+      # The cdi-operator is a Deployment; on k8s 1.33+ its live .status carries
+      # `terminatingReplicas`, absent from the bundled OpenAPI schema of older Argo
+      # (the local 7.7), which makes the SSA structured-merge-diff fail with a
+      # ComparisonError (sync → Unknown) though resources apply Healthy. The small
+      # workload manifests (operator + RBAC + CR) need no SSA; it stays on the
+      # -crds half only, where the large CDI CRD needs it.

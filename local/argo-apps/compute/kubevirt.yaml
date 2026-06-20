@@ -1,0 +1,54 @@
+# Argo Application for compute/kubevirt (local test environment).
+# Strict-B WORKLOAD half (ADR-0028): the virt-operator Deployment + RBAC, the
+# kubevirt Namespace (PSA enforce: privileged) and the KubeVirt operator-config CR,
+# synced at sync-wave 0 — after the compute-kubevirt-crds artifact (wave -1) so the
+# KubeVirt CR resolves against an existing kubevirts.kubevirt.io CRD.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-kubevirt
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: kubevirt
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/compute
+    chart: kubevirt
+    targetRevision: ${TAG}
+    helm:
+      releaseName: kubevirt
+  destination:
+    server: https://kubernetes.default.svc
+    # The workload artifact ships its own kubevirt Namespace object (PSA
+    # enforce: privileged), so this app deploys into it but never auto-creates it
+    # (CreateNamespace=false — the shipped Namespace manifest is authoritative).
+    namespace: kubevirt
+
+  syncPolicy:
+    # The workload IS prunable (unlike the -crds half): removing the artifact
+    # garbage-collects the operator + KubeVirt CR. CR-cascade protection for the
+    # CRD lives on the -crds Application (Prune=false), not here.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The kubevirt Namespace is shipped as a manifest in this artifact — never
+      # create it from Argo's CreateNamespace path (it would miss the PSA labels).
+      - CreateNamespace=false
+      # NB: ServerSideApply is deliberately NOT set here (unlike the -crds half).
+      # The workload's virt-operator is a Deployment; on k8s 1.33+ its live
+      # .status carries `terminatingReplicas`, a field absent from the bundled
+      # OpenAPI schema of older Argo (the local 7.7), which makes the SSA
+      # structured-merge-diff fail with a ComparisonError (sync → Unknown) even
+      # though the resources apply Healthy. The workload manifests (operator +
+      # RBAC + CR) are small enough for client-side apply, so SSA buys nothing
+      # here; it stays on the -crds half only, where the large KubeVirt CRD needs
+      # it to clear the 262 KB client-side annotation limit.
