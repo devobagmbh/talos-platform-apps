@@ -1,0 +1,5 @@
+# Sub-layer aggregate (components carry their own compatibility.yaml).
+# Directory bracket for the sub-layer identity; OCI granularity is per component (ADR-0009).
+
+components:
+  - kubevirt-crds # strict-B CRD half — KubeVirt operator-config CRD (sync-wave -1, ADR-0028); pairs with kubevirt
