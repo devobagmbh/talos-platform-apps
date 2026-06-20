@@ -43,6 +43,14 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 **Zero CustomResourceDefinition objects** — the CRD schema ships in
 `compute/kubevirt-crds`, not here (strict-B workload half).
 
+> **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
+> including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.5.0.
+> They are part of `virt-operator`'s documented threat model (it reconciles the full
+> KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
+> operator RBAC silently breaks reconciliation on the next version bump. Accepted as
+> upstream-verbatim; re-derived on every version re-extraction.
+
 ## The `KubeVirt` CR — a catalog default (consumer-overridable)
 
 This workload ships the `KubeVirt` CR as a **catalog default**, taken verbatim from
