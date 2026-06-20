@@ -17,7 +17,7 @@
 [![Taskfile](https://img.shields.io/badge/Taskfile-v3-29BEB0?style=flat-square&logo=Task)](https://taskfile.dev/)
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
 
-OCI sub-layers of the Devoba Talos platform: `automation`, `databases`, `identity`, `lifecycle`, `network`, `observability`, `registry`, `secrets`, `storage-block`, and `storage-objects`. Pre-rendered manifests with cosign signature, SLSA v1 provenance, and CycloneDX SBOM. Consumed by consumer-cluster repos.
+OCI sub-layers of the Devoba Talos platform: `automation`, `databases`, `identity`, `lifecycle`, `network`, `observability`, `registry`, `secrets`, `storage-block`, and `storage-objects`. Pre-rendered manifests, cosign-signed (keyless); SLSA v1 provenance and CycloneDX SBOM attestations are planned (phase 2+, see `task attest`). Consumed by consumer-cluster repos.
 
 ## Purpose
 
@@ -100,11 +100,11 @@ See `devbox.json`. Versions are pinned in `devbox.lock` as needed — updates ha
 `go-task` replaces make. Tasks are declared in `Taskfile.yml`. Example targets:
 
 ```bash
-task render -- observability         # renders sub-layers/observability to rendered/manifest.yaml
-task sign   -- observability v0.1.0  # cosign sign of the published OCI tag
-task attest -- observability v0.1.0  # SBOM + SLSA provenance as attestations
-task publish -- observability v0.1.0 # render → push → sign → attest in one go
-task ci                           # local reproduction of the GHA pipeline
+task render:one -- lifecycle/crossplane        # render one component to rendered/manifest.yaml
+task sign       -- lifecycle/crossplane v0.1.0 # cosign sign of the published OCI tag
+task attest     -- lifecycle/crossplane v0.1.0 # SBOM + SLSA provenance (deferred stub, phase 2+)
+task publish    -- lifecycle/crossplane v0.1.0 # render → package → push → sign in one go
+task ci                                        # local reproduction of the GHA pipeline
 ```
 
 ### Local live testing (Talos + ArgoCD)
@@ -123,7 +123,7 @@ Full architecture, endpoints, component details, and troubleshooting: [`local/RE
 
 ### CI
 
-The production pipeline runs on **GitHub Actions** (workflows under `.github/workflows/`). Triggers: PRs (render + lint, no push) and tag push `<sub-layer>-vX.Y.Z` (render + OCI push + cosign sign + SBOM/provenance attest). cosign signing is keyless via the GHA OIDC identity.
+The production pipeline runs on **GitHub Actions** (workflows under `.github/workflows/`). Triggers: PRs (render + lint, no push) and tag push `<sub-layer>/<component>-vX.Y.Z` (render + OCI push + cosign sign + verify). Tags are normally cut by release-please (see § Release automation); cosign signing is keyless via the GHA OIDC identity (`oci-publish.yml@refs/tags/...`).
 
 **Three binding CI rules** for this and all other platform repos:
 
@@ -143,25 +143,50 @@ Helm chart + values
  rendered/manifest.yaml
         │
         ▼
-oras push ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>
+oras push ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>:<tag>
         │
         ▼
  cosign sign --yes
         │
         ▼
- syft → CycloneDX SBOM → cosign attest
-        │
-        ▼
- slsa-github-generator → provenance → cosign attest
+ cosign verify   (keyless; identity oci-publish.yml@refs/tags/...)
+
+ # phase 2+ (deferred — NOT wired in oci-publish.yml today; see `task attest`):
+ #   syft → CycloneDX SBOM → cosign attest
+ #   slsa-github-generator → provenance → cosign attest
 ```
 
-Pipeline implementation follows in a separate iteration (a task from phase 2 of the [day-zero-backlog](https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md)).
+### Release automation (release-please)
+
+Releases are automated per component — you do **not** hand-cut tags in the normal flow:
+
+1. Merge a `feat`/`fix` commit that touches exactly one `sub-layers/<sl>/components/<c>/` (the lefthook `lint:commit-scope` gate enforces one component per commit, because release-please maps commits to components by path).
+2. `release-please.yml` opens (or updates) a **per-component release PR** that bumps the version and updates the changelog.
+3. Merging that release PR cuts the tag `<sub-layer>/<component>-vX.Y.Z`. The tag is created with a **GitHub App installation token** (not the built-in `GITHUB_TOKEN`, whose events do not cascade to other workflows), so the tag-push triggers `oci-publish.yml`, which renders → pushes → signs → verifies the component. The cosign signing identity stays `oci-publish.yml@refs/tags/...` — unchanged for `task verify` and for consumer-side Kyverno verification.
+
+The per-component version SoT is [`.release-please-manifest.json`](.release-please-manifest.json); [`release-please-config.json`](release-please-config.json) enumerates every component (not-yet-implemented stubs carry `initial-version: 0.1.0`; the `kube-prometheus-stack` *stack* is excluded — it is not an OCI distribution unit).
+
+**One-time setup (org admin).** release-please cuts tags via a GitHub App token (short-lived, minted per run — no long-lived PAT). Create a GitHub App in `devobagmbh` with repo permissions **Contents: Read & Write**, **Pull requests: Read & Write**, **Issues: Read & Write**; **install it on this repository only** (not org-wide — limits the App key's blast radius); then set repo variable `RELEASE_PLEASE_APP_ID` and repo secret `RELEASE_PLEASE_APP_PRIVATE_KEY`. Until `RELEASE_PLEASE_APP_ID` is set the `release-please` job is **skipped** (neutral, no failing check); manual tag push remains available for releases in the meantime.
+
+**Manual / backfill tag** — a hand-pushed `<sub-layer>/<component>-vX.Y.Z` tag also triggers `oci-publish.yml` directly (first-time backfill or a hotfix). Caveat: push **at most three tags per `git push`** — tags beyond the third in a single push raise no workflow run at all (silently), so batch larger backfills.
+
+**Recovering a stuck release** — if a release PR merged but no OCI artifact appeared, the cut tag did not reach `oci-publish.yml`. Check the [Actions tab](../../actions/workflows/oci-publish.yml) for a run on that tag:
+
+- A run exists but **failed** (e.g. a transient upstream Helm-repo error during render) → re-run it from the Actions UI (*Re-run failed jobs*). No tag change needed.
+- **No run** exists (the tag event never fired) → re-push the tag to re-raise the event (`oci-publish.yml` has no `workflow_dispatch`, so a tag re-push is the only trigger):
+
+  ```bash
+  git push origin :refs/tags/<sub-layer>/<component>-vX.Y.Z   # delete the remote tag
+  git push origin <sub-layer>/<component>-vX.Y.Z              # re-push at the same commit → triggers oci-publish.yml
+  ```
+
+**Rotating the App key** — generate a new private key in the GitHub App's settings, update the repo secret `RELEASE_PLEASE_APP_PRIVATE_KEY` with the new PEM, then delete the old key in the App settings. `RELEASE_PLEASE_APP_ID` is unchanged. Old keys stay valid until deleted, so there is no downtime window.
 
 ## Conventions
 
-- **Sub-layer versioning**: SemVer per sub-layer (`<sub-layer>-vMAJ.MIN.PATCH`). Each sub-layer has an independent lifecycle.
-- **OCI paths**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>:<tag>` as the manifest, same path for SBOM/provenance attestations.
-- **Signing**: cosign keyless (OIDC via the GitHub Actions workflow identity). Verification in consumer clusters via the Kyverno ClusterPolicy `image-verify-platform-oci` (see [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22)).
+- **Per-component versioning**: SemVer per component (`<sub-layer>/<component>-vMAJ.MIN.PATCH`). Each component has an independent lifecycle (managed by release-please).
+- **OCI paths**: `ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>:<tag>` as the manifest, same path for SBOM/provenance attestations.
+- **Signing**: cosign keyless (OIDC via the GitHub Actions workflow identity). Verification in consumer clusters via the Kyverno ClusterPolicy `image-verify-platform-oci` (see [Issue #21](https://github.com/devobagmbh/talos-platform-docs/issues/21)).
 - **Value separation**: cluster-specific Helm values stay in the consumer-cluster repos. This layer holds defaults and shared values.
 - **Language**: English throughout — code, comments, READMEs, and docs (platform policy 2026-06-03). Code and Helm values follow upstream conventions (English).
 - **Tools**: all dev-relevant binaries come from Devbox — direct `brew install <tool>` is forbidden to avoid version drift.

@@ -1,0 +1,133 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "bootstrap-sha": "97855686e84e462efa26afcf20c7ec1bda7e33c0",
+  "separate-pull-requests": true,
+  "packages": {
+    "sub-layers/automation/components/velero": {
+      "component": "automation/velero",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/compute/components/kubevirt": {
+      "component": "compute/kubevirt"
+    },
+    "sub-layers/compute/components/kubevirt-cdi": {
+      "component": "compute/kubevirt-cdi"
+    },
+    "sub-layers/compute/components/kubevirt-cdi-crds": {
+      "component": "compute/kubevirt-cdi-crds"
+    },
+    "sub-layers/compute/components/kubevirt-crds": {
+      "component": "compute/kubevirt-crds"
+    },
+    "sub-layers/databases/components/cnpg": {
+      "component": "databases/cnpg"
+    },
+    "sub-layers/databases/components/cnpg-crds": {
+      "component": "databases/cnpg-crds"
+    },
+    "sub-layers/databases/components/valkey-operator": {
+      "component": "databases/valkey-operator"
+    },
+    "sub-layers/identity/components/dex": {
+      "component": "identity/dex"
+    },
+    "sub-layers/lifecycle/components/booter": {
+      "component": "lifecycle/booter"
+    },
+    "sub-layers/lifecycle/components/compositions": {
+      "component": "lifecycle/compositions"
+    },
+    "sub-layers/lifecycle/components/crossplane": {
+      "component": "lifecycle/crossplane"
+    },
+    "sub-layers/lifecycle/components/crossview": {
+      "component": "lifecycle/crossview"
+    },
+    "sub-layers/lifecycle/components/ipxe": {
+      "component": "lifecycle/ipxe"
+    },
+    "sub-layers/lifecycle/components/providers": {
+      "component": "lifecycle/providers"
+    },
+    "sub-layers/network/components/multus-cni": {
+      "component": "network/multus-cni"
+    },
+    "sub-layers/network/components/multus-cni-crds": {
+      "component": "network/multus-cni-crds"
+    },
+    "sub-layers/observability/components/alloy": {
+      "component": "observability/alloy"
+    },
+    "sub-layers/observability/components/grafana": {
+      "component": "observability/grafana",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/hubble": {
+      "component": "observability/hubble"
+    },
+    "sub-layers/observability/components/kube-state-metrics": {
+      "component": "observability/kube-state-metrics"
+    },
+    "sub-layers/observability/components/loki": {
+      "component": "observability/loki",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/metrics-server": {
+      "component": "observability/metrics-server"
+    },
+    "sub-layers/observability/components/mimir": {
+      "component": "observability/mimir",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/prometheus-operator": {
+      "component": "observability/prometheus-operator"
+    },
+    "sub-layers/observability/components/prometheus-operator-crds": {
+      "component": "observability/prometheus-operator-crds"
+    },
+    "sub-layers/observability/components/tempo": {
+      "component": "observability/tempo",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/registry/components/harbor": {
+      "component": "registry/harbor"
+    },
+    "sub-layers/secrets/components/ca-clusterissuer": {
+      "component": "secrets/ca-clusterissuer",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/secrets/components/cert-manager": {
+      "component": "secrets/cert-manager"
+    },
+    "sub-layers/secrets/components/clustersecretstore-defaults": {
+      "component": "secrets/clustersecretstore-defaults",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/secrets/components/external-secrets": {
+      "component": "secrets/external-secrets"
+    },
+    "sub-layers/storage-block/components/democratic-csi": {
+      "component": "storage-block/democratic-csi"
+    },
+    "sub-layers/storage-block/components/piraeus-operator": {
+      "component": "storage-block/piraeus-operator"
+    },
+    "sub-layers/storage-block/components/piraeus-operator-crds": {
+      "component": "storage-block/piraeus-operator-crds"
+    },
+    "sub-layers/storage-block/components/synology-csi": {
+      "component": "storage-block/synology-csi"
+    },
+    "sub-layers/storage-objects/components/garage": {
+      "component": "storage-objects/garage"
+    },
+    "sub-layers/storage-objects/components/garage-buckets": {
+      "component": "storage-objects/garage-buckets",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/storage-objects/components/garage-crds": {
+      "component": "storage-objects/garage-crds"
+    }
+  }
+}

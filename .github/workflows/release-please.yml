@@ -1,0 +1,73 @@
+name: release-please
+
+# Automated, per-component release management for the catalog.
+#
+# On every push to main, release-please maintains one release PR per component
+# (path-based commit-split — a commit under sub-layers/<sl>/components/<c>/ bumps
+# only that component; the lefthook `lint:commit-scope` gate keeps a commit to one
+# component). Merging a release PR cuts the git tag <sub-layer>/<component>-vX.Y.Z
+# and a GitHub Release.
+#
+# The tag is created with a GitHub App installation token (NOT the built-in
+# GITHUB_TOKEN), so the `push: tags:` event DOES fire and triggers oci-publish.yml,
+# which renders + pushes + signs + verifies the component. The cosign keyless
+# signing identity therefore stays oci-publish.yml@refs/tags/... — unchanged for
+# `task verify` and for the consumer-side Kyverno policy image-verify-platform-oci.
+#
+# Why an App token and not GITHUB_TOKEN: tags created with GITHUB_TOKEN do not
+# raise workflow events (documented GitHub recursion guard), so oci-publish.yml
+# would never run. The App installation token is short-lived (minted per run via
+# actions/create-github-app-token) — no long-lived PAT, consistent with
+# AGENTS.md § Hard Constraints "Never commit long-lived keys".
+#
+# ONE-TIME SETUP (org admin): create a GitHub App in `devobagmbh` with repo
+# permissions Contents: Read & Write + Pull requests: Read & Write + Issues:
+# Read & Write, install it on this repository, then configure:
+#   - repo variable  RELEASE_PLEASE_APP_ID          = the App's numeric ID
+#   - repo secret     RELEASE_PLEASE_APP_PRIVATE_KEY = the App's PEM private key
+# Until RELEASE_PLEASE_APP_ID is set the job is SKIPPED (neutral — see the `if:`
+# guard below). Once the variable is set, the private-key secret must also be
+# present, or the token step fails. See README § Release automation (release-please).
+#
+# Rule-3 note (AGENTS.md § CI conventions): this is release MANAGEMENT
+# (GitHub-API orchestration via two `uses:` actions, no build steps), exempt per
+# the API-orchestration carve-out. The build/publish runs through oci-publish.yml,
+# which is the `task` caller.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # release-please mutates shared state (release-PR branches, the manifest, tags).
+  # Two pushes to main racing two runs can clobber a release PR or the manifest, so
+  # serialize. Do NOT cancel-in-progress: a cancelled mid-flight run can leave a
+  # half-updated release PR — queue instead of killing.
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    # Skip (neutral, not failed) until the App is configured, so the workflow does
+    # not red-X every push to main during the one-time setup window. Once the repo
+    # variable RELEASE_PLEASE_APP_ID is set, the job runs.
+    if: ${{ vars.RELEASE_PLEASE_APP_ID != '' }}
+    steps:
+      - name: Mint a short-lived GitHub App token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - name: release-please (maintain release PRs, cut tags on merge)
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5.0.0
+        with:
+          # App token (not GITHUB_TOKEN) so the cut tag triggers oci-publish.yml.
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
