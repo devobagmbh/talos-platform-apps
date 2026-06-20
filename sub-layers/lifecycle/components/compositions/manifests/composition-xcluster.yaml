@@ -248,6 +248,15 @@ spec:
                 providerConfigRef:
                   kind: ClusterProviderConfig
                   name: kubernetes-default
+                # Readiness: provider-kubernetes defaults to "ready on successful
+                # apply", which would mark this Object ready BEFORE the seed Job
+                # actually reaches Complete. Derive readiness from the Job's
+                # Complete condition so anything gating on this Object waits for
+                # the seed to finish (provider-kubernetes v1.2.1 DeriveFromCelQuery;
+                # null-safe short-circuit while .status/.conditions are absent).
+                readiness:
+                  policy: DeriveFromCelQuery
+                  celQuery: 'has(object.status) && has(object.status.conditions) && object.status.conditions.exists(c, c.type == "Complete" && c.status == "True")'
                 forProvider:
                   manifest:
                     apiVersion: batch/v1
@@ -325,6 +334,16 @@ spec:
                                 readOnlyRootFilesystem: true
                                 capabilities:
                                   drop: [ALL]
+                              # Bounded footprint: a one-shot kubectl-get init
+                              # container. Requests + limits so the seed Job is
+                              # schedulable and cannot starve a node.
+                              resources:
+                                requests:
+                                  cpu: 10m
+                                  memory: 32Mi
+                                limits:
+                                  cpu: 100m
+                                  memory: 64Mi
                           containers:
                             - name: seed
                               image: ghcr.io/opentofu/opentofu:1.11.10  # pinned (no :latest)
@@ -478,6 +497,15 @@ spec:
                                 readOnlyRootFilesystem: true
                                 capabilities:
                                   drop: [ALL]
+                              # tofu init + state pull/push is short-lived but
+                              # needs more headroom than the init container.
+                              resources:
+                                requests:
+                                  cpu: 25m
+                                  memory: 64Mi
+                                limits:
+                                  cpu: 500m
+                                  memory: 256Mi
             patches:
               # Object name (and the XR scoping) -> <clusterName>-tofu-state-seed.
               - type: FromCompositeFieldPath

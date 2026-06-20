@@ -57,6 +57,10 @@ This catalog component is the cluster-agnostic template; the consumer cluster re
    rules:
      - apiGroups: ["opentofu.m.upbound.io"]
        resources: ["clusterproviderconfigs"]
+       # Restrict to the single config this XCluster reads (its providerConfigName,
+       # default opentofu-default) — `get` supports resourceNames, so the seed Job
+       # cannot read any other cluster's backend config.
+       resourceNames: ["<providerConfigName>"]
        verbs: ["get"]
    ---
    apiVersion: rbac.authorization.k8s.io/v1
