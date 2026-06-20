@@ -21,8 +21,7 @@ on:
       - 'sub-layers/**/helm/**'
       - 'sub-layers/**/manifests/**'
       - 'sub-layers/**/vendor/**'   # vendored chart .tgz archives change the render too
-      - 'scripts/lint-version-parity.sh'
-      - 'Taskfile.yml'
+      - 'Taskfile.yml'   # the A7 parity gate logic lives inline in lint:version
       - '.github/workflows/version-parity.yml'
 
 permissions:
