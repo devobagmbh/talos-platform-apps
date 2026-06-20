@@ -110,7 +110,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/compute/kubevirt-crds:vX.Y.Z
 ```
 
 The git tag is `compute/kubevirt-crds-vX.Y.Z`; `task push` strips the leading `v`, so
-the OCI registry tag is the bare SemVer (`kubevirt-crds-X.Y.Z`).
+the OCI registry tag is the bare SemVer (the component name is the OCI *path*, not the tag).
 
 ## Related ADRs
 
