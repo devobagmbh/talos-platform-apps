@@ -45,8 +45,10 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 
 ## The `KubeVirt` CR — a catalog default (consumer-overridable)
 
-This workload ships the `KubeVirt` CR as a **catalog default**, verbatim from the
-upstream v1.5.0 `kubevirt-cr.yaml`. It is **not** consumer-owned-only: the platform
+This workload ships the `KubeVirt` CR as a **catalog default**, taken verbatim from
+the base migration source at v1.5.0. Its security/posture **spec values** are the
+upstream defaults verbatim; the `app.kubernetes.io/*` labels (incl. `managed-by:
+argocd`) are standard labels the base source carries on the minimal upstream CR. It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
 (Kustomize/values in the consumer-cluster repo) where they need to diverge. The
 shipped spec preserves these security/posture values, which the catalog **does not
