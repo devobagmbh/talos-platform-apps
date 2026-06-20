@@ -10,6 +10,7 @@ bracket (ADR-0009).
 | Component | sync-wave | Purpose |
 |---|---|---|
 | [`kubevirt-crds`](components/kubevirt-crds/) | -1 | Strict-B CRD half (ADR-0028) — the KubeVirt operator-config `CustomResourceDefinition` (`kubevirts.kubevirt.io`). Lands before its workload counterpart. |
+| [`kubevirt`](components/kubevirt/) | 0 | Strict-B workload half — the virt-operator (Deployment, RBAC, Services, PriorityClass), the `kubevirt` Namespace (PSA `privileged`), and the `KubeVirt` CR; provides `vm-runtime`. Requires `kubevirt-crds`. |
 
 ## Notes
 

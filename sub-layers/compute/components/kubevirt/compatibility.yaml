@@ -1,0 +1,27 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for kubevirt. Ships the virt-operator
+# workload — the kubevirt Namespace, the virt-operator Deployment, the operator
+# RBAC (ServiceAccount, Role/RoleBinding, ClusterRole/ClusterRoleBinding), the
+# kubevirt-cluster-critical PriorityClass, and the KubeVirt operator-config CR — and
+# carries 0 CRDs (the single kubevirts.kubevirt.io CRD ships in the SEPARATE
+# strict-B artifact `compute/kubevirt-crds`, sync-wave -1). NO crd-bearing marker
+# here (that marks the -crds half only).
+#
+# requires the -crds artifact: the operator reconciles the KubeVirt CR, and the CR
+# is an instance of the kubevirts.kubevirt.io CRD, so the CRD schema must be
+# established first (strict-B ordering). Same pattern as
+# storage-block/piraeus-operator -> storage-block/piraeus-operator-crds.
+requires:
+  compute/kubevirt-crds: ">=v0.1.0"
+
+# Provides the swappable capability `vm-runtime` — present in
+# catalog/capability-index.yaml with kubevirt as the active implementation at
+# swap_class rewrite-required (replacing the VM-workload runtime means rewriting
+# every VM/VMI manifest against a different CR surface, not a drop-in). The CRD half
+# is apis-only (no capability); the operational capability lives HERE in the workload
+# that reconciles the KubeVirt CR into the virtualization control plane.
+provides:
+  - name: kubevirt
+    apis:
+      - kubevirt-operator@v1.5.0
+    capabilities:
+      - {id: vm-runtime, swap_class: rewrite-required}
