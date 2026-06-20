@@ -3,3 +3,4 @@
 
 components:
   - kubevirt-crds # strict-B CRD half — KubeVirt operator-config CRD (sync-wave -1, ADR-0028); pairs with kubevirt
+  - kubevirt # strict-B workload half — virt-operator + KubeVirt CR, capability vm-runtime (sync-wave 0); requires kubevirt-crds
