@@ -283,7 +283,10 @@ tasks:
       gate. Deliberate bypass: `git commit --no-verify`.
     cmd: |
       set -eu
-      sign="$(git config --get commit.gpgsign 2>/dev/null || true)"
+      # --bool normalizes git's boolean spellings (true/yes/on/1) to "true" so a
+      # valid `commit.gpgsign yes|on|1` is not mis-rejected (it errors → "" on an
+      # unset/garbage value, which correctly falls through to BLOCKED).
+      sign="$(git config --bool --get commit.gpgsign 2>/dev/null || true)"
       key="$(git config --get user.signingkey 2>/dev/null || true)"
       if [ "$sign" = "true" ] && [ -n "$key" ]; then
         exit 0
