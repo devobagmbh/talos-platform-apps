@@ -1,0 +1,48 @@
+# Argo Application for compute/kubevirt-cdi-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the cdi.kubevirt.io/CDI operator-config CRD
+# (cdis.cdi.kubevirt.io, cluster-scoped) ships as its own OCI artifact, synced at
+# sync-wave -1 ahead of the CDI operator workload (wave 0).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-kubevirt-cdi-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: kubevirt-cdi-crds
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/compute
+    chart: kubevirt-cdi-crds
+    targetRevision: ${TAG}
+    helm:
+      releaseName: kubevirt-cdi-crds
+  destination:
+    server: https://kubernetes.default.svc
+    # cdis.cdi.kubevirt.io is cluster-scoped; the destination namespace is nominal.
+    # The cdi namespace is created by the workload half (wave 0), so this -crds app
+    # never creates or manages it (CreateNamespace=false).
+    namespace: cdi
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRD is never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # DataVolume / CDI CRs (and break in-flight disk imports).
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: blocks
+      # pruning on BOTH automated and manual sync-with-prune.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit on the large
+      # CDI CRD (the rendered CRD is ~5k lines).
+      - ServerSideApply=true
