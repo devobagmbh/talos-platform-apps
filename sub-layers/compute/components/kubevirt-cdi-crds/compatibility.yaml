@@ -1,0 +1,28 @@
+# Strict-B CRDs artifact (ADR-0028) for kubevirt-cdi. Ships ONLY the single
+# cdi.kubevirt.io operator-config CustomResourceDefinition (CDI). The CRD object
+# itself depends on nothing in the catalog -> requires is empty. The workload
+# counterpart of this strict-B pair is `compute/kubevirt-cdi` (sync-wave 0), which
+# carries 0 CRDs.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair. The
+# build gate uses this marker to assert kind: CustomResourceDefinition count > 0
+# here (and == 0 in the workload artifact). compatibility.yaml has no schema, so
+# the extra top-level field is permitted.
+crd-bearing: true
+
+requires: {}
+
+# apis-only, NO capability. The CDI operator-config CRD is the API surface
+# (schema), not the swappable operational capability. CDI is a supporting
+# infrastructure component of the vm-runtime app (disk-image import for VMs); it
+# is not itself a swappable interface -- no consumer would swap CDI out
+# independently of KubeVirt, so neither the CDI workload nor its CRD carries a
+# capability id. Carrying capabilities: [] here is the deliberate design
+# (precedent: storage-block/piraeus-operator-crds and
+# observability/prometheus-operator-crds, both apis-only with no capability),
+# NOT a deferral -- so no `# TODO:` here.
+provides:
+  - name: kubevirt-cdi-crds
+    apis:
+      - cdi.kubevirt.io/CDI@v1beta1   # cdis.cdi.kubevirt.io (served: v1alpha1, v1beta1; storage: v1beta1)
+    capabilities: []

@@ -1,0 +1,39 @@
+# The KubeVirt operator-config singleton CR — the operator watches it and, on
+# reconcile, deploys the virtualization control plane (virt-api, virt-controller,
+# virt-handler, the webhooks). Shipped HERE in the workload as a CATALOG DEFAULT,
+# verbatim from the base migration source at v1.5.0 — NOT consumer-owned-only. A
+# consumer patches it via their own Argo overlay (Kustomize/values) where they need
+# to (e.g. enable useEmulation on hardware without vt-x/amd-v); the bundled spec is
+# the platform's posture default.
+#
+# Security/posture values preserved EXACTLY (MUST NOT be softened by the catalog):
+#   - developerConfiguration.useEmulation: false  — require hardware virtualization
+#     (KVM); never silently fall back to slow/insecure software emulation.
+#   - network.permitBridgeInterfaceOnPodNetwork: false — block bridge binding on the
+#     pod network (a hardening default).
+#   - workloadUpdateStrategy.workloadUpdateMethods: [Evict] — live-migrate/evict VMIs
+#     on operator upgrade rather than leaving them on stale virt-launcher pods.
+#
+# The CR carries 0 CustomResourceDefinitions (it is an instance of the KubeVirt CRD
+# shipped by compute/kubevirt-crds); it renders as exactly one `kind: KubeVirt`
+# named `kubevirt` in namespace kubevirt.
+---
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+  labels:
+    app.kubernetes.io/name: kubevirt
+    app.kubernetes.io/version: v1.5.0
+    app.kubernetes.io/component: operator
+    app.kubernetes.io/managed-by: argocd
+spec:
+  configuration:
+    developerConfiguration:
+      useEmulation: false
+    network:
+      permitBridgeInterfaceOnPodNetwork: false
+  workloadUpdateStrategy:
+    workloadUpdateMethods:
+      - Evict

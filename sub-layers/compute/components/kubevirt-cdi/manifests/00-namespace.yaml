@@ -1,0 +1,35 @@
+# cdi's own namespace. The cdi-operator workload is the sole catalog occupant
+# (dedicated namespace), so this workload artifact ships the Namespace object — a
+# shipped manifest takes precedence over Argo `managedNamespaceMetadata`, making the
+# PSA posture authoritative and self-contained (build skill CONVENTIONS.md
+# § Namespace & PSA). The strict-B CRD half (compute/kubevirt-cdi-crds) ships NO
+# Namespace; this workload is the sole claimant.
+#
+# enforce: restricted — the upstream v1.62.0 cdi-operator.yaml ships NO Namespace
+# object (and no PSA labels), so this label set is authored here, not copied. The
+# strictest level the namespace's workloads provably satisfy is `restricted`: the
+# cdi-operator Deployment is restricted-compliant (pod securityContext
+# runAsNonRoot: true; container allowPrivilegeEscalation: false,
+# capabilities.drop: [ALL], runAsNonRoot: true, seccompProfile: RuntimeDefault — see
+# 10-operator.yaml). The operator-created control-plane pods (cdi-apiserver,
+# cdi-controller, cdi-uploadproxy) the operator spawns at reconcile time are likewise
+# restricted-compatible at v1.62.0 (build plan § Namespace PSA posture), so the
+# namespace admits them without softening to baseline/privileged. This mirrors the
+# kubevirt workload precedent (same sole-claimant authoring), differing only in the
+# PSA level (kubevirt needs privileged for its virt-handler DaemonSet; CDI does not).
+#
+# The upstream cdi.kubevirt.io: "" label is kept verbatim.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: cdi
+    cdi.kubevirt.io: ""
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+  name: cdi

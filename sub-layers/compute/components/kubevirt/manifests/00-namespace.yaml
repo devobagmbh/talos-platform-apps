@@ -1,0 +1,32 @@
+# kubevirt's own namespace. The virt-operator workload is the sole catalog
+# occupant (dedicated namespace), so this workload artifact ships the Namespace
+# object — a shipped manifest takes precedence over Argo `managedNamespaceMetadata`,
+# making the PSA posture authoritative and self-contained (build skill
+# CONVENTIONS.md § Namespace & PSA). The strict-B CRD half (compute/kubevirt-crds)
+# ships NO Namespace; this workload is the sole claimant.
+#
+# enforce: privileged — the upstream v1.5.0 kubevirt-operator.yaml ships NO
+# Namespace object (and no PSA labels), so this label set is authored here, not
+# copied. privileged is required because the operator dynamically creates the
+# virt-handler DaemonSet at runtime with `privileged: true` + `hostNetwork: true`
+# (virt-handler manages VM workloads on each node; those pods are operator-created
+# from this KubeVirt CR and are NOT in this manifest). The operator's OWN pod
+# (virt-operator) is restricted-compatible (runAsNonRoot, allowPrivilegeEscalation:
+# false, capabilities.drop: [ALL], seccompProfile: RuntimeDefault), but the namespace
+# must admit the privileged virt-handler the operator spawns — so the namespace
+# posture is set to the strictest level its workloads provably need: privileged.
+# Same shape as storage-block/piraeus-operator (restricted operator pod, privileged
+# namespace for operator-created satellite DaemonSets).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: kubevirt
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: privileged
+    pod-security.kubernetes.io/warn-version: latest
+  name: kubevirt

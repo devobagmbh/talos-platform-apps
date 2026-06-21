@@ -144,6 +144,18 @@ is a finding):
    `external_dependencies` target either already exists in the tree
    (`sub-layers/<sl>/components/<c>/`) OR appears earlier in `build_order`. A
    dependency that is neither is a blocking finding (the build would stall).
+   **CRD-bearing co-build group.** A strict-B pair — a crds half (apis-only,
+   `capability.id: null`, `sync_wave "-1"`, and `crd-bearing: true` in its built
+   `compatibility.yaml`) plus the workload that `external_dependencies`-requires it,
+   both introduced in this plan's `build_order` — is a *co-build group*: `ship` may
+   build both in one run as a **stacked pair** (workload PR based on the crds branch),
+   skipping the crds→merge→re-run cycle (`ship-catalog-app` Phase 3 §co-build
+   carve-out). For such a pair confirm consistency: the crds half is `capability.id:
+   null` + `sync_wave "-1"`, the workload sets `sync_wave "0"` and names the crds half
+   in `external_dependencies`, and it is **one crds → one workload** (a crds half with
+   >1 dependent, or a workload with >1 crds dependency, is out of co-build scope and
+   takes the ordinary merge-cycle path). The authoritative crds signal is the built
+   `crd-bearing: true` marker, not the plan — the plan only makes the pair resolvable.
 6. **Capability coherence.** A component's `capability` is in exactly one of three
    states; the state — keyed on whether `capability.id` is null — decides what the
    build does:
