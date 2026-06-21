@@ -1,6 +1,6 @@
 requires:
   lifecycle/crossplane: ">=v0.1.0" # XRD-/Composition-CRDs
-  lifecycle/providers: ">=v0.1.0" # Pipeline-Steps brauchen die Provider
+  lifecycle/providers: ">=v0.1.0" # pipeline steps need the providers
 provides:
   - name: xcluster-api
     apis:
