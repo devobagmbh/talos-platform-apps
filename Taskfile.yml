@@ -1224,12 +1224,24 @@ tasks:
         - provides[].version.sot enum: [app, chart, crd-schema, none]
         - version block is optional (unbuilt stubs carry no version)
         - capabilities[] is optional per item (providers-style no-capability components)
+
+      Optional per-component scope: `task validate:compatibility -- <sub-layer>/<component>`
+      validates only that component (parity with validate:contract). With no arg every
+      component is validated AND the negative fixtures under schemas/testdata/ are asserted
+      to be rejected (red-green regression guard for the schema's reject-side).
     cmd: |
       set -uo pipefail
       schema="schemas/compatibility.schema.json"
+      # Optional per-component scope: `task validate:compatibility -- <sub-layer>/<component>`.
+      scope="{{.CLI_ARGS}}"
+      if [ -n "$scope" ]; then
+        set -- "sub-layers/${scope%/*}/components/${scope#*/}/"
+      else
+        set -- sub-layers/*/components/*/
+      fi
       fail=0
       found=0
-      for cdir in sub-layers/*/components/*/; do
+      for cdir in "$@"; do
         [ -d "$cdir" ] || continue
         comp_id=$(echo "$cdir" | sed 's|sub-layers/||; s|/components/|/|; s|/$||')
         cfile="${cdir}compatibility.yaml"
@@ -1253,6 +1265,21 @@ tasks:
         exit 1
       fi
       echo "→ ${found} component(s) validated against ${schema}."
+      # Negative-fixture regression guard (full-corpus runs only). The schema MUST
+      # reject each known-bad fixture; a fixture that PASSES means the reject-side
+      # (additionalProperties:false / required sot / sot enum) silently regressed.
+      if [ -z "$scope" ]; then
+        for nf in schemas/testdata/compatibility-apis-legacy.yaml \
+                  schemas/testdata/compatibility-missing-sot.yaml \
+                  schemas/testdata/compatibility-bad-sot-enum.yaml; do
+          if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
+            echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
+            fail=1
+          else
+            echo "✓ negative fixture correctly rejected: $(basename "$nf")"
+          fi
+        done
+      fi
       exit $fail
 
   # --- Worktree (parallel independent sessions) ---
