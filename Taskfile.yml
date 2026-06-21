@@ -579,33 +579,47 @@ tasks:
         - a config package has no matching component dir (stale entry)
         - a built config package (no initial-version) is missing from the manifest
         - a stub config package (has initial-version) is also in the manifest (redundant)
+        - a package's `component` field != its path-derived <sub-layer>/<component> id
       bootstrap-sha/last-release-sha are top-level-only, so this directory↔config parity
-      is the only mechanical guard against a forgotten component (apps#245, see issue #259).
+      (plus the component-identity check) is the only mechanical guard against a
+      forgotten or mis-named component (apps#245, see issue #259).
     cmd: |
       # NOTE: no `set -o pipefail` and no `grep -q` over a pipe — go-task's embedded
       # mvdan/sh terminates the script on the SIGPIPE that grep -q raises when it
       # closes the pipe early under pipefail. Set membership is done with `comm`
-      # over sorted temp files instead (no early pipe close).
+      # over sorted temp files instead (no early pipe close). LC_ALL=C pins the
+      # collation so `sort` and `comm` agree byte-for-byte regardless of locale.
       set -u
+      export LC_ALL=C
       cfg="release-please-config.json"
       man=".release-please-manifest.json"
-      stack="sub-layers/observability/components/kube-prometheus-stack"
-      tmp=$(mktemp -d)
+      [ -f "$cfg" ] || { echo "✗ ${cfg} not found"; exit 2; }
+      [ -f "$man" ] || { echo "✗ ${man} not found"; exit 2; }
+      tmp=$(mktemp -d) || { echo "✗ mktemp failed"; exit 2; }
       trap 'rm -rf "$tmp"' EXIT
-      # component dirs (minus the deliberately-excluded kube-prometheus-stack stack)
-      for d in sub-layers/*/components/*/; do printf '%s\n' "${d%/}"; done | grep -vxF "$stack" | sort > "$tmp/dirs"
+      # Dirs under components/ that are NOT OCI distribution units (stacks =
+      # compositions, ADR-0009). Add a new stack dir as an extra line here.
+      printf '%s\n' "sub-layers/observability/components/kube-prometheus-stack" > "$tmp/stacks"
+      for d in sub-layers/*/components/*/; do printf '%s\n' "${d%/}"; done | grep -vxF -f "$tmp/stacks" | sort > "$tmp/dirs"
       jq -r '.packages | keys[]' "$cfg" | sort > "$tmp/cfg"
       jq -r 'keys[]' "$man" | sort > "$tmp/man"
       jq -r '.packages | to_entries[] | select(.value | has("initial-version")) | .["key"]' "$cfg" | sort > "$tmp/stub"
+      jq -r '.packages | to_entries[] | [.["key"], (.value.component // "")] | @tsv' "$cfg" > "$tmp/kc"
+      [ -s "$tmp/cfg" ] || { echo "✗ ${cfg} has no .packages (unreadable / corrupt?)"; exit 2; }
       comm -23 "$tmp/cfg" "$tmp/stub" > "$tmp/built"   # built = all packages minus initial-version stubs
       fail=0
       report() { echo "✗ $1"; sed 's/^/    /' < "$2"; fail=1; }
-      comm -23 "$tmp/dirs" "$tmp/cfg" > "$tmp/a"; [ -s "$tmp/a" ] && report "component dir(s) missing from ${cfg} (add a packages entry):" "$tmp/a"
+      comm -23 "$tmp/dirs" "$tmp/cfg" > "$tmp/a"; [ -s "$tmp/a" ] && report "component dir(s) missing from ${cfg} (add a packages entry, or a stack to the exclusion list above):" "$tmp/a"
       comm -13 "$tmp/dirs" "$tmp/cfg" > "$tmp/b"; [ -s "$tmp/b" ] && report "stale ${cfg} package(s) with no component dir:" "$tmp/b"
       comm -23 "$tmp/built" "$tmp/man" > "$tmp/c"; [ -s "$tmp/c" ] && report "built package(s) missing from ${man}:" "$tmp/c"
-      comm -12 "$tmp/stub" "$tmp/man" > "$tmp/e"; [ -s "$tmp/e" ] && report "stub package(s) redundantly in ${man}:" "$tmp/e"
+      comm -12 "$tmp/stub" "$tmp/man" > "$tmp/d"; [ -s "$tmp/d" ] && report "stub package(s) redundantly in ${man}:" "$tmp/d"
+      # Each package's `component` (release-please's release identity → tag name / OCI
+      # path) must equal the path-derived <sub-layer>/<component>; a typo there cuts a
+      # mis-named tag while dir↔key parity still passes.
+      awk -F'\t' '{want=$1; sub(/^sub-layers\//,"",want); sub(/\/components\//,"/",want); if ($2 != want) print $1": component=\""$2"\" expected=\""want"\""}' "$tmp/kc" > "$tmp/f"
+      [ -s "$tmp/f" ] && report "package(s) whose 'component' field != path-derived id:" "$tmp/f"
       if [ "$fail" = "0" ]; then
-        echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies); only ${stack} excluded."
+        echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies), component fields match; $(wc -l < "$tmp/stacks" | tr -d ' ') stack dir(s) excluded."
       fi
       exit "$fail"
 

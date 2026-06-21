@@ -175,7 +175,7 @@ The per-component version SoT is [`.release-please-manifest.json`](.release-plea
 **Recovering a stuck release** — if a release PR merged but no OCI artifact appeared, the cut tag did not reach `oci-publish.yml`. Check the [Actions tab](../../actions/workflows/oci-publish.yml) for a run on that tag:
 
 - A run exists but **failed** (e.g. a transient upstream Helm-repo error during render) → re-run it from the Actions UI (*Re-run failed jobs*). No tag change needed.
-- **No run** exists (the tag event never fired) → re-push the tag to re-raise the event (`oci-publish.yml` has no `workflow_dispatch`, so a tag re-push is the only trigger). Re-push the tag **at the commit it already points at** (the release PR's merge commit), never at `HEAD`, or a different tree is published — capture that commit *before* deleting the tag:
+- **No run** exists (the tag event never fired) → re-push the tag to re-raise the event (`oci-publish.yml` has no `workflow_dispatch`, so a tag re-push is the only trigger). Re-push the tag **at the commit it already points at** (the release PR's merge commit), never at `HEAD`, or a different tree is published — capture that commit *before* deleting the tag, and confirm it is the intended release commit (not a moved or tampered ref) before re-signing:
 
   ```bash
   rel_sha=$(git rev-list -n 1 <sub-layer>/<component>-vX.Y.Z)  # commit the tag points at — capture FIRST
