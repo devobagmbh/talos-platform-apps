@@ -1,7 +1,7 @@
 requires:
-  storage-objects/garage: ">=v0.1.0"  # Garage-API
-  secrets/external-secrets: ">=v0.1.0"  # ExternalSecret für Access-Keys
+  storage-objects/garage: ">=v0.1.0"  # Garage API
+  secrets/external-secrets: ">=v0.1.0"  # ExternalSecret for access keys
 
 provides:
   - name: garage-buckets
-    apis: []  # wird mit Issue #13 befüllt
+    api_surface: []  # filled in with issue #13
