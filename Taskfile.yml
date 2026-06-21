@@ -477,6 +477,44 @@ tasks:
         exit 1
       fi
 
+  lint:signing-config:
+    desc: 'verify commit signing is configured locally (main enforces required_signatures); see README § Commit signing'
+    summary: |
+      Layer-B check logic for the pre-commit `signing-config` hook (lefthook calls
+      this target). `main` enforces branch-protection required_signatures, so an
+      unsigned commit makes the PR mergeStateStatus=BLOCKED. This gate fails fast
+      when commit signing is not CONFIGURED locally (commit.gpgsign + user.signingkey),
+      catching the common "never set it up" case before a PR is opened.
+
+      Scope: it is a config-PRESENCE check, not a signature check — a key that is
+      missing, wrong, or not registered on GitHub still passes here and is caught
+      by the server-side required_signatures (the authoritative gate) + the GitHub
+      Verified badge. Reads the merged git config, so a one-time GLOBAL setup
+      satisfies it in every clone and worktree (see README § "Commit signing").
+
+      Local pre-commit only — deliberately NOT wired into `task ci`: CI checkouts
+      have no per-developer signing config, and required_signatures is the CI-side
+      gate. Deliberate bypass: `git commit --no-verify`.
+    cmd: |
+      set -eu
+      # --bool normalizes git's boolean spellings (true/yes/on/1) to "true" so a
+      # valid `commit.gpgsign yes|on|1` is not mis-rejected (it errors → "" on an
+      # unset/garbage value, which correctly falls through to BLOCKED).
+      sign="$(git config --bool --get commit.gpgsign 2>/dev/null || true)"
+      key="$(git config --get user.signingkey 2>/dev/null || true)"
+      if [ "$sign" = "true" ] && [ -n "$key" ]; then
+        exit 0
+      fi
+      echo "COMMIT BLOCKED — commit signing is not configured locally." >&2
+      echo "main enforces required_signatures; an unsigned commit makes the PR BLOCKED." >&2
+      echo "Configure once, globally (see README § \"Commit signing\"):" >&2
+      echo "  git config --global gpg.format ssh" >&2
+      echo "  git config --global user.signingkey <your-public-key>.pub" >&2
+      echo "  git config --global commit.gpgsign true" >&2
+      echo "then register that key on GitHub as a *Signing* key." >&2
+      echo "Deliberate bypass (discouraged): git commit --no-verify" >&2
+      exit 1
+
   validate:contract:
     desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1); optional: -- <sub-layer>/<component> to scope to one'
     summary: |
@@ -1364,83 +1402,6 @@ tasks:
   hooks:install:
     desc: install the lefthook-managed git hooks (.git/hooks/{pre-commit,commit-msg})
     cmd: lefthook install
-
-  setup:signing:
-    desc: 'configure repo-local SSH commit signing (one-time per clone); prints the GitHub registration step'
-    summary: |
-      Why: `main` enforces required_signatures (branch protection). An unsigned
-      commit makes a PR mergeStateStatus=BLOCKED and forces an admin override on
-      merge. See README § "Commit signing" for the full rationale.
-
-      What this does: sets the repo-local git signing config from an SSH key
-      (repo-local by design, like `hooks:install` — it does NOT touch your global
-      config) and prints the steps it CANNOT script: registering the same public
-      key on GitHub as a *Signing* key, verifying the committer email, and loading
-      a passphrase-protected key into the ssh-agent. If signing is already
-      configured it leaves it untouched (works for SSH and OpenPGP setups alike).
-
-      Usage:
-        task setup:signing                       # auto-detect ~/.ssh/id_ed25519.pub or id_rsa.pub
-        task setup:signing -- ~/.ssh/mykey.pub   # use a specific public key
-    cmd: |
-      set -eu
-      pubkey="{{.CLI_ARGS}}"
-      # Expand a leading ~ the caller's shell may not have expanded (e.g. agent invocation).
-      case "$pubkey" in "~/"*) pubkey="$HOME/${pubkey#\~/}" ;; esac
-
-      # Do not clobber an already-configured setup (respects an existing SSH or
-      # OpenPGP signing config). Only short-circuit when the caller passed no key.
-      if [ -z "$pubkey" ] \
-         && [ "$(git config commit.gpgsign 2>/dev/null || true)" = "true" ] \
-         && [ -n "$(git config user.signingkey 2>/dev/null || true)" ]; then
-        echo "commit signing already configured — leaving it untouched:"
-        echo "  gpg.format=$(git config gpg.format 2>/dev/null || echo openpgp), user.signingkey=$(git config user.signingkey)"
-        echo "  Ensure that key is registered on GitHub (Signing Key) and your committer"
-        echo "  email is verified there; a pushed commit then shows a 'Verified' badge."
-        exit 0
-      fi
-
-      if [ -z "$pubkey" ]; then
-        if [ -f "$HOME/.ssh/id_ed25519.pub" ]; then
-          pubkey="$HOME/.ssh/id_ed25519.pub"
-        elif [ -f "$HOME/.ssh/id_rsa.pub" ]; then
-          pubkey="$HOME/.ssh/id_rsa.pub"
-        fi
-      fi
-      if [ -z "$pubkey" ] || [ ! -f "$pubkey" ]; then
-        echo "ERROR: no SSH public key found (looked for ~/.ssh/id_ed25519.pub, ~/.ssh/id_rsa.pub)." >&2
-        echo "Generate one (ed25519 recommended):" >&2
-        echo "  ssh-keygen -t ed25519 -C \"$(git config user.email 2>/dev/null || echo your-email)\"" >&2
-        echo "Then re-run:  task setup:signing -- ~/.ssh/id_ed25519.pub" >&2
-        exit 1
-      fi
-      if grep -q "PRIVATE KEY" "$pubkey" 2>/dev/null; then
-        echo "ERROR: $pubkey looks like a PRIVATE key. Pass the matching PUBLIC key (.pub)." >&2
-        exit 1
-      fi
-      privkey="${pubkey%.pub}"
-      git config --local gpg.format ssh
-      git config --local user.signingkey "$pubkey"
-      git config --local commit.gpgsign true
-      echo "repo-local SSH commit signing CONFIGURED — but NOT yet working end-to-end."
-      echo "  signing key: $pubkey ($(ssh-keygen -lf "$pubkey" 2>/dev/null | awk '{print $2}' || true))"
-      echo ""
-      echo "DO THIS NOW — otherwise your NEXT commit fails to sign and is rejected"
-      echo "(a passphrase-protected key needs the agent; skip if your key has no passphrase):"
-      echo "  macOS:  ssh-add --apple-use-keychain \"$privkey\""
-      echo "  Linux:  ssh-add \"$privkey\"        (or set AddKeysToAgent in ~/.ssh/config)"
-      echo ""
-      echo "REMAINING MANUAL STEPS on GitHub (cannot be scripted) for the 'Verified' badge:"
-      echo "  1) Register THIS public key as a *Signing Key*: https://github.com/settings/ssh/new"
-      echo "       (Key type -> 'Signing Key' — a SEPARATE entry from the Authentication key,"
-      echo "        even with identical key material). Paste the contents of $pubkey"
-      echo "  2) Ensure committer email '$(git config user.email 2>/dev/null || echo '<unset — set user.email!>')'"
-      echo "       is a VERIFIED email on that same account (https://github.com/settings/emails),"
-      echo "       otherwise a valid signature still shows 'Unverified'."
-      echo ""
-      echo "Proof: after a commit is pushed, it shows a green 'Verified' badge on GitHub"
-      echo "(the authoritative check; local 'git log --show-signature' additionally needs a"
-      echo " gpg.ssh.allowedSignersFile to print 'Good signature')."
 
   devbox-info:
     desc: Devbox-Tool-Versionen anzeigen

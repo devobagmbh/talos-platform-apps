@@ -20,6 +20,14 @@ pre-commit:
     - name: single-component
       run: task lint:commit-scope
 
+    # Branch protection on main enforces required_signatures: an unsigned commit
+    # makes the PR mergeStateStatus=BLOCKED. Fail fast locally when commit signing
+    # is not configured (config-presence check, not a signature check), catching
+    # the "forgot to set it up" case before the PR. Logic in the Taskfile
+    # (lint:signing-config). Deliberate bypass: git commit --no-verify.
+    - name: signing-config
+      run: task lint:signing-config
+
     # YAML + Markdown lint (devbox yamllint + markdownlint, via the task caller).
     - name: lint
       run: task lint
