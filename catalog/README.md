@@ -61,6 +61,18 @@ Regeln:
 - Komponenten ohne passende Capability tragen heute `capabilities: []` mit
   einem `# TODO`-Verweis auf das Folge-Issue, das die Capability definiert
   (Status `proposed` im Index) — Verträge werden nicht erraten.
+- In `requires:` MUSS eine feste Katalog-Komponente **konkret** als
+  `<sub-layer>/<component>: ">=vX.Y.Z"` referenziert werden — auch wenn sie
+  selbst eine Capability bereitstellt (z. B. `alloy`/`grafana` →
+  `observability/loki|mimir|tempo`, **nicht** die `*-query`-Capabilities;
+  `storage-objects/garage`, nicht `s3-object`). Eine **Capability-ID** in
+  `requires:` steht ausschließlich für *instanced*, vom Consumer beigestellte
+  Services (heute `cnpg-postgres`, `redis-managed`; beide `instanced: true`).
+  Faustregel: Capability-ID nur, wo ein echter, im Index geführter
+  Swap-Vertrag besteht *und* der Consumer die Instanz beistellt; ein
+  tool-spezifischer Vertrag (Grafana-geformtes Dashboard-Payload,
+  tool-spezifische CRs oder Metriknamen) wird **konkret** referenziert — sonst
+  behauptet die Capability eine Austausch-Freiheit, die nicht existiert.
 
 ### `version:` — Versions-Provenienz (apps#226)
 
