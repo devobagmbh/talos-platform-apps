@@ -1,0 +1,62 @@
+name: pr-issue-link
+
+# Enforces that every PR either closes an issue (a "Closes #N" link) or is
+# explicitly marked link-exempt via the `no-issue` label. This keeps the
+# Projects v2 board self-maintaining: a linked PR auto-closes its issue on
+# merge, so the board's "Item closed" / "Pull request merged" workflows set
+# Status=Done with no manual upkeep. The recurring drift it prevents: a build
+# PR merges without a link, its issue stays open, and the board sticks on Todo
+# (apps#45 and apps#53 were both exactly this).
+#
+# CI-rule-3 carve-out: a GitHub-API-only PR gate — it reads
+# closingIssuesReferences from the PR via GraphQL, needs no devbox and no
+# `task`, and cannot be reproduced locally. Exempt from AGENTS.md CI-rule 3
+# ("Pipeline = task caller") and listed in the closed carve-out set there.
+# Uses the read-only GITHUB_TOKEN (same-repo read) — unlike project-sync.yml it
+# needs no PAT.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-issue-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          script: |
+            const labels = (context.payload.pull_request.labels || []).map((l) => l.name);
+            if (labels.includes('no-issue')) {
+              core.info('PR carries the `no-issue` label — issue-link requirement waived.');
+              return;
+            }
+            const { repository } = await github.graphql(
+              `query ($owner: String!, $repo: String!, $number: Int!) {
+                 repository(owner: $owner, name: $repo) {
+                   pullRequest(number: $number) {
+                     closingIssuesReferences(first: 1) { totalCount }
+                   }
+                 }
+               }`,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                number: context.payload.pull_request.number,
+              }
+            );
+            const linked = repository.pullRequest.closingIssuesReferences.totalCount;
+            if (linked > 0) {
+              core.info(`PR closes ${linked} issue(s) — OK.`);
+              return;
+            }
+            core.setFailed(
+              'This PR neither closes an issue nor is marked exempt. ' +
+              'Add "Closes #<N>" to the PR body (the issue this PR completes), ' +
+              'or apply the `no-issue` label for tooling/docs PRs without a ticket. ' +
+              'The board automation relies on this link to auto-close the issue and set Status=Done on merge.'
+            );
