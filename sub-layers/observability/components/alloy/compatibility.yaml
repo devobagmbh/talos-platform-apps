@@ -7,7 +7,11 @@ requires:
   observability/tempo: ">=v0.1.0"  # trace sink
 provides:
   - name: alloy
-    apis: [alloy@1.10.0]
+    version:
+      sot: app
+      app: v1.17.0   # real Alloy app (apis[] held chart 1.10.0)
+      chart: 1.10.0
+    api_surface: []
     capabilities:
       - {id: logs-collect, swap_class: label-move}
       - {id: metrics-scrape, swap_class: drop-in}

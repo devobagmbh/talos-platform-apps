@@ -63,7 +63,7 @@ The consumer cluster repo wires **two** Argo `Application`s — the `-crds` app
 Provides the swappable operational capability **`secondary-network-attachment`**
 (`catalog/capability-index.yaml`: active implementation `multus-cni`,
 `swap_class: rewrite-required`). This is the controller that *implements* CNI
-delegation — distinct from the `-crds` half, which is apis-only (the CRD schema is
+delegation — distinct from the `-crds` half, which is api-surface-only (the CRD schema is
 the API surface, not the operational capability). `rewrite-required` reflects that
 replacing Multus with another secondary-network provider is not a drop-in swap.
 

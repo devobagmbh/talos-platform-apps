@@ -10,15 +10,18 @@ requires:
   # Argo sync-wave -1, this workload at 0.
   observability/prometheus-operator-crds: ">=v0.1.0"
 
-# apis-only, NO capability — `capabilities: []` is the deliberate design, NOT a
+# api-surface-only, NO capability — `capabilities: []` is the deliberate design, NOT a
 # deferral, so there is no `# TODO:`. The monitoring.coreos.com group is
 # provider-exclusive (the Prometheus Operator's own API surface, not a swappable
 # capability with alternative implementations), and the operational capabilities
 # (metrics-scrape / -storage / -query / alert-routing) belong to the Prometheus
 # INSTANCE (issue #20), not to this controller framework. Precedent for
-# apis-only-no-TODO: lifecycle/providers.
+# the api-surface-only, no-TODO pattern: lifecycle/providers.
 provides:
   - name: prometheus-operator
-    apis:
-      - kube-prometheus-stack@86.2.3  # operator-only mode; appVersion v0.91.0
+    version:
+      sot: app
+      app: v0.91.0   # real prometheus-operator app; kube-prometheus-stack chart 86.2.3 (rendered label is chart version — misleading; A7 matches v0.91.0 via image tag)
+      chart: 86.2.3
+    api_surface: []
     capabilities: []

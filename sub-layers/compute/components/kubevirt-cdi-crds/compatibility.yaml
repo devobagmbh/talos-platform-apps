@@ -6,23 +6,26 @@
 #
 # crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair. The
 # build gate uses this marker to assert kind: CustomResourceDefinition count > 0
-# here (and == 0 in the workload artifact). compatibility.yaml has no schema, so
-# the extra top-level field is permitted.
+# here (and == 0 in the workload artifact). The compatibility.yaml schema
+# (schemas/compatibility.schema.json) permits this crd-bearing top-level field.
 crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The CDI operator-config CRD is the API surface
+# api-surface-only, NO capability. The CDI operator-config CRD is the API surface
 # (schema), not the swappable operational capability. CDI is a supporting
 # infrastructure component of the vm-runtime app (disk-image import for VMs); it
 # is not itself a swappable interface -- no consumer would swap CDI out
 # independently of KubeVirt, so neither the CDI workload nor its CRD carries a
 # capability id. Carrying capabilities: [] here is the deliberate design
 # (precedent: storage-block/piraeus-operator-crds and
-# observability/prometheus-operator-crds, both apis-only with no capability),
+# observability/prometheus-operator-crds, both api-surface-only with no capability),
 # NOT a deferral -- so no `# TODO:` here.
 provides:
   - name: kubevirt-cdi-crds
-    apis:
-      - cdi.kubevirt.io/CDI@v1beta1   # cdis.cdi.kubevirt.io (served: v1alpha1, v1beta1; storage: v1beta1)
+    version:
+      sot: crd-schema
+      crd_schema: v1.62.0             # CDI release the cdis.cdi.kubevirt.io CRD is vendored from
+    api_surface:
+      - cdi.kubevirt.io/CDI@v1beta1   # cdis.cdi.kubevirt.io (served: v1alpha1, v1beta1; storage: v1beta1) (formerly apis[])
     capabilities: []
