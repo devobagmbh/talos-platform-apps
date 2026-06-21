@@ -5,8 +5,8 @@
 # crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
 # workload half is `network/multus-cni`. The build gate uses this marker to assert
 # kind: CustomResourceDefinition count > 0 here (and == 0 in the workload
-# artifact). compatibility.yaml has no schema, so the extra top-level field is
-# permitted.
+# artifact). The compatibility.yaml schema (schemas/compatibility.schema.json)
+# permits this crd-bearing top-level field.
 crd-bearing: true
 
 requires: {}
