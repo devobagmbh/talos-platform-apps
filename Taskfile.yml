@@ -200,7 +200,11 @@ tasks:
       # files are exactly the published docs and stay DRY with .gitignore.
       # Null-delimited | xargs -0 (matching lint:rendered below) keeps paths intact
       # under word-splitting; -r skips the run when no .md is tracked.
-      - git ls-files -z '*.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
+      # CHANGELOG.md is excluded: it is generated and committed by release-please,
+      # whose format we do not control (it emits two blank lines after the version
+      # header → markdownlint MD012). Linting it would make every `chore(main):
+      # release …` PR red. Treated like rendered/ — a tool artifact, not authored docs.
+      - git ls-files -z '*.md' ':!:*CHANGELOG.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
   lint:rendered:
     desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
@@ -575,7 +579,7 @@ tasks:
       Cross-checks the catalog component directories against release-please-config.json
       and .release-please-manifest.json so a newly added component cannot be silently
       left out of release management. Fails (exit 1) when:
-        - a component dir (except the kube-prometheus-stack stack) is missing from the config
+        - a component dir is missing from the config
         - a config package has no matching component dir (stale entry)
         - a built config package (no initial-version) is missing from the manifest
         - a stub config package (has initial-version) is also in the manifest (redundant)
@@ -597,10 +601,12 @@ tasks:
       [ -f "$man" ] || { echo "✗ ${man} not found"; exit 2; }
       tmp=$(mktemp -d) || { echo "✗ mktemp failed"; exit 2; }
       trap 'rm -rf "$tmp"' EXIT
-      # Dirs under components/ that are NOT OCI distribution units (stacks =
-      # compositions, ADR-0009). Add a new stack dir as an extra line here.
-      printf '%s\n' "sub-layers/observability/components/kube-prometheus-stack" > "$tmp/stacks"
-      for d in sub-layers/*/components/*/; do printf '%s\n' "${d%/}"; done | grep -vxF -f "$tmp/stacks" | sort > "$tmp/dirs"
+      # Every directory under components/ is an OCI distribution unit (a buildable
+      # component) — there are NO stack/composition directories: a stack (e.g.
+      # kube-prometheus-stack) is documented in the sub-layer README, never as a
+      # components/ entry (ADR-0009). So the dir set maps 1:1 to release packages,
+      # with no exclusion list to maintain.
+      for d in sub-layers/*/components/*/; do printf '%s\n' "${d%/}"; done | sort > "$tmp/dirs"
       jq -r '.packages | keys[]' "$cfg" | sort > "$tmp/cfg"
       jq -r 'keys[]' "$man" | sort > "$tmp/man"
       jq -r '.packages | to_entries[] | select(.value | has("initial-version")) | .["key"]' "$cfg" | sort > "$tmp/stub"
@@ -609,7 +615,7 @@ tasks:
       comm -23 "$tmp/cfg" "$tmp/stub" > "$tmp/built"   # built = all packages minus initial-version stubs
       fail=0
       report() { echo "✗ $1"; sed 's/^/    /' < "$2"; fail=1; }
-      comm -23 "$tmp/dirs" "$tmp/cfg" > "$tmp/a"; [ -s "$tmp/a" ] && report "component dir(s) missing from ${cfg} (add a packages entry, or a stack to the exclusion list above):" "$tmp/a"
+      comm -23 "$tmp/dirs" "$tmp/cfg" > "$tmp/a"; [ -s "$tmp/a" ] && report "component dir(s) missing from ${cfg} (every components/ dir must be a release package — add a packages entry):" "$tmp/a"
       comm -13 "$tmp/dirs" "$tmp/cfg" > "$tmp/b"; [ -s "$tmp/b" ] && report "stale ${cfg} package(s) with no component dir:" "$tmp/b"
       comm -23 "$tmp/built" "$tmp/man" > "$tmp/c"; [ -s "$tmp/c" ] && report "built package(s) missing from ${man}:" "$tmp/c"
       comm -12 "$tmp/stub" "$tmp/man" > "$tmp/d"; [ -s "$tmp/d" ] && report "stub package(s) redundantly in ${man}:" "$tmp/d"
@@ -619,7 +625,7 @@ tasks:
       awk -F'\t' '{want=$1; sub(/^sub-layers\//,"",want); sub(/\/components\//,"/",want); if ($2 != want) print $1": component=\""$2"\" expected=\""want"\""}' "$tmp/kc" > "$tmp/f"
       [ -s "$tmp/f" ] && report "package(s) whose 'component' field != path-derived id:" "$tmp/f"
       if [ "$fail" = "0" ]; then
-        echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies), component fields match; $(wc -l < "$tmp/stacks" | tr -d ' ') stack dir(s) excluded."
+        echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies), component fields match; every components/ dir is a release package."
       fi
       exit "$fail"
 
