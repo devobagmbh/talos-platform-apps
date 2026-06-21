@@ -12,13 +12,13 @@ crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The KubeVirt operator-config CRD is the API surface
+# api-surface-only, NO capability. The KubeVirt operator-config CRD is the API surface
 # (schema), not the swappable operational capability. The vm-runtime capability is
 # provided by the workload artifact `compute/kubevirt` (the operator that
 # reconciles the KubeVirt CR into the virtualization control plane), not by the CRD
 # schema. Carrying capabilities: [] here is the deliberate design (precedent:
 # storage-block/piraeus-operator-crds and observability/prometheus-operator-crds,
-# both apis-only with no capability), NOT a deferral -- so no `# TODO:` here.
+# both api-surface-only with no capability), NOT a deferral -- so no `# TODO:` here.
 provides:
   - name: kubevirt-crds
     version:

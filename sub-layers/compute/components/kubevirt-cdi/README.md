@@ -116,7 +116,7 @@ This workload carries **0 CRDs** — the strict-B gate's oracle asserts
 
 ## Capability
 
-**None** — `capabilities: []` is a deliberate design state (apis-only), not a
+**None** — `capabilities: []` is a deliberate design state (api-surface-only), not a
 deferral. CDI is a supporting infrastructure component bundled into the `vm-runtime`
 app (disk-image import for VMs), not a swappable interface of its own: no consumer
 would swap CDI out independently of KubeVirt, so neither the CDI workload nor its CRD
@@ -124,7 +124,7 @@ carries a capability id. `catalog/capability-index.yaml` ties CDI to the `vm-run
 entry only as a bundled member (the `# kubevirt + kubevirt-cdi` comment), not as a
 capability. Same shape as the `-crds` half and the precedents
 `storage-block/piraeus-operator-crds` and `observability/prometheus-operator-crds`
-(all apis-only with no capability).
+(all api-surface-only with no capability).
 
 ## Sync-wave
 

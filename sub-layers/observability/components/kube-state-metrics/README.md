@@ -11,7 +11,7 @@ independently versioned OCI artifact (ADR-0009).
 This component provides **no swappable capability** (`compatibility.yaml`
 `provides[].capabilities: []`). kube-state-metrics is the canonical, sole provider
 of the `kube_*` object-state series over a Prometheus `/metrics` endpoint — there
-is no drop-in alternative implementing the same interface, so it is an apis-only
+is no drop-in alternative implementing the same interface, so it is an api-surface-only
 component (precedent: `lifecycle/providers`). It is distinct from
 `observability/alloy`, which implements the `metrics-scrape` capability (the
 *scraper*); kube-state-metrics is the *source* being scraped.

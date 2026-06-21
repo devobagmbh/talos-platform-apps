@@ -11,7 +11,7 @@ requires:
 # Provides the swappable operational capability `secondary-network-attachment`
 # (catalog/capability-index.yaml: active impl multus-cni, swap_class
 # rewrite-required) — the controller that implements the CNI delegation, not the
-# CRD schema (which is the apis-only -crds half).
+# CRD schema (which is the api-surface-only -crds half).
 provides:
   - name: multus-cni
     version:

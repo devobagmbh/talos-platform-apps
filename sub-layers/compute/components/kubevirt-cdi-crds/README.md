@@ -95,13 +95,13 @@ A safe schema-remove upgrade follows three steps:
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The CDI CRD is the API surface
+api-surface-only, **no capability** — `capabilities: []`. The CDI CRD is the API surface
 (schema), not a swappable operational capability. CDI is a supporting
 infrastructure component of the `vm-runtime` app (disk-image import for VMs); it is
 not itself a swappable interface — no consumer would swap CDI out independently of
 KubeVirt. This is the deliberate no-capability design state, not a deferral
 (precedent: `storage-block/piraeus-operator-crds` and
-`observability/prometheus-operator-crds`, likewise apis-only). The swappable
+`observability/prometheus-operator-crds`, likewise api-surface-only). The swappable
 `vm-runtime` capability is provided by the KubeVirt workload artifact
 `compute/kubevirt`.
 

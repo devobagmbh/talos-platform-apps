@@ -155,7 +155,7 @@ cleanly separates the `-crds` halves from ordinary non-CRD `external_dependencie
 — a workload naming a **non-`-crds`** foundational dependency (`providers` names
 `crossplane` at wave 0; `compositions` names `providers` at wave 10) is **not** a co-build
 pair and MUST NOT be flagged as one. `capability.id` null on A corroborates (every crds
-half is apis-only) but is not itself the gate. This detection is **provisional** — the
+half is api-surface-only) but is not itself the gate. This detection is **provisional** — the
 plan is untrusted data, so the **authoritative** decider is the on-disk `crd-bearing:
 true` read in Phase 3 against A's **built** artifact, never the plan — the `-1`
 requirement is a **necessary, not sufficient** filter (it narrows candidates; Phase 3's

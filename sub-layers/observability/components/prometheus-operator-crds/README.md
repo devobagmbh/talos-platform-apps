@@ -83,10 +83,10 @@ controller-drain check in the consumer repo's runbook.
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The `monitoring.coreos.com`
+api-surface-only, **no capability** — `capabilities: []`. The `monitoring.coreos.com`
 CRD group is the Prometheus Operator's own provider-exclusive API surface, not a
 swappable capability with alternative implementations (precedent:
-`lifecycle/providers`, likewise apis-only).
+`lifecycle/providers`, likewise api-surface-only).
 
 ## Sync-wave
 

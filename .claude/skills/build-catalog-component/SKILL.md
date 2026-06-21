@@ -98,7 +98,7 @@ pushed); this skill trusts the block and sanity-checks only its own worktree.
      pre-existing one, or a pending-index pre-build PR named in the plan's
      `open_questions[]` — must be present first). The built component declares
      `provides[].capabilities: [{id, swap_class}]`.
-   - **`capability.id` is null** — a deliberate **no-capability** (apis-only) state,
+   - **`capability.id` is null** — a deliberate **no-capability** (api-surface-only) state,
      NOT a pending action. Do **no** index check; proceed. The component declares its
      version block under `provides[].version` (formerly apis[]) and carries
      `provides[].capabilities: []` (no `# TODO:`) — precedent `lifecycle/providers`.

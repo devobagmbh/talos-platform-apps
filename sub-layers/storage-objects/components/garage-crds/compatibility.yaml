@@ -12,12 +12,12 @@ crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The deuxfleurs.fr GarageNode CRD is the API surface
+# api-surface-only, NO capability. The deuxfleurs.fr GarageNode CRD is the API surface
 # (schema), not the swappable operational capability. The capability `s3-object` is
 # provided by the workload artifact `storage-objects/garage` (the garage StatefulSet
 # that serves the S3 API), not by the CRD schema. Carrying capabilities: [] here is
 # the deliberate design (precedent: network/multus-cni-crds and
-# observability/prometheus-operator-crds, both apis-only with no capability), NOT a
+# observability/prometheus-operator-crds, both api-surface-only with no capability), NOT a
 # deferral — so no `# TODO:` here.
 provides:
   - name: garage-crds

@@ -135,7 +135,7 @@ This workload carries **0 CRDs** — the strict-B gate's oracle asserts
 Provides `vm-runtime` at `swap_class: rewrite-required` — present in
 `catalog/capability-index.yaml` with kubevirt as the active implementation. Replacing
 the VM-workload runtime means rewriting every VM/VMI manifest against a different CR
-surface, not a drop-in. (The `-crds` half is apis-only with no capability — the schema
+surface, not a drop-in. (The `-crds` half is api-surface-only with no capability — the schema
 is the API surface, the operational capability lives here in the operator that
 reconciles the `KubeVirt` CR into the virtualization control plane.)
 

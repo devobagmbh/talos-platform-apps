@@ -10,11 +10,11 @@ crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The monitoring.coreos.com CRD group is
+# api-surface-only, NO capability. The monitoring.coreos.com CRD group is
 # provider-exclusive — it is the Prometheus Operator's own API surface, not a
 # swappable capability with alternative implementations. Carrying capabilities: []
 # is the deliberate design (precedent: lifecycle/providers, which is also
-# apis-only with no capabilities), NOT a deferral — so no `# TODO:` here.
+# api-surface-only with no capabilities), NOT a deferral — so no `# TODO:` here.
 provides:
   - name: prometheus-operator-crds
     version:

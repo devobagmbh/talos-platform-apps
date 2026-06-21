@@ -1,4 +1,4 @@
 components:
-  - cnpg-crds       # sync-wave -1 — CloudNativePG postgresql.cnpg.io CRDs (strict-B, ADR-0028; apis-only, no capability)
+  - cnpg-crds       # sync-wave -1 — CloudNativePG postgresql.cnpg.io CRDs (strict-B, ADR-0028; api-surface-only, no capability)
   - cnpg            # sync-wave 0 — CloudNativePG operator (CRDs ship separately via cnpg-crds, strict-B; capability cnpg-postgres)
   - valkey-operator # sync-wave 0 — hyperspike/valkey-operator + CRD (capability redis-managed via Valkey)
