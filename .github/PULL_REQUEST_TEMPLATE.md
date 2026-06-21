@@ -8,7 +8,7 @@
      pr-issue-link check blocks the PR. -->
 Closes #<!-- issue number -->
 
-**Affected sub-layer:** <!-- automation/databases/dns/lifecycle/observability/registry/secrets/storage-objects or "cross-cutting" -->
+**Affected sub-layer:** <!-- a sub-layer per AGENTS.md §Repository Purpose, or "cross-cutting" -->
 
 <!-- Short description — what changes and why? -->
 

@@ -30,16 +30,12 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
         with:
           script: |
-            const labels = (context.payload.pull_request.labels || []).map((l) => l.name);
-            if (labels.includes('no-issue')) {
-              core.info('PR carries the `no-issue` label — issue-link requirement waived.');
-              return;
-            }
             const { repository } = await github.graphql(
               `query ($owner: String!, $repo: String!, $number: Int!) {
                  repository(owner: $owner, name: $repo) {
                    pullRequest(number: $number) {
                      closingIssuesReferences(first: 1) { totalCount }
+                     labels(first: 50) { nodes { name } }
                    }
                  }
                }`,
@@ -49,7 +45,15 @@ jobs:
                 number: context.payload.pull_request.number,
               }
             );
-            const linked = repository.pullRequest.closingIssuesReferences.totalCount;
+            const pr = repository.pullRequest;
+            // Labels read fresh from the API (not the stale event payload), matching
+            // the house pattern in status-strip.yml / pr-needs-review.yml.
+            const labels = pr.labels.nodes.map((l) => l.name);
+            if (labels.includes('no-issue')) {
+              core.info('PR carries the `no-issue` label — issue-link requirement waived.');
+              return;
+            }
+            const linked = pr.closingIssuesReferences.totalCount;
             if (linked > 0) {
               core.info(`PR closes ${linked} issue(s) — OK.`);
               return;
