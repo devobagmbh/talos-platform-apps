@@ -1,6 +1,6 @@
 # Sub-layer `observability`
 
-LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + kube-prometheus-stack (operator-only) + Hubble (Cilium network-flow visibility).
+LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + the Prometheus operator (`prometheus-operator` + `prometheus-operator-crds`) + Hubble (Cilium network-flow visibility).
 
 OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a forwarder-only consumer = operator + Alloy forwarder, a full-stack consumer = full stack).
 
@@ -10,7 +10,6 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 |---|---|---|---|
 | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Helm `prometheus-community/prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
 | [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
-| [`kube-prometheus-stack`](components/kube-prometheus-stack/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (Prometheus disabled) | `oci://.../observability/kube-prometheus-stack:vX.Y.Z` |
 | [`loki`](components/loki/) | 10 | Helm `grafana/loki` (distributed) | `oci://.../observability/loki:vX.Y.Z` |
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` | `oci://.../observability/mimir:vX.Y.Z` |
 | [`tempo`](components/tempo/) | 10 | Helm `grafana/tempo-distributed` | `oci://.../observability/tempo:vX.Y.Z` |
@@ -19,6 +18,15 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
+
+> **`kube-prometheus-stack` is a stack, not a component.** It is the *name of the
+> composition* the upstream chart bundles (operator + Prometheus + Alertmanager +
+> node-exporter + kube-state-metrics + Grafana) and is **never built or published**
+> as an OCI artifact. The catalog ships those pieces as the independent components
+> above (the operator half as `prometheus-operator` + `prometheus-operator-crds`);
+> the Prometheus and Alertmanager *instances* are consumer-instantiated via the
+> operator CRs. See [`components/kube-prometheus-stack/`](components/kube-prometheus-stack/)
+> for the full composition map.
 
 Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
 
@@ -29,7 +37,7 @@ The bidirectional watchdog AlertmanagerConfig (between two consumer clusters) cu
 ## Consumed by
 
 - A full-stack consumer — full stack
-- A forwarder-only consumer — subset: `kube-prometheus-stack` + `alloy` (forwarder to the full-stack consumer's endpoints)
+- A forwarder-only consumer — subset: `prometheus-operator` + `alloy` (forwarder to the full-stack consumer's endpoints)
 
 ## Backlog issue
 

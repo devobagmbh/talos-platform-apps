@@ -1,10 +1,18 @@
+# kube-prometheus-stack is a STACK (composition), NOT a built catalog component:
+# it is never rendered, packaged, signed, or published as an OCI artifact and is
+# intentionally absent from release-please-config.json. This file is kept only so
+# the directory stays schema-valid — `task validate:compatibility` (part of
+# `task ci`) fails closed on a missing or invalid compatibility.yaml.
+#
+# It declares NO capabilities of its own. Every capability the upstream
+# kube-prometheus-stack chart bundles is provided by an individual component:
+#   metrics-scrape  -> alloy
+#   metrics-storage -> mimir
+#   metrics-query   -> mimir          (local short-term path: prometheus instance, #20)
+#   alert-routing   -> alertmanager   (#43, consumer-instantiated via the operator CR)
+#   dashboards      -> grafana
+# See README.md for the full composition map (source of truth: issue #38).
 requires: {}
 provides:
   - name: kube-prometheus-stack
-    api_surface: [] # filled in with issue #17 — brings monitoring.coreos.com CRDs
-    capabilities:
-      - {id: metrics-scrape, swap_class: drop-in}
-      - {id: metrics-storage, swap_class: data-migration}
-      - {id: metrics-query, swap_class: drop-in}
-      - {id: alert-routing, swap_class: drop-in}
-      - {id: dashboards, swap_class: label-move}
+    api_surface: []

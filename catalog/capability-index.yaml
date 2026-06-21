@@ -120,7 +120,7 @@ capabilities:
     name: Alert-Routing / Notification
     domain: observability
     implementations:
-      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}  # Alertmanager
+      - {name: alertmanager, status: active, swap_class: drop-in}  # the Alertmanager (#43; consumer-instantiated via the prometheus-operator CR), not the kube-prometheus-stack bundle
       - {name: grafana-oncall, status: considered, swap_class: drop-in}
 
   # — Observability: Network ——————————————————————————————————

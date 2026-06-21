@@ -36,7 +36,7 @@ OCI distribution is **per component** (ADR-0009, revision 2026-05-26). The sub-l
 | [`identity`](sub-layers/identity/) | dex | #47 |
 | [`lifecycle`](sub-layers/lifecycle/) | crossplane, ipxe, providers, compositions | #12 |
 | [`network`](sub-layers/network/) | multus-cni-crds | #48 |
-| [`observability`](sub-layers/observability/) | kube-prometheus-stack, loki, mimir, tempo, alloy, grafana | #17 |
+| [`observability`](sub-layers/observability/) | prometheus-operator, loki, mimir, tempo, alloy, grafana | #17 |
 | [`registry`](sub-layers/registry/) | harbor | #14 |
 | [`secrets`](sub-layers/secrets/) | external-secrets, clustersecretstore-defaults | #15a |
 | [`storage-block`](sub-layers/storage-block/) | democratic-csi, synology-csi | #50 |
