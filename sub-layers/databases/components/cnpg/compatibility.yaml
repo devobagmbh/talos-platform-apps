@@ -2,7 +2,10 @@ requires:
   databases/cnpg-crds: ">=v0.1.0" # strict-B (ADR-0028): the postgresql.cnpg.io CRDs ship separately at wave -1
 provides:
   - name: cnpg
-    apis:
-      - cloudnative-pg@0.28.2 # CloudNativePG operator Helm chart (appVersion 1.29.1)
+    version:
+      sot: app          # provenance SOT from artifact shape (#226 A6): the running operator app-version
+      app: 1.29.1       # CloudNativePG operator — the running workload (was apis[]-comment-only)
+      chart: 0.28.2     # cloudnative-pg Helm chart — packaging axis (A5-orthogonal to appVersion)
+    api_surface: []     # exposed CRDs (postgresql.cnpg.io) ship in the cnpg-crds artifact, not here
     capabilities:
       - {id: cnpg-postgres, swap_class: data-migration}

@@ -20,7 +20,9 @@ requires:
 # a replicated DRBD/Linstor storage cluster.
 provides:
   - name: piraeus-operator
-    apis:
-      - piraeus-operator@v2.10.7
+    version:
+      sot: app
+      app: v2.10.7
+    api_surface: []
     capabilities:
       - {id: block-storage-replicated, swap_class: data-migration}

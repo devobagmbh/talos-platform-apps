@@ -3,7 +3,10 @@ requires:
   lifecycle/providers: ">=v0.1.0" # pipeline steps need the providers
 provides:
   - name: xcluster-api
-    apis:
-      - platform.devoba.de/XCluster@v1alpha1
+    version:
+      sot: crd-schema     # abstraction-wrapped (ADR-0029): the XCluster XR contract is the provenance — no upstream app
+      crd_schema: v1alpha1  # the catalog's own XCluster XR API version (rendered as the XRD spec.versions)
+    api_surface:
+      - platform.devoba.de/XCluster@v1alpha1  # the stable XR consumers bind to (XRD group/version, A7 parity target)
     capabilities:
       - {id: cluster-provisioning, swap_class: rewrite-required}

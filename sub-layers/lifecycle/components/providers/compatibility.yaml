@@ -2,15 +2,17 @@ requires:
   lifecycle/crossplane: ">=v0.1.0"  # Provider/Function CRDs must exist first
 
 provides:
+  # Each entry is a single Crossplane package; the package version IS the app version
+  # (A7 matches it against the rendered spec.package OCI tag — no image:/app-label exists).
   - name: provider-opentofu
-    apis:
-      - pkg.crossplane.io/Provider@v1.1.3
+    version: {sot: app, app: v1.1.3}   # xpkg.upbound.io/upbound/provider-opentofu
+    api_surface: []                     # the provider's own CRDs are installed at runtime, not rendered here
   - name: provider-kubernetes
-    apis:
-      - pkg.crossplane.io/Provider@v1.2.1
+    version: {sot: app, app: v1.2.1}   # xpkg.crossplane.io/crossplane-contrib/provider-kubernetes (added on main via #234)
+    api_surface: []                     # the provider's own CRDs are installed at runtime, not rendered here
   - name: function-patch-and-transform
-    apis:
-      - pkg.crossplane.io/Function@v0.10.6
+    version: {sot: app, app: v0.10.6}  # xpkg.upbound.io/crossplane-contrib/function-patch-and-transform
+    api_surface: []
   - name: function-auto-ready
-    apis:
-      - pkg.crossplane.io/Function@v0.6.5
+    version: {sot: app, app: v0.6.5}   # xpkg.upbound.io/crossplane-contrib/function-auto-ready
+    api_surface: []

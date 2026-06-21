@@ -21,6 +21,9 @@ requires: {}
 # deferral — so no `# TODO:` here.
 provides:
   - name: garage-crds
-    apis:
-      - deuxfleurs.fr/GarageNode@v1  # GarageNode CRD, deuxfleurs.fr/v1 (garage v2.3.0)
+    version:
+      sot: crd-schema
+      crd_schema: v2.3.0   # FLAG: confirm — deuxfleurs.fr/GarageNode provenance release (aligned to garage v2.3.0)
+    api_surface:
+      - deuxfleurs.fr/GarageNode@v1
     capabilities: []

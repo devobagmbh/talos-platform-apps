@@ -21,7 +21,9 @@ requires:
 # that reconciles the KubeVirt CR into the virtualization control plane.
 provides:
   - name: kubevirt
-    apis:
-      - kubevirt-operator@v1.5.0
+    version:
+      sot: app        # virt-operator app-version — the running workload (#226 A6)
+      app: v1.5.0     # KubeVirt release (image quay.io/kubevirt/virt-operator:v1.5.0)
+    api_surface: []   # the kubevirts.kubevirt.io CRD ships in compute/kubevirt-crds, not here (formerly apis[])
     capabilities:
       - {id: vm-runtime, swap_class: rewrite-required}

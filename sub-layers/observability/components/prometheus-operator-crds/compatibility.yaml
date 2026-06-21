@@ -17,6 +17,9 @@ requires: {}
 # apis-only with no capabilities), NOT a deferral — so no `# TODO:` here.
 provides:
   - name: prometheus-operator-crds
-    apis:
-      - prometheus-operator-crds@29.0.0  # chart 29.0.0 → monitoring.coreos.com CRDs (appVersion v0.91.0)
+    version:
+      sot: crd-schema
+      crd_schema: v0.91.0   # monitoring.coreos.com CRDs from prometheus-operator v0.91.0 (chart 29.0.0)
+    api_surface:
+      - monitoring.coreos.com/Prometheus@v1
     capabilities: []

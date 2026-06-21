@@ -22,9 +22,12 @@ requires: {}
 # NOT a deferral — so no `# TODO:` here.
 provides:
   - name: piraeus-operator-crds
-    apis:
-      - piraeus.io/LinstorCluster@v1               # linstorclusters.piraeus.io
-      - piraeus.io/LinstorNodeConnection@v1        # linstornodeconnections.piraeus.io
-      - piraeus.io/LinstorSatelliteConfiguration@v1  # linstorsatelliteconfigurations.piraeus.io
-      - piraeus.io/LinstorSatellite@v1             # linstorsatellites.piraeus.io
+    version:
+      sot: crd-schema
+      crd_schema: v2.10.7   # piraeus.io CRDs from piraeus-operator v2.10.7
+    api_surface:
+      - piraeus.io/LinstorCluster@v1
+      - piraeus.io/LinstorSatellite@v1
+      - piraeus.io/LinstorSatelliteConfiguration@v1
+      - piraeus.io/LinstorNodeConnection@v1
     capabilities: []

@@ -23,6 +23,8 @@ requires:
 # precedents storage-block/piraeus-operator-crds and observability/prometheus-operator-crds.
 provides:
   - name: kubevirt-cdi
-    apis:
-      - cdi-operator@v1.62.0
+    version:
+      sot: app        # cdi-operator app-version — the running workload (#226 A6)
+      app: v1.62.0    # CDI release (image quay.io/kubevirt/cdi-operator:v1.62.0)
+    api_surface: []   # the cdis.cdi.kubevirt.io CRD ships in compute/kubevirt-cdi-crds, not here (formerly apis[])
     capabilities: []

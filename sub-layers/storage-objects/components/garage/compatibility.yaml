@@ -10,7 +10,10 @@ requires:
   storage-objects/garage-crds: ">=v0.1.0"
 provides:
   - name: garage
-    apis:
-      - garage@0.9.3
+    version:
+      sot: app
+      app: v2.3.0   # real Garage app (apis[] held chart 0.9.3)
+      chart: 0.9.3
+    api_surface: []
     capabilities:
       - {id: s3-object, swap_class: drop-in}
