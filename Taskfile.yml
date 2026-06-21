@@ -276,7 +276,7 @@ tasks:
       echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
 
   lint:version:
-    desc: 'A7 parity (apps#226): declared version.<sot> vs rendered reality — needs renders (run after `task render`)'
+    desc: 'A7 parity (apps#226): render-source⇒version guard + declared version.<sot> vs rendered reality (parity needs `task render`)'
     summary: |
       A7 version-provenance gate (apps#226): declared `version.<sot>` in each
       compatibility.yaml vs the rendered reality. The SOT axis hard-fails; secondary
@@ -292,6 +292,16 @@ tasks:
         none       -> no provenance axis to check          [WARN]
       `version.artifacts[]` (when present) are render-checked against image tags (hard-fail).
       Env STRICT=1 turns a MIGRATED component's missing render from WARN into FAIL (set in CI).
+
+      Forward invariant (render-source ⇒ version block): a component that ships render
+      source (helm/ or manifests/) must declare at least one provides entry AND carry a
+      typed `version` block (a non-empty `version.sot`) on EVERY entry — any missing,
+      empty (sot-less), or absent-provides case FAILs under STRICT (WARN otherwise).
+      Covers the all-missing case, a multi-provides component that versions only some
+      entries (the rest would otherwise escape the parity loop, which skips sot-less
+      entries), and a built component declaring no provides at all. Without it a newly-
+      built component could silently skip the block. Unbuilt stubs (no render source)
+      and sub-layer aggregates are exempt.
       Optional scope: `task lint:version -- <sub-layer>/<component> ...`.
     cmd: |
       set -euo pipefail
@@ -316,13 +326,57 @@ tasks:
 
       for compat in "${compat_files[@]}"; do
         [ -f "$compat" ] || { echo "ERROR $compat not found"; fail=1; continue; }
-        # (.provides // []) — null-safe under jq-based yq (sub-layer aggregators have no provides)
-        migrated=$(yq -r '[(.provides // [])[] | select(has("version"))] | length' "$compat")
-        [ "$migrated" -gt 0 ] || continue
-
+        # (.provides // []) — null-safe under jq-based yq (sub-layer aggregators have no provides).
+        # Count entries with a NON-EMPTY version.sot, not just has("version"): a bare `version:`
+        # / `version: {}` is present-but-meaningless — it passes key-presence yet the parity loop
+        # skips it on empty sot, so keying on sot closes that silent-bypass.
+        migrated=$(yq -r '[(.provides // [])[] | select((.version.sot // "") != "")] | length' "$compat")
         comp_dir="$(dirname "$compat")"
         sub_layer="$(echo "$comp_dir" | sed -E 's#sub-layers/([^/]+)/components/.*#\1#')"
         cid="${sub_layer}/$(basename "$comp_dir")"
+
+        # A7 forward invariant (apps#226): render source ⇒ the component declares ≥1 provides
+        # entry AND EVERY entry carries a typed version block (a non-empty version.sot, per the
+        # `migrated` definition above). Checked per component, not just the all-missing case: a
+        # multi-provides component mixing versioned + version-less entries would otherwise escape
+        # both this guard and the parity loop (which skips an entry whose .version.sot is empty),
+        # and a built component declaring no provides at all (total=0) would pass vacuously.
+        # Stubs (no render source) and sub-layer aggregates (path without /components/) are exempt.
+        # The probe MUST track render:one's input contract (helm/*.yaml OR manifests/*.yaml) — a
+        # new render source shape there needs a matching update here. Probe is pipe-free,
+        # dir-guarded, -type f: `find` over a MISSING path exits non-zero (even with 2>/dev/null)
+        # and `| head` would SIGPIPE it — under `set -o pipefail` both falsely negate. `find`
+        # (not a glob) is shell-agnostic (zsh nomatch is fatal).
+        has_src=0
+        case "$comp_dir" in
+          */components/*)
+            for d in "$comp_dir/helm" "$comp_dir/manifests"; do
+              if [ -d "$d" ] && [ -n "$(find "$d" -maxdepth 1 -type f -name '*.yaml' 2>/dev/null)" ]; then
+                has_src=1; break
+              fi
+            done
+            ;;
+        esac
+        total=$(yq -r '(.provides // []) | length' "$compat")
+        flag_reason=""
+        if [ "$has_src" = "1" ]; then
+          if [ "$total" -eq 0 ]; then
+            flag_reason="declares no provides entries (a built component needs at least one with a typed version block)"
+          elif [ "$migrated" -lt "$total" ]; then
+            flag_reason="$((total - migrated))/${total} provides entries lack a typed version block (a non-empty version.sot) — add one to each"
+          fi
+        fi
+        if [ -n "$flag_reason" ]; then
+          if [ "$STRICT" = "1" ]; then
+            echo "FAIL  [$cid] has render source but $flag_reason (apps#226)"
+            fail=1
+          else
+            echo "WARN  [$cid] has render source but $flag_reason (apps#226)"
+            warn=$((warn + 1))
+          fi
+        fi
+
+        [ "$migrated" -gt 0 ] || continue
         manifest="${comp_dir}/rendered/manifest.yaml"
 
         if [ ! -s "$manifest" ]; then
