@@ -200,7 +200,11 @@ tasks:
       # files are exactly the published docs and stay DRY with .gitignore.
       # Null-delimited | xargs -0 (matching lint:rendered below) keeps paths intact
       # under word-splitting; -r skips the run when no .md is tracked.
-      - git ls-files -z '*.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
+      # CHANGELOG.md is excluded: it is generated and committed by release-please,
+      # whose format we do not control (it emits two blank lines after the version
+      # header → markdownlint MD012). Linting it would make every `chore(main):
+      # release …` PR red. Treated like rendered/ — a tool artifact, not authored docs.
+      - git ls-files -z '*.md' ':!:*CHANGELOG.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
   lint:rendered:
     desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
