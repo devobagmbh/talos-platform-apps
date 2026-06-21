@@ -5,5 +5,8 @@ requires:
   cnpg-postgres: "*"
 provides:
   - name: crossview
-    apis:
-      - crossview@4.4.0 # crossplane-contrib Crossview dashboard (read-only by default)
+    version:
+      sot: app
+      app: v4.4.0
+      chart: 4.4.0
+    api_surface: []

@@ -17,11 +17,13 @@ requires:
 # catalog/capability-index.yaml with kubevirt as the active implementation at
 # swap_class rewrite-required (replacing the VM-workload runtime means rewriting
 # every VM/VMI manifest against a different CR surface, not a drop-in). The CRD half
-# is apis-only (no capability); the operational capability lives HERE in the workload
+# is api-surface-only (no capability); the operational capability lives HERE in the workload
 # that reconciles the KubeVirt CR into the virtualization control plane.
 provides:
   - name: kubevirt
-    apis:
-      - kubevirt-operator@v1.5.0
+    version:
+      sot: app        # virt-operator app-version — the running workload (#226 A6)
+      app: v1.5.0     # KubeVirt release (image quay.io/kubevirt/virt-operator:v1.5.0)
+    api_surface: []   # the kubevirts.kubevirt.io CRD ships in compute/kubevirt-crds, not here (formerly apis[])
     capabilities:
       - {id: vm-runtime, swap_class: rewrite-required}

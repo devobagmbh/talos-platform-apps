@@ -4,19 +4,22 @@
 # crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
 # workload half is `observability/prometheus-operator`. The build gate uses this
 # marker to assert kind: CustomResourceDefinition count > 0 here (and == 0 in the
-# workload artifact). compatibility.yaml has no schema, so the extra top-level
-# field is permitted.
+# workload artifact). The compatibility.yaml schema
+# (schemas/compatibility.schema.json) permits this crd-bearing top-level field.
 crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The monitoring.coreos.com CRD group is
+# api-surface-only, NO capability. The monitoring.coreos.com CRD group is
 # provider-exclusive — it is the Prometheus Operator's own API surface, not a
 # swappable capability with alternative implementations. Carrying capabilities: []
 # is the deliberate design (precedent: lifecycle/providers, which is also
-# apis-only with no capabilities), NOT a deferral — so no `# TODO:` here.
+# api-surface-only with no capabilities), NOT a deferral — so no `# TODO:` here.
 provides:
   - name: prometheus-operator-crds
-    apis:
-      - prometheus-operator-crds@29.0.0  # chart 29.0.0 → monitoring.coreos.com CRDs (appVersion v0.91.0)
+    version:
+      sot: crd-schema
+      crd_schema: v0.91.0   # monitoring.coreos.com CRDs from prometheus-operator v0.91.0 (chart 29.0.0)
+    api_surface:
+      - monitoring.coreos.com/Prometheus@v1
     capabilities: []

@@ -1,8 +1,8 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3-Backend für Chunks
+  storage-objects/garage: ">=v0.1.0" # S3 backend for chunks
 provides:
   - name: loki
-    apis: [] # wird mit Issue #17 befüllt
+    api_surface: [] # filled in with issue #17
     capabilities:
       - {id: logs-storage, swap_class: data-migration}
       - {id: logs-query, swap_class: drop-in}

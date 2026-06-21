@@ -7,5 +7,9 @@ requires:
   redis-managed: "*"
 provides:
   - name: harbor
-    apis: []  # wird mit Issue #14 befüllt
-    capabilities: [] # TODO: Capability oci-registry definieren (proposed, Vertrag offen)
+    version:
+      sot: app        # Harbor app-version (appVersion) — the running workload (#226 A6)
+      app: v2.15.1    # Harbor appVersion (chart harbor 1.19.1) — render-parity-verified
+      chart: 1.19.1   # harbor Helm chart — packaging axis (A5, orthogonal to appVersion)
+    api_surface: []   # Harbor exposes no CRD/API surface (registry HTTP API is not a catalog API) (formerly apis[])
+    capabilities: [] # TODO: define the oci-registry capability (proposed, contract open)

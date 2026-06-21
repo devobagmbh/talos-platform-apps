@@ -6,8 +6,11 @@
 requires: {}
 provides:
   - name: metrics-server
-    apis:
-      - metrics-server@3.13.1 # kubernetes-sigs metrics-server chart (Resource Metrics API)
+    version:
+      sot: app
+      app: 0.8.1   # real metrics-server app (apis[] held chart 3.13.1)
+      chart: 3.13.1
+    api_surface: []
     capabilities:
       # Resource-Metrics-API (HPA + kubectl top) — id from catalog/capability-index.yaml;
       # drop-in: consumer can substitute keda-metrics-adapter without selector/config changes.

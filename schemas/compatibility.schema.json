@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devoba.de/schemas/compatibility.schema.json",
+  "title": "Component Compatibility Contract",
+  "description": "Declares the dependency surface and API/capability surface of a catalog component. Lives as compatibility.yaml next to helm/ + manifests/ and ships with the OCI artifact.\n\nSchema-contract-parity decisions (rules/schema-contract-parity.md):\n1. Closed-vs-open: closed via additionalProperties:false on provides[] items — hygiene and the explicit reject-apis threat-model (a legacy 'apis' key under provides[] fails validation).\n2. Duplicate-key behavior: duplicate top-level keys are a YAML authoring error; readers treat the file as corrupt and surface it, not silently last-wins.\n3. No schema version field — evolution tracked via git history under harness-evolution review (rules/review-rigor.md 2-round R2 minimum).\n4. compatibility.yaml is repo-internal trusted data — no untrusted-data sentinel applies.\n5. Per-field mutability: 'requires' and 'provides' are mutable-in-place (version bumps, new capabilities). 'crd-bearing' is mutable-in-place.\n\nNote: structural typing only. sot<->payload consistency (e.g. sot:app requires app: to be set) and render-parity are owned by task lint:version, not this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requires", "provides"],
+  "properties": {
+    "crd-bearing": {
+      "type": "boolean",
+      "description": "Marks the CRD-bearing half of a strict-B pair (ADR-0028). When true, the validate:crd-split gate asserts kind:CustomResourceDefinition count > 0 in the rendered artifact."
+    },
+    "requires": {
+      "type": "object",
+      "description": "Component and capability dependencies. Keys are either '<sub-layer>/<component>' (version range of another catalog component) or a capability id from catalog/capability-index.yaml. Empty {} is allowed (no dependencies).",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "provides": {
+      "type": "array",
+      "description": "The API and capability surface this component publishes. Each entry is one named unit (one Helm release, one Crossplane package, etc.).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "api_surface"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The component or package name published by this entry."
+          },
+          "version": {
+            "type": "object",
+            "description": "Provenance version block (optional — unbuilt stubs carry no version block; lint:version skips version-less components by design). Structural typing only: sot<->payload consistency is owned by lint:version.",
+            "additionalProperties": false,
+            "required": ["sot"],
+            "properties": {
+              "sot": {
+                "type": "string",
+                "enum": ["app", "chart", "crd-schema", "none"],
+                "description": "The provenance source-of-truth axis. 'app' = running workload version; 'chart' = Helm chart packaging version; 'crd-schema' = CRD schema version; 'none' = built component with no trackable provenance axis."
+              },
+              "app": {
+                "type": "string",
+                "description": "Version of the running workload (app-version axis). Present when sot is 'app' or when the chart also carries a distinct app version."
+              },
+              "chart": {
+                "type": "string",
+                "description": "Helm chart packaging version. Present when sot is 'chart' or when both app and chart versions are tracked."
+              },
+              "crd_schema": {
+                "type": "string",
+                "description": "CRD schema version sourced from the upstream operator. Present when sot is 'crd-schema'."
+              },
+              "artifacts": {
+                "type": "array",
+                "description": "Full multi-image cardinality for components that ship more than one image (e.g. hubble, democratic-csi). Each entry is one image with its version.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["image", "version"],
+                  "properties": {
+                    "image": {
+                      "type": "string",
+                      "description": "Fully-qualified image reference (registry/org/name)."
+                    },
+                    "version": {
+                      "type": "string",
+                      "description": "Image tag or digest for this artifact."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "api_surface": {
+            "type": "array",
+            "description": "CRD API groups or API surfaces exposed by this component. Empty array allowed (most components expose no additional API surface).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Swappable capabilities this component implements. Optional — omit entirely for components that carry no capability mapping (e.g. lifecycle/providers). Empty [] for deliberate no-capability design state.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Capability id from catalog/capability-index.yaml."
+                },
+                "swap_class": {
+                  "type": "string",
+                  "description": "Migration class when swapping implementations. Valid values are owned by catalog/capability-index.yaml (not enum-constrained here to avoid schema drift)."
+                },
+                "role": {
+                  "type": "string",
+                  "description": "Role within a multi-component capability (e.g. proxydhcp for bare-metal-boot). Valid values are owned by catalog/capability-index.yaml."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

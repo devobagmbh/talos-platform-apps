@@ -1,0 +1,7 @@
+---
+# Negative fixture: legacy 'apis' key under provides[] should fail additionalProperties:false
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+    apis: []   # legacy key — fails additionalProperties:false on provides[] items

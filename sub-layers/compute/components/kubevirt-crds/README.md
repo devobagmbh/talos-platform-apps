@@ -91,13 +91,13 @@ A safe schema-remove upgrade follows three steps:
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The KubeVirt CRD is the API
+api-surface-only, **no capability** — `capabilities: []`. The KubeVirt CRD is the API
 surface (schema), not a swappable operational capability. The swappable capability
 (VM runtime) is provided by the workload artifact `compute/kubevirt` (the
 `virt-operator` that reconciles the `KubeVirt` CR into the virtualization control
 plane), not by the CRD schema alone (precedent:
 `storage-block/piraeus-operator-crds` and `observability/prometheus-operator-crds`,
-likewise apis-only).
+likewise api-surface-only).
 
 ## Sync-wave
 

@@ -1,7 +1,9 @@
 requires: {}
 provides:
   - name: crossplane
-    apis:
-      - crossplane@2.3.1
+    version:
+      sot: app          # provenance SOT from artifact shape (#226 A6): the crossplane core workload
+      app: 2.3.1        # crossplane core — the #191 drift fix (declared 1.18.0 vs rendered 2.3.1)
+    api_surface: []     # core CRDs (pkg.crossplane.io) are not a declared catalog surface here
     capabilities:
       - {id: cluster-provisioning, swap_class: rewrite-required}
