@@ -21,11 +21,14 @@ webhook, **0** CRDs — the render-parity contract), not by the chart it renders
 kube-prometheus-stack operator-only is chosen because it is currently the only
 maintained Helm path (a standalone operator-only chart is an open upstream request,
 [prometheus-community/helm-charts#5497](https://github.com/prometheus-community/helm-charts/issues/5497)).
-Should that chart ever ship — or the operator's own `bundle.yaml` be vendored as raw
-`manifests/` — the switch is a localized change to
+A **chart→chart** swap (e.g. if #5497 ships) stays localized to
 [`helm/prometheus-operator.yaml`](helm/prometheus-operator.yaml) (`chart` / `repo` /
-`version` + values) with no change to the OCI path, the capability contract, or the
-consumer's Argo wiring.
+`version` + values), with no change to the OCI path, the capability contract, or the
+consumer's Argo wiring. Vendoring the operator's own `bundle.yaml` as raw `manifests/`
+is a **larger** change — it replaces `helm/` with `manifests/`, and because that bundle
+ships the operator CRDs inline it must be re-split to keep this workload artifact
+CRD-free (the strict-B `task validate:crd-split` gate asserts **0** CRDs here) and the
+version block re-established; only the OCI path and the capability contract stay fixed.
 
 ## What ships
 
