@@ -1,0 +1,5 @@
+# Sub-layer aggregate (components carry their own compatibility.yaml).
+# Directory bracket for the sub-layer identity; OCI granularity is per component (ADR-0009).
+
+components:
+  - tetragon # eBPF runtime-security observability — capability runtime-security (sync-wave 0)
