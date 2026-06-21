@@ -85,6 +85,7 @@ jobs:
 
       - name: Komponenten-ID und Tag aus refs/tags ableiten
         id: parse
+        shell: bash
         run: |
           set -eu
           # tag ist z. B. "lifecycle/crossplane-v0.1.0"
@@ -93,12 +94,32 @@ jobs:
           component_id="${full%-v*}"
           # Version-Tag = "v" + Rest (z. B. "v0.1.0")
           version="v${full##*-v}"
-          # Guard: component_id MUST resolve to a real component dir — catches a
-          # malformed tag (or a component name that breaks the -v split) before
-          # render/push/sign acts on the wrong path.
+          # Both parsed fields flow verbatim into the signed `task publish`/`task
+          # verify` steps, so validate BOTH here — independently of git's ref-name
+          # grammar — before anything is written to GITHUB_OUTPUT or pushed/signed.
+          #
+          # 1) component_id: a "<sub-layer>/<component>" identifier in the catalog
+          #    charset, then it MUST resolve to a real component dir. The shape check
+          #    also blocks shell metacharacters and path traversal; the dir check
+          #    catches a malformed tag (or a name that breaks the -v split) before
+          #    render/push/sign acts on the wrong path.
+          if [[ ! "$component_id" =~ ^[a-z0-9-]+/[a-z0-9-]+$ ]]; then
+            echo "::error::component_id '$component_id' (from tag '$full') is not a '<sub-layer>/<component>' identifier" >&2
+            exit 1
+          fi
           dir="sub-layers/${component_id%/*}/components/${component_id##*/}"
           if [ ! -d "$dir" ]; then
             echo "::error::component_id '$component_id' does not resolve to a component dir ($dir; expected '<sub-layer>/<component>')" >&2
+            exit 1
+          fi
+          # 2) version: a strict vMAJOR.MINOR.PATCH[-prerelease] SemVer. The accepted
+          #    set is a SUBSET of the OCI tag grammar — build metadata ("+...") is
+          #    rejected because "+" is illegal in an OCI tag, so a version that passes
+          #    here cannot fail mid-publish at helm push / cosign sign. This also
+          #    rejects an empty/garbage version (e.g. a trailing-"-v" tag → "v") and
+          #    any shell metacharacter.
+          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version '$version' (from tag '$full') is not a valid vMAJOR.MINOR.PATCH SemVer tag" >&2
             exit 1
           fi
           echo "component_id=$component_id" >> "$GITHUB_OUTPUT"
