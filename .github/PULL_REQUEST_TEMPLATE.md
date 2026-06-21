@@ -1,32 +1,38 @@
-## Was tut dieser PR?
+## What does this PR do?
 
-Closes #<!-- Issue-Nummer -->
+<!-- REQUIRED: link the issue this PR closes so the Projects board stays
+     self-maintaining — a linked issue auto-closes on merge and the board's
+     "Pull request merged" / "Item closed" workflows set Status=Done with no
+     manual upkeep. If this PR intentionally closes no issue (tooling/docs
+     without a ticket), apply the `no-issue` label instead — otherwise the
+     pr-issue-link check blocks the PR. -->
+Closes #<!-- issue number -->
 
-**Betroffener Sub-Layer:** <!-- automation/databases/dns/lifecycle/observability/registry/secrets/storage-objects oder „cross-cutting" -->
+**Affected sub-layer:** <!-- a sub-layer per AGENTS.md §Repository Purpose, or "cross-cutting" -->
 
-<!-- Kurzbeschreibung — was ändert sich und warum? -->
+<!-- Short description — what changes and why? -->
 
 ## Validation
 
-- [ ] `task lint` lokal grün
-- [ ] `task render -- <sub-layer>` produziert valide YAML
-- [ ] `task ci` lokal grün (komplette Pipeline durchgelaufen)
-- [ ] `compatibility.yaml` aktualisiert (falls Chart-Version geändert)
-- [ ] Sub-Layer-`README.md` aktualisiert (falls Komponenten/Konsumenten sich geändert haben)
+- [ ] `task lint` green locally
+- [ ] `task render -- <sub-layer>` produces valid YAML
+- [ ] `task ci` green locally (full pipeline run)
+- [ ] `compatibility.yaml` updated (if the chart version changed)
+- [ ] sub-layer `README.md` updated (if components/consumers changed)
 
 ## Reviews
 
-- [ ] Mindestens ein Subagent-Review hinterlegt (siehe `AGENTS.md` § Multi-Agent-Coordination)
-- [ ] Bei Pipeline-/Signing-Themen: `provenance-reviewer`
-- [ ] Bei `compatibility.yaml`-Änderungen: `compatibility-reviewer`
-- [ ] Bei Bootstrap-/DR-Auswirkungen: `operational-safety-reviewer`
-- [ ] Bei Vault/SOPS/RBAC-Themen: `security-reviewer`
+- [ ] At least one subagent review attached (see `AGENTS.md` § Multi-Agent-Coordination)
+- [ ] Pipeline/signing topics: `provenance-reviewer`
+- [ ] `compatibility.yaml` changes: `compatibility-reviewer`
+- [ ] Bootstrap/DR impact: `operational-safety-reviewer`
+- [ ] Vault/SOPS/RBAC topics: `security-reviewer`
 
-## Commit-Style
+## Commit style
 
-- [ ] Conventional Commits mit Sub-Layer-Scope (`feat(observability): …`, `fix(dns): …`, `chore(automation): …`)
-- [ ] Bei Breaking Changes: `BREAKING CHANGE:`-Footer im Commit + Hinweis im PR-Body
+- [ ] Conventional Commits with sub-layer scope (`feat(observability): …`, `fix(dns): …`, `chore(automation): …`)
+- [ ] Breaking changes: `BREAKING CHANGE:` footer in the commit + note in the PR body
 
-## Hinweise
+## Notes
 
-<!-- Optional: Test-Output, Screenshots, Verweise auf Issues/ADRs/Runbooks -->
+<!-- Optional: test output, screenshots, references to issues/ADRs/runbooks -->
