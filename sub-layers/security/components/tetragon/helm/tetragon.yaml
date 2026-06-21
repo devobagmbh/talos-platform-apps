@@ -1,0 +1,84 @@
+# Tetragon — eBPF-based runtime-security observability for the Devoba platform
+# (runtime-security capability). Layer-2 default values for talos-platform-apps.
+# This component ships the agent DaemonSet + the tetragon-operator Deployment.
+#
+# The TracingPolicy / TracingPolicyNamespaced CRDs are NOT in this artifact: the
+# tetragon-operator installs and upgrades them at cluster runtime (crds.installMethod:
+# operator). That operator-managed-CRD lifecycle is the AGENTS.md strict-B
+# "operator-installed CRDs (Crossplane providers / XRDs)" out-of-scope carve-out
+# (ADR-0028), so there is NO `-crds` split. Concrete TracingPolicy CRs are
+# consumer-owned and live in the consumer cluster repos — never here.
+#
+# Cluster-specific bits (clusterName for event-stream source identification,
+# export filters, node placement) are consumer-owned (Layer 3) — see
+# customization.yaml. The agent is cluster-agnostic at the freeze line: it attaches
+# kernel probes regardless of cluster identity and runs without any consumer CR.
+
+metadata:
+  chart: tetragon
+  repo: https://helm.cilium.io
+  version: 1.7.0  # latest stable (helm search repo cilium/tetragon, 2026-06-21)
+  # >>> VERIFY the current chart at push (`helm show chart tetragon --repo https://helm.cilium.io --version 1.7.0`).
+  # The namespace pin below is load-bearing: render:one reads .metadata.namespace and
+  # passes it as --namespace. Without it the privileged DaemonSet + operator Deployment
+  # render into `default`, a PSA-defeating mismatch against the shipped `tetragon`
+  # Namespace (manifests/00-namespace.yaml). cnpg pins namespace: cnpg-system the same way.
+  namespace: tetragon
+
+values:
+  # CRD installation method: the tetragon-operator installs/upgrades the
+  # TracingPolicy, TracingPolicyNamespaced (and PodInfo, when enabled) CRDs at
+  # cluster runtime via its controller loop. Pinned explicitly (this is the chart
+  # default) so a chart upgrade cannot silently flip to `helm` — that would render
+  # the CRDs inline and mandate a strict-B `-crds` split. The operator path matches
+  # upstream Cilium's intent and the AGENTS.md operator-managed-CRD carve-out. This
+  # workload therefore renders ZERO kind: CustomResourceDefinition resources.
+  crds:
+    installMethod: "operator"
+
+  # The tetragon-operator Deployment manages the CRDs + reconciles TracingPolicy CRs.
+  # Pinned explicitly (chart default) so the operator-Deployment is reliable across
+  # chart upgrades rather than relying on the default being preserved.
+  tetragonOperator:
+    enabled: true
+    # TracingPolicy + TracingPolicyNamespaced CRDs installed/managed by the operator.
+    tracingPolicy:
+      enabled: true
+    # PodInfo CRD + controller OFF: not needed for core runtime security.
+    podInfo:
+      enabled: false
+
+  tetragon:
+    # Empty source-cluster identifier in the event stream. Consumers SHOULD set this
+    # per cluster via the config shape (provided_refs.config) to disambiguate event
+    # sources; the catalog ships it empty so the workload is cluster-agnostic.
+    clusterName: ""
+    # Prometheus metrics on port 2112. The ServiceMonitor is OFF (below) — consumers
+    # wire the metrics-scrape capability separately so this artifact does not depend
+    # on the monitoring.coreos.com/ServiceMonitor CRD being present at sync-wave 0.
+    prometheus:
+      enabled: true
+      serviceMonitor:
+        enabled: false
+
+  # Event export to stdout: events flow to the cluster log pipeline via the
+  # export-stdout sidecar (chart default). No external sink is wired by the catalog.
+  export:
+    mode: "stdout"
+
+  # Runtime-hook installer DaemonSet OFF (opt-in feature for OCI hooks / NRI runtime
+  # hooks) — a separate concern, not needed for core runtime-security observability.
+  rthooks:
+    enabled: false
+
+  # Schedule the agent on every node, including Talos control-plane nodes, so the
+  # eBPF observability covers the whole cluster (chart default).
+  tolerations:
+    - operator: Exists
+
+# NOTE — required eBPF settings, NOT over-rides:
+#   tetragon.securityContext.privileged: true   (chart default — kernel probe attachment)
+#   tetragon.hostNetwork: true                  (chart default — host-namespace process visibility)
+# These are the upstream Tetragon architecture and MUST NOT be removed; doing so
+# breaks the tool's core eBPF function. They drive the `privileged` PSA enforce level
+# on the `tetragon` namespace (manifests/00-namespace.yaml). See README.md.

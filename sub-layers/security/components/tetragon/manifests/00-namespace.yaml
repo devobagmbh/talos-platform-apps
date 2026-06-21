@@ -1,0 +1,18 @@
+# The tetragon agent's own namespace. tetragon is the sole occupant of the security
+# sub-layer (dedicated namespace), so this component ships the Namespace object — a
+# shipped manifest takes precedence over Argo `managedNamespaceMetadata`, making the
+# PSA posture authoritative and self-contained (build skill CONVENTIONS § Namespace & PSA).
+#
+# enforce: privileged — the eBPF agent DaemonSet runs with securityContext.privileged:
+# true (kernel probe attachment) and hostNetwork: true (host-namespace process
+# visibility). `privileged` is the only PSA enforce level that admits privileged
+# containers; `restricted` and `baseline` both reject them. These are non-negotiable
+# upstream Tetragon requirements, not catalog over-rides. Matches the synology-csi
+# precedent (a CSI driver with host access uses enforce: privileged for the same
+# host-access class).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tetragon
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
