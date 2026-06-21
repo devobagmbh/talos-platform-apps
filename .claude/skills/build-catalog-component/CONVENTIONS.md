@@ -70,7 +70,7 @@ A component's `provides[].capabilities` takes one of two shapes, set by the plan
     `{id: null, swap_class: null}` (e.g. a provider-exclusive CRD framework;
     precedent: `lifecycle/providers`).
     Carry `capabilities: []` **without** a `# TODO:` and declare the version block
-    under `provides[].version` (formerly `provides[].apis`). It is a design state, not a deferral.
+    under `provides[].version` (formerly apis[]). It is a design state, not a deferral.
   - **No-plan build-time discovery** — building directly from an issue (no plan
     entry) when a genuinely-needed capability is not yet in the index: carry
     `capabilities: []` with a `# TODO:` naming the follow-up. (With a plan, that

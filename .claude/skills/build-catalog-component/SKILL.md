@@ -100,7 +100,7 @@ pushed); this skill trusts the block and sanity-checks only its own worktree.
      `provides[].capabilities: [{id, swap_class}]`.
    - **`capability.id` is null** — a deliberate **no-capability** (apis-only) state,
      NOT a pending action. Do **no** index check; proceed. The component declares its
-     version block under `provides[].version` (formerly `provides[].apis`) and carries
+     version block under `provides[].version` (formerly apis[]) and carries
      `provides[].capabilities: []` (no `# TODO:`) — precedent `lifecycle/providers`.
 
    When no plan entry covers the component (a direct-from-issue build, step 3),

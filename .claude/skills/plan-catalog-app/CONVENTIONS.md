@@ -184,7 +184,7 @@ is a finding):
      state, NOT a pending action — e.g. a provider-exclusive CRD framework whose API
      group has no alternative implementation (precedent: `lifecycle/providers`). The
      build does **no** index check and proceeds; the component declares its version block
-     under `provides[].version` (formerly `provides[].apis`) and carries `provides[].capabilities: []` **without** a
+     under `provides[].version` (formerly apis[]) and carries `provides[].capabilities: []` **without** a
      `# TODO:`. Non-vacuity: `capability.id: null` is valid only when no existing
      index capability fits **and** the component genuinely is not a
      swappable-interface provider — a real swappable capability left unmapped, or a
