@@ -94,7 +94,16 @@ is empty. Two **optional** consumer surfaces exist:
 
 - **`TracingPolicy` / `TracingPolicyNamespaced` CRs** (which kprobe/tracepoint/LSM rules
   to load) are **consumer-authored** and live in the consumer cluster repos — never in
-  this catalog artifact. The agent deploys and operates without them.
+  this catalog artifact. The agent deploys and operates without them. Because the CRDs are
+  operator-installed at runtime, the consumer's Argo `Application` that delivers these CRs
+  **MUST sit at a sync-wave greater than `0`** (e.g. `10`) so the `tetragon-operator` has
+  registered the API group before the CR `Application` syncs. Co-scheduling the CR
+  `Application` at wave `0` races the operator's CRD install and surfaces intermittent
+  `no matches for kind "TracingPolicy"` errors with no clear diagnostic signal.
+- The **`tetragon-operator` runs as a single replica** with leader-election disabled (the
+  shipped chart default — `replicas: 1`, `leader-election: "false"`). Do **not** scale the
+  operator `Deployment` beyond one replica without enabling leader-election: two replicas
+  would reconcile and install/upgrade the CRDs concurrently with no coordination guarantee.
 - **`tetragon.clusterName`** ships **empty**; the consumer SHOULD set it (via the config
   shape) to identify the source cluster in the event stream when running more than one
   cluster.
@@ -106,7 +115,9 @@ is empty. Two **optional** consumer surfaces exist:
 ## Sync-wave
 
 `0` — the agent and operator deploy together; the operator establishes the
-`TracingPolicy` CRDs at runtime before any consumer `TracingPolicy` CR is applied.
+`TracingPolicy` CRDs at runtime. A consumer `Application` delivering `TracingPolicy` CRs
+MUST therefore sit at a higher wave (see Consumer obligations) so the API group exists
+before those CRs sync.
 
 ## OCI
 
