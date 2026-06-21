@@ -120,7 +120,7 @@ capabilities:
     name: Alert-Routing / Notification
     domain: observability
     implementations:
-      - {name: kube-prometheus-stack, status: active, swap_class: drop-in}  # Alertmanager
+      - {name: alertmanager, status: active, swap_class: drop-in}  # Alertmanager (#43): the chosen implementation, but NOT a catalog OCI artifact and (by design) NO components/alertmanager dir — the catalog ships the operator; the consumer instantiates an Alertmanager CR. 'active' = chosen design, not shippable-today.
       - {name: grafana-oncall, status: considered, swap_class: drop-in}
 
   # — Observability: Network ——————————————————————————————————
