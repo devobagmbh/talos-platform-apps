@@ -1,0 +1,8 @@
+---
+# Negative fixture: invalid sot enum value — should fail enum constraint on sot
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+    version:
+      sot: bogus   # invalid enum value — fails enum:[app,chart,crd-schema,none]
