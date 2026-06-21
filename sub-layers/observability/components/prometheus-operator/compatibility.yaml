@@ -16,7 +16,7 @@ requires:
 # capability with alternative implementations), and the operational capabilities
 # (metrics-scrape / -storage / -query / alert-routing) belong to the Prometheus
 # INSTANCE (issue #20), not to this controller framework. Precedent for
-# api-surface-only-no-TODO: lifecycle/providers.
+# the api-surface-only, no-TODO pattern: lifecycle/providers.
 provides:
   - name: prometheus-operator
     version:
