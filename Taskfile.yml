@@ -1188,6 +1188,7 @@ tasks:
     cmds:
       - task: check:primitives
       - task: lint
+      - task: validate:compatibility
       - task: render
       - task: lint:rendered
       - task: validate:crd-split
@@ -1200,6 +1201,59 @@ tasks:
   # pipeline to it would be the wrong dependency — a single broken contract would
   # block the whole pipeline. Instead it runs as a separate, targeted call (+ its
   # own CI job contract-validate.yml, which only checks components that carry one).
+
+  # Note: validate:compatibility IS part of `ci` (unlike validate:contract) because
+  # compatibility.yaml is a UNIVERSAL per-component contract — every component is
+  # required to carry one (no per-component rollout). A missing or invalid
+  # compatibility.yaml is always a pipeline failure, not an optional gap to report.
+
+  validate:compatibility:
+    desc: 'Compatibility-Contract schema validation (apps#246): every component compatibility.yaml must conform to schemas/compatibility.schema.json'
+    summary: |
+      Validates every component's compatibility.yaml against
+      schemas/compatibility.schema.json (draft 2020-12) with check-jsonschema.
+      Fails closed on zero found (no empty-run pass).
+
+      Unlike validate:contract (customization.yaml, per-component rollout), this task
+      is part of `task ci` because compatibility.yaml is a universal per-component
+      contract — every component is required to carry one.
+
+      Schema enforces:
+        - required: [requires, provides]
+        - provides[] items are closed (additionalProperties:false) — rejects legacy 'apis' key
+        - provides[].version.sot enum: [app, chart, crd-schema, none]
+        - version block is optional (unbuilt stubs carry no version)
+        - capabilities[] is optional per item (providers-style no-capability components)
+    cmd: |
+      set -uo pipefail
+      schema="schemas/compatibility.schema.json"
+      fail=0
+      found=0
+      for cdir in sub-layers/*/components/*/; do
+        [ -d "$cdir" ] || continue
+        comp_id=$(echo "$cdir" | sed 's|sub-layers/||; s|/components/|/|; s|/$||')
+        cfile="${cdir}compatibility.yaml"
+        if [ ! -f "$cfile" ]; then
+          echo "✗ ${comp_id}: compatibility.yaml MISSING"
+          fail=1
+          continue
+        fi
+        found=$((found+1))
+        if out=$(check-jsonschema --schemafile "$schema" "$cfile" 2>&1); then
+          echo "✓ ${comp_id}"
+        else
+          echo "✗ ${comp_id}:"
+          printf '%s\n' "$out" | sed 's/^/    /'
+          fail=1
+        fi
+      done
+      echo ""
+      if [ "$found" -eq 0 ]; then
+        echo "ERROR: no compatibility.yaml files found — check sub-layers/ structure" >&2
+        exit 1
+      fi
+      echo "→ ${found} component(s) validated against ${schema}."
+      exit $fail
 
   # --- Worktree (parallel independent sessions) ---
   # Multiple independent Claude Code sessions build components in parallel on ONE

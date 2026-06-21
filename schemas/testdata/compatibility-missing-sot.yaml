@@ -1,0 +1,7 @@
+---
+# Negative fixture: version present but sot missing — should fail required:[sot]
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+    version: {}   # version object present but sot field missing — fails required:[sot]

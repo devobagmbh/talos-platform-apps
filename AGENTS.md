@@ -157,8 +157,10 @@ These **MUST NOT** be relaxed without explicit maintainer approval.
     cnpg-postgres: "*"                 # a capability (id from catalog/capability-index.yaml)
   provides:
     - name: <component>
-      apis:
-        - <chart-name>@<chart-version>
+      version:
+        sot: app                       # provenance axis: app | chart | crd-schema | none
+        app: vX.Y.Z                    # version of the running workload
+      api_surface: []                  # CRD/API groups exposed (empty for most components)
       capabilities:
         - id: <capability-id>          # if this component implements a capability
   ```

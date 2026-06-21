@@ -105,7 +105,7 @@ findings; never fabricate a spec from the plan.
    `{id: null, swap_class: null}` (never a bare `capability: null` scalar) — the
    component provides no swappable capability (apis-only foundational; e.g. a
    provider-exclusive CRD framework, precedent `lifecycle/providers`); the built
-   component carries `capabilities: []` (no `# TODO`) and declares `provides[].apis`.
+   component carries `capabilities: []` (no `# TODO`) and declares `provides[].version` (formerly `provides[].apis`).
    Findings: a real swappable capability left unmapped, OR a not-yet-indexed one
    dodged as `null` instead of the pending-index state (with no `open_questions`
    blocker), OR a `null` whose component genuinely IS a swappable-interface provider.

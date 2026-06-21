@@ -16,8 +16,8 @@ For `sub-layers/<sub-layer>/components/<component>/`, the builder writes exactly
   OCI *registry* tag is the bare SemVer; the *git* tag is the distinct
   `<sub-layer>/<component>-vX.Y.Z`), related ADRs. English (platform policy 2026-06-03).
 - `compatibility.yaml` — `requires:` (version ranges of other catalog components,
-  `<sub-layer>/<component>: ">=vX.Y.Z"`) and `provides:` (`- name:`, `apis:`
-  `[<chart>@<version>]`, `capabilities:` `[{id, swap_class}]`).
+  `<sub-layer>/<component>: ">=vX.Y.Z"`) and `provides:` (`- name:`, `version:`
+  `{sot, app/chart/…}`, `api_surface: []`, `capabilities:` `[{id, swap_class}]`).
 - `customization.yaml` — the ADR-0024 v2 freeze-line contract (see below).
 - **either** `helm/<name>.yaml` — `metadata` (`chart`, `repo`, `version`,
   `namespace`) + `values:` — **or** `manifests/NN-*.yaml` — raw K8s YAML named
@@ -69,8 +69,8 @@ A component's `provides[].capabilities` takes one of two shapes, set by the plan
   - **No-capability by design (apis-only)** — the plan's `capability` is
     `{id: null, swap_class: null}` (e.g. a provider-exclusive CRD framework;
     precedent: `lifecycle/providers`).
-    Carry `capabilities: []` **without** a `# TODO:` and declare the chart under
-    `provides[].apis`. It is a design state, not a deferral.
+    Carry `capabilities: []` **without** a `# TODO:` and declare the version block
+    under `provides[].version` (formerly `provides[].apis`). It is a design state, not a deferral.
   - **No-plan build-time discovery** — building directly from an issue (no plan
     entry) when a genuinely-needed capability is not yet in the index: carry
     `capabilities: []` with a `# TODO:` naming the follow-up. (With a plan, that
