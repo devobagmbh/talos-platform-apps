@@ -16,9 +16,9 @@ Wave -1 establishes the `GarageNode` CRD (strict-B CRD half), wave 0 provides th
 
 ## Consumed by
 
-- A single-node consumer — single-node cluster. Buckets: `tf-state`, `ipxe`, `velero-source-seeder`
-- A multi-node consumer — 3-node cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-office-lab`, app-specific buckets
-- **DS720+** — a separate Garage cluster (Docker container on a NAS, NOT a member of the K8s clusters). Tier-2 backup target with buckets `velero-seeder`, `velero-office-lab`. Backup invariant: target ≠ source.
+- A single-node consumer — single-node cluster. Buckets: `tf-state`, `ipxe`, `velero-source-<consumer>`
+- A multi-node consumer — 3-node cluster. Buckets: `mimir-blocks`, `loki-chunks`, `tempo-blocks`, `harbor-store`, `velero-source-<consumer>`, app-specific buckets
+- **DS720+** — a separate Garage cluster (Docker container on a NAS, NOT a member of the K8s clusters). Tier-2 backup target with buckets `velero-<consumer>` (one per source cluster). Backup invariant: target ≠ source.
 
 ## Backlog issue
 
