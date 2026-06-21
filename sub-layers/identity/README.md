@@ -23,8 +23,8 @@ consumer cluster manifests.
 
 ## Consumed by
 
-- A control-plane consumer — own dex instance (`argocd-seeder`, `harbor-seeder`,
-  `kubelogin-seeder` static clients).
+- A control-plane consumer — own dex instance (`argocd`, `harbor`,
+  `kubelogin` static clients).
 - A workload consumer — own dex instance (argocd, harbor, grafana, vault, kubelogin,
   alertmanager, kubevirt-manager static clients).
 
