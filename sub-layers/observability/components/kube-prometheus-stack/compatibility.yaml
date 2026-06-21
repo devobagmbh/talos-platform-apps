@@ -1,7 +1,7 @@
 requires: {}
 provides:
   - name: kube-prometheus-stack
-    apis: [] # wird mit Issue #17 befüllt — bringt monitoring.coreos.com-CRDs
+    api_surface: [] # filled in with issue #17 — brings monitoring.coreos.com CRDs
     capabilities:
       - {id: metrics-scrape, swap_class: drop-in}
       - {id: metrics-storage, swap_class: data-migration}

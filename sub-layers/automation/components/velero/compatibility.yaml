@@ -1,5 +1,5 @@
 requires: {}
 provides:
   - name: velero
-    apis: [] # wird mit Issue #16 befüllt
-    capabilities: [] # TODO: Capability backup definieren (proposed, Vertrag offen)
+    api_surface: [] # filled in with issue #16
+    capabilities: [] # TODO: define backup capability (proposed, contract open)
