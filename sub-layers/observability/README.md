@@ -19,20 +19,34 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
 
-> **`kube-prometheus-stack` is a stack, not a component.** It is the *name of the
-> composition* the upstream chart bundles (operator + Prometheus + Alertmanager +
-> node-exporter + kube-state-metrics + Grafana) and is **never built or published**
-> as an OCI artifact. The catalog ships those pieces as the independent components
-> above (the operator half as `prometheus-operator` + `prometheus-operator-crds`);
-> the Prometheus and Alertmanager *instances* are consumer-instantiated via the
-> operator CRs. See [`components/kube-prometheus-stack/`](components/kube-prometheus-stack/)
-> for the full composition map.
+> **`kube-prometheus-stack` is a stack, not a component** — there is **no**
+> `components/kube-prometheus-stack/` directory and **no**
+> `oci://…/observability/kube-prometheus-stack` artifact. Every directory under
+> `components/` is a buildable OCI component (`task validate:release-config` enforces
+> it); the stack is the *composition* of the components above, documented in the
+> dedicated section below.
 
 Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
 The bidirectional watchdog AlertmanagerConfig (between two consumer clusters) currently lives as a cross-cluster resource in the consumer repo — once issue #36 is implemented it can become its own `observability/watchdog` component.
+
+## The `kube-prometheus-stack` composition
+
+The upstream `prometheus-community/kube-prometheus-stack` chart bundles operator + CRDs + Prometheus + Alertmanager + node-exporter + kube-state-metrics + Grafana into one release. The catalog **does not** ship that bundle: it splits it into the independently-versioned components above (ADR-0009 granularity; strict-B CRD split per [ADR-0028](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)) so a consumer takes exactly the subset it needs. `kube-prometheus-stack` is therefore a *stack name*, not a distribution unit — it has no component directory and no OCI artifact. Source of truth: [#38](https://github.com/devobagmbh/talos-platform-apps/issues/38).
+
+| Bundled piece | Catalog component | Capability | Issue | Built |
+|---|---|---|---|---|
+| Operator (controller) | [`prometheus-operator`](components/prometheus-operator/) | api-surface only | [#46](https://github.com/devobagmbh/talos-platform-apps/issues/46) | yes |
+| Operator CRDs (strict-B) | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | api-surface only | [#46](https://github.com/devobagmbh/talos-platform-apps/issues/46) | yes |
+| Prometheus instance | `prometheus` (consumer-instantiated via the operator `Prometheus` CR) | `metrics-scrape` / `metrics-storage` / `metrics-query` | [#20](https://github.com/devobagmbh/talos-platform-apps/issues/20) | no |
+| Alertmanager | `alertmanager` (consumer-instantiated via the operator `Alertmanager` CR) | `alert-routing` | [#43](https://github.com/devobagmbh/talos-platform-apps/issues/43) | no |
+| node-exporter | `node-exporter` | metrics source | [#44](https://github.com/devobagmbh/talos-platform-apps/issues/44) | no |
+| kube-state-metrics | [`kube-state-metrics`](components/kube-state-metrics/) | metrics source | [#45](https://github.com/devobagmbh/talos-platform-apps/issues/45) | yes |
+| Grafana | [`grafana`](components/grafana/) | `dashboards` | [#24](https://github.com/devobagmbh/talos-platform-apps/issues/24) | no |
+
+Long-term metric storage and query are served by [`mimir`](components/mimir/) (`metrics-storage` / `metrics-query`); scraping/forwarding by [`alloy`](components/alloy/) (`metrics-scrape`). The Prometheus and Alertmanager *instances* are consumer concerns wired via the operator CRs, not published catalog artifacts.
 
 ## Consumed by
 
