@@ -45,11 +45,15 @@ jobs:
   ci:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # PR CI may cancel a superseded run on the same PR ref (resource hygiene).
+    concurrency:
+      group: oci-publish-ci-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Devbox setup
-        uses: jetify-com/devbox-install-action@v0.15.0
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
         with:
           enable-cache: true
 
@@ -62,6 +66,11 @@ jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # Serialize publishes of the SAME tag ref; NEVER cancel a mid-flight publish — a
+    # cancelled run can leave a pushed-but-unsigned (or unverified) OCI artifact.
+    concurrency:
+      group: oci-publish-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write   # GHCR push
@@ -70,19 +79,49 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Devbox setup
-        uses: jetify-com/devbox-install-action@v0.15.0
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
         with:
           enable-cache: true
 
       - name: Komponenten-ID und Tag aus refs/tags ableiten
         id: parse
+        shell: bash
         run: |
+          set -eu
           # tag ist z. B. "lifecycle/crossplane-v0.1.0"
           full="${GITHUB_REF_NAME}"
           # Komponenten-ID = alles vor dem letzten "-v" (z. B. "lifecycle/crossplane")
           component_id="${full%-v*}"
           # Version-Tag = "v" + Rest (z. B. "v0.1.0")
           version="v${full##*-v}"
+          # Both parsed fields flow verbatim into the signed `task publish`/`task
+          # verify` steps, so validate BOTH here — independently of git's ref-name
+          # grammar — before anything is written to GITHUB_OUTPUT or pushed/signed.
+          #
+          # 1) component_id: a "<sub-layer>/<component>" identifier in the catalog
+          #    charset, then it MUST resolve to a real component dir. The shape check
+          #    also blocks shell metacharacters and path traversal; the dir check
+          #    catches a malformed tag (or a name that breaks the -v split) before
+          #    render/push/sign acts on the wrong path.
+          if [[ ! "$component_id" =~ ^[a-z0-9-]+/[a-z0-9-]+$ ]]; then
+            echo "::error::component_id '$component_id' (from tag '$full') is not a '<sub-layer>/<component>' identifier" >&2
+            exit 1
+          fi
+          dir="sub-layers/${component_id%/*}/components/${component_id##*/}"
+          if [ ! -d "$dir" ]; then
+            echo "::error::component_id '$component_id' does not resolve to a component dir ($dir; expected '<sub-layer>/<component>')" >&2
+            exit 1
+          fi
+          # 2) version: a strict vMAJOR.MINOR.PATCH[-prerelease] SemVer. The accepted
+          #    set is a SUBSET of the OCI tag grammar — build metadata ("+...") is
+          #    rejected because "+" is illegal in an OCI tag, so a version that passes
+          #    here cannot fail mid-publish at helm push / cosign sign. This also
+          #    rejects an empty/garbage version (e.g. a trailing-"-v" tag → "v") and
+          #    any shell metacharacter.
+          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version '$version' (from tag '$full') is not a valid vMAJOR.MINOR.PATCH SemVer tag" >&2
+            exit 1
+          fi
           echo "component_id=$component_id" >> "$GITHUB_OUTPUT"
           echo "version=$version"           >> "$GITHUB_OUTPUT"
           echo "Tag '$full' → component_id='$component_id', version='$version'"
