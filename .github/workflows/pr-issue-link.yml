@@ -1,7 +1,8 @@
 name: pr-issue-link
 
 # Enforces that every PR either closes an issue (a "Closes #N" link) or is
-# explicitly marked link-exempt via the `no-issue` label. This keeps the
+# explicitly marked link-exempt via the `no-issue` label (or `autorelease:
+# pending`, the marker release-please puts on its bot release PRs). This keeps the
 # Projects v2 board self-maintaining: a linked PR auto-closes its issue on
 # merge, so the board's "Item closed" / "Pull request merged" workflows set
 # Status=Done with no manual upkeep. The recurring drift it prevents: a build
@@ -49,8 +50,15 @@ jobs:
             // Labels read fresh from the API (not the stale event payload), matching
             // the house pattern in status-strip.yml / pr-needs-review.yml.
             const labels = pr.labels.nodes.map((l) => l.name);
-            if (labels.includes('no-issue')) {
-              core.info('PR carries the `no-issue` label — issue-link requirement waived.');
+            // `no-issue`: human tooling/docs PRs without a ticket (applied manually).
+            // `autorelease: pending`: release-please bot PRs (`chore(main): release …`)
+            // close no issue by design and never get a manual label, so they are
+            // exempted via the bot's own marker — otherwise the whole release train
+            // is blocked by a gate meant for human build PRs.
+            const exemptLabels = ['no-issue', 'autorelease: pending'];
+            const exempt = exemptLabels.find((l) => labels.includes(l));
+            if (exempt) {
+              core.info(`PR carries the \`${exempt}\` label — issue-link requirement waived.`);
               return;
             }
             const linked = pr.closingIssuesReferences.totalCount;
