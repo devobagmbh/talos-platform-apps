@@ -5,8 +5,10 @@
 requires: {}
 provides:
   - name: booter
-    apis:
-      - booter-standalone@v0.3.1
+    version:
+      sot: app
+      app: v0.3.1
+    api_surface: []
     capabilities:
       # booter is a proxyDHCP responder and is one half of bare-metal-boot — it
       # complements lifecycle/ipxe (HTTP boot assets), it does not swap with it.

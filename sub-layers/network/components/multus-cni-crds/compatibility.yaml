@@ -5,22 +5,25 @@
 # crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
 # workload half is `network/multus-cni`. The build gate uses this marker to assert
 # kind: CustomResourceDefinition count > 0 here (and == 0 in the workload
-# artifact). compatibility.yaml has no schema, so the extra top-level field is
-# permitted.
+# artifact). The compatibility.yaml schema (schemas/compatibility.schema.json)
+# permits this crd-bearing top-level field.
 crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The k8s.cni.cncf.io NetworkAttachmentDefinition CRD
+# api-surface-only, NO capability. The k8s.cni.cncf.io NetworkAttachmentDefinition CRD
 # is the API surface (schema), not the swappable operational capability. The
 # capability `secondary-network-attachment` is provided by the workload artifact
 # `network/multus-cni` (the controller DaemonSet that implements the CNI
 # delegation), not by the CRD schema. Carrying capabilities: [] here is the
 # deliberate design (precedent: observability/prometheus-operator-crds and
-# lifecycle/providers, both apis-only with no capability), NOT a deferral — so no
+# lifecycle/providers, both api-surface-only with no capability), NOT a deferral — so no
 # `# TODO:` here.
 provides:
   - name: multus-cni-crds
-    apis:
-      - k8s.cni.cncf.io/NetworkAttachmentDefinition@v1  # NetworkAttachmentDefinition CRD, k8s.cni.cncf.io/v1 (multus-cni v4.2.4)
+    version:
+      sot: crd-schema     # a CRD bundle's provenance axis is the schema it vendors (#226 A6)
+      crd_schema: v4.2.4  # upstream multus-cni release the CRD bundle is vendored from (was apis[]-comment-only — A4 defect fixed)
+    api_surface:
+      - k8s.cni.cncf.io/NetworkAttachmentDefinition@v1  # exposed CRD kind + served group/version (A7 crd-schema parity target)
     capabilities: []

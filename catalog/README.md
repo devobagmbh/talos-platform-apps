@@ -46,7 +46,11 @@ provides:
     capabilities:                            # NEU: welche Capabilities dieses Tool implementiert
       - {id: metrics-storage, swap_class: data-migration}
       - {id: metrics-query,   swap_class: drop-in}
-    apis: []                                 # #57: API-/Chart-Versionen
+    version:                                  # apps#226: typisierte Versions-Provenienz (ersetzt apis[])
+      sot: app                                # Provenienz-Achse: app | chart | crd-schema | none
+      app: 2.13.0                             # laufende App-Version (das echte „was läuft")
+      chart: 5.5.1                            # Helm-Chart-Version (Packaging; orthogonal zu appVersion)
+    api_surface: []                           # exponierte CRD/API-Oberfläche (Kind@version), de-konfliert
 ```
 
 Regeln:
@@ -57,6 +61,39 @@ Regeln:
 - Komponenten ohne passende Capability tragen heute `capabilities: []` mit
   einem `# TODO`-Verweis auf das Folge-Issue, das die Capability definiert
   (Status `proposed` im Index) — Verträge werden nicht erraten.
+
+### `version:` — Versions-Provenienz (apps#226)
+
+Der frühere `apis[]` war überladen (mischte Chart-Version, Image-Tag, CRD-API-Group,
+Crossplane-Package-Version und Fiktives) und unenforced — man konnte nicht ablesen, *welche
+Version der echten Software* eine Komponente deployt. Ersetzt durch einen typisierten
+`version:`-Block mit **einer** gelabelten Provenienz-Achse pro Artefakt:
+
+- **`sot`** (Pflicht) ∈ `{app, chart, crd-schema, none}` — welche Achse die „was läuft"-SOT ist.
+- **`app`** / **`chart`** / **`crd_schema`** — disjunkte typisierte Felder (kein Catch-all):
+  laufende App-Version / Helm-Chart-Version / Upstream-Release eines CRD-Bundles.
+- **`artifacts[]`** — `{image, version}` für Multi-Image-Komponenten; Headline + primäre
+  Upstream-Images, **ohne** Standard-kubernetes-csi-Sidecars (eigenständig versioniert).
+- **`api_surface[]`** — die *exponierte* CRD/API-Oberfläche (`Kind@version`), de-konfliert.
+
+Enforcement — **A7-Parity-Gate** (`scripts/lint-version-parity.sh` · `task lint:version` · CI
+`version-parity.yml`). Render-geprüft (hard-fail) wird **nur die deklarierte SOT-Achse**, plus
+`artifacts[]`:
+
+- `sot: app` → `version.app` muss im Render erscheinen (`app.kubernetes.io/version`-Label, sonst
+  Image-/Package-Tag).
+- `sot: crd-schema` → jede `api_surface[]`-Group/Version muss als gerenderte CRD/XRD existieren.
+- `artifacts[]` → jedes `{image, version}` muss exakt im Render vorkommen.
+
+**Bewusst NICHT geprüft (declared-only — nicht als verifiziert annehmen):** der `version.chart`-Wert
+(auch neben `sot: app`), der `version.crd_schema`-**Release**-Wert (nur die `api_surface`-Group/Version
+wird gerendert-geprüft, nicht dieser String), sowie `sot: none`. `sot` ist selbst-deklariert; das Gate
+verhindert kein Downgrade/Löschen des `version`-Blocks (kein Ratchet). Upstream-Chart-Mutation ohne
+Repo-Diff fängt erst `task ci` / Publish, nicht dieses path-gefilterte PR-Gate. Der Job ist (path-filter-bedingt)
+**kein required check** — siehe Workflow-Header.
+
+Der `appVersion` im gepackten Chart stammt aus `version.app` (nicht mehr force-gestampt auf den OCI-Tag;
+der OCI-Tag bleibt `Chart.version`). Track: apps#226 · Capability-Bezug: ADR docs:0029.
 
 ## Abgrenzung
 

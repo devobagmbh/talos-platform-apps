@@ -153,7 +153,7 @@ This workload carries **0 CRDs** — the strict-B gate's oracle asserts
 Provides `block-storage-replicated` at `swap_class: data-migration` — present in
 `catalog/capability-index.yaml` with piraeus-operator as the active implementation.
 Replacing the replicated-block backend is a data migration, not a drop-in. (The
-`-crds` half is apis-only with no capability — the schema is the API surface, the
+`-crds` half is api-surface-only with no capability — the schema is the API surface, the
 operational capability lives here.)
 
 ## Sync-wave

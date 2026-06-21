@@ -52,7 +52,7 @@ components:
       name: <chart-name>
       version: <vX.Y.Z>                    # pinned; never a range, never :latest
     capability:                            # ALWAYS the {id, swap_class} object — never a bare `capability: null`; §6 keys 3 states on capability.id:
-      id: <capability-id>                  #   in index = mapped | non-null, not-yet-indexed (+ open_questions blocker) = pending-index | null = no-capability (apis-only)
+      id: <capability-id>                  #   in index = mapped | non-null, not-yet-indexed (+ open_questions blocker) = pending-index | null = no-capability (api-surface-only)
       swap_class: drop-in | label-move | data-migration | rewrite-required | consumer-change   # null only when id is null (no-capability)
     sync_wave: "<int>"                     # string, regex ^-?[0-9]+$
     external_dependencies: ["<sub-layer>/<component>", ...]  # regex ^[a-z0-9-]+/[a-z0-9-]+$
@@ -144,7 +144,7 @@ is a finding):
    `external_dependencies` target either already exists in the tree
    (`sub-layers/<sl>/components/<c>/`) OR appears earlier in `build_order`. A
    dependency that is neither is a blocking finding (the build would stall).
-   **CRD-bearing co-build group.** A strict-B pair — a crds half (apis-only,
+   **CRD-bearing co-build group.** A strict-B pair — a crds half (api-surface-only,
    `capability.id: null`, `sync_wave "-1"`, and `crd-bearing: true` in its built
    `compatibility.yaml`) plus the workload that `external_dependencies`-requires it,
    both introduced in this plan's `build_order` — is a *co-build group*: `ship` may
@@ -183,8 +183,8 @@ is a finding):
      swappable capability**. This is a deliberate design
      state, NOT a pending action — e.g. a provider-exclusive CRD framework whose API
      group has no alternative implementation (precedent: `lifecycle/providers`). The
-     build does **no** index check and proceeds; the component declares its chart
-     under `provides[].apis` and carries `provides[].capabilities: []` **without** a
+     build does **no** index check and proceeds; the component declares its version block
+     under `provides[].version` (formerly apis[]) and carries `provides[].capabilities: []` **without** a
      `# TODO:`. Non-vacuity: `capability.id: null` is valid only when no existing
      index capability fits **and** the component genuinely is not a
      swappable-interface provider — a real swappable capability left unmapped, or a

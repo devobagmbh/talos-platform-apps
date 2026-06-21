@@ -66,11 +66,11 @@ reviewed change.
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The `GarageNode` CRD is the API
+api-surface-only, **no capability** — `capabilities: []`. The `GarageNode` CRD is the API
 surface (schema), not a swappable operational capability. The swappable capability
 `s3-object` is provided by the workload artifact `storage-objects/garage` (the
 StatefulSet that serves the S3 API), not by the CRD schema alone (precedent:
-`network/multus-cni-crds`, likewise apis-only).
+`network/multus-cni-crds`, likewise api-surface-only).
 
 ## Sync-wave
 

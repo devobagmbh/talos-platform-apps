@@ -90,13 +90,13 @@ A safe schema-remove upgrade follows three steps:
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The four Linstor CRDs are the API
+api-surface-only, **no capability** — `capabilities: []`. The four Linstor CRDs are the API
 surface (schema), not a swappable operational capability. The swappable capability
 `block-storage-replicated` is provided by the workload artifact
 `storage-block/piraeus-operator` (the operator that reconciles these CRs into a
 replicated DRBD/Linstor storage cluster), not by the CRD schemas alone (precedent:
 `storage-objects/garage-crds` and `observability/prometheus-operator-crds`, likewise
-apis-only).
+api-surface-only).
 
 ## Sync-wave
 

@@ -275,6 +275,209 @@ tasks:
       [ "$fail" -eq 0 ] || { echo "crd-split: strict-B CRD-count oracle FAILED (see above)" >&2; exit 1; }
       echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
 
+  lint:version:
+    desc: 'A7 parity (apps#226): render-source⇒version guard + declared version.<sot> vs rendered reality (parity needs `task render`)'
+    summary: |
+      A7 version-provenance gate (apps#226): declared `version.<sot>` in each
+      compatibility.yaml vs the rendered reality. The SOT axis hard-fails; secondary
+      declared axes WARN. Skips components not yet migrated to the typed `version`
+      block, so it is safe to run repo-wide during rollout (no coupling to unfinished
+      components — same discipline as validate:contract). Logic is INLINE here per the
+      Taskfile convention ("Logic lives in the Taskfile, not external scripts/").
+
+      Per-`sot` rendered mapping (pinned):
+        app        -> app.kubernetes.io/version label, else image/package tag  [contain version.app]
+        crd-schema -> rendered CRD/XRD .spec.group + .spec.versions[].name      [contain each api_surface[]]
+        chart      -> declared-only (NOT render-checked)   [WARN]
+        none       -> no provenance axis to check          [WARN]
+      `version.artifacts[]` (when present) are render-checked against image tags (hard-fail).
+      Env STRICT=1 turns a MIGRATED component's missing render from WARN into FAIL (set in CI).
+
+      Forward invariant (render-source ⇒ version block): a component that ships render
+      source (helm/ or manifests/) must declare at least one provides entry AND carry a
+      typed `version` block (a non-empty `version.sot`) on EVERY entry — any missing,
+      empty (sot-less), or absent-provides case FAILs under STRICT (WARN otherwise).
+      Covers the all-missing case, a multi-provides component that versions only some
+      entries (the rest would otherwise escape the parity loop, which skips sot-less
+      entries), and a built component declaring no provides at all. Without it a newly-
+      built component could silently skip the block. Unbuilt stubs (no render source)
+      and sub-layer aggregates are exempt.
+      Optional scope: `task lint:version -- <sub-layer>/<component> ...`.
+    cmd: |
+      set -euo pipefail
+      set -- {{.CLI_ARGS}}
+      STRICT="${STRICT:-0}"
+      repo_root="$(git rev-parse --show-toplevel)"
+      cd "$repo_root"
+
+      fail=0
+      warn=0
+      checked=0
+
+      if [ "$#" -gt 0 ]; then
+        compat_files=()
+        for c in "$@"; do compat_files+=("sub-layers/${c%/*}/components/${c#*/}/compatibility.yaml"); done
+      else
+        # portable to bash 3.2 (macOS default) — `mapfile` is bash 4+
+        compat_files=()
+        while IFS= read -r line; do compat_files+=("$line"); done \
+          < <(find sub-layers -name compatibility.yaml -not -path '*/.claude/*' | sort)
+      fi
+
+      for compat in "${compat_files[@]}"; do
+        [ -f "$compat" ] || { echo "ERROR $compat not found"; fail=1; continue; }
+        # (.provides // []) — null-safe under jq-based yq (sub-layer aggregators have no provides).
+        # Count entries with a NON-EMPTY version.sot, not just has("version"): a bare `version:`
+        # / `version: {}` is present-but-meaningless — it passes key-presence yet the parity loop
+        # skips it on empty sot, so keying on sot closes that silent-bypass.
+        migrated=$(yq -r '[(.provides // [])[] | select((.version.sot // "") != "")] | length' "$compat")
+        comp_dir="$(dirname "$compat")"
+        sub_layer="$(echo "$comp_dir" | sed -E 's#sub-layers/([^/]+)/components/.*#\1#')"
+        cid="${sub_layer}/$(basename "$comp_dir")"
+
+        # A7 forward invariant (apps#226): render source ⇒ the component declares ≥1 provides
+        # entry AND EVERY entry carries a typed version block (a non-empty version.sot, per the
+        # `migrated` definition above). Checked per component, not just the all-missing case: a
+        # multi-provides component mixing versioned + version-less entries would otherwise escape
+        # both this guard and the parity loop (which skips an entry whose .version.sot is empty),
+        # and a built component declaring no provides at all (total=0) would pass vacuously.
+        # Stubs (no render source) and sub-layer aggregates (path without /components/) are exempt.
+        # The probe MUST track render:one's input contract (helm/*.yaml OR manifests/*.yaml) — a
+        # new render source shape there needs a matching update here. Probe is pipe-free,
+        # dir-guarded, -type f: `find` over a MISSING path exits non-zero (even with 2>/dev/null)
+        # and `| head` would SIGPIPE it — under `set -o pipefail` both falsely negate. `find`
+        # (not a glob) is shell-agnostic (zsh nomatch is fatal).
+        has_src=0
+        case "$comp_dir" in
+          */components/*)
+            for d in "$comp_dir/helm" "$comp_dir/manifests"; do
+              if [ -d "$d" ] && [ -n "$(find "$d" -maxdepth 1 -type f -name '*.yaml' 2>/dev/null)" ]; then
+                has_src=1; break
+              fi
+            done
+            ;;
+        esac
+        total=$(yq -r '(.provides // []) | length' "$compat")
+        flag_reason=""
+        if [ "$has_src" = "1" ]; then
+          if [ "$total" -eq 0 ]; then
+            flag_reason="declares no provides entries (a built component needs at least one with a typed version block)"
+          elif [ "$migrated" -lt "$total" ]; then
+            flag_reason="$((total - migrated))/${total} provides entries lack a typed version block (a non-empty version.sot) — add one to each"
+          fi
+        fi
+        if [ -n "$flag_reason" ]; then
+          if [ "$STRICT" = "1" ]; then
+            echo "FAIL  [$cid] has render source but $flag_reason (apps#226)"
+            fail=1
+          else
+            echo "WARN  [$cid] has render source but $flag_reason (apps#226)"
+            warn=$((warn + 1))
+          fi
+        fi
+
+        [ "$migrated" -gt 0 ] || continue
+        manifest="${comp_dir}/rendered/manifest.yaml"
+
+        if [ ! -s "$manifest" ]; then
+          if [ "$STRICT" = "1" ]; then
+            echo "FAIL  [$cid] migrated but no rendered manifest (STRICT) — render failed or was skipped"
+            fail=1
+          else
+            echo "WARN  [$cid] no rendered manifest — run 'task render:one -- $cid'; render-parity skipped"
+            warn=$((warn + 1))
+          fi
+          continue
+        fi
+
+        n=$(yq -r '.provides | length' "$compat")
+        for i in $(seq 0 $((n - 1))); do
+          sot=$(yq -r ".provides[$i].version.sot // \"\"" "$compat")
+          [ -n "$sot" ] && [ "$sot" != "null" ] || continue
+          checked=$((checked + 1))
+          case "$sot" in
+            app)
+              declared=$(yq -r ".provides[$i].version.app" "$compat")
+              if [ -z "$declared" ] || [ "$declared" = "null" ]; then
+                echo "FAIL  [$cid] sot=app but version.app is empty/null"
+                fail=1
+              else
+                # extraction may legitimately be empty (label-less raw manifests) — guard against pipefail
+                rendered=$(grep -hoE 'app\.kubernetes\.io/version: "?[^"]+' "$manifest" \
+                           | sed -E 's/.*version: "?//' | sort -u | tr '\n' ' ' || true)
+                # image tags AND Crossplane spec.package OCI refs (providers/functions carry no image:/label).
+                # Per-grep `|| true`: a no-match grep exits 1, which under `set -e` aborts the whole
+                # command group before the 2nd grep runs in the go-task interpreter (a package-only
+                # render would then yield empty img_tags). Guard each so both always contribute.
+                img_tags=$( { grep -hoE 'image: "?[^"@ ]+' "$manifest" || true; grep -hoE 'package: "?[^"@ ]+' "$manifest" || true; } \
+                            | sed -E 's/.*://' | sort -u | tr '\n' ' ' || true)
+                # `-- ` guards a `declared` beginning with `-`; space-padding anchors whole-token match
+                if printf ' %s ' "$rendered" | grep -qF -- " $declared "; then
+                  echo "OK    [$cid] sot=app declared=$declared ∈ rendered labels{ $rendered}"
+                elif printf ' %s ' "$img_tags" | grep -qF -- " $declared "; then
+                  # #226 A7: label-less components match via image/package tag
+                  echo "OK    [$cid] sot=app declared=$declared ∈ rendered image/package tags (no app-version label)"
+                else
+                  echo "FAIL  [$cid] sot=app declared=$declared NOT in rendered labels{ $rendered} nor image tags"
+                  fail=1
+                fi
+              fi
+              ;;
+            crd-schema)
+              # A7: sot=crd-schema MUST declare a non-empty api_surface, else the
+              # render-check loop below is vacuous and the axis would pass silently.
+              n_surface=$(yq -r ".provides[$i].api_surface // [] | length" "$compat")
+              if [ "$n_surface" -eq 0 ]; then
+                echo "FAIL  [$cid] sot=crd-schema but api_surface is empty/absent — nothing to render-check"
+                fail=1
+              fi
+              # CustomResourceDefinition AND Crossplane CompositeResourceDefinition (XRD)
+              rendered_gv=$(yq -r 'select(.kind == "CustomResourceDefinition" or .kind == "CompositeResourceDefinition") | .spec.group + "/" + (.spec.versions // [])[].name' \
+                            "$manifest" 2>/dev/null | sort -u)
+              while IFS= read -r s; do
+                [ -n "$s" ] && [ "$s" != "null" ] || continue
+                gv="${s%%/*}/${s##*@}"   # k8s.cni.cncf.io/NAD@v1 -> k8s.cni.cncf.io/v1
+                if printf '%s\n' "$rendered_gv" | grep -qxF -- "$gv"; then
+                  echo "OK    [$cid] sot=crd-schema surface=$gv ∈ rendered CRDs"
+                else
+                  echo "FAIL  [$cid] sot=crd-schema surface=$gv NOT in rendered CRD group/versions{ $(printf '%s' "$rendered_gv" | tr '\n' ' ')}"
+                  fail=1
+                fi
+              done < <(yq -r ".provides[$i].api_surface[]?" "$compat" 2>/dev/null)
+              ;;
+            chart | none)
+              echo "WARN  [$cid] sot=$sot — provenance render-parity not enforced (declared-only)"
+              warn=$((warn + 1))
+              ;;
+            *)
+              echo "FAIL  [$cid] sot=$sot not in {app,chart,crd-schema,none}"
+              fail=1
+              ;;
+          esac
+
+          # artifacts[] cardinality (A3): every declared image:version must appear in the render.
+          arts=$(yq -r ".provides[$i].version.artifacts // [] | length" "$compat")
+          if [ "$arts" -gt 0 ]; then
+            img_all=$(grep -hoE 'image: "?[^"@ ]+' "$manifest" | sed -E 's/image: "?//' | sort -u || true)
+            for j in $(seq 0 $((arts - 1))); do
+              aimg=$(yq -r ".provides[$i].version.artifacts[$j].image" "$compat")
+              aver=$(yq -r ".provides[$i].version.artifacts[$j].version" "$compat")
+              # whole-line exact match (-x): ':v1.19.4' must NOT match ':v1.19.40'
+              if printf '%s\n' "$img_all" | grep -qxF -- "${aimg}:${aver}"; then
+                echo "OK    [$cid] artifact ${aimg}:${aver} ∈ render"
+              else
+                echo "FAIL  [$cid] artifact ${aimg}:${aver} NOT in render"
+                fail=1
+              fi
+            done
+          fi
+        done
+      done
+
+      echo "---"
+      echo "checked=$checked warnings=$warn result=$([ $fail -eq 0 ] && echo PASS || echo FAIL)"
+      exit $fail
+
   lint:commit-msg:
     desc: 'Conventional-Commit check of a message file: task lint:commit-msg -- <msg-file>'
     summary: |
@@ -960,13 +1163,23 @@ tasks:
       source_url="${repo_url}"
       component_url="${repo_url}/tree/main/sub-layers/${sub_layer}/components/${component}"
 
+      # appVersion = the real running-app version (A4/A5, apps#226): prefer the declared
+      # version.app (sot=app) from compatibility.yaml; fall back to the packaging tag for
+      # components not yet migrated to the typed `version` block (backward-compatible).
+      compat="${root}/compatibility.yaml"
+      app_version=""
+      if [ -f "$compat" ]; then
+        app_version=$(yq -r '[.provides[].version | select(.sot == "app") | .app] | .[0] // ""' "$compat" 2>/dev/null)
+      fi
+      app_version="${app_version:-$chart_version}"
+
       cat > "$wrapper/Chart.yaml" <<EOF
       apiVersion: v2
       name: ${component}
       description: Pre-rendered Devoba-Platform-Komponente ${component_id}
       type: application
       version: ${chart_version}
-      appVersion: "${chart_version}"
+      appVersion: "${app_version}"
       home: ${component_url}
       sources:
         - ${source_url}
@@ -1108,9 +1321,11 @@ tasks:
       - task: check:primitives
       - task: validate:release-config
       - task: lint
+      - task: validate:compatibility
       - task: render
       - task: lint:rendered
       - task: validate:crd-split
+      - task: lint:version
       - task: scan:conftest-verify
       - task: scan:conftest
 
@@ -1119,6 +1334,86 @@ tasks:
   # pipeline to it would be the wrong dependency — a single broken contract would
   # block the whole pipeline. Instead it runs as a separate, targeted call (+ its
   # own CI job contract-validate.yml, which only checks components that carry one).
+
+  # Note: validate:compatibility IS part of `ci` (unlike validate:contract) because
+  # compatibility.yaml is a UNIVERSAL per-component contract — every component is
+  # required to carry one (no per-component rollout). A missing or invalid
+  # compatibility.yaml is always a pipeline failure, not an optional gap to report.
+
+  validate:compatibility:
+    desc: 'Compatibility-Contract schema validation (apps#246): every component compatibility.yaml must conform to schemas/compatibility.schema.json'
+    summary: |
+      Validates every component's compatibility.yaml against
+      schemas/compatibility.schema.json (draft 2020-12) with check-jsonschema.
+      Fails closed on zero found (no empty-run pass).
+
+      Unlike validate:contract (customization.yaml, per-component rollout), this task
+      is part of `task ci` because compatibility.yaml is a universal per-component
+      contract — every component is required to carry one.
+
+      Schema enforces:
+        - required: [requires, provides]
+        - provides[] items are closed (additionalProperties:false) — rejects legacy 'apis' key
+        - provides[].version.sot enum: [app, chart, crd-schema, none]
+        - version block is optional (unbuilt stubs carry no version)
+        - capabilities[] is optional per item (providers-style no-capability components)
+
+      Optional per-component scope: `task validate:compatibility -- <sub-layer>/<component>`
+      validates only that component (parity with validate:contract). With no arg every
+      component is validated AND the negative fixtures under schemas/testdata/ are asserted
+      to be rejected (red-green regression guard for the schema's reject-side).
+    cmd: |
+      set -uo pipefail
+      schema="schemas/compatibility.schema.json"
+      # Optional per-component scope: `task validate:compatibility -- <sub-layer>/<component>`.
+      scope="{{.CLI_ARGS}}"
+      if [ -n "$scope" ]; then
+        set -- "sub-layers/${scope%/*}/components/${scope#*/}/"
+      else
+        set -- sub-layers/*/components/*/
+      fi
+      fail=0
+      found=0
+      for cdir in "$@"; do
+        [ -d "$cdir" ] || continue
+        comp_id=$(echo "$cdir" | sed 's|sub-layers/||; s|/components/|/|; s|/$||')
+        cfile="${cdir}compatibility.yaml"
+        if [ ! -f "$cfile" ]; then
+          echo "✗ ${comp_id}: compatibility.yaml MISSING"
+          fail=1
+          continue
+        fi
+        found=$((found+1))
+        if out=$(check-jsonschema --schemafile "$schema" "$cfile" 2>&1); then
+          echo "✓ ${comp_id}"
+        else
+          echo "✗ ${comp_id}:"
+          printf '%s\n' "$out" | sed 's/^/    /'
+          fail=1
+        fi
+      done
+      echo ""
+      if [ "$found" -eq 0 ]; then
+        echo "ERROR: no compatibility.yaml files found — check sub-layers/ structure" >&2
+        exit 1
+      fi
+      echo "→ ${found} component(s) validated against ${schema}."
+      # Negative-fixture regression guard (full-corpus runs only). The schema MUST
+      # reject each known-bad fixture; a fixture that PASSES means the reject-side
+      # (additionalProperties:false / required sot / sot enum) silently regressed.
+      if [ -z "$scope" ]; then
+        for nf in schemas/testdata/compatibility-apis-legacy.yaml \
+                  schemas/testdata/compatibility-missing-sot.yaml \
+                  schemas/testdata/compatibility-bad-sot-enum.yaml; do
+          if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
+            echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
+            fail=1
+          else
+            echo "✓ negative fixture correctly rejected: $(basename "$nf")"
+          fi
+        done
+      fi
+      exit $fail
 
   # --- Worktree (parallel independent sessions) ---
   # Multiple independent Claude Code sessions build components in parallel on ONE

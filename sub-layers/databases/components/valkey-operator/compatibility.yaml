@@ -1,7 +1,10 @@
 requires: {} # no catalog-internal deps; substrate need is capability-form, not a version pin (#71)
 provides:
   - name: valkey-operator
-    apis:
-      - valkey-operator@v0.0.61 # hyperspike/valkey-operator, CRD valkeys.hyperspike.io/v1 (Valkey 8.1.4)
+    version:
+      sot: app
+      app: v0.0.61
+    api_surface:
+      - hyperspike.io/Valkey@v1
     capabilities:
       - {id: redis-managed, swap_class: data-migration} # realizes redis-managed via Valkey (Redis-wire-compatible)

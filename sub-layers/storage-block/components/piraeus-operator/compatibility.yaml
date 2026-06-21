@@ -15,12 +15,14 @@ requires:
 # Provides the swappable capability `block-storage-replicated` — present in
 # catalog/capability-index.yaml with piraeus-operator as the active implementation
 # at swap_class data-migration (replacing the replicated-block backend is a
-# data-migration, not a drop-in). The CRD half is apis-only (no capability); the
+# data-migration, not a drop-in). The CRD half is api-surface-only (no capability); the
 # operational capability lives here in the workload that reconciles those CRs into
 # a replicated DRBD/Linstor storage cluster.
 provides:
   - name: piraeus-operator
-    apis:
-      - piraeus-operator@v2.10.7
+    version:
+      sot: app
+      app: v2.10.7
+    api_surface: []
     capabilities:
       - {id: block-storage-replicated, swap_class: data-migration}
