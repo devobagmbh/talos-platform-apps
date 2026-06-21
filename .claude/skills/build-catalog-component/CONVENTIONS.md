@@ -66,7 +66,7 @@ A component's `provides[].capabilities` takes one of two shapes, set by the plan
   as a workaround for a capability the component genuinely provides.
 - **`capabilities: []`** — the component provides no swappable capability. Two
   legitimate sub-cases:
-  - **No-capability by design (apis-only)** — the plan's `capability` is
+  - **No-capability by design (api-surface-only)** — the plan's `capability` is
     `{id: null, swap_class: null}` (e.g. a provider-exclusive CRD framework;
     precedent: `lifecycle/providers`).
     Carry `capabilities: []` **without** a `# TODO:` and declare the version block

@@ -113,7 +113,7 @@ at.
    swappable capability whose id is not yet indexed, so name the intended id and
    record a pre-build blocker in `open_questions[]` (never a silent `# TODO`, never
    an invented index row); or **no-capability** — `capability.id: null` (`{id: null,
-   swap_class: null}`) when the component provides no swappable capability (apis-only
+   swap_class: null}`) when the component provides no swappable capability (api-surface-only
    foundational, e.g. a provider-exclusive CRD framework; precedent
    `lifecycle/providers`). `capability.id: null` is NOT the "not-yet-indexed" marker —
    that is the pending-index state (a named, non-null intended id + an

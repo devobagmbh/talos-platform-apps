@@ -12,14 +12,14 @@ crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The CDI operator-config CRD is the API surface
+# api-surface-only, NO capability. The CDI operator-config CRD is the API surface
 # (schema), not the swappable operational capability. CDI is a supporting
 # infrastructure component of the vm-runtime app (disk-image import for VMs); it
 # is not itself a swappable interface -- no consumer would swap CDI out
 # independently of KubeVirt, so neither the CDI workload nor its CRD carries a
 # capability id. Carrying capabilities: [] here is the deliberate design
 # (precedent: storage-block/piraeus-operator-crds and
-# observability/prometheus-operator-crds, both apis-only with no capability),
+# observability/prometheus-operator-crds, both api-surface-only with no capability),
 # NOT a deferral -- so no `# TODO:` here.
 provides:
   - name: kubevirt-cdi-crds

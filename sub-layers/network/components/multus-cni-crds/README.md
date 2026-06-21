@@ -68,12 +68,12 @@ intervention. A version bump is a separate reviewed change.
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The
+api-surface-only, **no capability** — `capabilities: []`. The
 `NetworkAttachmentDefinition` CRD is the API surface (schema), not a swappable
 operational capability. The swappable capability `secondary-network-attachment`
 is provided by the workload artifact `network/multus-cni` (the controller that
 implements the CNI delegation), not by the CRD schema alone (precedent:
-`observability/prometheus-operator-crds`, likewise apis-only).
+`observability/prometheus-operator-crds`, likewise api-surface-only).
 
 ## Sync-wave
 

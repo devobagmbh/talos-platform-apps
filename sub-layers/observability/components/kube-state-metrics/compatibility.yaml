@@ -11,7 +11,7 @@ provides:
       app: 2.19.1   # real kube-state-metrics app (apis[] held chart 7.5.1)
       chart: 7.5.1
     api_surface: []
-    # No-capability by design (apis-only). kube-state-metrics is the canonical,
+    # No-capability by design (api-surface-only). kube-state-metrics is the canonical,
     # sole provider of the kube_* object-state series over a Prometheus /metrics
     # endpoint — there is no drop-in swap alternative implementing the same
     # interface, so it provides no swappable capability (precedent:

@@ -95,12 +95,12 @@ a separate reviewed change.
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []`. The `postgresql.cnpg.io` CRDs
+api-surface-only, **no capability** — `capabilities: []`. The `postgresql.cnpg.io` CRDs
 are the API surface (schemas), not a swappable operational capability. The
 swappable capability `cnpg-postgres` (managed instanced PostgreSQL) is provided by
 the workload artifact `databases/cnpg` (the operator that reconciles the
 `Cluster` / `Backup` / etc. CRs), not by the CRD schemas alone (precedent:
-`network/multus-cni-crds`, likewise apis-only with the capability on its workload
+`network/multus-cni-crds`, likewise api-surface-only with the capability on its workload
 counterpart). The `provides[].apis` entry pins the representative API-group surface
 `postgresql.cnpg.io/Cluster@v1` (`Cluster` is the primary CRD kind).
 

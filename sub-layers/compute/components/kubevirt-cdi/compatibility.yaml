@@ -13,13 +13,13 @@
 requires:
   compute/kubevirt-cdi-crds: ">=v0.1.0"
 
-# apis-only, NO capability — capabilities: [] is the deliberate design, not a
+# api-surface-only, NO capability — capabilities: [] is the deliberate design, not a
 # deferral (so no `# TODO:`). CDI is a supporting infrastructure component bundled
 # into the vm-runtime app (disk-image import for VMs); it is not itself a swappable
 # interface — no consumer would swap CDI out independently of KubeVirt. The plan's
 # capability is {id: null, swap_class: null}, and catalog/capability-index.yaml ties
 # CDI to the vm-runtime entry only as a bundled member (`# kubevirt + kubevirt-cdi`),
-# not as a capability of its own. Same shape as the -crds half (apis-only) and the
+# not as a capability of its own. Same shape as the -crds half (api-surface-only) and the
 # precedents storage-block/piraeus-operator-crds and observability/prometheus-operator-crds.
 provides:
   - name: kubevirt-cdi

@@ -149,8 +149,8 @@ time (see [Admission webhook & bootstrap](#admission-webhook--bootstrap)).
 
 ## Capability
 
-apis-only, **no capability** — `capabilities: []` (precedent: `lifecycle/providers`,
-likewise apis-only with no capabilities, no `# TODO`). Two reasons this is a design
+api-surface-only, **no capability** — `capabilities: []` (precedent: `lifecycle/providers`,
+likewise api-surface-only with no capabilities, no `# TODO`). Two reasons this is a design
 state, not a deferral:
 
 - The `monitoring.coreos.com` API group is **provider-exclusive** — it is the

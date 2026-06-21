@@ -12,13 +12,13 @@ crd-bearing: true
 
 requires: {}
 
-# apis-only, NO capability. The piraeus.io Linstor CRDs are the API surface
+# api-surface-only, NO capability. The piraeus.io Linstor CRDs are the API surface
 # (schema), not the swappable operational capability. The capability
 # `block-storage-replicated` is provided by the workload artifact
 # `storage-block/piraeus-operator` (the operator that reconciles these CRs into a
 # replicated DRBD/Linstor storage cluster), not by the CRD schema. Carrying
 # capabilities: [] here is the deliberate design (precedent: storage-objects/garage-crds
-# and observability/prometheus-operator-crds, both apis-only with no capability),
+# and observability/prometheus-operator-crds, both api-surface-only with no capability),
 # NOT a deferral — so no `# TODO:` here.
 provides:
   - name: piraeus-operator-crds
