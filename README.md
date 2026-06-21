@@ -170,15 +170,21 @@ The per-component version SoT is [`.release-please-manifest.json`](.release-plea
 
 **Manual / backfill tag** — a hand-pushed `<sub-layer>/<component>-vX.Y.Z` tag also triggers `oci-publish.yml` directly (first-time backfill or a hotfix). Caveat: push **at most three tags per `git push`** — tags beyond the third in a single push raise no workflow run at all (silently), so batch larger backfills.
 
+**Adoption cutover (pre-existing components).** `bootstrap-sha` in `release-please-config.json` marks where release-please starts managing this repo. Component changes merged *before* that SHA are **not** auto-released by the first run — release-please anchors on its own last release PR (or `bootstrap-sha`), never on the manually backfilled tags, and the manifest already records each component's last published version. Pre-cutover unreleased changes are therefore published via the **manual-backfill path above** when a component next warrants a version (`bootstrap-sha`/`last-release-sha` are top-level-only — there is no per-package config alternative). The pending pre-cutover backfill is tracked in issue #259.
+
 **Recovering a stuck release** — if a release PR merged but no OCI artifact appeared, the cut tag did not reach `oci-publish.yml`. Check the [Actions tab](../../actions/workflows/oci-publish.yml) for a run on that tag:
 
 - A run exists but **failed** (e.g. a transient upstream Helm-repo error during render) → re-run it from the Actions UI (*Re-run failed jobs*). No tag change needed.
-- **No run** exists (the tag event never fired) → re-push the tag to re-raise the event (`oci-publish.yml` has no `workflow_dispatch`, so a tag re-push is the only trigger):
+- **No run** exists (the tag event never fired) → re-push the tag to re-raise the event (`oci-publish.yml` has no `workflow_dispatch`, so a tag re-push is the only trigger). Re-push the tag **at the commit it already points at** (the release PR's merge commit), never at `HEAD`, or a different tree is published — capture that commit *before* deleting the tag:
 
   ```bash
-  git push origin :refs/tags/<sub-layer>/<component>-vX.Y.Z   # delete the remote tag
-  git push origin <sub-layer>/<component>-vX.Y.Z              # re-push at the same commit → triggers oci-publish.yml
+  rel_sha=$(git rev-list -n 1 <sub-layer>/<component>-vX.Y.Z)  # commit the tag points at — capture FIRST
+  git push origin :refs/tags/<sub-layer>/<component>-vX.Y.Z    # delete the remote tag
+  git tag -fs <sub-layer>/<component>-vX.Y.Z "$rel_sha"        # re-create at the same commit (signed)
+  git push origin <sub-layer>/<component>-vX.Y.Z               # re-push → triggers oci-publish.yml
   ```
+
+  While the tag is deleted, a consumer Argo app pinning it by `targetRevision` sees a transient gap until the re-push lands.
 
 **Rotating the App key** — generate a new private key in the GitHub App's settings, update the repo secret `RELEASE_PLEASE_APP_PRIVATE_KEY` with the new PEM, then delete the old key in the App settings. `RELEASE_PLEASE_APP_ID` is unchanged. Old keys stay valid until deleted, so there is no downtime window.
 

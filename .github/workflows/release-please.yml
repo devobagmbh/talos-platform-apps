@@ -52,6 +52,11 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # Bound the run: the concurrency group above is cancel-in-progress: false, so a
+    # hung token-mint or release-please call would otherwise hold the queue (and
+    # block every subsequent release run) up to the 6h GHA default. 10 min is ample
+    # for a metadata-only API run.
+    timeout-minutes: 10
     # Skip (neutral, not failed) until the App is configured, so the workflow does
     # not red-X every push to main during the one-time setup window. Once the repo
     # variable RELEASE_PLEASE_APP_ID is set, the job runs.
