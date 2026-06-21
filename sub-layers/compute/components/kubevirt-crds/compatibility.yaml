@@ -21,6 +21,9 @@ requires: {}
 # both apis-only with no capability), NOT a deferral -- so no `# TODO:` here.
 provides:
   - name: kubevirt-crds
-    apis:
-      - kubevirt.io/KubeVirt@v1   # kubevirts.kubevirt.io (served: v1, v1alpha3)
+    version:
+      sot: crd-schema
+      crd_schema: v1.5.0          # KubeVirt release the kubevirts.kubevirt.io CRD is vendored from
+    api_surface:
+      - kubevirt.io/KubeVirt@v1   # kubevirts.kubevirt.io (served: v1, v1alpha3) (formerly apis[])
     capabilities: []

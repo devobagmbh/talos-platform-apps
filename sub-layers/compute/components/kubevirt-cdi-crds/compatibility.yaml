@@ -23,6 +23,9 @@ requires: {}
 # NOT a deferral -- so no `# TODO:` here.
 provides:
   - name: kubevirt-cdi-crds
-    apis:
-      - cdi.kubevirt.io/CDI@v1beta1   # cdis.cdi.kubevirt.io (served: v1alpha1, v1beta1; storage: v1beta1)
+    version:
+      sot: crd-schema
+      crd_schema: v1.62.0             # CDI release the cdis.cdi.kubevirt.io CRD is vendored from
+    api_surface:
+      - cdi.kubevirt.io/CDI@v1beta1   # cdis.cdi.kubevirt.io (served: v1alpha1, v1beta1; storage: v1beta1) (formerly apis[])
     capabilities: []
