@@ -29,6 +29,13 @@ vars:
       for sldir in sub-layers/*/; do
         sl=$(basename "$sldir")
         for cdir in "$sldir"components/*/; do
+          # Stack descriptors (compatibility.yaml `stack: true`) are NOT components —
+          # never built or published (e.g. observability/kube-prometheus-stack, a
+          # composition, not an OCI distribution unit). Skip them so render / task ci /
+          # the publish matrix never enumerate them.
+          if [ "$(yq -r '.stack // false' "${cdir}compatibility.yaml" 2>/dev/null)" = "true" ]; then
+            continue
+          fi
           echo "$sl/$(basename "$cdir")"
         done
       done
@@ -96,6 +103,14 @@ tasks:
       if [ ! -d "$root" ]; then
         echo "ERROR: Komponente ${component_id} existiert nicht (${root})"
         exit 1
+      fi
+
+      # Stack descriptors (compatibility.yaml `stack: true`) carry no render input and
+      # are never built — render is a clean no-op. They are already excluded from the
+      # COMPONENTS matrix; this guard handles a direct `task render:one -- <stack>`.
+      if [ "$(yq -r '.stack // false' "${root}/compatibility.yaml" 2>/dev/null)" = "true" ]; then
+        echo "↳ skip ${component_id} (stack — not a buildable component)"
+        exit 0
       fi
 
       mkdir -p "$(dirname "$out")"
@@ -1231,6 +1246,11 @@ tasks:
       set -- {{.CLI_ARGS}}
       component_id="${1:?usage: task publish -- <sub-layer>/<component> <tag>}"
       tag="${2:?usage: task publish -- <sub-layer>/<component> <tag>}"
+      compat="sub-layers/${component_id%/*}/components/${component_id#*/}/compatibility.yaml"
+      if [ "$(yq -r '.stack // false' "$compat" 2>/dev/null)" = "true" ]; then
+        echo "ERROR: ${component_id} is a stack (composition), not a publishable component — refusing to publish (see ${compat%/compatibility.yaml}/README.md)" >&2
+        exit 1
+      fi
       task render:one -- "$component_id"
       task package    -- "$component_id" "$tag"
       task push       -- "$component_id" "$tag"
@@ -1250,6 +1270,11 @@ tasks:
       fi
       for cdir in "$sldir"/*/; do
         component=$(basename "$cdir")
+        # Skip stack descriptors (compatibility.yaml `stack: true`) — never published.
+        if [ "$(yq -r '.stack // false' "${cdir}compatibility.yaml" 2>/dev/null)" = "true" ]; then
+          echo "↳ skip ${sub_layer}/${component} (stack — not a publishable component)"
+          continue
+        fi
         task publish -- "${sub_layer}/${component}" "$tag"
       done
 

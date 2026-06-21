@@ -2,10 +2,12 @@
 
 `kube-prometheus-stack` is a **stack**: the *name of a composition* of individual
 observability apps, **not** a catalog component. It is **never built, packaged,
-signed, or published** as an OCI artifact — it is intentionally excluded from
-`release-please-config.json` and carries no `helm/`, `manifests/`, or
-`customization.yaml`. There is **no** `oci://…/observability/kube-prometheus-stack`
-artifact, and there never will be one.
+signed, or published** as an OCI artifact — it carries no `helm/`, `manifests/`, or
+`customization.yaml`, and the `stack: true` marker in its
+[`compatibility.yaml`](compatibility.yaml) excludes it from the Taskfile build/publish
+discovery (`COMPONENTS` / `render` / `publish`), so this contract is mechanically
+enforced, not merely documented. There is **no**
+`oci://…/observability/kube-prometheus-stack` artifact, and there never will be one.
 
 This directory is kept **only as the composition map**: it records which
 independently-versioned catalog components together cover what the upstream

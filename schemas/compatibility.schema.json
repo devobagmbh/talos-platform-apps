@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://devoba.de/schemas/compatibility.schema.json",
   "title": "Component Compatibility Contract",
-  "description": "Declares the dependency surface and API/capability surface of a catalog component. Lives as compatibility.yaml next to helm/ + manifests/ and ships with the OCI artifact.\n\nSchema-contract-parity decisions (rules/schema-contract-parity.md):\n1. Closed-vs-open: closed via additionalProperties:false on provides[] items — hygiene and the explicit reject-apis threat-model (a legacy 'apis' key under provides[] fails validation).\n2. Duplicate-key behavior: duplicate top-level keys are a YAML authoring error; readers treat the file as corrupt and surface it, not silently last-wins.\n3. No schema version field — evolution tracked via git history under harness-evolution review (rules/review-rigor.md 2-round R2 minimum).\n4. compatibility.yaml is repo-internal trusted data — no untrusted-data sentinel applies.\n5. Per-field mutability: 'requires' and 'provides' are mutable-in-place (version bumps, new capabilities). 'crd-bearing' is mutable-in-place.\n\nNote: structural typing only. sot<->payload consistency (e.g. sot:app requires app: to be set) and render-parity are owned by task lint:version, not this schema.",
+  "description": "Declares the dependency surface and API/capability surface of a catalog component. Lives as compatibility.yaml next to helm/ + manifests/ and ships with the OCI artifact.\n\nSchema-contract-parity decisions (rules/schema-contract-parity.md):\n1. Closed-vs-open: closed via additionalProperties:false on provides[] items — hygiene and the explicit reject-apis threat-model (a legacy 'apis' key under provides[] fails validation).\n2. Duplicate-key behavior: duplicate top-level keys are a YAML authoring error; readers treat the file as corrupt and surface it, not silently last-wins.\n3. No schema version field — evolution tracked via git history under harness-evolution review (rules/review-rigor.md 2-round R2 minimum).\n4. compatibility.yaml is repo-internal trusted data — no untrusted-data sentinel applies.\n5. Per-field mutability: 'requires' and 'provides' are mutable-in-place (version bumps, new capabilities). 'crd-bearing' and 'stack' are mutable-in-place.\n\nNote: structural typing only. sot<->payload consistency (e.g. sot:app requires app: to be set) and render-parity are owned by task lint:version, not this schema.",
   "type": "object",
   "additionalProperties": false,
   "required": ["requires", "provides"],
@@ -10,6 +10,10 @@
     "crd-bearing": {
       "type": "boolean",
       "description": "Marks the CRD-bearing half of a strict-B pair (ADR-0028). When true, the validate:crd-split gate asserts kind:CustomResourceDefinition count > 0 in the rendered artifact."
+    },
+    "stack": {
+      "type": "boolean",
+      "description": "Marks this directory as a STACK (composition) descriptor, NOT a buildable/publishable component (e.g. observability/kube-prometheus-stack — a composition of individual apps, not an OCI distribution unit per ADR-0009). When true the Taskfile build/publish discovery skips it: the COMPONENTS var (and thus render / task ci) excludes it, render:one is a no-op, and publish / publish:sublayer refuse it — so the 'never built or published' contract is mechanically enforced, not merely documented. The directory still carries a schema-valid compatibility.yaml (this file) and a README composition map, but ships no helm/ or manifests/ render input."
     },
     "requires": {
       "type": "object",
