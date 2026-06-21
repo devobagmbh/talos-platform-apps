@@ -15,6 +15,18 @@ standalone `prometheus-operator` chart is DEPRECATED upstream; kube-prometheus-s
 with every instance, exporter, and scraper disabled is the maintained path to a
 framework-only render.
 
+The chart source is a deliberate but **swappable** implementation detail: this
+component is defined by *what it ships* (the operator controller + RBAC + admission
+webhook, **0** CRDs — the render-parity contract), not by the chart it renders from.
+kube-prometheus-stack operator-only is chosen because it is currently the only
+maintained Helm path (a standalone operator-only chart is an open upstream request,
+[prometheus-community/helm-charts#5497](https://github.com/prometheus-community/helm-charts/issues/5497)).
+Should that chart ever ship — or the operator's own `bundle.yaml` be vendored as raw
+`manifests/` — the switch is a localized change to
+[`helm/prometheus-operator.yaml`](helm/prometheus-operator.yaml) (`chart` / `repo` /
+`version` + values) with no change to the OCI path, the capability contract, or the
+consumer's Argo wiring.
+
 ## What ships
 
 The Prometheus Operator controller framework, and nothing else:
