@@ -14,6 +14,7 @@ bracket (ADR-0009).
 | [`kubevirt-cdi-crds`](components/kubevirt-cdi-crds/) | -1 | Strict-B CRD half (ADR-0028) — the CDI operator-config `CustomResourceDefinition` (`cdis.cdi.kubevirt.io`, cluster-scoped). Lands before its workload counterpart. |
 | [`kubevirt-cdi`](components/kubevirt-cdi/) | 0 | Strict-B workload half — the CDI operator (Deployment, RBAC), the `cdi` Namespace (PSA `restricted`), and the `CDI` operator-config CR. Requires `kubevirt-cdi-crds`. |
 | [`node-feature-discovery-crds`](components/node-feature-discovery-crds/) | -1 | Strict-B CRD half (ADR-0028) — the 3 node-feature-discovery `CustomResourceDefinition`s (`nfd.k8s-sigs.io`: `NodeFeature`, `NodeFeatureRule`, `NodeFeatureGroup`). Lands before its workload counterpart. |
+| [`node-feature-discovery`](components/node-feature-discovery/) | 0 | Strict-B workload half — the NFD master Deployment + worker DaemonSet + gc Deployment, the `node-feature-discovery` Namespace (PSA `baseline`); api-surface-only, no capability (hardware-feature labeling enabler for `gpu-runtime`/`vm-runtime`). Requires `node-feature-discovery-crds`. |
 
 ## Notes
 
@@ -26,5 +27,10 @@ bracket (ADR-0009).
 - **Hardware prerequisites** for VM runtime (`vt-x`/`amd-v`, the KVM kernel module)
   are a substrate-layer concern (base), not a catalog deliverable — consumers gate
   scheduling on the nodes that carry them.
-- The sub-layer also brackets the GPU/hardware axis (node-feature-discovery,
-  nvidia-device-plugin per epic #49); those components land as they are built.
+- **Hardware-feature labeling** is delivered by the **node-feature-discovery**
+  strict-B pair (`node-feature-discovery-crds` sync-wave -1 + `node-feature-discovery`
+  sync-wave 0). NFD labels nodes (`feature.node.kubernetes.io/*`) so GPU/VM-runtime
+  consumers can nodeSelect on hardware features; it is an enabler, not itself a
+  swappable capability.
+- The sub-layer also brackets **nvidia-device-plugin** (GPU scheduling, per
+  epic #49); it lands as it is built.
