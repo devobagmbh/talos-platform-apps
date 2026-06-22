@@ -1,0 +1,31 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for node-feature-discovery. Ships the NFD
+# workload — the node-feature-discovery Namespace, the master Deployment
+# (role: master), the worker DaemonSet (role: worker), the gc Deployment
+# (role: gc), and their RBAC/ServiceAccounts — and carries 0 CRDs (the 3
+# nfd.k8s-sigs.io CRDs ship in the SEPARATE strict-B artifact
+# compute/node-feature-discovery-crds, sync-wave -1). NO crd-bearing marker here
+# (that marks the -crds half only).
+#
+# requires the -crds artifact: the master reconciles NodeFeature/NodeFeatureRule
+# CRs, which are instances of the nfd.k8s-sigs.io CRDs, so the CRD schemas must be
+# established first (strict-B ordering). Same pattern as
+# compute/kubevirt-cdi -> compute/kubevirt-cdi-crds.
+requires:
+  compute/node-feature-discovery-crds: ">=v0.1.0"
+
+# api-surface-only, NO capability — capabilities: [] is the deliberate design, not a
+# deferral (so no `# TODO:`). NFD is an infrastructure node-labeling enabler bundled
+# under the hardware-dependent compute capabilities (gpu-runtime, vm-runtime): it
+# labels nodes so those capabilities' workloads can target them via nodeSelectors,
+# but NFD itself is not a swappable interface — no consumer would swap NFD out
+# independently to obtain the same feature.node.kubernetes.io/* labels, and
+# catalog/capability-index.yaml carries no node-labeling / hardware-feature-discovery
+# capability id. Same shape as the -crds half (api-surface-only) and the precedent
+# compute/kubevirt-cdi.
+provides:
+  - name: node-feature-discovery
+    version:
+      sot: app          # NFD app-version — the running workload (#226 A6)
+      app: v0.18.3      # node-feature-discovery release (image registry.k8s.io/nfd/node-feature-discovery:v0.18.3)
+    api_surface: []     # the nfd.k8s-sigs.io CRDs ship in compute/node-feature-discovery-crds, not here
+    capabilities: []

@@ -1,0 +1,32 @@
+# Customization Contract v2 (ADR-0024). Strict-B WORKLOAD half (ADR-0028) for
+# node-feature-discovery. The workload (the node-feature-discovery Namespace, the
+# master Deployment, the worker DaemonSet, the gc Deployment, and their RBAC) is the
+# signed, pre-rendered artifact — catalog-owned, never consumer-patched.
+#
+# The freeze line is genuinely all-empty (NOT a hollow pass): NFD is a
+# cluster-agnostic node labeler. The master/worker/gc pods carry no cluster-specific
+# URLs, credentials, node addresses, or consumer config references — node-feature
+# labeling is driven by NFD's internal detection logic. The optional NodeFeatureRule
+# CRs a consumer authors are instances of a CRD (consumer-owned, applied in the
+# consumer overlay), NOT one of the four catalog config shapes (env / config / secret
+# / selector) the workload reads through provided_refs — so provided_refs is empty.
+# The master does not render a label selector against consumer-supplied CRs (it
+# watches NodeFeature/NodeFeatureRule via its reconcile loop), so selector_crs: [] /
+# provided_selectors: {} (the cnpg / kubevirt-cdi precedent). A cluster-specific
+# concern like replica count, node placement, or enabling topologyUpdater/prometheus
+# is a consumer-overlay patch of a catalog default, not a freeze-line shape.
+#
+# external_dependencies: the strict-B CRD half compute/node-feature-discovery-crds
+# (sync-wave -1) must be established before this workload (wave 0).
+freeze_line:
+  workload: rendered/manifest.yaml  # NFD master/worker/gc workload + RBAC + Namespace — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - compute/node-feature-discovery-crds

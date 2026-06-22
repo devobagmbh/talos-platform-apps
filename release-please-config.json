@@ -24,6 +24,10 @@
       "component": "compute/node-feature-discovery-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/compute/components/node-feature-discovery": {
+      "component": "compute/node-feature-discovery",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/databases/components/cnpg": {
       "component": "databases/cnpg"
     },
