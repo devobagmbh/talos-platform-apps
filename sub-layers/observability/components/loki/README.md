@@ -91,7 +91,7 @@ of these:
 - **The two Garage buckets** — a chunks bucket and a ruler bucket, provisioned by
   `storage-objects/garage-buckets` (sync-wave 10), not the `garage` workload (wave 0);
   their names are what `S3_BUCKET_CHUNKS` / `S3_BUCKET_RULER` point at. NOTE: the chunks
-  + ruler buckets MUST exist before Loki can write — Loki CrashLoops on a missing S3
+  and ruler buckets MUST exist before Loki can write — Loki CrashLoops on a missing S3
   bucket until it appears (a visible, self-healing failure). Since `garage-buckets` and
   `loki` share sync-wave 10, the consumer SHOULD ensure bucket readiness, e.g. by
   ordering `garage-buckets` ahead of `loki` in its composition.
