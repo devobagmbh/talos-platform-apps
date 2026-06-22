@@ -22,7 +22,7 @@
   "sub-layers/observability/components/prometheus-operator": "0.2.0",
   "sub-layers/observability/components/prometheus-operator-crds": "0.2.0",
   "sub-layers/registry/components/harbor": "0.3.0",
-  "sub-layers/secrets/components/cert-manager": "0.1.0",
+  "sub-layers/secrets/components/cert-manager": "0.2.0",
   "sub-layers/secrets/components/external-secrets": "0.2.0",
   "sub-layers/storage-block/components/democratic-csi": "0.2.0",
   "sub-layers/storage-block/components/piraeus-operator": "0.1.0",
