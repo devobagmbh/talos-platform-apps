@@ -1,0 +1,153 @@
+# mimir — Grafana Mimir, the platform metrics store + PromQL query endpoint.
+# Layer-2 default values for talos-platform-apps. Deployed in the classic
+# microservices architecture (mimir-distributed chart 5.x), every core component
+# at replicas 1, backed by S3 (Garage) for blocks + ruler.
+# Orchestrator decision: consumers are small single-node clusters, so 1 replica per
+# microservice is the right footprint — these microservices are inherent to
+# mimir-distributed (do NOT force a non-chart-native monolith).
+#
+# Why chart 5.8.0 (classic) and NOT 6.x (latest):
+#   Chart 6.x (latest, 6.0.6/appVersion 3.0.4) defaults to the Kafka-based
+#   ingest-storage architecture (`kafka.enabled: true`, `ingest_storage.enabled:
+#   true`) — it mandates a Kafka broker, which directly violates this build's
+#   small-single-node-footprint mandate. Chart 5.8.0 is the latest release of the
+#   classic microservices architecture (no Kafka), the correct footprint. This is a
+#   deliberate not-latest pin.
+#
+# Freeze-line (ADR-0024 v2, Shapes a + c): the WORKLOAD (the rendered Deployments/
+# StatefulSets + Services + RBAC + the chart-generated mimir config ConfigMap) is
+# catalog-owned and signed; the S3 CONNECTION is 100% consumer-owned and per-cluster.
+# The rendered Mimir config references ${VAR} placeholders (NOT hardcoded endpoints/
+# keys); Mimir resolves them at runtime from consumer-supplied env via
+# `-config.expand-env=true`. That flag is ALREADY in every component container's
+# default args in this chart (verified rendered — no extraArgs needed). Two refs:
+#   - ConfigMap mimir-runtime-config (envFrom, non-secret): S3_ENDPOINT, S3_REGION,
+#     S3_BUCKET_BLOCKS, S3_BUCKET_RULER
+#   - Secret    mimir-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
+#     S3_SECRET_ACCESS_KEY
+#
+# Chart-template verification (chart 5.8.0):
+#   * env injection: the chart exposes the top-level global knob `global.extraEnvFrom`,
+#     which the shared templates/lib/containerEnv.tpl emits as `envFrom:` on EVERY
+#     component pod (distributor/ingester/querier/query-frontend/query-scheduler/
+#     store-gateway/compactor/ruler) — so both refs land on every S3-touching pod.
+#   * expand-env: `-config.expand-env=true` is in every component container's default
+#     args (templates/<component>/*.yaml) — verified rendered, not added here.
+#   * ${VAR} placeholders land in the rendered mimir config ConfigMap (templates/
+#     mimir-config.yaml) via `mimir.structuredConfig` merged into `mimir.config`:
+#     common.storage.s3 + blocks_storage.s3 + ruler_storage.s3 carry the ${VAR}
+#     strings literally; expanded at runtime by -config.expand-env=true.
+
+metadata:
+  chart: mimir-distributed
+  repo: https://grafana.github.io/helm-charts
+  version: 5.8.0  # bare SemVer — NO leading 'v' (--version v5.8.0 fails to resolve)
+  # appVersion 2.17.0 → image tag grafana/mimir:2.17.0 (chart appVersion pin, NEVER
+  # :latest; never overridden here). VERIFY at push that 5.8.0 is still the current
+  # stable classic-architecture release and appVersion is still 2.17.0
+  # (`helm show chart mimir-distributed --repo https://grafana.github.io/helm-charts --version 5.8.0`).
+  namespace: mimir
+
+values:
+  # Shape (a)+(c) freeze-line: feed the consumer-owned S3 connection in as env so the
+  # ${VAR} placeholders in the rendered config resolve at runtime. global.extraEnvFrom
+  # is emitted as `envFrom:` on every component pod by templates/lib/containerEnv.tpl.
+  global:
+    extraEnvFrom:
+      - configMapRef:
+          name: mimir-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_BLOCKS, S3_BUCKET_RULER
+      - secretRef:
+          name: mimir-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+  # Mimir runtime configuration. structuredConfig merges into the chart's mimir.config
+  # and renders into the mimir config ConfigMap (templates/mimir-config.yaml). The S3
+  # connection values are ${VAR} placeholders, NOT real endpoints/keys: the freeze-line
+  # keeps the S3 connection 100% consumer-owned. Garage specifics: path-style addressing
+  # (s3.endpoint set to the explicit URL), TLS on (insecure: false), region as ${VAR}.
+  mimir:
+    structuredConfig:
+      common:
+        storage:
+          backend: s3
+          s3:
+            endpoint: ${S3_ENDPOINT}
+            region: ${S3_REGION}
+            access_key_id: ${S3_ACCESS_KEY_ID}
+            secret_access_key: ${S3_SECRET_ACCESS_KEY}
+            # Garage requires path-style addressing; insecure:false keeps TLS on.
+            insecure: false
+      blocks_storage:
+        s3:
+          bucket_name: ${S3_BUCKET_BLOCKS}
+      ruler_storage:
+        s3:
+          bucket_name: ${S3_BUCKET_RULER}
+
+  # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
+  # small single-workload cluster; no zone awareness).
+  distributor:
+    replicas: 1
+  ingester:
+    replicas: 1
+    # Single ingester: no cross-pod replication, so zone-aware replication is off and
+    # the replication factor is 1 (chart default 3 is a multi-replica/zone value).
+    zoneAwareReplication:
+      enabled: false
+  querier:
+    replicas: 1
+  query_frontend:
+    replicas: 1
+  query_scheduler:
+    replicas: 1
+  store_gateway:
+    replicas: 1
+    zoneAwareReplication:
+      enabled: false
+  compactor:
+    replicas: 1
+  ruler:
+    # KEEP the ruler: it evaluates recording/alerting rules and reads them from the
+    # ruler S3 bucket (ruler_storage.s3 → ${S3_BUCKET_RULER}).
+    enabled: true
+    replicas: 1
+
+  # Disabled — not needed for the small single-node footprint:
+  # the bundled minio (we use external Garage S3),
+  minio:
+    enabled: false
+  # the nginx/gateway front-end (a consumer fronts Mimir via its own gateway),
+  nginx:
+    enabled: false
+  gateway:
+    enabled: false
+  # the alertmanager (the platform ships a standalone alertmanager component, so no
+  # alertmanager S3 bucket is needed here),
+  alertmanager:
+    enabled: false
+  # the overrides-exporter and the rollout-operator (only needed for zone-aware HA
+  # StatefulSet rollouts — we run replicas 1 with no zone awareness),
+  overrides_exporter:
+    enabled: false
+  rollout_operator:
+    enabled: false
+  # and ALL memcached caches (distributed-mode optimizations; add Deployments +
+  # unpinned images for no benefit at this scale).
+  chunks-cache:
+    enabled: false
+  index-cache:
+    enabled: false
+  metadata-cache:
+    enabled: false
+  results-cache:
+    enabled: false
+
+  # The chart's bundled metamonitoring (ServiceMonitor/rules/dashboards) depends on
+  # prometheus-operator CRDs the platform does not ship here; external scrape via
+  # observability/alloy instead. Disable the smoke-test pod too (not a GitOps workload).
+  metaMonitoring:
+    serviceMonitor:
+      enabled: false
+    grafanaAgent:
+      enabled: false
+  smoke_test:
+    enabled: false
