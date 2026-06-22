@@ -13,7 +13,7 @@
   "sub-layers/lifecycle/components/crossview": "0.2.0",
   "sub-layers/lifecycle/components/ipxe": "0.1.0",
   "sub-layers/lifecycle/components/providers": "0.2.0",
-  "sub-layers/network/components/multus-cni": "0.1.0",
+  "sub-layers/network/components/multus-cni": "0.2.0",
   "sub-layers/network/components/multus-cni-crds": "0.1.0",
   "sub-layers/observability/components/alloy": "0.2.0",
   "sub-layers/observability/components/hubble": "0.1.0",
