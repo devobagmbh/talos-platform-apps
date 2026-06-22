@@ -17,7 +17,7 @@
   "sub-layers/network/components/multus-cni-crds": "0.1.0",
   "sub-layers/observability/components/alloy": "0.1.0",
   "sub-layers/observability/components/hubble": "0.1.0",
-  "sub-layers/observability/components/kube-state-metrics": "0.1.0",
+  "sub-layers/observability/components/kube-state-metrics": "0.2.0",
   "sub-layers/observability/components/metrics-server": "0.1.0",
   "sub-layers/observability/components/prometheus-operator": "0.2.0",
   "sub-layers/observability/components/prometheus-operator-crds": "0.1.0",
