@@ -5,7 +5,7 @@
   "sub-layers/compute/components/kubevirt-crds": "0.1.0",
   "sub-layers/databases/components/cnpg": "0.1.0",
   "sub-layers/databases/components/cnpg-crds": "0.1.0",
-  "sub-layers/databases/components/valkey-operator": "0.1.0",
+  "sub-layers/databases/components/valkey-operator": "0.2.0",
   "sub-layers/identity/components/dex": "0.1.0",
   "sub-layers/lifecycle/components/booter": "0.1.0",
   "sub-layers/lifecycle/components/compositions": "0.3.0",
