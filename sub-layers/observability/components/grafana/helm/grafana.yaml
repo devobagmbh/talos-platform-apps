@@ -25,7 +25,8 @@
 #       user/password then resolve via secretKeyRef from the consumer secret using
 #       GF_-named keys (valid env identifiers, consistent with envFrom).
 #   (d) Shape (d) label discovery — the chart's datasource + dashboard sidecars
-#       watch ConfigMaps cluster-wide by label. The catalog ships NO datasources
+#       watch ConfigMaps in the grafana namespace by label (namespace-scoped per
+#       rbac.namespaced: true). The catalog ships NO datasources
 #       and NO dashboards; the consumer creates labelled ConfigMaps
 #       (grafana_datasource=1 / grafana_dashboard=1) that the sidecars import.
 # See customization.yaml + README §Consumer obligations.

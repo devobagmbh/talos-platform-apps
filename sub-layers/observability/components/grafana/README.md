@@ -69,8 +69,10 @@ catalog-owned and signed; the **config** (datasources, dashboards, OIDC, admin) 
   **suppresses** the chart's literal admin Secret (the chart bakes one only when
   that value is empty), so the catalog ships **no literal admin credential**.
 - **Shape (d) — label discovery.** The datasource + dashboard sidecars watch
-  ConfigMaps cluster-wide by label (`grafana_datasource=1` / `grafana_dashboard=1`)
-  and import them. The catalog ships **no** datasources and **no** dashboards.
+  ConfigMaps in the `grafana` namespace by label (`grafana_datasource=1` /
+  `grafana_dashboard=1`) and import them — namespace-scoped per
+  `rbac.namespaced: true`. The catalog ships **no** datasources and **no**
+  dashboards.
 
 The signed workload is never patched.
 
@@ -94,8 +96,11 @@ none of these:
   key would also become a Grafana environment variable.
 - **Labelled datasource / dashboard ConfigMaps** (`grafana_datasource=1` /
   `grafana_dashboard=1`) for the Loki/Mimir/Tempo datasources and any dashboards.
-  Datasources, dashboards, and the OIDC values are **per-cluster consumer
-  overlay** — they differ per cluster and are never baked into the catalog.
+  These ConfigMaps MUST be created **in the `grafana` namespace**: the sidecar
+  RBAC is namespace-scoped (`rbac.namespaced: true`), so labelled ConfigMaps in
+  any other namespace are NOT discovered. Datasources, dashboards, and the OIDC
+  values are **per-cluster consumer overlay** — they differ per cluster and are
+  never baked into the catalog.
 - The **HTTPRoute** fronting Grafana on the Cilium Gateway (TLS terminates there;
   the public root URL is `GF_SERVER_ROOT_URL` + the HTTPRoute host). Base
   Hard-Constraint: no Ingress (`ingress.enabled: false`).

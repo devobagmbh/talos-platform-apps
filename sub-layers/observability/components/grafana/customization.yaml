@@ -20,8 +20,9 @@
 # admin credential.
 #
 # Sidecar label discovery (Shape d). The chart's datasource + dashboard sidecars
-# watch ConfigMaps cluster-wide by label (grafana_datasource=1 /
-# grafana_dashboard=1) and import them. The catalog ships NO datasources and NO
+# watch ConfigMaps in the grafana namespace by label (grafana_datasource=1 /
+# grafana_dashboard=1) and import them — namespace-scoped per rbac.namespaced:
+# true. The catalog ships NO datasources and NO
 # dashboards; the consumer creates the labelled ConfigMaps. selector_crs below
 # maps to those sidecar label watches.
 #
