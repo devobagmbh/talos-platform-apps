@@ -7,23 +7,31 @@
 # ships NO Namespace; this workload is the sole claimant. The chart itself renders
 # ZERO Namespace objects (verified), so this label set is authored here, not copied.
 #
-# enforce: baseline — FORCED by the worker DaemonSet. The worker mounts hostPath
-# volumes (/sys, /boot, /etc/os-release, /usr/lib, /lib, /proc/swaps) for host
-# feature detection — these are architecturally required and cannot be removed. PSA
-# `restricted` forbids hostPath volumes outright, so a namespace labeled
-# `enforce: restricted` would reject the worker pod at admission. A single Namespace
-# carries one enforce level for ALL its pods (master, worker, gc share it), so the
-# worker's hostPath requirement forces the enforce level to `baseline`. The worker
-# satisfies every OTHER baseline control — verified against the rendered pod:
-# hostNetwork: false, no hostPID/hostIPC, no hostPort, no privileged container, no
-# Unmasked procMount — so baseline admits it.
+# enforce: privileged — FORCED by the worker DaemonSet, and the ONLY admissible PSA
+# level for it. The worker mounts hostPath volumes (/sys, /boot, /etc/os-release,
+# /usr/lib, /lib, /proc/swaps + the features.d dir) for host feature detection —
+# architecturally required, cannot be removed. In the Pod Security Standards
+# "HostPath Volumes" is a *Baseline* control ("hostPath volumes must be forbidden"),
+# so BOTH `enforce: baseline` AND `enforce: restricted` reject a hostPath pod at
+# admission — only `privileged` permits hostPath. A single Namespace carries one
+# enforce level for ALL its pods (master, worker, gc share it), so the worker's
+# mandatory hostPath forces the namespace to `privileged`. Verified on a live k8s
+# 1.36 cluster: under `enforce: baseline` the worker DaemonSet is rejected
+# ("violates PodSecurity baseline:latest: hostPath volumes"); under `privileged` it
+# is admitted and becomes Ready (local E2E, 2026-06-22). This matches how every
+# node-level hostPath agent is deployed (node-exporter, CSI/CNI node DaemonSets,
+# local-path-provisioner — all run in privileged-PSA namespaces).
 #
-# audit: restricted + warn: restricted — the master and gc pods ARE restricted-grade
-# (their container securityContext pins runAsNonRoot, drops ALL caps,
-# readOnlyRootFilesystem, allowPrivilegeEscalation: false + a seccompProfile). The
-# audit/warn: restricted labels surface the worker's hostPath non-conformance as a
-# non-blocking audit-log entry + apiserver warning, WITHOUT rejecting it — so the
-# restricted-grade master/gc posture is still visible while the worker is admitted.
+# audit: restricted + warn: restricted — the enforce level is the loosest the worker
+# needs, but audit/warn stay at `restricted` so the namespace is NOT a silent
+# privilege hole: the master and gc pods ARE restricted-grade (their container
+# securityContext pins runAsNonRoot, drops ALL caps, readOnlyRootFilesystem,
+# allowPrivilegeEscalation: false + a seccompProfile — independent of the namespace
+# enforce level) and pass the restricted audit cleanly, while the worker's hostPath
+# usage surfaces as a non-blocking audit-log entry + apiserver warning. So the
+# restricted-grade master/gc posture stays visible and any NEW non-conformance
+# (e.g. a future `privileged: true` slipping into master/gc) is surfaced, even
+# though enforce admits the worker.
 ---
 apiVersion: v1
 kind: Namespace
@@ -33,7 +41,7 @@ metadata:
     app.kubernetes.io/part-of: node-feature-discovery
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/audit-version: latest
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: privileged
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/warn: restricted
     pod-security.kubernetes.io/warn-version: latest
