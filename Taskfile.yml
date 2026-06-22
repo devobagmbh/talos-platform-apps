@@ -582,8 +582,12 @@ tasks:
         - a component dir is missing from the config
         - a config package has no matching component dir (stale entry)
         - a built config package (no initial-version) is missing from the manifest
-        - a stub config package (has initial-version) is also in the manifest (redundant)
         - a package's `component` field != its path-derived <sub-layer>/<component> id
+      Reports (non-fatal ℹ, never exit 1):
+        - a stub config package (has initial-version) is ALSO in the manifest — a
+          vestigial initial-version on an already-released package; release-please
+          reads the manifest, so it is harmless and the maintainer may strip it at
+          leisure (#314: hard-failing this blocked every first-release PR).
       bootstrap-sha/last-release-sha are top-level-only, so this directory↔config parity
       (plus the component-identity check) is the only mechanical guard against a
       forgotten or mis-named component (apps#245, see issue #259).
@@ -663,8 +667,20 @@ tasks:
       t=$(mktemp -d) || { echo "✗ mktemp"; exit 2; }
       trap 'rm -rf "$t"' EXIT
       # A stub = a config package carrying initial-version; a built = one without.
+      # stub fixture victim: any package declaring initial-version.
       stub=$(jq -r '.packages | to_entries[] | select(.value|has("initial-version")) | .key' "$cfg" | head -1)
-      built=$(jq -r 'keys[]' "$man" | head -1)
+      # built fixture victim: a manifest entry whose config package is NOT a stub.
+      # MUST exclude stub-declaring packages — once a first-release stub lands in the
+      # manifest while keeping its initial-version (the "strip at leisure" state this
+      # PR legalizes), a naive `head -1` of manifest keys could pick it, and the
+      # production task would correctly reclassify it as a stub (declares initial-version
+      # ∧ ... here it's IN the manifest, so not a stub — but if Case B then DELETES it
+      # from the fixture it becomes absent-from-manifest ∧ declares-initial-version = a
+      # stub → the "built missing" guard correctly does NOT fire → false Case-B fail).
+      # Picking a genuinely-built (non-stub-declaring) victim keeps Case B robust. (#315 review)
+      jq -r 'keys[]' "$man" | sort > "$t/man-keys"
+      jq -r '.packages | to_entries[] | select(.value|has("initial-version")) | .key' "$cfg" | sort > "$t/stub-keys"
+      built=$(comm -23 "$t/man-keys" "$t/stub-keys" | head -1)
       [ -n "$stub" ] && [ -n "$built" ] || { echo "✗ no stub/built package to derive a fixture from"; exit 2; }
       iv=$(jq -r --arg k "$stub" '.packages[$k]."initial-version"' "$cfg")
 
@@ -1393,10 +1409,14 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + validate:release-config + lint + render + crd-split + scan:conftest)
+    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + validate:release-config + test:release-config + lint + render + crd-split + scan:conftest)
     cmds:
       - task: check:primitives
       - task: validate:release-config
+      # Hermetic regression guard for the #314 first-release relaxation (fast, no
+      # network). Wired into ci so a regression in validate:release-config's stub
+      # handling is caught automatically, not only when a dev remembers (#315 review).
+      - task: test:release-config
       - task: lint
       - task: validate:compatibility
       - task: render
