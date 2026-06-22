@@ -1,0 +1,40 @@
+# node-feature-discovery's own namespace. The NFD workload (master Deployment,
+# worker DaemonSet, gc Deployment) is the sole catalog occupant (dedicated
+# namespace), so this workload artifact ships the Namespace object — a shipped
+# manifest takes precedence over Argo `managedNamespaceMetadata`, making the PSA
+# posture authoritative and self-contained (build skill CONVENTIONS.md
+# § Namespace & PSA). The strict-B CRD half (compute/node-feature-discovery-crds)
+# ships NO Namespace; this workload is the sole claimant. The chart itself renders
+# ZERO Namespace objects (verified), so this label set is authored here, not copied.
+#
+# enforce: baseline — FORCED by the worker DaemonSet. The worker mounts hostPath
+# volumes (/sys, /boot, /etc/os-release, /usr/lib, /lib, /proc/swaps) for host
+# feature detection — these are architecturally required and cannot be removed. PSA
+# `restricted` forbids hostPath volumes outright, so a namespace labeled
+# `enforce: restricted` would reject the worker pod at admission. A single Namespace
+# carries one enforce level for ALL its pods (master, worker, gc share it), so the
+# worker's hostPath requirement forces the enforce level to `baseline`. The worker
+# satisfies every OTHER baseline control — verified against the rendered pod:
+# hostNetwork: false, no hostPID/hostIPC, no hostPort, no privileged container, no
+# Unmasked procMount — so baseline admits it.
+#
+# audit: restricted + warn: restricted — the master and gc pods ARE restricted-grade
+# (their container securityContext pins runAsNonRoot, drops ALL caps,
+# readOnlyRootFilesystem, allowPrivilegeEscalation: false + a seccompProfile). The
+# audit/warn: restricted labels surface the worker's hostPath non-conformance as a
+# non-blocking audit-log entry + apiserver warning, WITHOUT rejecting it — so the
+# restricted-grade master/gc posture is still visible while the worker is admitted.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: node-feature-discovery
+    app.kubernetes.io/part-of: node-feature-discovery
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+  name: node-feature-discovery
