@@ -99,7 +99,7 @@ helm template es "$dom" \
   --repo "https://charts.${dom}.io" \
   --version 2.5.0 --namespace "$dom" --skip-tests \
   --set installCRDs=true \
-  | yq 'select(.kind == "CustomResourceDefinition")'
+  | yq -y 'select(.kind == "CustomResourceDefinition")'
 ```
 
 The source chart+version (external-secrets 2.5.0) is the **drift anchor**. A chart
