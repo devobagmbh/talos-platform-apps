@@ -33,7 +33,9 @@
 metadata:
   chart: grafana
   repo: https://grafana-community.github.io/helm-charts
-  version: 12.4.8  # bare SemVer — NO leading 'v'. appVersion 13.0.2. >>> VERIFY the current chart at push (`helm show chart grafana --repo https://grafana-community.github.io/helm-charts --version 12.4.8`).
+  version: 12.4.8  # bare SemVer — NO leading 'v'. appVersion 13.0.2.
+  # >>> VERIFY the current chart at push:
+  # `helm show chart grafana --repo https://grafana-community.github.io/helm-charts --version 12.4.8`.
   namespace: grafana
 
 values:
@@ -110,9 +112,14 @@ values:
   testFramework:
     enabled: false
 
-  # The datasource/dashboard sidecars need ConfigMap list/watch RBAC.
+  # The datasource/dashboard sidecars need ConfigMap/Secret get/watch/list RBAC.
+  # namespaced:true renders a namespace-scoped Role/RoleBinding in the grafana
+  # namespace instead of a cluster-wide ClusterRole/ClusterRoleBinding (least
+  # privilege): the sidecar discovers the labelled datasource/dashboard ConfigMaps
+  # in the grafana namespace only (Shape (d)), so no cluster-wide read is needed.
   rbac:
     create: true
+    namespaced: true
   serviceAccount:
     create: true
 

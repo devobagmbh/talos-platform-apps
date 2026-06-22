@@ -22,8 +22,12 @@ A `kind: helm` wrapper over the `grafana` chart plus
 `manifests/00-namespace.yaml`:
 
 - A `Deployment` (`grafana`) with the chart's **datasource** and **dashboard**
-  discovery sidecars, plus `Service` (ClusterIP), `ServiceAccount`, and the
-  `Role`/`RoleBinding` the sidecars need to list/watch ConfigMaps.
+  discovery sidecars, plus `Service` (ClusterIP), `ServiceAccount`, and a
+  **namespace-scoped** `Role`/`RoleBinding` in the `grafana` namespace granting
+  the ServiceAccount `get`/`watch`/`list` on `configmaps` and `secrets` (the
+  k8s-sidecar `RESOURCE: both` watch mode). This is scoped to the `grafana`
+  namespace only — **not** a cluster-wide `ClusterRole` (`rbac.namespaced: true`,
+  least privilege).
 - A dedicated `grafana` `Namespace` carrying
   `pod-security.kubernetes.io/enforce: restricted`.
 
@@ -84,7 +88,10 @@ none of these:
 - **`grafana-runtime-secret` Secret** carrying the secret keys:
   `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, and
   `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` (the Dex static-client secret) — via SOPS
-  (seeder) / Vault + ESO (office-lab). The catalog ships no secrets.
+  (seeder) / Vault + ESO (office-lab). The catalog ships no secrets. The Secret
+  MUST carry **only** these three keys (the same set as `secret_keys` in
+  `customization.yaml`): the whole Secret is injected via `envFrom`, so any extra
+  key would also become a Grafana environment variable.
 - **Labelled datasource / dashboard ConfigMaps** (`grafana_datasource=1` /
   `grafana_dashboard=1`) for the Loki/Mimir/Tempo datasources and any dashboards.
   Datasources, dashboards, and the OIDC values are **per-cluster consumer
@@ -109,6 +116,12 @@ sets `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` +
 `seccompProfile: RuntimeDefault`. `persistence.enabled: false` suppresses the
 chart's root `initChownData` init-container, so no container or init-container runs
 as root. Confirmed via `task render:one`.
+
+The pod mounts the ServiceAccount token (pod-level
+`automountServiceAccountToken: true`) — the discovery sidecars need the in-cluster
+API credential to watch the labelled ConfigMaps. Because the RBAC is a
+namespace-scoped `Role`/`RoleBinding` (`rbac.namespaced: true`), the token's blast
+radius is the `grafana` namespace only — there is no cluster-wide read.
 
 ## Sync-wave
 
