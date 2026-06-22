@@ -1,0 +1,94 @@
+# blackbox-exporter — synthetic HTTP/TCP/DNS probing for the LGTM-A stack.
+# Layer-2 default values for talos-platform-apps. The rendered Deployment/Service/
+# ServiceAccount is the signed, cluster-agnostic workload; the probe TARGETS
+# (which URLs/hosts each cluster probes) are NOT here — they live in the consumer's
+# Prometheus `Probe` CRs / Alloy scrape config (see README §Consumer obligations).
+#
+# Role in the design (talos-platform-apps#183, talos-platform-docs ADR-0015): Alloy
+# scrapes blackbox's `/probe` endpoint, and the bidirectional cross-cluster watchdog
+# probes each cluster's endpoints (Alertmanager / Mimir / Grafana) from the other —
+# closing the "if a cluster dies, no one screams" gap.
+#
+# NO ICMP module: the icmp prober needs CAP_NET_RAW, which breaks
+# `pod-security.kubernetes.io/enforce: restricted`. Endpoint health is covered by
+# the http_2xx / https_2xx / tcp_connect / dns modules below; if a consumer ever
+# needs icmp it is a deliberate, documented overlay change (add NET_RAW + relax PSA).
+
+metadata:
+  chart: prometheus-blackbox-exporter
+  repo: https://prometheus-community.github.io/helm-charts
+  version: 11.13.0 # bare SemVer — NO leading 'v'
+  # appVersion v0.28.0 → image quay.io/prometheus/blackbox-exporter:v0.28.0 (chart
+  # appVersion pin, NEVER :latest). VERIFY at push
+  # (`helm show chart prometheus-blackbox-exporter --repo <repo> --version 11.13.0`).
+  namespace: blackbox-exporter
+
+values:
+  # Pod-level securityContext (chart key `podSecurityContext`, empty by default).
+  # PSA `restricted` requires seccompProfile.type RuntimeDefault/Localhost at pod or
+  # container level — the chart sets it at NEITHER, so we add it here (+ at the
+  # container level below) or the pod is admission-rejected in the restricted
+  # namespace this component ships. Same posture as observability/metrics-server.
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container-level securityContext pins (explicit-not-inherited). Chart 11.13.0
+  # ships most of a restricted block but NO seccompProfile; pinned in full here so a
+  # future chart bump cannot silently weaken the posture that satisfies
+  # `enforce: restricted`.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop: ["ALL"]
+
+  # No host access, no token needed for /probe.
+  automountServiceAccountToken: false
+
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+  # Probe modules (cluster-agnostic defaults). Targets are consumer-supplied via
+  # Probe CRs / scrape config, never here. icmp deliberately omitted (NET_RAW).
+  config:
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 5s
+        http:
+          valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+          follow_redirects: true
+          preferred_ip_protocol: "ip4"
+      https_2xx:
+        prober: http
+        timeout: 5s
+        http:
+          valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+          fail_if_not_ssl: true
+          follow_redirects: true
+          preferred_ip_protocol: "ip4"
+          tls_config:
+            # Cross-cluster watchdog probes target endpoints behind the per-cluster
+            # self-signed wildcard cert (Let's-Encrypt is a follow-up, docs#110) —
+            # a probe checks reachability, not the trust chain, so skip verify here.
+            insecure_skip_verify: true
+      tcp_connect:
+        prober: tcp
+        timeout: 5s
+        tcp:
+          preferred_ip_protocol: "ip4"
+      dns_udp:
+        prober: dns
+        timeout: 5s
+        dns:
+          query_name: "kubernetes.default.svc.cluster.local"
+          query_type: "A"
+          preferred_ip_protocol: "ip4"

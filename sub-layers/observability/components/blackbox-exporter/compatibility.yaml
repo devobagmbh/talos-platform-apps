@@ -1,0 +1,18 @@
+# blackbox-exporter probes endpoints it is TOLD to probe (consumer Probe CRs /
+# Alloy scrape config) — it needs no other catalog component and no cluster
+# capability at deploy time, so `requires:` is empty (only component-refs +
+# capability-ids belong there; ADR-0009, #71). No base version-coupling line.
+requires: {}
+provides:
+  - name: blackbox-exporter
+    version:
+      sot: app
+      app: v0.28.0   # MUST equal the rendered app.kubernetes.io/version label exactly (chart appVersion v0.28.0; lint:version is exact-match, not substring)
+      chart: 11.13.0 # prometheus-community/prometheus-blackbox-exporter
+    api_surface: []
+    # No-capability by design (api-surface-only). blackbox-exporter is the canonical
+    # synthetic-prober exposing the Prometheus multi-target /probe interface; there
+    # is no drop-in alternative implementing the same interface in this catalog, so
+    # it provides no swappable capability (precedent: observability/kube-state-metrics,
+    # lifecycle/providers). This is a design state, not a deferral — NO `# TODO:`.
+    capabilities: []

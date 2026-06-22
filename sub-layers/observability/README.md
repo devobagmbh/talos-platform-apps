@@ -18,6 +18,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
+| [`blackbox-exporter`](components/blackbox-exporter/) | 0 | Helm `prometheus-community/prometheus-blackbox-exporter` (synthetic HTTP/TCP/DNS probing — Alloy scrape target + bidirectional cross-cluster watchdog) | `oci://.../observability/blackbox-exporter:vX.Y.Z` |
 
 > **`kube-prometheus-stack` is a stack, not a component** — there is **no**
 > `components/kube-prometheus-stack/` directory and **no**
