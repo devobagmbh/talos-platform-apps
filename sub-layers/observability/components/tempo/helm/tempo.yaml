@@ -1,0 +1,240 @@
+# tempo — Grafana Tempo, the platform trace store + trace-query endpoint.
+# Layer-2 default values for talos-platform-apps. Deployed in MONOLITHIC single-binary
+# mode (one StatefulSet, replicas 1, every Tempo target in a single process) backed by
+# S3 (Garage) for the trace blocks.
+# Orchestrator decision: consumers are small single-node clusters, so Tempo's
+# distributed (tempo-distributed) topology is massively over-provisioned — the
+# monolithic single binary is the right granularity (analogous to loki SingleBinary).
+#
+# CHART-SOURCE DEVIATION (ratify on PR review): this uses chart `tempo` from the
+# `grafana-community` Helm repo (https://grafana-community.github.io/helm-charts),
+# NOT `grafana/tempo` from https://grafana.github.io/helm-charts. On 2026-01-30 Grafana
+# migrated the tempo/tempo-distributed/grafana charts to the new `grafana-community`
+# org (governance move). The old `grafana/tempo` is now a DEPRECATED dead stub
+# (Chart.yaml + README only), frozen at chart 1.24.4 / appVersion 2.9.0 with no future
+# updates. `grafana-community/tempo` (chart 2.2.3, appVersion 2.10.7) is the
+# actively-maintained successor — the SAME monolithic single-binary chart
+# (`description: "Grafana Tempo Single Binary Mode"`). This honors the monolithic
+# single-binary intent at the correct maintained source. Evidence:
+# grafana-community/helm-charts#2, grafana/helm-charts PR#4104/#4112.
+#
+# Freeze-line (ADR-0024 v2, Shapes a + c): the WORKLOAD (this rendered StatefulSet +
+# Service + ServiceAccount + the chart-generated tempo config ConfigMap) is
+# catalog-owned and signed; the S3 CONNECTION is 100% consumer-owned and per-cluster.
+# The rendered Tempo config references ${VAR} placeholders (NOT hardcoded
+# endpoints/keys); Tempo resolves them at runtime from consumer-supplied env via the
+# `-config.expand-env=true` flag. Two refs:
+#   - ConfigMap tempo-runtime-config (envFrom, non-secret): S3_ENDPOINT, S3_REGION,
+#     S3_BUCKET_TRACES
+#   - Secret    tempo-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
+#     S3_SECRET_ACCESS_KEY
+#
+# Chart-template verification (chart 2.2.3, templates/statefulset.yaml +
+# templates/configmap-tempo.yaml + values.yaml):
+#   * expand-env flag: statefulset.yaml renders the tempo container args as
+#     `-config.file=...`, `-mem-ballast-size-mbs=...`, then
+#     `{{- range $key,$value := .Values.tempo.extraArgs }}- "-{{$key}}{{if $value}}={{$value}}{{end}}"`,
+#     so `tempo.extraArgs: {config.expand-env: "true"}` → `-config.expand-env=true`.
+#   * envFrom: statefulset.yaml emits `envFrom: {{- toYaml .Values.tempo.extraEnvFrom }}`
+#     on the tempo container — both the ConfigMap and Secret are wired there.
+#   * S3 placeholders: configmap-tempo.yaml renders `storage:` from
+#     `toYaml .Values.tempo.storage`, so the ${VAR} strings in tempo.storage.trace.s3
+#     render literally into storage.trace.s3 and expand at runtime.
+#   * OTLP receivers: the rendered config comes from the top-level `config` string
+#     (configmap-tempo.yaml `{{- tpl .Values.config . }}`), whose default
+#     `distributor.receivers` is `toYaml .Values.tempo.receivers`. The chart's
+#     `_ports.tpl` (used by service.yaml) HARD-dereferences
+#     `.Values.tempo.receivers.jaeger.protocols.*`, so nulling `tempo.receivers.jaeger`
+#     breaks the Service render — the chart structurally couples the config receivers
+#     and the Service jaeger ports to one value. To get an OTLP-only INGESTION config
+#     without breaking the render, the top-level `config` string is overridden so
+#     `distributor.receivers` lists only otlp (the jaeger Service ports still render —
+#     harmless, nothing forwards to them). Verified: rendered config receivers =
+#     {otlp} only, jaeger/zipkin absent.
+#   * securityContext: the pod spec emits `securityContext: {{- toYaml .Values.securityContext }}`
+#     (TOP-LEVEL, not tempo.securityContext) and the tempo container emits
+#     `securityContext: {{- toYaml .Values.tempo.securityContext }}`.
+
+metadata:
+  chart: tempo
+  repo: https://grafana-community.github.io/helm-charts
+  version: 2.2.3  # bare SemVer — NO leading 'v' (--version v2.2.3 fails to resolve)
+  # appVersion 2.10.7 → image tag grafana/tempo:2.10.7 (chart appVersion pin, NEVER
+  # :latest; never overridden here — the chart image tag defaults to .Chart.AppVersion).
+  # VERIFY at push that 2.2.3 is still current stable + appVersion 2.10.7:
+  # `helm show chart tempo --repo https://grafana-community.github.io/helm-charts --version 2.2.3`
+  namespace: tempo
+
+values:
+  # Monolithic single binary: one Tempo process, one StatefulSet replica. Small
+  # single-node clusters → monolithic is right (analogous to loki SingleBinary).
+  replicas: 1
+
+  tempo:
+    # -- Disable anonymous usage reporting to Grafana Labs (renders
+    # `usage_report.reporting_enabled: false` in the tempo config) — platform/airgap
+    # hygiene.
+    reportingEnabled: false
+
+    # -- Single-tenant platform trace store; multitenancy off (chart default, stated
+    # explicitly so a chart-default change cannot silently enable it).
+    multitenancyEnabled: false
+
+    # Append the Tempo server flag that turns on ${VAR} expansion in the config file.
+    # Verified against templates/statefulset.yaml: extraArgs renders as
+    # `-{{key}}={{value}}` → `-config.expand-env=true`.
+    extraArgs:
+      config.expand-env: "true"
+
+    # Shape (a)+(c) freeze-line: feed the consumer-owned S3 connection in as env so the
+    # ${VAR} placeholders in the rendered config resolve at runtime. Verified against
+    # templates/statefulset.yaml `envFrom: {{- toYaml .Values.tempo.extraEnvFrom }}`.
+    extraEnvFrom:
+      - configMapRef:
+          name: tempo-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_TRACES
+      - secretRef:
+          name: tempo-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+    # S3 object storage (Garage). The connection values are ${VAR} placeholders, NOT
+    # real endpoints/keys: the freeze-line keeps the S3 connection 100% consumer-owned.
+    # Tempo uses ONE bucket (trace blocks). Garage specifics: path-style addressing
+    # (forcepathstyle: true), TLS on (insecure: false), region a ${VAR}, explicit
+    # endpoint. Rendered into storage.trace.s3 by the config template; expanded at
+    # runtime by -config.expand-env=true. The chart's default `local:` backend is
+    # dropped via `local: null` (Helm deletes a key whose override value is null during
+    # merge — verified: the rendered storage.trace has no `local:`). The WAL path is
+    # kept (the writable scratch path for the recent, not-yet-flushed window). Tempo S3
+    # keys are snake_case (access_key/secret_key), distinct from loki's accessKeyId.
+    storage:
+      trace:
+        backend: s3
+        local: null  # drop the chart's default local backend (merge-delete via null)
+        s3:
+          bucket: ${S3_BUCKET_TRACES}
+          endpoint: ${S3_ENDPOINT}
+          region: ${S3_REGION}
+          access_key: ${S3_ACCESS_KEY_ID}
+          secret_key: ${S3_SECRET_ACCESS_KEY}
+          insecure: false        # TLS to the Garage S3 endpoint
+          forcepathstyle: true   # Garage requires path-style addressing
+        wal:
+          path: /var/tempo/wal
+
+    # Container-level restricted predicates (tempo.securityContext → the tempo
+    # container). Verified against templates/statefulset.yaml. readOnlyRootFilesystem is
+    # intentionally NOT set: tempo writes scratch/WAL paths and `restricted` PSA does
+    # not require it — left default (false), tracked as a deferred hardening item in the
+    # README.
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+
+  # Pod-level securityContext (TOP-LEVEL `securityContext`, NOT tempo.securityContext —
+  # verified against the pod spec `securityContext: {{- toYaml .Values.securityContext }}`).
+  # `restricted` PSA requires a pod- or container-level seccompProfile RuntimeDefault;
+  # set it here plus runAsNonRoot + the 10001 uid/gid/fsGroup so the rendered pod
+  # provably satisfies `restricted` and a chart bump cannot weaken it.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  # WAL persistence: Tempo's WAL needs a writable /var/tempo, only mounted when
+  # persistence is enabled. DR story (mirrors loki): committed trace blocks live in S3
+  # (Garage) and survive pod/node loss; the PVC holds only the WAL (recent,
+  # not-yet-flushed window) and uses whenDeleted/whenScaled:Delete, so deleting the
+  # StatefulSet loses the recent pre-flush window. No storageClassName is pinned
+  # (consumer-tunable; binds to the cluster default StorageClass).
+  persistence:
+    enabled: true
+    enableStatefulSetAutoDeletePVC: true
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+
+  serviceAccount:
+    # -- Tempo needs no Kubernetes API access — do not mount a token (hygiene).
+    automountServiceAccountToken: false
+
+  # Alloy scrapes Tempo's metrics endpoint externally (observability/alloy), so the
+  # bundled ServiceMonitor is disabled (chart default) — no prometheus-operator CRD
+  # dependency.
+  serviceMonitor:
+    enabled: false
+
+  # Network policy is a consumer / Cilium concern (PNI capability selectors), not a
+  # catalog-baked resource — disabled (chart default).
+  networkPolicy:
+    enabled: false
+
+  # Top-level Tempo config template (configmap-tempo.yaml renders `{{- tpl .Values.config . }}`).
+  # This overrides the chart default ONLY to make `distributor.receivers` OTLP-only:
+  # the chart's `_ports.tpl` (service.yaml) hard-dereferences
+  # `.Values.tempo.receivers.jaeger.protocols.*`, so jaeger cannot be nulled out of
+  # `tempo.receivers` without breaking the Service render — overriding this config
+  # string is the only way to get an OTLP-only INGESTION config while keeping a valid
+  # render. Every other block stays `toYaml .Values.tempo.*` (verbatim from the chart
+  # default) so the other knobs above (multitenancy, reporting, storage s3, the
+  # metrics_generator conditional) still flow through unchanged. Alloy forwards OTLP
+  # traces (design issue #183); the jaeger/zipkin Service ports still render but nothing
+  # forwards to them — harmless.
+  config: |
+    stream_over_http_enabled: {{ .Values.tempo.streamOverHttpEnabled }}
+    memberlist:
+      cluster_label: "{{ .Release.Name }}.{{ .Release.Namespace }}"
+    multitenancy_enabled: {{ .Values.tempo.multitenancyEnabled }}
+    usage_report:
+      reporting_enabled: {{ .Values.tempo.reportingEnabled }}
+    compactor:
+      compaction:
+        block_retention: {{ .Values.tempo.retention }}
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+    ingester:
+      {{- toYaml .Values.tempo.ingester | nindent 6 }}
+    server:
+      {{- toYaml .Values.tempo.server | nindent 6 }}
+    storage:
+      {{- toYaml .Values.tempo.storage | nindent 6 }}
+    querier:
+      {{- toYaml .Values.tempo.querier | nindent 6 }}
+    query_frontend:
+      {{- toYaml .Values.tempo.queryFrontend | nindent 6 }}
+    overrides:
+      {{- toYaml .Values.tempo.overrides | nindent 6 }}
+      {{- if .Values.tempo.metricsGenerator.enabled }}
+    metrics_generator:
+      {{- if .Values.tempo.metricsGenerator.processor }}
+      processor:
+        {{- toYaml .Values.tempo.metricsGenerator.processor | nindent 8 }}
+      {{- end }}
+      {{- if .Values.tempo.metricsGenerator.registry }}
+      registry:
+        {{- toYaml .Values.tempo.metricsGenerator.registry | nindent 8 }}
+      {{- end }}
+      storage:
+        path: {{ .Values.tempo.metricsGenerator.storage.path | quote }}
+        {{- if .Values.tempo.metricsGenerator.storage.remote_write }}
+        remote_write:
+          {{- toYaml .Values.tempo.metricsGenerator.storage.remote_write | nindent 10 }}
+        {{- else }}
+        remote_write:
+          - url: {{ .Values.tempo.metricsGenerator.remoteWriteUrl }}
+        {{- end }}
+      traces_storage:
+        path: {{ .Values.tempo.metricsGenerator.traces_storage.path | quote }}
+      {{- end }}
