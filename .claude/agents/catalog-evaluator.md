@@ -59,7 +59,12 @@ judgment and the downstream GHA + human-PR gate — do not over-trust a green Ti
 3. `task validate:contract -- <sub-layer>/<component>` — customization.yaml
    against `schemas/customization.schema.json`. (Deliberately not in `task ci`;
    run it explicitly.)
-4. `task scan:conftest` — rendered output against `policies/`.
+4. `task scan:conftest` — rendered output against `policies/` (per-document policies).
+   Then `task scan:psa-conformance` — the PSA workload-conformance gate. You MUST run
+   this one yourself: `scan:conftest` does NOT cover it (the conformance policy needs
+   `conftest --combine`, which `scan:conftest` does not pass, so the conformance rules
+   are inert there). This is the gate you defer PSA admissibility to in the §Namespace
+   posture lens below — trusting it without running it IS the "caught by neither" hole.
 5. **Chart-ref resolution** (the hallucinated-dependency class — invented
    versions/repos pass `helm template` but do not exist upstream; and a vendored
    `vendor/<chart>-<version>.tgz` makes `task render:one` render from the local
@@ -115,17 +120,33 @@ Only after Tier 1 is green (or with the green/red state recorded), judge:
   true and renders+lints clean — verify the emptiness genuinely reflects a
   cluster-agnostic component, not a hollow pass.
 - **Namespace ownership & PSA posture** — every `Namespace` object the component
-  declares (`manifests/*.yaml`) carries a `pod-security.kubernetes.io/enforce` label
-  whose value is the strictest level the rendered workloads satisfy: a workload whose
-  pod sets `runAsNonRoot` + `seccompProfile: RuntimeDefault` and whose containers set
-  `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` must be `restricted`,
-  not a looser level (under-labelling is a finding); `restricted` on a workload that
-  lacks that securityContext is an admission-reject footgun (also a finding). If the
-  component runs workloads in a namespace it does NOT declare (shared / consumer-owned
-  per the sole-claimant rule), confirm it ships no `Namespace` object and documents the
-  owner + required PSA level in its README. A dedicated-namespace component that ships
-  no `Namespace` at all is a finding the deterministic gate cannot see — the conftest
-  policy only checks declared namespaces, not their absence.
+  declares (`manifests/*.yaml`) carries a valid `pod-security.kubernetes.io/enforce`
+  label. **Do NOT certify level-vs-workload admissibility by walking a controls
+  checklist in your head.** Whether the workloads actually CONFORM to the declared
+  level — the "too-strict label → admission-reject" direction, e.g. `baseline` or
+  `restricted` on a workload that mounts a hostPath volume — is decided by the
+  deterministic gate, which encodes the exact Pod Security Standards control set; a
+  partial mental walk reliably mis-rationalizes it (a checklist that omits hostPath
+  wrongly passes `baseline`, yet "HostPath Volumes" is a *Baseline* control — baseline
+  AND restricted reject hostPath; only `privileged` admits it). Trust the gate for the
+  controls it IMPLEMENTS — the Baseline structural forbids (hostPath, host namespaces,
+  privileged, host ports, hostProcess, procMount, Unconfined seccomp) plus the Baseline
+  capabilities allow-list — and do NOT re-walk those in your head; raise a finding on
+  them only when the gate reports one. Your residual semantic judgment covers the THREE
+  things the gate does not decide (the defer-list is NOT a no-look zone): (1) the
+  controls the gate explicitly DEFERS — sysctls safe-list, AppArmor/SELinux values, and
+  the Restricted-additional hardening (`runAsNonRoot`, `runAsUser != 0`,
+  `allowPrivilegeEscalation: false`, required `seccompProfile`, `capabilities.drop:
+  [ALL]`) — flag a clear violation of one of these under a `baseline`/`restricted`
+  namespace; (2) **under-labelling** — a restricted-grade workload (pod sets
+  `runAsNonRoot` + `seccompProfile: RuntimeDefault`, every container sets
+  `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`) carrying a label
+  looser than `restricted` is a posture finding (admissible, but not as strict as it
+  could be); (3) a dedicated-namespace component that ships NO `Namespace` object —
+  whether it runs in a namespace it does not declare (shared / consumer-owned per the
+  sole-claimant rule) — the gate is blind here, so confirm it ships no `Namespace`
+  object, documents the owner + required PSA level in its README, and reason yourself
+  about whether the workload is admissible at that documented level.
 - **Capability mapping** — each `provides[].capabilities[].id` exists in
   `catalog/capability-index.yaml` and the `swap_class` matches the index entry.
 - **README ↔ artifact agreement** — sync-wave, OCI path, listed capabilities,
