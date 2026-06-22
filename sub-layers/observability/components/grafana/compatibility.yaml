@@ -2,8 +2,13 @@ requires:
   observability/loki: ">=v0.1.0"
   observability/mimir: ">=v0.1.0"
   observability/tempo: ">=v0.1.0"
+  identity/dex: ">=v0.1.0"  # OIDC SSO via generic_oauth → dex (ADR-0010)
 provides:
   - name: grafana
-    api_surface: [] # filled in with issue #17
+    version:
+      sot: app
+      app: v13.0.2  # running Grafana app version (chart appVersion)
+      chart: 12.4.8  # grafana-community/grafana chart version
+    api_surface: []
     capabilities:
       - {id: dashboards, swap_class: label-move}

@@ -1,0 +1,62 @@
+# Customization Contract v2 (ADR-0024). The grafana Deployment/Service/SA/RBAC +
+# the datasource/dashboard discovery sidecars are the signed, pre-rendered
+# workload. Grafana's CONFIG (datasources, dashboards, OIDC, admin) is NOT baked:
+# it is 100% consumer-owned across three contract surfaces.
+#
+# Override mechanism — GF_ env (Shape a + c). Grafana reads its native config from
+# environment variables named GF_<SECTION>_<KEY> (verified against the chart's
+# _pod.tpl env injection). The consumer supplies them in two refs the workload
+# injects via envFrom: the non-secret keys (server root URL, the OIDC endpoints /
+# client id / scopes) in the `grafana-runtime-config` ConfigMap, and the secret
+# keys (the OIDC client secret) in the `grafana-runtime-secret` Secret. The
+# catalog bakes NO GF_ literal (helm `env: {}`).
+#
+# admin.existingSecret choice. Setting admin.existingSecret SUPPRESSES the chart's
+# literal admin Secret (verified in templates/secret.yaml: the chart bakes one
+# ONLY when admin.existingSecret is empty). The admin user/password then resolve
+# via secretKeyRef from `grafana-runtime-secret` using GF_-named keys
+# (GF_SECURITY_ADMIN_USER / GF_SECURITY_ADMIN_PASSWORD) — valid env identifiers,
+# consistent with the envFrom-injected GF_ config. So the catalog ships NO literal
+# admin credential.
+#
+# Sidecar label discovery (Shape d). The chart's datasource + dashboard sidecars
+# watch ConfigMaps cluster-wide by label (grafana_datasource=1 /
+# grafana_dashboard=1) and import them. The catalog ships NO datasources and NO
+# dashboards; the consumer creates the labelled ConfigMaps. selector_crs below
+# maps to those sidecar label watches.
+#
+# Every required.* key maps to a real ref in the rendered workload: env_keys ←
+# envFrom grafana-runtime-config; secret_keys GF_SECURITY_ADMIN_* ←
+# admin.existingSecret secretKeyRef + GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET ←
+# envFrom grafana-runtime-secret; selector_crs ← sidecar ConfigMap label watch.
+freeze_line:
+  workload: rendered/manifest.yaml  # Deployment/Service/SA/RBAC + sidecars + Namespace — never consumer-patched
+provided_refs:
+  env: grafana-runtime-config  # Shape (a): non-secret GF_ env (server root URL, OIDC endpoints)
+  secret: grafana-runtime-secret  # Shape (c): secret GF_ env (admin creds + OIDC client secret)
+provided_selectors:
+  datasources: {grafana_datasource: "1"}  # Shape (d): label the datasource ConfigMaps carry
+  dashboards: {grafana_dashboard: "1"}  # Shape (d): label the dashboard ConfigMaps carry
+required:
+  env_keys:  # Shape (a) — consumer sets these in grafana-runtime-config
+    - GF_SERVER_ROOT_URL
+    - GF_AUTH_GENERIC_OAUTH_ENABLED
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+    - GF_AUTH_GENERIC_OAUTH_AUTH_URL
+    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL
+    - GF_AUTH_GENERIC_OAUTH_API_URL
+    - GF_AUTH_GENERIC_OAUTH_SCOPES
+  config_files: []  # no Shape (b) merged file — grafana config is GF_ env, not a mounted file
+  secret_keys:  # Shape (c) — consumer sets these in grafana-runtime-secret
+    - GF_SECURITY_ADMIN_USER
+    - GF_SECURITY_ADMIN_PASSWORD
+    - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+  selector_crs:  # Shape (d) — the consumer creates + labels these ConfigMaps; the sidecars import them
+    - {kind: ConfigMap, label: {grafana_datasource: "1"}}
+    - {kind: ConfigMap, label: {grafana_dashboard: "1"}}
+sync_wave: "20"
+external_dependencies:
+  - observability/loki
+  - observability/mimir
+  - observability/tempo
+  - identity/dex

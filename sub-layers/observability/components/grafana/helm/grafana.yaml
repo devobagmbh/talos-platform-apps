@@ -1,0 +1,133 @@
+# grafana — Grafana, the dashboard / visualisation frontend (capability
+# `dashboards`, ADR-0015). Layer-2 default values for talos-platform-apps. The
+# rendered Deployment/Service/SA/RBAC (+ discovery sidecars) is the signed,
+# pre-rendered workload; the CONFIG (datasources, dashboards, OIDC, admin) is
+# 100% consumer-owned.
+#
+# CHART SOURCE — grafana-community migration (2026-01-30): the original
+# `grafana/grafana` chart at https://grafana.github.io/helm-charts is now a frozen
+# stub (last 10.5.15). Active development moved to the community-maintained
+# `grafana-community/grafana` chart at
+# https://grafana-community.github.io/helm-charts — use that. (Mirrors how
+# tempo/dex document their chart source in-header.)
+#
+# Freeze-line (ADR-0024 v2): three contract surfaces split workload from config.
+#   (a) Shape (a) non-secret env — the consumer's `grafana-runtime-config`
+#       ConfigMap is injected via envFromConfigMaps. Grafana reads native config
+#       from GF_<SECTION>_<KEY> environment variables (verified against the chart's
+#       templates/_pod.tpl env injection), so GF_SERVER_ROOT_URL + the
+#       GF_AUTH_GENERIC_OAUTH_* OIDC keys are supplied here as env, NOT baked.
+#   (c) Shape (c) secret env — the consumer's `grafana-runtime-secret` Secret is
+#       injected via envFromSecrets (the OIDC client secret) AND wired to admin via
+#       admin.existingSecret. Setting admin.existingSecret SUPPRESSES the chart's
+#       literal admin Secret (verified in templates/secret.yaml: the chart bakes a
+#       literal admin Secret ONLY when admin.existingSecret is empty); the admin
+#       user/password then resolve via secretKeyRef from the consumer secret using
+#       GF_-named keys (valid env identifiers, consistent with envFrom).
+#   (d) Shape (d) label discovery — the chart's datasource + dashboard sidecars
+#       watch ConfigMaps cluster-wide by label. The catalog ships NO datasources
+#       and NO dashboards; the consumer creates labelled ConfigMaps
+#       (grafana_datasource=1 / grafana_dashboard=1) that the sidecars import.
+# See customization.yaml + README §Consumer obligations.
+
+metadata:
+  chart: grafana
+  repo: https://grafana-community.github.io/helm-charts
+  version: 12.4.8  # bare SemVer — NO leading 'v'. appVersion 13.0.2. >>> VERIFY the current chart at push (`helm show chart grafana --repo https://grafana-community.github.io/helm-charts --version 12.4.8`).
+  namespace: grafana
+
+values:
+  # Pin the Grafana image to the chart appVersion (NEVER :latest). Sidecar /
+  # curl image tags stay at their pinned chart defaults.
+  image:
+    tag: "13.0.2"
+
+  # Shape (a) — non-secret GF_ env (GF_SERVER_ROOT_URL, GF_AUTH_GENERIC_OAUTH_*
+  # endpoints/client id/scopes). Consumer-supplied ConfigMap; the catalog ships
+  # no literal values. See required.env_keys in customization.yaml.
+  envFromConfigMaps:
+    - name: grafana-runtime-config
+
+  # Shape (c) — secret GF_ env (GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET, plus the
+  # admin credential keys consumed via admin.existingSecret below). Consumer-
+  # supplied Secret. See required.secret_keys in customization.yaml.
+  envFromSecrets:
+    - name: grafana-runtime-secret
+
+  # No baked literal env. Every GF_ value is consumer-owned (envFrom above).
+  env: {}
+
+  # admin.existingSecret SUPPRESSES the chart's literal admin Secret (the chart
+  # bakes one ONLY when this is empty) AND wires the admin user/password via
+  # secretKeyRef from `grafana-runtime-secret`. GF_-named keys keep them valid env
+  # identifiers and consistent with the envFrom-injected GF_ config.
+  admin:
+    existingSecret: grafana-runtime-secret
+    userKey: GF_SECURITY_ADMIN_USER
+    passwordKey: GF_SECURITY_ADMIN_PASSWORD
+
+  # Shape (d) — the discovery sidecars. The consumer labels its datasource /
+  # dashboard ConfigMaps; the sidecars import them. The catalog ships NONE.
+  sidecar:
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+
+  # Pod-level restricted predicates. The chart's pod securityContext already sets
+  # runAsNonRoot/472 but OMITS a pod-level seccompProfile — add it explicitly for
+  # unambiguous `restricted` PSA compliance.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container-level restricted predicates. The chart default is already restricted-
+  # compliant; set explicitly (explicit-not-inherited) so a future chart bump
+  # cannot weaken it.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+  # No persistence (default). With persistence.enabled:false the chart's root
+  # initChownData init-container does NOT render — keeping the pod restricted-
+  # compliant. Dashboards/datasources are sidecar-imported, not stored on a PVC.
+  persistence:
+    enabled: false
+
+  # Defensive: ship no non-compliant chart test Pod.
+  testFramework:
+    enabled: false
+
+  # The datasource/dashboard sidecars need ConfigMap list/watch RBAC.
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+
+  # Gateway-API at the consumer (base Hard-Constraint: no Ingress) → ClusterIP,
+  # ingress off. The consumer fronts grafana with an HTTPRoute on the Cilium
+  # Gateway (the public root URL lives in GF_SERVER_ROOT_URL + the HTTPRoute host).
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

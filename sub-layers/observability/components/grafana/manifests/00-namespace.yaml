@@ -1,0 +1,28 @@
+# The component's own namespace. grafana is the sole catalog occupant (dedicated
+# namespace), so this component ships the Namespace object — a shipped manifest
+# takes precedence over Argo `managedNamespaceMetadata`, making the PSA posture
+# authoritative and self-contained (see the build skill's CONVENTIONS.md
+# § Namespace & PSA).
+#
+# enforce: restricted — derived from the rendered workload, not assumed: the pod
+# securityContext sets runAsNonRoot:true / runAsUser:472 + seccompProfile
+# RuntimeDefault; every container (grafana + the datasource/dashboard sidecars)
+# sets allowPrivilegeEscalation:false + capabilities.drop:[ALL] + seccompProfile
+# RuntimeDefault; persistence.enabled:false suppresses the root initChownData
+# init-container, so no init-container runs as root. The workload is therefore
+# fully restricted-compliant. (Confirmed via `task render:one`.)
+#
+# The consumer adds the audit/warn PSA modes, the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor), and any PNI
+# trust-anchor labels in its Argo overlay; the catalog ships only the enforce
+# level and the ownership labels.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grafana
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: observability
