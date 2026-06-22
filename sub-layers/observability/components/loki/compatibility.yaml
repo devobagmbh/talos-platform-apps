@@ -1,8 +1,12 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 backend for chunks
+  storage-objects/garage: ">=v0.1.0" # S3 backend for chunks + ruler
 provides:
   - name: loki
-    api_surface: [] # filled in with issue #17
+    version:
+      sot: app
+      app: 3.6.7 # Loki appVersion (image tag docker.io/grafana/loki:3.6.7)
+      chart: 6.55.0 # grafana/loki chart version
+    api_surface: [] # SingleBinary ships no CRDs / exposed API groups
     capabilities:
       - {id: logs-storage, swap_class: data-migration}
       - {id: logs-query, swap_class: drop-in}
