@@ -1,0 +1,53 @@
+# Argo Application for compute/node-feature-discovery (local test environment).
+# Strict-B WORKLOAD half (ADR-0028): the NFD master Deployment, worker DaemonSet,
+# gc Deployment + RBAC, and the node-feature-discovery Namespace (PSA enforce:
+# baseline), synced at sync-wave 0 — after the compute-node-feature-discovery-crds
+# artifact (wave -1) so the workloads reconcile against established CRDs.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-node-feature-discovery
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: node-feature-discovery
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/compute
+    chart: node-feature-discovery
+    targetRevision: ${TAG}
+    helm:
+      releaseName: node-feature-discovery
+  destination:
+    server: https://kubernetes.default.svc
+    # The workload artifact ships its own node-feature-discovery Namespace object
+    # (PSA enforce: baseline), so this app deploys into it but never auto-creates it
+    # (CreateNamespace=false — the shipped Namespace manifest is authoritative,
+    # carrying the PSA labels Argo's CreateNamespace path would miss).
+    namespace: node-feature-discovery
+
+  syncPolicy:
+    # The workload IS prunable (unlike the -crds half): removing the artifact
+    # garbage-collects the master/worker/gc + RBAC. CR-cascade protection for the
+    # CRDs lives on the -crds Application (Prune=false), not here.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The node-feature-discovery Namespace is shipped as a manifest in this
+      # artifact — never create it from Argo's CreateNamespace path (it would miss
+      # the PSA labels).
+      - CreateNamespace=false
+      # NB: ServerSideApply is deliberately NOT set here (unlike the -crds half).
+      # master/gc are Deployments; on k8s 1.33+ their live .status carries
+      # `terminatingReplicas`, absent from the bundled OpenAPI schema of the local
+      # Argo 7.7, which makes the SSA structured-merge-diff fail with a
+      # ComparisonError (sync → Unknown) though resources apply Healthy. The small
+      # workload manifests need no SSA; it stays on the -crds half only.

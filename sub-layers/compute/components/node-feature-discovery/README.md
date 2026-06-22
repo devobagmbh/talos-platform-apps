@@ -86,31 +86,53 @@ NFD ships its own `node-feature-discovery` namespace
 namespace), so the Namespace object travels with the artifact and a shipped manifest
 wins over Argo `managedNamespaceMetadata`.
 
-**`pod-security.kubernetes.io/enforce: baseline`** — forced by the worker DaemonSet.
-The worker mounts hostPath volumes for host feature detection; PSA `restricted`
-forbids hostPath outright, so a `restricted` namespace would reject the worker at
-admission. A single Namespace carries one enforce level for all its pods
-(master/worker/gc share it), so the worker's hostPath requirement fixes the level at
-`baseline`. The worker satisfies every **other** baseline control — verified against
-the rendered pod: `hostNetwork: false`, no hostPID/hostIPC, no hostPort, no
-privileged container, no `Unmasked` procMount — so baseline admits it.
+**`pod-security.kubernetes.io/enforce: privileged`** — the only PSS level that admits
+the worker DaemonSet. The worker mounts hostPath volumes for host feature detection
+(`/sys`, `/boot`, `/etc/os-release`, `/usr/lib`, `/lib`, `/proc/swaps`, `features.d`),
+architecturally required and not removable. In the Pod Security Standards "HostPath
+Volumes" is a **Baseline** control ("hostPath volumes must be forbidden"), so **both**
+`baseline` and `restricted` reject a hostPath pod at admission — only `privileged`
+admits it. Verified live on a k8s 1.36 cluster: under `enforce: baseline` the worker
+is rejected (`violates PodSecurity "baseline:latest": hostPath volumes`); under
+`privileged` it is admitted and becomes Ready. A single Namespace carries one enforce
+level for all its pods (master/worker/gc share it), so the worker's mandatory hostPath
+forces the whole namespace to `privileged`. This matches every node-level hostPath
+agent (node-exporter, CSI/CNI node DaemonSets, local-path-provisioner — all
+privileged-PSA).
 
-`audit: restricted` + `warn: restricted` surface the worker's hostPath
-non-conformance as a non-blocking audit entry + apiserver warning, without rejecting
-it — so the restricted-grade master/gc posture stays visible while the worker is
-admitted.
+The `privileged` enforce level relies on this being a **dedicated, sole-occupancy**
+namespace — its only occupants are the three catalog-owned NFD workloads. Consumers
+MUST NOT co-locate other workloads in `node-feature-discovery`: a privileged-enforce
+namespace admits any pod (including truly-privileged / host-namespace), so its safety
+rests on the dedicated-namespace boundary, not on PSA enforcement.
+
+`audit: restricted` + `warn: restricted` keep the namespace from being a silent
+privilege hole: the master and gc pods are restricted-grade (see Defense-in-depth
+below) and pass the restricted audit cleanly, while the worker's hostPath usage
+surfaces as a **non-blocking** audit entry + apiserver warning. Expect one such warn
+per worker pod (one per node) — the known, expected deviation, not a defect; it keeps
+any *new* master/gc non-conformance visible even though `enforce: privileged` does not
+block it.
 
 **Defense-in-depth, not the PSA backstop.** Each workload's container
 `securityContext` is pinned to restricted-grade in `helm/node-feature-discovery.yaml`
 (`runAsNonRoot`, `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem`,
-`capabilities.drop: [ALL]`, `seccompProfile.type: RuntimeDefault`). The operative
-backstop against the (disabled) topologyUpdater's root container is the explicit
-`topologyUpdater.enable: false` values pin — **not** the namespace PSA label, since
-`baseline` does not reject root containers (only `restricted` does). The
-seccompProfile pins are good hygiene but do not change the enforce level. For the gc
-pod the chart hard-codes the **container** securityContext, so its seccompProfile is
-set on the gc **pod** securityContext instead (pod-level seccomp applies to every
+`capabilities.drop: [ALL]`, `seccompProfile.type: RuntimeDefault`) — independent of
+the namespace enforce level, so the master/gc hardening holds regardless of PSA, and
+the worker's seven hostPath mounts are all `readOnly: true`. The operative backstop
+against the (disabled) topologyUpdater's root container is the explicit
+`topologyUpdater.enable: false` values pin — **not** the namespace PSA label. For the
+gc pod the chart hard-codes the **container** securityContext, so its seccompProfile
+is set on the gc **pod** securityContext instead (pod-level seccomp applies to every
 container).
+
+**Upgrade note.** On a cluster that previously ran this namespace at `enforce:
+baseline` (where the worker was rejected), flipping the namespace label alone may not
+recover the worker immediately — the DaemonSet controller's `FailedCreate` backoff is
+keyed on the DS UID. If the worker stays absent after the namespace syncs, delete the
+DaemonSet (`kubectl delete ds node-feature-discovery-worker -n
+node-feature-discovery`); Argo (`selfHeal`) recreates it fresh within seconds and it
+then admits under `privileged`.
 
 ## Capability
 

@@ -62,11 +62,11 @@ values:
   topologyUpdater:
     # -- topologyUpdater is OFF. This is the operative backstop against the
     # topologyUpdater DaemonSet's root container (its chart default is runAsUser: 0):
-    # keeping it disabled means that container is never rendered. The namespace PSA
-    # enforce: baseline label does NOT reject a root container (only restricted does),
-    # so this explicit pin — NOT the PSA label — is what keeps a root container out of
-    # the workload. Consumers that need NUMA-aware topology export enable it in their
-    # own overlay and accept the resulting PSA posture.
+    # keeping it disabled means that container is never rendered. The namespace runs at
+    # PSA enforce: privileged (forced by the worker's hostPath, see the worker block),
+    # which enforces nothing — so this explicit pin, NOT the PSA label, is what keeps a
+    # root container out of the workload. Consumers that need NUMA-aware topology export
+    # enable it in their own overlay and accept the resulting PSA posture.
     enable: false
 
   prometheus:
@@ -94,10 +94,12 @@ values:
   worker:
     # -- worker DaemonSet container securityContext. Same shape as master. The worker
     # mounts hostPath volumes (/sys, /boot, /etc/os-release, /usr/lib, /lib,
-    # /proc/swaps) for host feature detection — PSA restricted forbids hostPath, so the
-    # namespace enforces baseline; these container hardening fields are still pinned as
-    # defense-in-depth (the worker is otherwise restricted-grade: hostNetwork: false, no
-    # hostPID/IPC, no hostPort, no privileged — verified against the rendered pod).
+    # /proc/swaps) for host feature detection — "HostPath Volumes" is a PSA *Baseline*
+    # control, so BOTH baseline and restricted forbid hostPath; the namespace must
+    # enforce privileged. These container hardening fields are still pinned as
+    # defense-in-depth (the worker is otherwise restricted-grade: readOnly hostPath
+    # mounts, hostNetwork: false, no hostPID/IPC, no hostPort, no privileged — verified
+    # against the rendered pod).
     securityContext:
       runAsNonRoot: true
       allowPrivilegeEscalation: false
