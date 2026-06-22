@@ -139,6 +139,14 @@ is a finding):
    Phase-6 on-branch integration step, landed in the component PR (hubble #154
    precedent). Do not list them in `out_of_scope` as "after the component PR
    merges"; reference them, if at all, as a build-phase Phase-6 step.
+   **Release-please registration is likewise a build-phase Phase-6 step, not a
+   plan deliverable** — the plan MUST NOT prescribe either file edit
+   (`release-please-config.json` or `.release-please-manifest.json`). The build
+   adds a stub package (`initial-version: 0.1.0`) to `release-please-config.json`
+   only; it does **not** touch `.release-please-manifest.json` (a stub in the
+   manifest fails `task validate:release-config`; release-please writes that entry
+   on first release). Reference release-please registration, if at all, as a
+   build-phase Phase-6 step — never instruct a config or manifest edit directly.
 5. **Resolvable dependency graph.** `build_order` is a valid topological sort:
    the graph (from `external_dependencies` + sync_wave) is acyclic, and every
    `external_dependencies` target either already exists in the tree

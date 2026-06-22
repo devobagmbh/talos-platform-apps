@@ -135,17 +135,18 @@ namespace:` field. Until then it is a convention contributors uphold.
 
 The builder writes ONLY inside `sub-layers/<sub-layer>/components/<component>/`
 (except `rendered/`). It MUST NOT edit `Taskfile.yml`, `policies/**`,
-`schemas/**`, `catalog/capability-index.yaml`, sub-layer `README.md`/
-`compatibility.yaml` aggregates, or add any `kubeconform`/conftest
-ignore-pragma. It MUST NOT add any `vendor/*.tgz`: vendoring is a separate,
+`schemas/**`, `catalog/capability-index.yaml`, `release-please-config.json`,
+sub-layer `README.md`/`compatibility.yaml` aggregates, or add any
+`kubeconform`/conftest ignore-pragma. It MUST NOT add any `vendor/*.tgz`: vendoring is a separate,
 deliberately-reviewed act (the existing vendored charts exist because an upstream
 repo 403s CI-runner IPs) — a build renders from the upstream Helm repo, never
 from a builder-introduced archive whose content no gate resolves against the
 declared chart ref. The gate and the acceptance spec are outside the builder's
 reach by design — editing them to pass is the documented reward-hacking failure
 mode.
-Shared-file aggregation (capability-index, sub-layer lists) is a separate,
-serialized integration step, never a parallel builder's job. That step lands **on
+Shared-file aggregation (capability-index, sub-layer lists,
+`release-please-config.json`) is a separate, serialized integration step, never a
+parallel builder's job. That step lands **on
 the component PR branch** (same PR, hubble #154 precedent) and is owned by the
 build skill's Phase 6, which re-verifies the result — the component-scoped
 `catalog-evaluator` never sees the aggregates, so its `pass` says nothing about

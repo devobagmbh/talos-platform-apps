@@ -83,8 +83,9 @@ judgment and the downstream GHA + human-PR gate — do not over-trust a green Ti
    `main` outside the worktree and yields a vacuous empty diff. The change set
    MUST be confined to `sub-layers/<sub-layer>/components/<component>/` (minus
    `rendered/`). CRITICAL tamper findings: any change to `Taskfile.yml`,
-   `policies/**`, `schemas/**`, `catalog/capability-index.yaml`, sub-layer
-   aggregates; any newly added `kubeconform`/conftest ignore-pragma; **and any
+   `policies/**`, `schemas/**`, `catalog/capability-index.yaml`,
+   `release-please-config.json`, sub-layer aggregates; any newly added
+   `kubeconform`/conftest ignore-pragma; **and any
    added `vendor/*.tgz`** — a build renders from the upstream repo, never
    introduces a vendored archive whose content cannot be resolved against the
    declared chart ref. **`tamper` is binary and fail-closed**: if the check
@@ -194,13 +195,15 @@ Boundaries: you run commands and read files; you never edit the component, the
 gate, the schema, or the spec. **Your acceptance scope is the single component
 directory.** Two things are explicitly out of scope and MUST NOT be a
 component-level fail: (1) the component's *absence* from the sub-layer aggregates
-(`catalog/capability-index.yaml`, the sub-layer `README.md`/`compatibility.yaml`) —
-that integration is a serialized step that runs AFTER you pass, so a not-yet-listed
-component is expected and recorded only as a note; (2) a *pre-existing* defect in a
+(`catalog/capability-index.yaml`, the sub-layer `README.md`/`compatibility.yaml`)
+and from the repo-level `release-please-config.json` — that integration is a
+serialized step that runs AFTER you pass, so a not-yet-listed component is
+expected and recorded only as a note; (2) a *pre-existing* defect in a
 file the build branch did not change. **This does NOT relax the Tier 1 tamper
 check:** a build-branch diff that *modifies* a file outside the component directory
 (`Taskfile.yml`, `schemas/**`, `policies/**`, `catalog/capability-index.yaml`,
-sub-layer aggregates, ignore-pragmas) remains a CRITICAL tamper finding. The
+`release-please-config.json`, sub-layer aggregates, ignore-pragmas) remains a
+CRITICAL tamper finding. The
 distinction is change-authorship — an out-of-scope file the builder *touched* is
 tamper; an out-of-scope file's *pre-existing* state is not this component's concern.
 You do not fix what you find — you report it with

@@ -199,7 +199,20 @@ correctness.
 Brief it with: the component path, the **worktree path** (`$WT` from Phase 1 —
 `.claude/worktrees/<slug>`, checked out on the build branch), the build branch
 name, and the **external spec** (issue ACs +
-`AGENTS.md §Hard Constraints`). It runs the deterministic gate
+`AGENTS.md §Hard Constraints`) — **scoped to the component directory**. When the
+issue/plan AC list mixes component ACs with the **Phase-6 shared aggregates** —
+the sub-layer `README.md`, the sub-layer `compatibility.yaml`,
+`catalog/capability-index.yaml`, and the `release-please-config.json` entry, all
+of which the orchestrator integrates in Phase 6 *after* this verify, so on the
+branch the evaluator sees they legitimately do not exist yet — the brief MUST
+carry only the component ACs and name those aggregates as out-of-scope. **Tell it
+explicitly not to run `task ci` or `task validate:release-config`** — those gate
+exactly the orchestrator-added aggregates. Building the **first component of a
+new sub-layer** is where this bites: passing the unbuilt aggregate ACs makes the
+evaluator correctly map them to `FAIL` and return `verdict: fail` on a
+brief-scope error, not a real defect (observed on `security/tetragon` #60 — a
+wasted dispatch a component-only re-dispatch cleared). The same scope applies to
+the `catalog-fleet` workflow's inline verify brief. It runs the deterministic gate
 (render-idempotency, lint, kubeconform, validate:contract, conftest, chart-ref
 resolution, tamper-check) then the semantic ACs (freeze-line consistency,
 non-vacuity, capability mapping, README↔artifact agreement, AC-by-AC verdict). It
@@ -291,8 +304,26 @@ none.
 
 After verify + review pass, update the shared aggregates the builder was
 forbidden to touch — sub-layer `README.md` (component list + sync-wave),
-sub-layer `compatibility.yaml`, and `catalog/capability-index.yaml` if a new
-capability/implementation is introduced. These land **on the component branch, in
+sub-layer `compatibility.yaml`, `catalog/capability-index.yaml` if a new
+capability/implementation is introduced, and **`release-please-config.json`**:
+**each** brand-new component directory is registered there as a **stub package**
+with `initial-version: 0.1.0` and is **NOT** added to
+`.release-please-manifest.json` — `task validate:release-config` fails on a
+stub-in-manifest (`Taskfile.yml`: "stub package(s) redundantly in the manifest"),
+and release-please writes the manifest entry itself on the first real release. A
+strict-B `-crds` half is itself a component directory and registers the same way,
+in its own build's Phase 6 (`validate:release-config` requires *every*
+`components/*/` dir to be a package); because the `-crds` half completes Phase 6
+before the stacked workload is cut from its branch, that registration already sits
+on the workload's base when the workload's own step-4 `task ci` runs the all-dirs
+parity check. This registration is **mandatory, not optional**: step 4 below runs
+`task ci`, which includes `validate:release-config`, and an unregistered new
+component dir fails it ("component dir missing from config"). That task
+deterministically gates the registration's **membership and identity** —
+dir↔config parity and `component` field == path-derived id — and catches a stub
+wrongly added to the manifest; the `initial-version` **value** itself (`0.1.0`)
+is not gated, so it rests on this step authoring it per the convention above plus
+human PR review, not an LLM judge. These land **on the component branch, in
 the same PR** (hubble #154 + metrics-server #161 precedent) — the established
 practice, which the planner's `out_of_scope` "after merge" deferral contradicted;
 this is the authoritative placement. **Cross-session caveat (a known limitation,
@@ -337,8 +368,8 @@ the aggregate diff it is contractually required to flag as CRITICAL:
    above), the diff is load-bearing. A failure is a pre-existing-defect note only
    when it is in a file **absent** from that change-set; a failure in **any file the
    change-set lists blocks** — and that set now includes the step-3 aggregate edits
-   (sub-layer `README.md` / `compatibility.yaml`, `catalog/capability-index.yaml`),
-   not just the component dir. **Fail closed on the diff:** if cwd is not the
+   (sub-layer `README.md` / `compatibility.yaml`, `catalog/capability-index.yaml`,
+   `release-please-config.json`), not just the component dir. **Fail closed on the diff:** if cwd is not the
    worktree or `git diff` exits non-zero, stop — never read an errored diff as
    "every file is pre-existing", which would silently disarm the block (an exit-0
    empty diff is fine — it means nothing was changed to block on). A broken
