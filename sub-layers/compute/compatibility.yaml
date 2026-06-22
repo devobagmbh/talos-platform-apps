@@ -6,3 +6,4 @@ components:
   - kubevirt # strict-B workload half — virt-operator + KubeVirt CR, capability vm-runtime (sync-wave 0); requires kubevirt-crds
   - kubevirt-cdi-crds # strict-B CRD half — CDI operator-config CRD (sync-wave -1, ADR-0028); pairs with kubevirt-cdi
   - kubevirt-cdi # strict-B workload half — CDI operator + CDI CR (sync-wave 0, ADR-0028); requires kubevirt-cdi-crds
+  - node-feature-discovery-crds # strict-B CRD half — 3 node-feature-discovery CRDs (nfd.k8s-sigs.io) (sync-wave -1, ADR-0028); pairs with node-feature-discovery
