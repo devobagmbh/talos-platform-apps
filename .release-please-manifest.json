@@ -26,7 +26,7 @@
   "sub-layers/secrets/components/external-secrets": "0.2.0",
   "sub-layers/storage-block/components/democratic-csi": "0.1.1",
   "sub-layers/storage-block/components/piraeus-operator": "0.1.0",
-  "sub-layers/storage-block/components/piraeus-operator-crds": "0.1.0",
+  "sub-layers/storage-block/components/piraeus-operator-crds": "0.2.0",
   "sub-layers/storage-block/components/synology-csi": "0.1.0",
   "sub-layers/storage-objects/components/garage": "0.1.0",
   "sub-layers/storage-objects/components/garage-crds": "0.1.0"
