@@ -134,7 +134,7 @@ values:
       seccompProfile:
         type: RuntimeDefault
 
-  # Pod-level securityContext (TOP-LEVEL `securityContext`, NOT tempo.securityContext —
+  # -- Pod-level securityContext (TOP-LEVEL `securityContext`, NOT tempo.securityContext —
   # verified against the pod spec `securityContext: {{- toYaml .Values.securityContext }}`).
   # `restricted` PSA requires a pod- or container-level seccompProfile RuntimeDefault;
   # set it here plus runAsNonRoot + the 10001 uid/gid/fsGroup so the rendered pod
@@ -147,7 +147,7 @@ values:
     seccompProfile:
       type: RuntimeDefault
 
-  # WAL persistence: Tempo's WAL needs a writable /var/tempo, only mounted when
+  # -- WAL persistence: Tempo's WAL needs a writable /var/tempo, only mounted when
   # persistence is enabled. DR story (mirrors loki): committed trace blocks live in S3
   # (Garage) and survive pod/node loss; the PVC holds only the WAL (recent,
   # not-yet-flushed window) and uses whenDeleted/whenScaled:Delete, so deleting the
@@ -175,7 +175,7 @@ values:
   networkPolicy:
     enabled: false
 
-  # Top-level Tempo config template (configmap-tempo.yaml renders `{{- tpl .Values.config . }}`).
+  # -- Top-level Tempo config template (configmap-tempo.yaml renders `{{- tpl .Values.config . }}`).
   # This overrides the chart default ONLY to make `distributor.receivers` OTLP-only:
   # the chart's `_ports.tpl` (service.yaml) hard-dereferences
   # `.Values.tempo.receivers.jaeger.protocols.*`, so jaeger cannot be nulled out of
@@ -186,6 +186,9 @@ values:
   # metrics_generator conditional) still flow through unchanged. Alloy forwards OTLP
   # traces (design issue #183); the jaeger/zipkin Service ports still render but nothing
   # forwards to them — harmless.
+  # CHART-BUMP: this config string is a frozen copy of chart 2.2.3 templates/configmap-tempo.yaml
+  # — re-diff it on every chart upgrade (new upstream root keys are silently absent otherwise).
+  # See README §Chart source.
   config: |
     stream_over_http_enabled: {{ .Values.tempo.streamOverHttpEnabled }}
     memberlist:

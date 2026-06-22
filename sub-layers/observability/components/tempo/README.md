@@ -62,6 +62,12 @@ them — they are harmless (nothing forwards to them). Removing them entirely wo
 require patching the upstream chart; the config is the authoritative ingestion surface
 and is OTLP-only.
 
+NOTE (maintenance): `helm/tempo.yaml` pins the full Tempo `config:` string (a frozen
+copy of chart 2.2.3's `templates/configmap-tempo.yaml`) to deliver OTLP-only ingest.
+Every chart version bump for this component MUST include a manual re-diff of the
+upstream `templates/configmap-tempo.yaml` against the pinned `config:` string — a new
+upstream top-level config block is otherwise silently dropped from the rendered config.
+
 Disabled (not needed for a single-node monolithic store): anonymous usage reporting
 (`tempo.reportingEnabled: false` — platform/airgap hygiene), multitenancy
 (`tempo.multitenancyEnabled: false` — single-tenant platform store), the bundled
@@ -109,10 +115,12 @@ of these:
   `S3_SECRET_ACCESS_KEY` (the Garage S3 credentials).
 - **The Garage traces bucket** — provisioned by `storage-objects/garage-buckets`
   (sync-wave 10), not the `garage` workload (wave 0); its name is what `S3_BUCKET_TRACES`
-  points at. NOTE: the bucket MUST exist before Tempo can flush — Tempo errors on a
-  missing S3 bucket until it appears. Since `garage-buckets` and `tempo` share sync-wave
-  10, the consumer SHOULD ensure bucket readiness, e.g. by ordering `garage-buckets`
-  ahead of `tempo` in its composition.
+  points at. NOTE: the traces bucket MUST exist before Tempo flushes blocks; because
+  `storage-objects/garage-buckets` shares sync-wave 10 with `tempo`, consumers MUST
+  order `garage-buckets` ahead of `tempo` in their composition (e.g. a lower Argo
+  sync-wave for `garage-buckets`, or an Argo sync-phase/readiness gate on bucket
+  provisioning) to avoid a first-deploy CrashLoop window — Tempo errors/CrashLoops on
+  the S3 flush against a missing bucket until it appears (visible + self-healing).
 - **Persistent storage** — the `StatefulSet`'s WAL volume claim binds to the cluster's
   default StorageClass (no `storageClassName` is pinned; consumer-tunable). NOTE (DR):
   committed trace blocks live in S3 (Garage) and survive pod/node loss; the PVC holds
