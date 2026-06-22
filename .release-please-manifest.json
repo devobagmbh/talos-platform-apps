@@ -11,7 +11,7 @@
   "sub-layers/lifecycle/components/compositions": "0.2.0",
   "sub-layers/lifecycle/components/crossplane": "0.1.0",
   "sub-layers/lifecycle/components/crossview": "0.1.0",
-  "sub-layers/lifecycle/components/ipxe": "0.0.2",
+  "sub-layers/lifecycle/components/ipxe": "0.1.0",
   "sub-layers/lifecycle/components/providers": "0.1.0",
   "sub-layers/network/components/multus-cni": "0.1.0",
   "sub-layers/network/components/multus-cni-crds": "0.1.0",
