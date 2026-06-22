@@ -1,5 +1,6 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 backend for chunks + ruler
+  storage-objects/garage: ">=v0.1.0" # S3 endpoint/API (StatefulSet, wave 0)
+  storage-objects/garage-buckets: ">=v0.1.0" # provisions the chunks + ruler buckets (wave 10)
 provides:
   - name: loki
     version:

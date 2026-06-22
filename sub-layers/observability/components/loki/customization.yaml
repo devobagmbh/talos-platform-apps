@@ -35,4 +35,5 @@ required:
   selector_crs: []
 sync_wave: "10" # needs the Garage S3 endpoint + buckets (storage-objects/garage, wave 0)
 external_dependencies:
-  - storage-objects/garage # the S3 backend for chunks + ruler must exist first
+  - storage-objects/garage # the S3 endpoint/API (StatefulSet, wave 0)
+  - storage-objects/garage-buckets # provisions the chunks + ruler buckets (wave 10)

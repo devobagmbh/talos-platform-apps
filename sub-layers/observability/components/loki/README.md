@@ -24,7 +24,8 @@ caches, an nginx gateway) are massively over-provisioned for that scale. SingleB
 runs the entire Loki read+write+backend path in one container, scales the
 `SimpleScalable` components to `replicas: 0`, and serves the read and write APIs
 directly (no gateway). The result is a single `StatefulSet` pod plus its `Service`s,
-`ServiceAccount`, and the chart's read-only `ClusterRole`/`ClusterRoleBinding`.
+`ServiceAccount`, and the chart's zero-permission `ClusterRole`/`ClusterRoleBinding`
+(`rules: []` — no API access granted).
 
 ## Contents
 
@@ -36,7 +37,8 @@ A `kind: helm` wrapper over the `loki` chart
   `docker.io/grafana/loki:3.6.7` — the image is pinned to the chart appVersion, never
   `:latest`.
 - `Service`s (the Loki HTTP/gRPC endpoints + the memberlist headless service), a
-  `ServiceAccount`, and the chart's read-only `ClusterRole`/`ClusterRoleBinding`.
+  `ServiceAccount`, and the chart's zero-permission `ClusterRole`/`ClusterRoleBinding`
+  (`rules: []` — no API access granted).
 - The chart-generated `loki` config `ConfigMap` and the `loki-runtime` `ConfigMap`
   (the chart's runtime-overrides file — distinct from the consumer's
   `loki-runtime-config`, see below).
@@ -86,12 +88,21 @@ of these:
   `garage`), `S3_BUCKET_CHUNKS`, `S3_BUCKET_RULER`.
 - **`loki-runtime-secret` `Secret`** with keys `S3_ACCESS_KEY_ID`,
   `S3_SECRET_ACCESS_KEY` (the Garage S3 credentials).
-- **The two Garage buckets** — a chunks bucket and a ruler bucket, provisioned against
-  the cluster's Garage (`storage-objects/garage`); their names are what
-  `S3_BUCKET_CHUNKS` / `S3_BUCKET_RULER` point at.
+- **The two Garage buckets** — a chunks bucket and a ruler bucket, provisioned by
+  `storage-objects/garage-buckets` (sync-wave 10), not the `garage` workload (wave 0);
+  their names are what `S3_BUCKET_CHUNKS` / `S3_BUCKET_RULER` point at. NOTE: the chunks
+  + ruler buckets MUST exist before Loki can write — Loki CrashLoops on a missing S3
+  bucket until it appears (a visible, self-healing failure). Since `garage-buckets` and
+  `loki` share sync-wave 10, the consumer SHOULD ensure bucket readiness, e.g. by
+  ordering `garage-buckets` ahead of `loki` in its composition.
 - **Persistent storage** — the SingleBinary `StatefulSet`'s `storage` volume claim
   binds to the cluster's default StorageClass; tune `singleBinary.persistence` in the
-  consumer overlay if a specific class/size is needed.
+  consumer overlay if a specific class/size is needed. NOTE (DR): committed chunks live
+  in S3 (Garage) and survive pod/node loss; the PVC holds only the ingester WAL + TSDB
+  index cache (recent, not-yet-compacted data) and uses
+  `persistentVolumeClaimRetentionPolicy: whenDeleted: Delete`, so deleting the
+  `StatefulSet` (Argo prune / re-install) loses the recent pre-compaction window. For
+  planned maintenance, flush before deletion.
 - **PNI labels** — the `platform.io/provide.*` namespace trust anchors, the
   `pod-security.kubernetes.io/enforce-version` pin (its cluster's Kubernetes minor),
   and the `audit`/`warn` PSA modes.
