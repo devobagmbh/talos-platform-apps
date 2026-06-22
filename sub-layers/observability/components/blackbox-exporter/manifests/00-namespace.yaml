@@ -1,0 +1,24 @@
+# The component's own namespace. blackbox-exporter is the sole occupant (dedicated
+# namespace, sole-claimant rule), so this component ships the Namespace object — a
+# shipped manifest takes precedence over Argo `managedNamespaceMetadata`, making the
+# PSA posture authoritative and self-contained (build skill CONVENTIONS § Namespace
+# & PSA, talos-platform-docs ADR-0032). The chart ships NO Namespace, so this
+# manifest is concatenated into the render.
+#
+# enforce: restricted — blackbox-exporter is a stateless prober with no host access.
+# It ships NO icmp module (icmp needs CAP_NET_RAW, which restricted forbids); the
+# http/https/tcp/dns modules need no added capabilities. Confirmed against the
+# rendered manifest: pod runAsNonRoot + seccompProfile RuntimeDefault, container
+# allowPrivilegeEscalation:false + capabilities.drop:[ALL] + readOnlyRootFilesystem.
+#
+# The consumer adds — per ADR-0032 — the PNI labels (platform.io/provide.*, network-*)
+# and the pod-security.kubernetes.io/enforce-version pin (its cluster minor) + audit/
+# warn modes in its Argo overlay; the catalog ships neither.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blackbox-exporter
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: blackbox-exporter

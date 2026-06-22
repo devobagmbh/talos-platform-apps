@@ -13,3 +13,4 @@ components:
   - hubble                  # sync-wave 0  — Cilium network-flow visibility (relay/ui); independent of LGTM, needs the Cilium-agent Hubble server
   - metrics-server          # sync-wave 0  — Resource Metrics API (HPA + kubectl top); independent, needs only the K8s control-plane API
   - kube-state-metrics      # sync-wave 0  — Kubernetes object-state metrics (kube_* series); independent, scraped by Alloy, needs only the K8s control-plane API
+  - blackbox-exporter       # sync-wave 0  — synthetic HTTP/TCP/DNS probing; Alloy scrape target + bidirectional cross-cluster watchdog (ADR-0015); probe targets are consumer Probe CRs
