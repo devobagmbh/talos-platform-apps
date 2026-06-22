@@ -595,8 +595,11 @@ tasks:
       # collation so `sort` and `comm` agree byte-for-byte regardless of locale.
       set -u
       export LC_ALL=C
-      cfg="release-please-config.json"
-      man=".release-please-manifest.json"
+      # Paths are env-overridable so `task test:release-config` can drive this same
+      # logic against synthetic fixtures (the first-release transition is otherwise
+      # only reproducible against the live files). Default to the real repo files.
+      cfg="${RP_CONFIG:-release-please-config.json}"
+      man="${RP_MANIFEST:-.release-please-manifest.json}"
       [ -f "$cfg" ] || { echo "✗ ${cfg} not found"; exit 2; }
       [ -f "$man" ] || { echo "✗ ${man} not found"; exit 2; }
       tmp=$(mktemp -d) || { echo "✗ mktemp failed"; exit 2; }
@@ -609,16 +612,28 @@ tasks:
       for d in sub-layers/*/components/*/; do printf '%s\n' "${d%/}"; done | sort > "$tmp/dirs"
       jq -r '.packages | keys[]' "$cfg" | sort > "$tmp/cfg"
       jq -r 'keys[]' "$man" | sort > "$tmp/man"
-      jq -r '.packages | to_entries[] | select(.value | has("initial-version")) | .["key"]' "$cfg" | sort > "$tmp/stub"
+      jq -r '.packages | to_entries[] | select(.value | has("initial-version")) | .["key"]' "$cfg" | sort > "$tmp/stub_declared"
       jq -r '.packages | to_entries[] | [.["key"], (.value.component // "")] | @tsv' "$cfg" > "$tmp/kc"
       [ -s "$tmp/cfg" ] || { echo "✗ ${cfg} has no .packages (unreadable / corrupt?)"; exit 2; }
-      comm -23 "$tmp/cfg" "$tmp/stub" > "$tmp/built"   # built = all packages minus initial-version stubs
+      # A package is a STUB (unreleased) only until release-please cuts its first
+      # release and writes its manifest entry. The leftover initial-version is then
+      # VESTIGIAL — release-please reads the manifest, not initial-version — and
+      # harmless. So the operational stub set excludes manifest-present (released)
+      # packages: that is exactly what lets a first-release PR (which adds the
+      # manifest entry without stripping the config initial-version) pass this gate
+      # instead of tripping the old "stub redundantly in manifest" hard-fail. (#314)
+      comm -23 "$tmp/stub_declared" "$tmp/man" > "$tmp/stub"   # stub = declared initial-version, NOT yet released
+      comm -23 "$tmp/cfg" "$tmp/stub" > "$tmp/built"   # built = all packages minus (still-unreleased) stubs
       fail=0
       report() { echo "✗ $1"; sed 's/^/    /' < "$2"; fail=1; }
       comm -23 "$tmp/dirs" "$tmp/cfg" > "$tmp/a"; [ -s "$tmp/a" ] && report "component dir(s) missing from ${cfg} (every components/ dir must be a release package — add a packages entry):" "$tmp/a"
       comm -13 "$tmp/dirs" "$tmp/cfg" > "$tmp/b"; [ -s "$tmp/b" ] && report "stale ${cfg} package(s) with no component dir:" "$tmp/b"
       comm -23 "$tmp/built" "$tmp/man" > "$tmp/c"; [ -s "$tmp/c" ] && report "built package(s) missing from ${man}:" "$tmp/c"
-      comm -12 "$tmp/stub" "$tmp/man" > "$tmp/d"; [ -s "$tmp/d" ] && report "stub package(s) redundantly in ${man}:" "$tmp/d"
+      # Vestigial initial-version on an already-released (manifest-present) package
+      # is a non-fatal cleanup hint, NOT a release-blocker — the old hard-fail here
+      # blocked every first-release PR (#314). release-please ignores the field once
+      # the manifest entry exists; the maintainer may strip it at leisure.
+      comm -12 "$tmp/stub_declared" "$tmp/man" > "$tmp/d"; [ -s "$tmp/d" ] && { echo "ℹ released package(s) still carrying a vestigial initial-version (harmless — release-please reads the manifest; strip at leisure):"; sed 's/^/    /' < "$tmp/d"; }
       # Each package's `component` (release-please's release identity → tag name / OCI
       # path) must equal the path-derived <sub-layer>/<component>; a typo there cuts a
       # mis-named tag while dir↔key parity still passes.
@@ -628,6 +643,48 @@ tasks:
         echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies), component fields match; every components/ dir is a release package."
       fi
       exit "$fail"
+
+  test:release-config:
+    desc: 'Hermetic test of validate:release-config: first-release transition passes, real coverage gaps still fail (#314)'
+    summary: |
+      Drives validate:release-config against synthetic fixtures derived from the
+      LIVE config+manifest (so directory↔config parity stays satisfied — only the
+      stub/manifest membership is mutated). Two cases:
+        A) first-release transition — a stub package (initial-version) added to the
+           manifest at 0.1.0 MUST pass (the #314 regression that blocked every new
+           component's first release).
+        B) coverage gap — a released package removed from the manifest MUST fail
+           (proves the relaxation did not blind the real "built missing from
+           manifest" guard).
+    cmd: |
+      set -u
+      export LC_ALL=C
+      cfg="release-please-config.json"; man=".release-please-manifest.json"
+      t=$(mktemp -d) || { echo "✗ mktemp"; exit 2; }
+      trap 'rm -rf "$t"' EXIT
+      # A stub = a config package carrying initial-version; a built = one without.
+      stub=$(jq -r '.packages | to_entries[] | select(.value|has("initial-version")) | .key' "$cfg" | head -1)
+      built=$(jq -r 'keys[]' "$man" | head -1)
+      [ -n "$stub" ] && [ -n "$built" ] || { echo "✗ no stub/built package to derive a fixture from"; exit 2; }
+      iv=$(jq -r --arg k "$stub" '.packages[$k]."initial-version"' "$cfg")
+
+      # --- Case A: first-release transition (stub now present in the manifest) ---
+      cp "$man" "$t/man-A.json"
+      jq --arg k "$stub" --arg v "$iv" '. + {($k): $v}' "$t/man-A.json" > "$t/man-A2.json"
+      if RP_CONFIG="$cfg" RP_MANIFEST="$t/man-A2.json" task validate:release-config >/dev/null 2>&1; then
+        echo "✓ Case A (first-release transition '$stub' @ $iv) passes"
+      else
+        echo "✗ Case A FAILED: a first-release stub-in-manifest must pass (#314 regression)"; exit 1
+      fi
+
+      # --- Case B: a released package dropped from the manifest must still fail ---
+      jq --arg k "$built" 'del(.[$k])' "$man" > "$t/man-B.json"
+      if RP_CONFIG="$cfg" RP_MANIFEST="$t/man-B.json" task validate:release-config >/dev/null 2>&1; then
+        echo "✗ Case B FAILED: a built package missing from the manifest must be caught"; exit 1
+      else
+        echo "✓ Case B (built '$built' missing from manifest) is still caught"
+      fi
+      echo "✓ test:release-config OK"
 
   validate:contract:
     desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1); optional: -- <sub-layer>/<component> to scope to one'
