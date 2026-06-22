@@ -61,7 +61,13 @@ consumer-supplied secrets, config files, env, or selector CRs to run, so
   enabling it adds a NUMA-topology DaemonSet whose container defaults to root).
 - **Prometheus scraping** — `prometheus.enable=true` (off in the catalog default; it
   renders a `monitoring.coreos.com` ServiceMonitor whose CRD is not guaranteed at
-  sync-wave 0).
+  sync-wave 0). **Re-enabling it requires the `monitoring.coreos.com/ServiceMonitor`
+  CRD to be Established BEFORE this workload syncs** — wire
+  `observability/prometheus-operator-crds` (or the equivalent operator) at an earlier
+  sync-wave in the consumer overlay. Enabling `prometheus.enable=true` at sync-wave 0
+  without that CRD present makes Argo fail the sync with `no matches for kind
+  "ServiceMonitor" in version "monitoring.coreos.com/v1"` — a silent-stuck class, not a
+  self-healing transient.
 - **NodeFeatureRule CRs** — custom labeling rules the consumer authors in its own
   repo.
 

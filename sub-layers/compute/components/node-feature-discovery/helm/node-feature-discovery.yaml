@@ -32,6 +32,18 @@ values:
   # rendered + signed workload is stable across chart-internal naming changes.
   fullnameOverride: node-feature-discovery
 
+  # -- postDeleteCleanup OFF (chart default is true). When true the chart renders a
+  # post-delete Helm hook bundle (ServiceAccount + ClusterRole + ClusterRoleBinding +
+  # Job, all annotated `helm.sh/hook: post-delete`) whose Job runs `nfd-master -prune`,
+  # stripping every `feature.node.kubernetes.io/*` label from every node. ArgoCD does
+  # NOT execute Helm lifecycle hooks — it applies each rendered object as a regular
+  # live resource — so for an Argo-managed (catalog) deployment that prune Job would
+  # run on the FIRST sync (not on delete) and wipe the node labels every GPU/VM-runtime
+  # consumer nodeSelects on. Disabling it removes those hook objects entirely; node-label
+  # cleanup on NFD removal becomes a documented manual/consumer step (an acceptable
+  # trade vs. a sync-time label-strip).
+  postDeleteCleanup: false
+
   image:
     # -- Image pull policy for all NFD workloads.
     pullPolicy: IfNotPresent
