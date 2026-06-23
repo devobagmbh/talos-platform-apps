@@ -54,6 +54,16 @@ series by reading the node itself. The rendered DaemonSet pod therefore carries
 These are read-only host mounts and host namespaces; node-exporter writes nothing
 to the host.
 
+Because `hostNetwork: true`, the container binds host port `9100` directly on the
+node network stack (the rendered spec declares no `hostPort:` — with host
+networking the container port *is* the host port). If another process already
+occupies port `9100` on a node, that node's DaemonSet pod will `CrashLoopBackOff`
+with a bind error while pods on other nodes stay healthy — a per-node partial
+failure. Consumers SHOULD confirm no host-level port-`9100` conflict before
+deploying (or, if the scraper reaches the pods via the ClusterIP `Service` rather
+than per-node IPs, set `hostNetwork: false` in the consumer overlay to remove the
+node-IP exposure entirely).
+
 ## Security posture (pinned explicitly)
 
 Despite the privileged namespace (forced by the host access above), the
@@ -107,7 +117,12 @@ catalog component ships none of them:
 - **Placement tweaks** — tolerations for tainted nodes, nodeSelector overrides, and
   HA/topology are consumer-overlay concerns (cluster-specific per AGENTS.md §Hard
   Constraints); the catalog leaves them at the chart defaults (runs on every Linux
-  node, tolerates `NoSchedule`).
+  node, tolerates `NoSchedule`). The shipped DaemonSet carries **only** an
+  `effect: NoSchedule, operator: Exists` toleration — a node tainted `NoExecute`
+  (e.g. an unhealthy or cordoned-for-eviction node) will evict the pod and leave a
+  gap in that node's `node_*` series precisely when node health matters most. A
+  consumer needing metrics from `NoExecute`-tainted nodes adds the matching
+  toleration in its overlay.
 - The Argo `Application` CR itself (with its `argocd.argoproj.io/sync-wave`
   annotation) — Argo definitions live in the consumer cluster repos, not here.
 
