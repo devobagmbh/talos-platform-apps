@@ -1,0 +1,33 @@
+# compute/nvidia-device-plugin — the GPU-scheduling half of the nvidia-stack. Ships the
+# device-plugin DaemonSet (advertises nvidia.com/gpu to the kubelet) + the MPS
+# control-daemon DaemonSet (dormant unless a node carries nvidia.com/mps.capable:
+# "true") + their RBAC/ServiceAccounts. Renders 0 CRDs, so NO crd-bearing marker and no
+# strict-B -crds sibling (ADR-0028 not triggered).
+#
+# requires compute/node-feature-discovery: the device-plugin's default affinity matches
+# the feature.node.kubernetes.io/pci-10de.present + cpu-model.vendor_id labels NFD's
+# worker produces; without NFD running, only the manual nvidia.com/gpu.present node label
+# fires (the plugin still works but cannot auto-discover GPU nodes from PCI topology).
+# This is a RUNTIME coupling (no CRD-ordering edge) — NFD is an already-built catalog
+# component, so it is a `requires` + external_dependencies entry, not a build-order edge.
+requires:
+  compute/node-feature-discovery: ">=v0.1.0"
+
+# Implements gpu-runtime (the active impl `nvidia-stack`, swap_class rewrite-required —
+# matches catalog/capability-index.yaml). This component is the SCHEDULING half; the
+# telemetry half observability/nvidia-dcgm-exporter (#61) additively declares the same
+# {id: gpu-runtime, swap_class: rewrite-required}. nvidia-stack = nvidia-device-plugin +
+# nvidia-dcgm-exporter is a deliberate two-component implementation of one index entry
+# (the index comment documents the component-location split as expected), NOT a
+# duplicate to be flagged. swap_class rewrite-required: swapping NVIDIA GPU scheduling
+# for an alternative (AMD ROCm / Intel GPU plugin) requires consumer CRs + config to be
+# rewritten; single_impl: true on the index entry confirms no realistic swap today.
+provides:
+  - name: nvidia-device-plugin
+    version:
+      sot: app          # the running workload's app version
+      app: v0.17.4      # nvidia-device-plugin release (image nvcr.io/nvidia/k8s-device-plugin:v0.17.4; chart appVersion 0.17.4)
+    api_surface: []     # the chart renders no CRDs / API groups
+    capabilities:
+      - id: gpu-runtime
+        swap_class: rewrite-required

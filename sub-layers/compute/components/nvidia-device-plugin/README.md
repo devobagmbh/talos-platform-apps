@@ -1,0 +1,164 @@
+# Component `compute/nvidia-device-plugin`
+
+[NVIDIA Device Plugin](https://github.com/NVIDIA/k8s-device-plugin) — the
+GPU-scheduling half of the Devoba platform's **nvidia-stack**. The device plugin
+runs on every GPU node, discovers the node's NVIDIA GPUs, and advertises them to
+the kubelet as the `nvidia.com/gpu` extended resource so that GPU-requesting pods
+can be scheduled onto those nodes.
+
+This is the **scheduling** half of the `gpu-runtime` capability. The **telemetry**
+half — DCGM GPU metrics for Prometheus — ships separately as
+`observability/nvidia-dcgm-exporter` (#61); both halves additively implement the
+same `gpu-runtime` capability (see [Capability](#capability)).
+
+Helm chart `nvidia-device-plugin` from
+`https://nvidia.github.io/k8s-device-plugin`, pinned to **0.17.4** (appVersion
+**0.17.4**). This component is **mixed** — a Helm wrapper plus a
+`manifests/00-namespace.yaml` (the chart renders no `Namespace`).
+
+## What ships
+
+Two DaemonSets (both chart-rendered with the default `devicePlugin.enabled: true`):
+
+- **device-plugin DaemonSet** (`<release>-nvidia-device-plugin`) — runs on GPU
+  nodes; advertises `nvidia.com/gpu` to the kubelet via the device-plugin socket and
+  mounts the host CDI directory. Its default affinity targets nodes carrying the
+  NFD-derived labels (`feature.node.kubernetes.io/pci-10de.present`,
+  `feature.node.kubernetes.io/cpu-model.vendor_id: NVIDIA`) with a fallback to the
+  manual `nvidia.com/gpu.present` label.
+- **MPS control-daemon DaemonSet** (`<release>-nvidia-device-plugin-mps-control-daemon`)
+  — manages [Multi-Process Service](https://docs.nvidia.com/deploy/mps/) (MPS) shared
+  GPU access. It is **dormant by default**: its `nodeSelector` requires
+  `nvidia.com/mps.capable: "true"`, so on a cluster without that label it schedules
+  zero pods. It is kept rendered (rather than disabled) because it adds no attack
+  surface on un-labeled nodes and avoids a values deviation from upstream; its
+  containers run `privileged: true` (chart-fixed, required for MPS shared-memory
+  management) when it does schedule.
+
+…plus the chart's RBAC (`ClusterRole`/`ClusterRoleBinding`) and `ServiceAccount`.
+
+This component renders **zero** CRDs, so ADR-0028 strict-B does **not** apply —
+there is no `-crds` sibling artifact.
+
+The bundled **node-feature-discovery** and **GPU Feature Discovery (GFD)** subcharts
+are **disabled** (`nfd.enabled: false`, `gfd.enabled: false`): NFD ships
+independently as [`compute/node-feature-discovery`](../node-feature-discovery/), and
+using the bundled subchart would deploy a second, conflicting NFD instance at a stale
+chart version into the wrong namespace.
+
+## Freeze-line (ADR-0024)
+
+The **workload** (the two DaemonSets, RBAC, Namespace) is the signed, pre-rendered
+artifact. The device plugin is **cluster-agnostic at the freeze line**: it needs no
+consumer-supplied secrets, config files, env, or selector CRs to run, so
+`provided_refs` and every `required.*` list are empty. It advertises GPUs using its
+built-in `fallbackStrategies: ["named", "single"]` when no plugin config is supplied.
+
+**Consumer-owned** (Layer 3), set in the consumer overlay rather than the catalog:
+
+- **Node placement / tolerations** — `nodeSelector`, `tolerations`, and the affinity
+  overrides for matching GPU nodes (a cluster property).
+- **Plugin config** — `config.name` (an external ConfigMap carrying MIG-strategy /
+  shared-access config). Off by default (`config.name: ""`); the plugin starts and
+  advertises GPUs without it. A consumer with an existing MIG config wires it in its
+  overlay.
+- **MPS enablement** — labeling nodes `nvidia.com/mps.capable: "true"` to activate the
+  (otherwise dormant) MPS control daemon.
+
+GPU hardware presence and the NVIDIA container runtime / driver on the node are
+**Layer-C / base concerns** (the substrate), not this component's: this component
+schedules against GPUs the base layer has already made available.
+
+## Consumer obligations
+
+- **Run [`compute/node-feature-discovery`](../node-feature-discovery/)** for automatic
+  GPU-node discovery. The device-plugin's default affinity matches the
+  `feature.node.kubernetes.io/pci-10de.present` PCI label NFD's worker produces. This
+  is a **runtime** coupling (declared in `external_dependencies` +
+  `compatibility.yaml` `requires`), not a CRD-ordering one.
+- **Fallback without NFD** — a consumer not running NFD MUST manually label GPU nodes
+  `nvidia.com/gpu.present: "true"` (the affinity fallback). A consumer running neither
+  NFD nor the manual label gets a DaemonSet that never schedules — a
+  misconfiguration, not a defect.
+
+## Sync-wave
+
+`0` — the device plugin tolerates NFD being present first but does not strictly
+require CRD registration (unlike a strict-B component). The consumer Argo
+`Application` SHOULD carry a `sync-wave` at or after
+[`compute/node-feature-discovery`](../node-feature-discovery/)'s wave so the
+PCI-topology labels exist when the plugin's affinity evaluates; the plugin self-heals
+once the labels appear.
+
+## Namespace & Pod Security
+
+This component ships its own `nvidia-device-plugin` namespace
+(`manifests/00-namespace.yaml`) — it is the sole catalog occupant (dedicated
+namespace), so the Namespace object travels with the artifact and a shipped manifest
+wins over Argo `managedNamespaceMetadata`.
+
+**`pod-security.kubernetes.io/enforce: privileged`** — the only PSS level that admits
+this workload. The device-plugin pod mounts hostPath volumes —
+`/var/lib/kubelet/device-plugins` (kubelet device-plugin socket dir),
+`/run/nvidia/mps` + `/run/nvidia/mps/shm` (MPS root + shared memory), and
+`/var/run/cdi` (Container Device Interface) — all architecturally required and not
+removable. In the Pod Security Standards "HostPath Volumes" is a **Baseline** control
+("hostPath volumes must be forbidden"), so **both** `baseline` and `restricted` reject
+a hostPath pod at admission — only `privileged` admits it. The MPS control-daemon
+additionally runs `privileged: true` containers (also Baseline-forbidden). A single
+Namespace carries one enforce level for all its pods, so the device-plugin's mandatory
+hostPath forces the whole namespace to `privileged`. This matches every node-level
+hostPath/privileged agent (node-exporter, CSI/CNI node DaemonSets,
+[`compute/node-feature-discovery`](../node-feature-discovery/) — all privileged-PSA).
+
+The `privileged` enforce level relies on this being a **dedicated, sole-occupancy**
+namespace — its only occupants are the two catalog-owned device-plugin workloads.
+Consumers MUST NOT co-locate other workloads in `nvidia-device-plugin`: a
+privileged-enforce namespace admits any pod (including truly-privileged /
+host-namespace), so its safety rests on the dedicated-namespace boundary, not on PSA
+enforcement.
+
+`audit: restricted` + `warn: restricted` keep the namespace from being a silent
+privilege hole: the device-plugin container is restricted-leaning (see Defense-in-depth
+below), so its hostPath usage surfaces as a **non-blocking** audit entry + apiserver
+warning, keeping any *new* non-conformance visible even though `enforce: privileged`
+does not block it.
+
+**Defense-in-depth, not the PSA backstop.** The device-plugin container
+`securityContext` is pinned to `allowPrivilegeEscalation: false` +
+`capabilities.drop: [ALL]` in `helm/nvidia-device-plugin.yaml` (the chart helper's
+verbatim-replacement branch) — independent of the namespace enforce level.
+`runAsNonRoot` and `readOnlyRootFilesystem` are **not** pinned: the plugin writes a
+Unix socket under the `/var/lib/kubelet/device-plugins` hostPath, accesses the NVIDIA
+device nodes, and is expected to run as root; the chart exposes no values key to set
+them independently of the full `securityContext` block (a documented design
+limitation for a device-driver agent, not a deferral). The MPS control-daemon's
+`privileged: true` is chart-fixed and required for MPS operation — not removable.
+
+## Capability
+
+`capabilities: [{id: gpu-runtime, swap_class: rewrite-required}]`. This component is
+the **scheduling** half of the active `nvidia-stack` implementation of `gpu-runtime`;
+the telemetry half `observability/nvidia-dcgm-exporter` (#61) additively declares the
+same `{id: gpu-runtime, swap_class: rewrite-required}`. `nvidia-stack =
+nvidia-device-plugin + nvidia-dcgm-exporter` is a deliberate two-component
+implementation of one `catalog/capability-index.yaml` entry — the index comment
+documents the component-location split (device-plugin in `compute`, dcgm-exporter in
+`observability`) as expected, not a duplicate. `swap_class: rewrite-required` reflects
+that swapping NVIDIA GPU scheduling for an alternative (AMD ROCm, Intel GPU plugin)
+requires consumer CRs and configuration to be rewritten; the index entry's
+`single_impl: true` confirms there is no realistic swap candidate today.
+
+## OCI
+
+```
+oci://ghcr.io/devobagmbh/talos-platform-apps/compute/nvidia-device-plugin:nvidia-device-plugin-vX.Y.Z
+```
+
+## Related ADRs
+
+- [ADR-0024 — Workload/Config-Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
+- [ADR-0021 — Capability-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0021-capability-layer-model.md)
+- [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- [ADR-0028 — CRD management (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)
+  — context only; this component renders no CRDs, so strict-B does not apply.

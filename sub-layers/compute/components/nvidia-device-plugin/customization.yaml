@@ -1,0 +1,42 @@
+# Customization Contract v2 (ADR-0024) for nvidia-device-plugin. The workload (the
+# nvidia-device-plugin Namespace, the device-plugin DaemonSet, the MPS control-daemon
+# DaemonSet, and their RBAC/ServiceAccounts) is the signed, pre-rendered artifact —
+# catalog-owned, never consumer-patched. This component renders ZERO CRDs, so it is a
+# single (non-strict-B) artifact: no -crds sibling.
+#
+# The freeze line is genuinely all-empty (NOT a hollow pass): the device plugin is a
+# cluster-agnostic node-level agent. The device-plugin / MPS pods carry no
+# cluster-specific URLs, credentials, node addresses, or consumer config references —
+# GPU advertisement is driven by the plugin's own device-detection logic, falling back
+# to its built-in `fallbackStrategies: ["named", "single"]` when no config is supplied.
+# Two would-be config inputs are deliberately NOT freeze-line shapes:
+#   * The optional `config.name` external-ConfigMap (chart default config.name: "") is a
+#     pure consumer overlay for consumers with an existing MIG-strategy config — the
+#     workload starts and advertises GPUs WITHOUT it, so it is not a required input
+#     (env/config/secret) the workload reads through provided_refs.
+#   * The `nvidia.com/gpu.present` manual node label (the affinity fallback when NFD is
+#     absent) is a consumer-MISCONFIGURATION path, not a freeze-line shape: the catalog
+#     composition wires compute/node-feature-discovery (external_dependencies), which
+#     provides the feature.node.kubernetes.io/pci-10de.present labels the default
+#     affinity uses. A consumer deploying without NFD and without the manual label gets
+#     a DaemonSet that never schedules — misconfiguration, not a missing input.
+# A cluster-specific concern like replica/node placement, tolerations, MIG strategy, or
+# the external plugin-config ConfigMap is a consumer-overlay patch of a catalog default,
+# not a freeze-line shape. Same cluster-agnostic case as compute/node-feature-discovery.
+#
+# external_dependencies: compute/node-feature-discovery (the runtime coupling — its
+# worker sets the feature.node.kubernetes.io/pci-10de.present labels the device-plugin's
+# default affinity matches on; without NFD only the manual nvidia.com/gpu.present label
+# fires). This is a runtime dependency, not a CRD-ordering one, so sync_wave stays 0.
+freeze_line:
+  workload: rendered/manifest.yaml  # device-plugin + MPS DaemonSets + RBAC + Namespace — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - compute/node-feature-discovery
