@@ -583,14 +583,21 @@ tasks:
         - a config package has no matching component dir (stale entry)
         - a built config package (no initial-version) is missing from the manifest
         - a package's `component` field != its path-derived <sub-layer>/<component> id
+        - a released package (a git tag <component>-vX.Y.Z exists) is missing from the
+          manifest — guard E; closes the #318 gap that built/stub classification cannot
+          (a released package still carrying initial-version is indistinguishable from a
+          never-released stub once its manifest entry is gone). Guard E reads git tags, so
+          the CI checkout MUST fetch tags (fetch-depth: 0); a tag-less checkout fails loud
+          rather than passing vacuously.
       Reports (non-fatal ℹ, never exit 1):
         - a stub config package (has initial-version) is ALSO in the manifest — a
           vestigial initial-version on an already-released package; release-please
-          reads the manifest, so it is harmless and the maintainer may strip it at
-          leisure (#314: hard-failing this blocked every first-release PR).
+          reads the manifest, so it is harmless. Guard E (above) now protects the
+          manifest entry regardless, so the field is genuine low-priority cleanup
+          (#314: hard-failing this blocked every first-release PR; #318).
       bootstrap-sha/last-release-sha are top-level-only, so this directory↔config parity
-      (plus the component-identity check) is the only mechanical guard against a
-      forgotten or mis-named component (apps#245, see issue #259).
+      (plus the component-identity and the tagged↔manifest checks) is the mechanical guard
+      against a forgotten, mis-named, or de-released component (apps#245, see issue #259).
     cmd: |
       # NOTE: no `set -o pipefail` and no `grep -q` over a pipe — go-task's embedded
       # mvdan/sh terminates the script on the SIGPIPE that grep -q raises when it
@@ -643,64 +650,115 @@ tasks:
       # mis-named tag while dir↔key parity still passes.
       awk -F'\t' '{want=$1; sub(/^sub-layers\//,"",want); sub(/\/components\//,"/",want); if ($2 != want) print $1": component=\""$2"\" expected=\""want"\""}' "$tmp/kc" > "$tmp/f"
       [ -s "$tmp/f" ] && report "package(s) whose 'component' field != path-derived id:" "$tmp/f"
+      # Guard E (tagged ⟹ in manifest): a package that has EVER been released — a git tag
+      # <component>-vX.Y.Z exists — MUST have a manifest entry, independent of any (possibly
+      # vestigial) initial-version. release-please re-cuts a manifest-less package at its
+      # initial-version, so a lost manifest entry for an already-released component is a
+      # silent version downgrade. The built/stub classification alone cannot catch this:
+      # once its manifest entry is gone, a released package that still declares initial-version
+      # is indistinguishable from a never-released stub. Git tags are the durable record of
+      # released-ness, so they close that gap (#318). Released component-ids come from the
+      # tags with the SemVer suffix stripped (a component name never ends in -vN.N.N, so the
+      # strip is unambiguous), mapped back to package keys via the kc (key<TAB>component) table.
+      git tag -l '*-v[0-9]*' 2>/dev/null | sed -E 's/-v[0-9]+\.[0-9]+\.[0-9]+.*$//' | sort -u > "$tmp/tagged_comp"
+      tagcount=$(wc -l < "$tmp/tagged_comp" | tr -d ' ')
+      awk -F'\t' 'NR==FNR{rel[$0]=1; next} ($2 in rel){print $1}' "$tmp/tagged_comp" "$tmp/kc" | sort > "$tmp/tagged"
+      # Silent-blinding guard: guard E reads git tags, which a shallow / tag-less checkout
+      # does not fetch (the CI job MUST checkout with fetch-depth: 0). If the manifest says
+      # packages are released but git exposes zero tags, the checkout is tag-less — fail loud
+      # rather than let guard E pass vacuously (it would then miss every dropped release entry).
+      if [ -s "$tmp/man" ] && [ "$tagcount" -eq 0 ]; then
+        echo "✗ guard E cannot run: no git release tags visible — the checkout is tag-less (use fetch-depth: 0) (#318)"; fail=1
+      fi
+      comm -23 "$tmp/tagged" "$tmp/man" > "$tmp/e"; [ -s "$tmp/e" ] && report "released package(s) (a git tag <component>-vX.Y.Z exists) missing from ${man} — a lost release entry; release-please would re-cut at initial-version (#318):" "$tmp/e"
       if [ "$fail" = "0" ]; then
-        echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies), component fields match; every components/ dir is a release package."
+        echo "✓ release-please coverage OK: $(wc -l < "$tmp/cfg" | tr -d ' ') package(s), $(wc -l < "$tmp/man" | tr -d ' ') manifest entr(y/ies), $(wc -l < "$tmp/tagged" | tr -d ' ') released (tagged) all in manifest; component fields match; every components/ dir is a release package."
       fi
       exit "$fail"
 
   test:release-config:
-    desc: 'Hermetic test of validate:release-config: first-release transition passes, real coverage gaps still fail (#314)'
+    desc: 'Test of validate:release-config: first-release passes, coverage + guard-E gaps still fail (#314, #318)'
     summary: |
-      Drives validate:release-config against synthetic fixtures derived from the
-      LIVE config+manifest (so directory↔config parity stays satisfied — only the
-      stub/manifest membership is mutated). Two cases:
+      Drives validate:release-config against fixtures derived from the LIVE config+
+      manifest+git-tags (guard E reads real tags, so a fully synthetic fixture cannot
+      exercise it; directory↔config parity stays satisfied — only stub/manifest/initial-
+      version membership is mutated). Victims are selected order-independently and each
+      case skips gracefully if its victim class is empty, so the task NEVER hard-fails on
+      catalog-state drift — critical because it is wired into `task ci` (a zero-stub
+      steady state must not exit non-zero) (#318). Three cases:
         A) first-release transition — a stub package (initial-version) added to the
-           manifest at 0.1.0 MUST pass (the #314 regression that blocked every new
-           component's first release).
-        B) coverage gap — a released package removed from the manifest MUST fail
-           (proves the relaxation did not blind the real "built missing from
-           manifest" guard).
+           manifest at its initial-version MUST pass (the #314 regression that blocked
+           every new component's first release). Skipped if no stub exists.
+        B) coverage gap — a built (non-stub) package removed from the manifest MUST fail
+           (proves the relaxation did not blind the "built missing from manifest" guard).
+        C) guard-E gap (#318) — a RELEASED (git-tagged) package that STILL carries
+           initial-version, removed from the manifest, MUST fail via guard E. Without
+           guard E it would pass (reclassified as a never-released stub), so this case is
+           red-green bound to guard E. Skipped if no tagged non-stub victim exists.
     cmd: |
       set -u
       export LC_ALL=C
       cfg="release-please-config.json"; man=".release-please-manifest.json"
       t=$(mktemp -d) || { echo "✗ mktemp"; exit 2; }
       trap 'rm -rf "$t"' EXIT
-      # A stub = a config package carrying initial-version; a built = one without.
-      # stub fixture victim: any package declaring initial-version.
-      stub=$(jq -r '.packages | to_entries[] | select(.value|has("initial-version")) | .key' "$cfg" | head -1)
-      # built fixture victim: a manifest entry whose config package is NOT a stub.
-      # MUST exclude stub-declaring packages — once a first-release stub lands in the
-      # manifest while keeping its initial-version (the "strip at leisure" state this
-      # PR legalizes), a naive `head -1` of manifest keys could pick it, and the
-      # production task would correctly reclassify it as a stub (declares initial-version
-      # ∧ ... here it's IN the manifest, so not a stub — but if Case B then DELETES it
-      # from the fixture it becomes absent-from-manifest ∧ declares-initial-version = a
-      # stub → the "built missing" guard correctly does NOT fire → false Case-B fail).
-      # Picking a genuinely-built (non-stub-declaring) victim keeps Case B robust. (#315 review)
       jq -r 'keys[]' "$man" | sort > "$t/man-keys"
-      jq -r '.packages | to_entries[] | select(.value|has("initial-version")) | .key' "$cfg" | sort > "$t/stub-keys"
+      jq -r '.packages | to_entries[] | select(.value|has("initial-version")) | .["key"]' "$cfg" | sort > "$t/stub-keys"
+      # stub victim: any package declaring initial-version (a still-unreleased first release).
+      stub=$(head -1 "$t/stub-keys")
+      # built victim: a manifest entry whose config package is NOT a stub — a genuinely
+      # released package (on the live repo these are exactly the tagged packages). Selected
+      # order-independently (comm over sorted temp files) so it can never accidentally pick a
+      # vestigial first-release stub that happens to sort first (#315 review).
       built=$(comm -23 "$t/man-keys" "$t/stub-keys" | head -1)
-      [ -n "$stub" ] && [ -n "$built" ] || { echo "✗ no stub/built package to derive a fixture from"; exit 2; }
-      iv=$(jq -r --arg k "$stub" '.packages[$k]."initial-version"' "$cfg")
+      ran=0
 
-      # --- Case A: first-release transition (stub now present in the manifest) ---
-      cp "$man" "$t/man-A.json"
-      jq --arg k "$stub" --arg v "$iv" '. + {($k): $v}' "$t/man-A.json" > "$t/man-A2.json"
-      if RP_CONFIG="$cfg" RP_MANIFEST="$t/man-A2.json" task validate:release-config >/dev/null 2>&1; then
-        echo "✓ Case A (first-release transition '$stub' @ $iv) passes"
+      # --- Case A: first-release transition (a stub now present in the manifest) MUST pass (#314) ---
+      if [ -n "$stub" ]; then
+        iv=$(jq -r --arg k "$stub" '.packages[$k]."initial-version"' "$cfg")
+        jq --arg k "$stub" --arg v "$iv" '. + {($k): $v}' "$man" > "$t/man-A.json"
+        if RP_CONFIG="$cfg" RP_MANIFEST="$t/man-A.json" task validate:release-config >/dev/null 2>&1; then
+          echo "✓ Case A (first-release transition '$stub' @ $iv) passes"; ran=$((ran + 1))
+        else
+          echo "✗ Case A FAILED: a first-release stub-in-manifest must pass (#314 regression)"; exit 1
+        fi
       else
-        echo "✗ Case A FAILED: a first-release stub-in-manifest must pass (#314 regression)"; exit 1
+        echo "ℹ Case A skipped: no initial-version stub in the config (zero-stub steady state) — nothing to transition (#318)"
       fi
 
-      # --- Case B: a released package dropped from the manifest must still fail ---
-      jq --arg k "$built" 'del(.[$k])' "$man" > "$t/man-B.json"
-      if RP_CONFIG="$cfg" RP_MANIFEST="$t/man-B.json" task validate:release-config >/dev/null 2>&1; then
-        echo "✗ Case B FAILED: a built package missing from the manifest must be caught"; exit 1
+      # --- Case B: a built (non-stub) package dropped from the manifest MUST fail ---
+      if [ -n "$built" ]; then
+        jq --arg k "$built" 'del(.[$k])' "$man" > "$t/man-B.json"
+        if RP_CONFIG="$cfg" RP_MANIFEST="$t/man-B.json" task validate:release-config >/dev/null 2>&1; then
+          echo "✗ Case B FAILED: a built package missing from the manifest must be caught"; exit 1
+        else
+          echo "✓ Case B (built '$built' missing from manifest) is still caught"; ran=$((ran + 1))
+        fi
       else
-        echo "✓ Case B (built '$built' missing from manifest) is still caught"
+        echo "ℹ Case B skipped: no released non-stub package to drop"
       fi
-      echo "✓ test:release-config OK"
+
+      # --- Case C: a RELEASED (git-tagged) package that STILL carries initial-version, dropped
+      #     from the manifest, MUST fail via guard E. Without guard E it would pass: adding
+      #     initial-version + removing the manifest entry reclassifies it as a never-released
+      #     stub (declares initial-version ∧ absent from manifest), so the built-missing guard
+      #     does not fire — the #318 gap. The case is red-green bound to guard E (revert guard E
+      #     → this passes → the test reports Case C FAILED). The 'built' victim is, on the live
+      #     repo, a tagged package; we confirm its tag before relying on guard E. ---
+      comp=""; [ -n "$built" ] && comp=$(jq -r --arg k "$built" '.packages[$k].component // ""' "$cfg")
+      if [ -n "$comp" ] && [ -n "$(git tag -l "${comp}-v[0-9]*" 2>/dev/null | head -1)" ]; then
+        jq --arg k "$built" '.packages[$k]."initial-version" = "0.1.0"' "$cfg" > "$t/cfg-C.json"
+        jq --arg k "$built" 'del(.[$k])' "$man" > "$t/man-C.json"
+        if RP_CONFIG="$t/cfg-C.json" RP_MANIFEST="$t/man-C.json" task validate:release-config >/dev/null 2>&1; then
+          echo "✗ Case C FAILED: a released (tagged) package still carrying initial-version, dropped from the manifest, must be caught by guard E (#318 gap)"; exit 1
+        else
+          echo "✓ Case C (vestigial-released '$built' dropped from manifest) is caught by guard E"; ran=$((ran + 1))
+        fi
+      else
+        echo "ℹ Case C skipped: no released non-stub package with a git tag (guard E not exercisable here)"
+      fi
+
+      [ "$ran" -gt 0 ] && echo "✓ test:release-config OK (${ran} case(s) ran)" || echo "ℹ test:release-config: no cases applicable in the current catalog state"
+      exit 0
 
   validate:contract:
     desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1); optional: -- <sub-layer>/<component> to scope to one'
@@ -1164,6 +1222,7 @@ tasks:
       - task: scan:secrets
       - task: scan:trivy
       - task: scan:conftest
+      - task: scan:psa-conformance
       - |
         if [[ -n "${SNYK_TOKEN:-}" ]]; then
           task scan:snyk
@@ -1208,6 +1267,34 @@ tasks:
       echo "$files" | sed 's/^/  - /'
       echo ""
       conftest test --policy policies/ --all-namespaces $files
+
+  scan:psa-conformance:
+    desc: 'PSA conformance: each component workload must satisfy its declared Namespace enforce level (combine, per component)'
+    deps: [render]
+    summary: |
+      base.pod_security_standards only checks the enforce LABEL is valid; it cannot
+      see whether the shipped workloads CONFORM to that level — the Namespace and the
+      workloads are SEPARATE conftest documents. This gate runs conformance.pod_security
+      with `conftest test --combine` PER COMPONENT (so the combined input is one
+      component's Namespace + its workloads) and denies a workload that violates the
+      declared Baseline structural controls (hostPath, host namespaces, privileged,
+      host ports, hostProcess, non-Default procMount, Unconfined seccomp). Catches the
+      "declared enforce level too strict for the workload" defect (apps PR #328)
+      deterministically, before it ships. Scope + deferred controls: see the policy
+      header in policies/conformance/pod_security_conformance.rego.
+    cmd: |
+      rc=0
+      files=$(find sub-layers -path '*/components/*/rendered/manifest.yaml' -size +0 -type f)
+      for f in $files; do
+        comp=$(echo "$f" | sed -E 's#sub-layers/([^/]+)/components/([^/]+)/.*#\1/\2#')
+        if ! out=$(conftest test --combine --all-namespaces --policy policies/conformance/ "$f" 2>&1); then
+          echo "✗ $comp"
+          printf '%s\n' "$out" | grep 'FAIL' | sed 's/^/    /'
+          rc=1
+        fi
+      done
+      if [ "$rc" -eq 0 ]; then echo "✓ all components conform to their declared PSA enforce level"; fi
+      exit $rc
 
   scan:conftest-verify:
     desc: Conftest-Policy-Selbsttests (testdata/-Korpus)
@@ -1409,14 +1496,35 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + validate:release-config + test:release-config + lint + render + crd-split + scan:conftest)
+    desc: Lokale Reproduktion der GHA-PR-Pipeline (release-coverage gates + ci:artifact)
     cmds:
-      - task: check:primitives
+      # Release-coverage gates — catalog-wide release-please invariants (config↔dir↔
+      # manifest↔git-tag parity). These are PR/merge-time checks, NOT artifact
+      # validation, so they live here and in the PR `ci` job but are DELIBERATELY
+      # excluded from `ci:artifact` (the publish job). guard E in validate:release-config
+      # is repo-global and runs after the tag is cut; running it in the per-component
+      # publish hot path would let one inconsistent tag (a stray or manual-backfill tag
+      # for a component not in the manifest) strand the just-cut tag and block every
+      # other component's publish. The PR gate catches the same gap before any tag
+      # exists, so the publish job does not need it (#314, #318 review).
       - task: validate:release-config
       # Hermetic regression guard for the #314 first-release relaxation (fast, no
-      # network). Wired into ci so a regression in validate:release-config's stub
-      # handling is caught automatically, not only when a dev remembers (#315 review).
+      # network). Wired into the PR `ci` so a regression in validate:release-config's
+      # stub handling is caught automatically, not only when a dev remembers (#315 review).
       - task: test:release-config
+      - task: ci:artifact
+
+  ci:artifact:
+    desc: Artifact validation shared by the PR `ci` gate and the publish job (no catalog-wide release-coverage gates)
+    summary: |
+      The render/lint/policy checks that validate the component artifact(s) being
+      published. Run by BOTH the PR `ci` job (via `task ci`) and the tag-push publish
+      job. The catalog-wide release-coverage gates (validate:release-config +
+      test:release-config) are NOT here: they are a merge-time invariant over the whole
+      catalog, and guard E is repo-global + post-tag, so running it per-publish would
+      let one inconsistent tag strand a cut tag and block all publishes (#318 review).
+    cmds:
+      - task: check:primitives
       - task: lint
       - task: validate:compatibility
       - task: render
@@ -1425,6 +1533,7 @@ tasks:
       - task: lint:version
       - task: scan:conftest-verify
       - task: scan:conftest
+      - task: scan:psa-conformance
 
   # Note: validate:contract is DELIBERATELY not part of `ci`. The customization
   # contract is rolled out per component (ADR-0024); coupling the render/lint

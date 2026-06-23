@@ -1,0 +1,33 @@
+# Customization Contract v2 (ADR-0024). Tetragon's workload (agent DaemonSet +
+# tetragon-operator Deployment + RBAC) is the signed, pre-rendered artifact. The agent
+# is fundamentally CLUSTER-AGNOSTIC at the freeze line: its eBPF instrumentation
+# attaches kernel probes regardless of cluster identity, and it runs without any
+# consumer-supplied secret, config file, or env. Two consumer-tunable surfaces exist as
+# OPTIONAL config shapes (provided_*), neither REQUIRED for core operation:
+#   (b) config: export filters (tetragon.exportAllowList/exportDenyList/exportFilename)
+#       — the catalog ships usable stdout defaults; the consumer overrides via
+#       provided_refs.config only when tuning the event stream.
+#   (d) selector: TracingPolicy / TracingPolicyNamespaced CRs — consumer-authored policy
+#       objects the operator selects. The agent observes at the base level without any;
+#       consumers layer tracing rules on top. So these are in provided_selectors only;
+#       required.selector_crs stays empty (no consumer CR is needed for the agent to run).
+# Shapes (a) env and (c) secret are unused: no cluster-specific env scalars, and the
+# agent reads kernel data, not consumer secrets.
+freeze_line:
+  workload: rendered/manifest.yaml # agent DaemonSet + operator Deployment + RBAC — never consumer-patched
+provided_refs:
+  config: tetragon-config # Shape (b): optional ConfigMap to override export filters; catalog defaults cover the common case
+provided_selectors:
+  # Shape (d): the label the consumer's TracingPolicy / TracingPolicyNamespaced CRs carry
+  # so the tetragon-operator selects them. These are extensions, not prerequisites.
+  TracingPolicy:
+    app.kubernetes.io/managed-by: tetragon
+  TracingPolicyNamespaced:
+    app.kubernetes.io/managed-by: tetragon
+required:
+  env_keys: []      # (a) none — no 12-factor env scalars needed for core operation
+  config_files: []  # (b) none REQUIRED — catalog stdout-export defaults are deployable as-is; provided_refs.config is an optional override
+  secret_keys: []   # (c) none — the agent reads kernel data, not consumer secrets
+  selector_crs: []  # (d) none REQUIRED — the agent runs without any TracingPolicy loaded; consumers layer policies on top
+sync_wave: "0" # wave 0: the agent + operator deploy together; the operator establishes the TracingPolicy CRDs at runtime before any consumer TracingPolicy CR is applied
+external_dependencies: [] # self-contained: depends only on the kernel ABI present on any Talos node
