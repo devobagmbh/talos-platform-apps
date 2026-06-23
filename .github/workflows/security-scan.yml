@@ -34,7 +34,11 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
         with:
-          fetch-depth: 0  # full history: `gitleaks git` scans all commits, not just HEAD
+          # fetch-depth: 0 is load-bearing for BOTH gitleaks paths: the full all-refs
+          # sweep (schedule) AND resolving GITLEAKS_SCAN_RANGE's base/head endpoints
+          # (pull_request/push). Narrowing it would silently degrade the scoped scan to
+          # a full-scan fallback over a shallow clone — do not reduce. (apps#340)
+          fetch-depth: 0
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -42,6 +46,12 @@ jobs:
           enable-cache: true
 
       - name: gitleaks secret-scan (backstop to the lefthook pre-commit hook)
+        # Scope the scan to the event's commit range so an unrelated in-flight branch's
+        # finding cannot fail this run (apps#340). pull_request → base..head, push →
+        # before..after, schedule → unset → full all-refs sweep. `task scan:secrets`
+        # validates the range and falls back to a full scan if it does not resolve.
+        env:
+          GITLEAKS_SCAN_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || github.event_name == 'push' && format('{0}..{1}', github.event.before, github.sha) || '' }}
         run: devbox run -- task scan:secrets
 
   trivy:
