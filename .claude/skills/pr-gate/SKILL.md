@@ -114,6 +114,7 @@ same-repo collaborator branch (this repo has multiple push collaborators).
 - When confirmed, run it in an isolated throwaway worktree (outside `.claude/worktrees/`
   → no build-lock collision), with cleanup guarded so an unset path can never widen the
   `rm`:
+
   ```sh
   tmproot="$(mktemp -d)" || { echo 'mktemp failed' >&2; exit 1; }
   wt="$tmproot/pr-<N>"
@@ -126,6 +127,7 @@ same-repo collaborator branch (this repo has multiple push collaborators).
   git update-ref -d "refs/pr-gate/<N>" 2>/dev/null || true
   [ -n "$tmproot" ] && [ "$tmproot" != "/" ] && rm -rf -- "$tmproot"
   ```
+
   Background the `task ci` line: ~20 min (≈40-component helm render + conftest); low CPU
   and an empty/redirected log are **not** hang signals — do not kill it.
 
