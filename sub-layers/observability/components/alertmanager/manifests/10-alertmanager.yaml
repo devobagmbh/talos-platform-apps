@@ -1,0 +1,90 @@
+# Identity-free Alertmanager INSTANCE (catalog CR-template component, ADR-0009).
+# The catalog ships the operator-reconciled Alertmanager CR + a routing skeleton;
+# the consumer overlays topology + receivers. This is a raw Custom Resource, NOT a
+# Helm wrapper — the prometheus-operator (observability/prometheus-operator, the
+# controller) reconciles this CR into a StatefulSet at runtime. No Deployment /
+# StatefulSet is rendered here by design.
+#
+# Strict-B (ADR-0028): the monitoring.coreos.com CRDs are NOT shipped here — they
+# live in observability/prometheus-operator-crds. This component renders 0 CRDs.
+apiVersion: monitoring.coreos.com/v1
+kind: Alertmanager
+metadata:
+  name: platform
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: observability
+    app.kubernetes.io/managed-by: prometheus-operator
+spec:
+  # Pinned image + version, kept consistent. NO :latest (no_latest_image_tag gate).
+  # v0.28.1 is the stable Alertmanager release matching prometheus-operator v0.91.0.
+  version: v0.28.1
+  image: quay.io/prometheus/alertmanager:v0.28.1
+  # replicas: 1 is the catalog DEFAULT. The consumer overlays this to an HA peer
+  # set (>=3) via a Kustomize patch — a per-cluster topology decision, NOT a
+  # freeze-line shape (ADR-0024 plain-value overlay).
+  replicas: 1
+  # alertmanagerConfigSelector: the operator merges every AlertmanagerConfig CR
+  # carrying this label into this instance's runtime config. Our shipped base
+  # routing skeleton (20-alertmanagerconfig.yaml) carries the matching label; the
+  # consumer adds further labeled AlertmanagerConfigs (with real receivers +
+  # secretKeyRefs) the same way.
+  alertmanagerConfigSelector:
+    matchLabels:
+      alertmanagerConfig: platform
+  # alertmanagerConfigMatcherStrategy: None.
+  # Rationale: this is the PLATFORM-WIDE routing instance. With strategy `None`,
+  # the operator does NOT auto-inject a per-namespace `namespace=<ns>` matcher onto
+  # each AlertmanagerConfig's routes, so the central base skeleton can route alerts
+  # ACROSS namespaces (cluster-wide severity + Watchdog routing). `OnNamespace`
+  # (the operator default) would scope every config to its own namespace, enforcing
+  # tenancy but defeating a single central platform routing tree. A multi-tenant
+  # consumer that wants per-namespace isolation overlays this back to `OnNamespace`.
+  alertmanagerConfigMatcherStrategy:
+    type: None
+  # Pod-level security context: Alertmanager needs NO host access. runAsNonRoot +
+  # RuntimeDefault seccomp + a non-root fsGroup/runAsUser. The operator applies a
+  # restrictive CONTAINER securityContext (allowPrivilegeEscalation: false,
+  # capabilities.drop:[ALL], readOnlyRootFilesystem) automatically; together the
+  # pods provably satisfy PSA `restricted`. nobody = 65534.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  # Default resources. Alertmanager is light; requests + a memory limit, no CPU
+  # limit (avoids throttling notification dispatch under burst).
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  # Persistent storage skeleton: Alertmanager persists notification + silence state
+  # to /alertmanager. storageClassName is DELIBERATELY omitted so the cluster
+  # default StorageClass is used — the consumer overlays a specific class via a
+  # Kustomize patch if needed (do NOT hardcode a cluster-specific class here).
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  # externalUrl is LEFT to the consumer (a per-cluster identity: the public URL
+  # Alertmanager is reachable at, used in notification links). Overlaid via a
+  # Kustomize patch — NOT baked here. Same for any cluster external-label value.
+  # Spread peers across nodes once the consumer scales replicas for HA.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                alertmanager: platform

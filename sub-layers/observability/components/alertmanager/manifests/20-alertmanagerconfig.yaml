@@ -1,0 +1,84 @@
+# Identity-free base routing skeleton (AlertmanagerConfig). Labeled
+# `alertmanagerConfig: platform` so the Alertmanager CR's alertmanagerConfigSelector
+# (10-alertmanager.yaml) merges it. This skeleton wires the ROUTING TREE + inhibit
+# rules + PLACEHOLDER receivers ONLY — it carries NO real integrations, NO endpoints,
+# NO secretKeyRef, NO credentials. The consumer authors its own labeled
+# AlertmanagerConfig with real receivers (referencing secrets via secretKeyRef) +
+# overlays the receivers here; that consumer-side config is NOT part of this
+# rendered, signed workload — which is why customization.yaml declares NO secret_keys
+# (declaring one the rendered manifest never reads would be a freeze-line defect).
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: platform-base
+  namespace: monitoring
+  labels:
+    alertmanagerConfig: platform
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: observability
+spec:
+  route:
+    # Group by alert identity + topology so a multi-cluster fleet keeps each
+    # (cluster, namespace) stream distinct. `cluster` is the external label the
+    # consumer's Prometheus stamps (see the PrometheusRule note in 30-*.yaml).
+    groupBy:
+      - alertname
+      - cluster
+      - namespace
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    # Default sink: a no-op `null` receiver. Anything not matched by a child route
+    # is dropped rather than spamming a default channel — the consumer adds catch-all
+    # routing in its own AlertmanagerConfig.
+    receiver: "null"
+    routes:
+      # Watchdog (dead-man's-switch): the always-firing alert (see 30-*.yaml) is
+      # routed to a dedicated `watchdog` receiver with a tight repeat so an external
+      # heartbeat monitor (or a PEER-CLUSTER Alertmanager) can detect the ABSENCE of
+      # the heartbeat. For the bidirectional 2-Alertmanager Watchdog, the consumer
+      # wires each cluster's `watchdog` receiver to the OTHER cluster's Alertmanager
+      # (a cross-cluster dead-man's-switch) — that receiver endpoint is consumer
+      # identity, not baked here.
+      - matchers:
+          - name: alertname
+            value: Watchdog
+        receiver: watchdog
+        groupWait: 0s
+        groupInterval: 1m
+        repeatInterval: 5m
+        continue: false
+      # Severity routing: critical and warning to their own receivers. Receivers are
+      # placeholders here; the consumer fills the real notification integrations.
+      - matchers:
+          - name: severity
+            value: critical
+        receiver: critical
+        continue: false
+      - matchers:
+          - name: severity
+            value: warning
+        receiver: warning
+        continue: false
+  # A critical alert suppresses a matching warning for the same alert on the same
+  # (namespace, cluster) — standard severity inhibition, reduces notification noise.
+  inhibitRules:
+    - sourceMatch:
+        - name: severity
+          value: critical
+      targetMatch:
+        - name: severity
+          value: warning
+      equal:
+        - alertname
+        - namespace
+        - cluster
+  # PLACEHOLDER receivers — named, but with NO integrations. A receiver with no
+  # notifier config is a valid no-op (Alertmanager simply records the notification
+  # without delivering it). The consumer overlays real notifiers (with secretKeyRefs
+  # to its own Secrets) onto these names via its own labeled AlertmanagerConfig.
+  receivers:
+    - name: "null"
+    - name: watchdog
+    - name: critical
+    - name: warning

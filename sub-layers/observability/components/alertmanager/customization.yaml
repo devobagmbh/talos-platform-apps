@@ -1,0 +1,39 @@
+# Customization Contract v2 (ADR-0024). CATALOG CR-TEMPLATE component (ADR-0009):
+# this ships an identity-free Alertmanager CR + a routing skeleton + the Watchdog
+# rules, all operator-reconciled (observability/prometheus-operator). The freeze-line
+# splits ownership: the workload (the CR set) is catalog-owned + signed + never
+# patched; per-cluster CR fields (replicas, externalUrl, storageClassName, the
+# `cluster` external-label value) are consumer Kustomize PLAIN-VALUE overlays
+# (ADR-0023/0024) — they are NOT freeze-line shapes and so do NOT appear under
+# `required.*`. They are documented in README as overlay points.
+#
+# Contract shape (d): the only consumer-supplied reference is the operator-assembled
+# AlertmanagerConfig the consumer labels so the Alertmanager CR's
+# alertmanagerConfigSelector merges it (real receivers + their secretKeyRefs live in
+# that CONSUMER config, not in our rendered workload). secret_keys is deliberately []:
+# the rendered manifest references NO Secret — declaring a secret_key the workload
+# never reads would be a freeze-line defect (build-spec §Freeze-line contract).
+freeze_line:
+  workload: rendered/manifest.yaml  # Alertmanager CR + base AlertmanagerConfig + PrometheusRules — never consumer-patched
+provided_refs: {}                   # no consumer-supplied env/config/secret ConfigMap/Secret refs
+provided_selectors:
+  # Shape (d): the label a consumer's AlertmanagerConfig CR MUST carry so the
+  # rendered Alertmanager CR's `.spec.alertmanagerConfigSelector` (10-alertmanager.yaml)
+  # merges it into this instance's runtime routing config.
+  AlertmanagerConfig:
+    alertmanagerConfig: platform
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []                   # our rendered workload references NO secret (see header)
+  selector_crs:
+    # Backed by the real `.spec.alertmanagerConfigSelector.matchLabels` in the
+    # rendered Alertmanager CR (10-alertmanager.yaml). The consumer creates labeled
+    # AlertmanagerConfig CRs (with real receivers) to be merged.
+    - kind: AlertmanagerConfig
+      label:
+        alertmanagerConfig: platform
+sync_wave: "10"                     # after the operator (wave 0) + its CRDs (wave -1): the CR needs the controller + CRD schemas present to reconcile
+external_dependencies:
+  - observability/prometheus-operator       # the controller that reconciles the Alertmanager CR
+  - observability/prometheus-operator-crds   # the monitoring.coreos.com CRD schemas

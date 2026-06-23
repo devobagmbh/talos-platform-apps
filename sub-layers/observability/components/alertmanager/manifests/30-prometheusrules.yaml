@@ -1,0 +1,138 @@
+# Reusable platform alert rules (PrometheusRule). IMPORTANT: these rules are
+# evaluated by the consumer's PROMETHEUS instance (issue #20), NOT by Alertmanager.
+# They ship with this component because the Watchdog rule + the routing skeleton in
+# 20-*.yaml are two halves of ONE dead-man's-switch contract and belong together.
+#
+# Selector contract: the consumer's Prometheus instance picks these up via its
+# `ruleSelector`. This object carries `role: alert-rules` + the standard part-of
+# label; the consumer MUST configure its Prometheus ruleSelector to match (e.g.
+# matchLabels {role: alert-rules}) OR relax it (ruleSelector: {}). Documented in
+# README. The `cluster` label referenced below is the EXTERNAL label the consumer's
+# Prometheus stamps on every series (`spec.externalLabels.cluster`) — these rules
+# never hardcode a cluster name, so the same artifact serves every cluster.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-alert-rules
+  namespace: monitoring
+  labels:
+    role: alert-rules
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: observability
+spec:
+  groups:
+    # ---------------------------------------------------------------------------
+    # Dead-man's-switch: an alert that ALWAYS fires. Its job is to be constantly
+    # present so a downstream monitor (or a peer-cluster Alertmanager, see 20-*.yaml)
+    # can alert on its ABSENCE — i.e. the whole alerting pipeline (Prometheus ->
+    # Alertmanager -> notification) is dead.
+    # ---------------------------------------------------------------------------
+    - name: watchdog
+      rules:
+        - alert: Watchdog
+          expr: vector(1)
+          for: 0m
+          labels:
+            severity: none
+          annotations:
+            summary: >-
+              Alerting pipeline is functional (dead-man's-switch).
+            description: >-
+              This alert is always firing. An external heartbeat monitor (or a
+              peer-cluster Alertmanager) MUST be configured to alert on the
+              ABSENCE of this Watchdog — its disappearance means the
+              Prometheus -> Alertmanager -> notification path is broken.
+    # ---------------------------------------------------------------------------
+    # Data-presence guards: absent() rules catch the case where a key signal stops
+    # arriving entirely (remote_write down, an exporter gone, the scrape silently
+    # broken). absent() fires when the series vanishes — a different failure class
+    # than a threshold breach.
+    # ---------------------------------------------------------------------------
+    - name: data-presence
+      rules:
+        - alert: PrometheusRemoteWriteAbsent
+          # `up{job="prometheus"}` is the canonical self-scrape signal. If it goes
+          # absent, Prometheus is not scraping itself — the data pipeline is suspect.
+          expr: absent(up{job="prometheus"})
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Prometheus self-scrape signal absent.
+            description: >-
+              `up{job="prometheus"}` has been absent for 10m. Prometheus is not
+              scraping itself; metric ingestion for this cluster may be down.
+        - alert: KubeStateMetricsAbsent
+          # kube_* series vanish entirely when kube-state-metrics is down, blinding
+          # every workload-state alert below.
+          expr: absent(up{job="kube-state-metrics"})
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: kube-state-metrics scrape signal absent.
+            description: >-
+              `up{job="kube-state-metrics"}` has been absent for 15m. Workload-state
+              alerts (pod restarts, deployment availability) are blind until it
+              returns.
+    # ---------------------------------------------------------------------------
+    # Standard platform alerts. All inherit the `cluster` external label at
+    # evaluation time, so routing/grouping by cluster works fleet-wide.
+    # ---------------------------------------------------------------------------
+    - name: platform-workloads
+      rules:
+        - alert: KubePodCrashLooping
+          # >0 restarts/min over 5m = a crash loop. by(...) keeps namespace + pod for
+          # routing; `cluster` rides along as an external label.
+          expr: |
+            increase(kube_pod_container_status_restarts_total[5m]) > 3
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash-looping.
+            description: >-
+              Container in pod {{ $labels.namespace }}/{{ $labels.pod }} has
+              restarted more than 3 times in the last 5 minutes.
+        - alert: KubeDeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas
+              != kube_deployment_status_replicas_available
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: >-
+              Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has
+              mismatched replicas.
+            description: >-
+              Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has not
+              matched the expected number of available replicas for 15 minutes.
+        - alert: KubeNodeNotReady
+          expr: |
+            kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Node {{ $labels.node }} is not ready.
+            description: >-
+              Node {{ $labels.node }} has been in a NotReady state for more than
+              10 minutes.
+        - alert: KubePersistentVolumeFillingUp
+          expr: |
+            (
+              kubelet_volume_stats_available_bytes
+                / kubelet_volume_stats_capacity_bytes
+            ) < 0.10
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: >-
+              PersistentVolume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }}
+              is filling up.
+            description: >-
+              The PersistentVolumeClaim
+              {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} has less
+              than 10% free space remaining.

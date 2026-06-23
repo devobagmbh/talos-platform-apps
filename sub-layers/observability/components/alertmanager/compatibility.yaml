@@ -1,0 +1,23 @@
+# CATALOG CR-TEMPLATE component (ADR-0009): an identity-free Alertmanager INSTANCE
+# (the operator-reconciled Alertmanager CR) + a base routing AlertmanagerConfig +
+# the platform PrometheusRules (incl. the Watchdog dead-man's-switch). This renders
+# raw Custom Resources, NOT a Helm chart. It renders 0 CustomResourceDefinitions —
+# the monitoring.coreos.com CRDs are owned by observability/prometheus-operator-crds
+# (strict-B, ADR-0028) — so there is deliberately NO `crd-bearing: true` marker here.
+requires:
+  # The prometheus-operator CONTROLLER reconciles the Alertmanager CR into a
+  # StatefulSet at runtime; without it the CR is inert. Strict-B ordering: the CRD
+  # schemas (-crds, Argo wave -1) and the controller (wave 0) must both exist before
+  # this instance (wave 10) can reconcile.
+  observability/prometheus-operator: ">=v0.1.0"
+  observability/prometheus-operator-crds: ">=v0.1.0"
+provides:
+  - name: alertmanager
+    version:
+      sot: app          # the running Alertmanager workload version (the pinned image tag)
+      app: v0.28.1      # quay.io/prometheus/alertmanager:v0.28.1 (matches prometheus-operator v0.91.0)
+    api_surface: []     # exposes no CRD/API surface; the monitoring.coreos.com CRDs ship in -crds
+    capabilities:
+      # alert-routing exists in catalog/capability-index.yaml with the active
+      # implementation = alertmanager, swap_class = drop-in.
+      - {id: alert-routing, swap_class: drop-in}
