@@ -35,7 +35,10 @@ Two DaemonSets (both chart-rendered with the default `devicePlugin.enabled: true
   containers run `privileged: true` (chart-fixed, required for MPS shared-memory
   management) when it does schedule.
 
-…plus the chart's RBAC (`ClusterRole`/`ClusterRoleBinding`) and `ServiceAccount`.
+At these values the chart renders **only** these two DaemonSets; together with this
+component's `manifests/00-namespace.yaml` the artifact ships the two DaemonSets and the
+`nvidia-device-plugin` Namespace — no `ClusterRole`/`ClusterRoleBinding`/`ServiceAccount`
+objects (the pods run under the namespace default ServiceAccount).
 
 This component renders **zero** CRDs, so ADR-0028 strict-B does **not** apply —
 there is no `-crds` sibling artifact.
@@ -48,7 +51,7 @@ chart version into the wrong namespace.
 
 ## Freeze-line (ADR-0024)
 
-The **workload** (the two DaemonSets, RBAC, Namespace) is the signed, pre-rendered
+The **workload** (the two DaemonSets and Namespace) is the signed, pre-rendered
 artifact. The device plugin is **cluster-agnostic at the freeze line**: it needs no
 consumer-supplied secrets, config files, env, or selector CRs to run, so
 `provided_refs` and every `required.*` list are empty. It advertises GPUs using its
@@ -80,15 +83,29 @@ schedules against GPUs the base layer has already made available.
   `nvidia.com/gpu.present: "true"` (the affinity fallback). A consumer running neither
   NFD nor the manual label gets a DaemonSet that never schedules — a
   misconfiguration, not a defect.
+- **MPS activation** — labelling a node `nvidia.com/mps.capable: "true"` causes the
+  (otherwise dormant) **privileged** MPS control-daemon to schedule onto it
+  automatically — no extra sync or Application is needed. MPS-daemon failure or
+  eviction tears down **all** shared CUDA contexts on that GPU with no graceful drain,
+  so drain MPS clients before removing the label or restarting the daemon.
+- **Bootstrap transient** — a transient `CreateContainerConfigError` on
+  `/var/lib/kubelet/device-plugins` during node join is **expected** (the device-plugin
+  hostPath requires the directory, which the kubelet creates) and self-heals once the
+  kubelet initialises — not a config defect.
 
 ## Sync-wave
 
 `0` — the device plugin tolerates NFD being present first but does not strictly
 require CRD registration (unlike a strict-B component). The consumer Argo
-`Application` SHOULD carry a `sync-wave` at or after
-[`compute/node-feature-discovery`](../node-feature-discovery/)'s wave so the
-PCI-topology labels exist when the plugin's affinity evaluates; the plugin self-heals
-once the labels appear.
+`Application` **MUST** carry a `sync-wave` **strictly higher** than
+[`compute/node-feature-discovery`](../node-feature-discovery/)'s (e.g. wave `1`) so
+NFD's worker has labelled the GPU nodes before the device-plugin's affinity evaluates.
+At the **same** sync-wave the device-plugin can evaluate its affinity against the
+`feature.node.kubernetes.io/pci-10de.present` labels before NFD has applied them: the
+DaemonSet then schedules **zero** pods until NFD catches up — self-healing, but
+**unobserved** (no alert distinguishes it from "no GPU nodes present"). The manual
+`nvidia.com/gpu.present` node label remains the fallback for a consumer not running NFD
+(see [Consumer obligations](#consumer-obligations)).
 
 ## Namespace & Pod Security
 

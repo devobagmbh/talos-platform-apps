@@ -29,7 +29,7 @@
 # default affinity matches on; without NFD only the manual nvidia.com/gpu.present label
 # fires). This is a runtime dependency, not a CRD-ordering one, so sync_wave stays 0.
 freeze_line:
-  workload: rendered/manifest.yaml  # device-plugin + MPS DaemonSets + RBAC + Namespace — never consumer-patched
+  workload: rendered/manifest.yaml  # device-plugin DaemonSet + MPS control-daemon DaemonSet + Namespace — never consumer-patched
 provided_refs: {}
 provided_selectors: {}
 required:
