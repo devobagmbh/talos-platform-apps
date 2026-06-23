@@ -1164,6 +1164,7 @@ tasks:
       - task: scan:secrets
       - task: scan:trivy
       - task: scan:conftest
+      - task: scan:psa-conformance
       - |
         if [[ -n "${SNYK_TOKEN:-}" ]]; then
           task scan:snyk
@@ -1208,6 +1209,34 @@ tasks:
       echo "$files" | sed 's/^/  - /'
       echo ""
       conftest test --policy policies/ --all-namespaces $files
+
+  scan:psa-conformance:
+    desc: 'PSA conformance: each component workload must satisfy its declared Namespace enforce level (combine, per component)'
+    deps: [render]
+    summary: |
+      base.pod_security_standards only checks the enforce LABEL is valid; it cannot
+      see whether the shipped workloads CONFORM to that level — the Namespace and the
+      workloads are SEPARATE conftest documents. This gate runs conformance.pod_security
+      with `conftest test --combine` PER COMPONENT (so the combined input is one
+      component's Namespace + its workloads) and denies a workload that violates the
+      declared Baseline structural controls (hostPath, host namespaces, privileged,
+      host ports, hostProcess, non-Default procMount, Unconfined seccomp). Catches the
+      "declared enforce level too strict for the workload" defect (apps PR #328)
+      deterministically, before it ships. Scope + deferred controls: see the policy
+      header in policies/conformance/pod_security_conformance.rego.
+    cmd: |
+      rc=0
+      files=$(find sub-layers -path '*/components/*/rendered/manifest.yaml' -size +0 -type f)
+      for f in $files; do
+        comp=$(echo "$f" | sed -E 's#sub-layers/([^/]+)/components/([^/]+)/.*#\1/\2#')
+        if ! out=$(conftest test --combine --all-namespaces --policy policies/conformance/ "$f" 2>&1); then
+          echo "✗ $comp"
+          printf '%s\n' "$out" | grep 'FAIL' | sed 's/^/    /'
+          rc=1
+        fi
+      done
+      if [ "$rc" -eq 0 ]; then echo "✓ all components conform to their declared PSA enforce level"; fi
+      exit $rc
 
   scan:conftest-verify:
     desc: Conftest-Policy-Selbsttests (testdata/-Korpus)
@@ -1409,7 +1438,7 @@ tasks:
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
   ci:
-    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + validate:release-config + test:release-config + lint + render + crd-split + scan:conftest)
+    desc: Lokale Reproduktion der GHA-Pipeline (check:primitives + validate:release-config + test:release-config + lint + render + crd-split + scan:conftest + psa-conformance)
     cmds:
       - task: check:primitives
       - task: validate:release-config
@@ -1425,6 +1454,7 @@ tasks:
       - task: lint:version
       - task: scan:conftest-verify
       - task: scan:conftest
+      - task: scan:psa-conformance
 
   # Note: validate:contract is DELIBERATELY not part of `ci`. The customization
   # contract is rolled out per component (ADR-0024); coupling the render/lint
