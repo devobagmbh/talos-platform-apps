@@ -28,6 +28,10 @@
       "component": "compute/node-feature-discovery",
       "initial-version": "0.1.0"
     },
+    "sub-layers/compute/components/nvidia-device-plugin": {
+      "component": "compute/nvidia-device-plugin",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/databases/components/cnpg": {
       "component": "databases/cnpg"
     },

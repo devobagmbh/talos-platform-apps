@@ -8,3 +8,4 @@ components:
   - kubevirt-cdi # strict-B workload half — CDI operator + CDI CR (sync-wave 0, ADR-0028); requires kubevirt-cdi-crds
   - node-feature-discovery-crds # strict-B CRD half — 3 node-feature-discovery CRDs (nfd.k8s-sigs.io) (sync-wave -1, ADR-0028); pairs with node-feature-discovery
   - node-feature-discovery # strict-B workload half — NFD master/worker/gc + Namespace (sync-wave 0, ADR-0028); requires node-feature-discovery-crds
+  - nvidia-device-plugin # GPU device-plugin + MPS control-daemon + Namespace, capability gpu-runtime (sync-wave 0); requires node-feature-discovery (runtime node-affinity labels)
