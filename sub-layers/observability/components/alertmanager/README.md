@@ -35,13 +35,23 @@ and **0** `Namespace` object (shared-namespace sole-claimant rule, below).
   Alertmanager release line of `prometheus-operator` v0.91.0.
 - **`replicas: 1`** is the catalog default. The consumer overlays an HA peer set
   (`>=3`) for production — a per-cluster topology decision (overlay point below).
+  At a single replica there is no HA: a rolling restart (image update, node eviction)
+  takes the whole alert-routing path — dedup, dispatch, **and the Watchdog
+  heartbeat** — offline for the restart window. A peer cluster's Watchdog detects
+  that gap (the design intent below), but a single-cluster deployment with no peer has
+  no external observer, so the outage is unobserved. Overlay `replicas` to `>=3`
+  before wiring real receivers for any production deployment.
 - **Security context**: pod-level `runAsNonRoot: true`,
   `seccompProfile.type: RuntimeDefault`, non-root `runAsUser`/`runAsGroup`/`fsGroup`
-  = `65534`. Alertmanager needs no host access. The operator additionally applies a
-  restrictive *container* securityContext (`allowPrivilegeEscalation: false`,
-  `capabilities.drop: [ALL]`, `readOnlyRootFilesystem: true`). The resulting pods
-  provably satisfy PSA **`restricted`** (see [Namespace & Pod Security
-  Admission](#namespace--pod-security-admission)).
+  = `65534`. Alertmanager needs no host access. The Prometheus Operator additionally
+  applies a restrictive *container* securityContext (`allowPrivilegeEscalation: false`,
+  `capabilities.drop: [ALL]`, `readOnlyRootFilesystem: true`) to the reconciled
+  `StatefulSet`
+  ([operator API](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#alertmanagerspec)).
+  The resulting pods satisfy PSA **`restricted`** (see [Namespace & Pod Security
+  Admission](#namespace--pod-security-admission)) — the pod-level fields are rendered
+  in this artifact; the container-level fields are operator-applied at runtime and so
+  are not visible in the rendered manifest.
 - **`alertmanagerConfigSelector`**: `matchLabels.alertmanagerConfig: platform` —
   the operator merges every `AlertmanagerConfig` carrying that label into this
   instance. The shipped base skeleton carries it; the consumer adds further labeled
@@ -57,7 +67,11 @@ and **0** `Namespace` object (shared-namespace sole-claimant rule, below).
 - **`storage`**: a `volumeClaimTemplate` skeleton (1Gi, `ReadWriteOnce`) for
   notification/silence state. `storageClassName` is **omitted** so the cluster
   default `StorageClass` is used — the consumer overlays a specific class if needed
-  (no cluster-specific class is hardcoded).
+  (no cluster-specific class is hardcoded). The PVC holds the notification-dedup log
+  and active silences; this state is transient and self-heals within `repeatInterval`,
+  so no cross-cluster backup is required, but consumers should know that PVC loss
+  (cluster rebuild, PV replacement) re-fires previously silenced/deduplicated alerts
+  on restart — an alert storm, not data loss.
 
 ### The base routing `AlertmanagerConfig` (`20-alertmanagerconfig.yaml`)
 
@@ -68,7 +82,13 @@ Labeled `alertmanagerConfig: platform`. Identity-free skeleton:
   receiver); severity routing (`critical` → `critical`, `warning` → `warning`);
   default → the `null` no-op receiver.
 - **Inhibit rule**: a `severity: critical` alert suppresses a matching
-  `severity: warning` on equal `[alertname, namespace, cluster]`.
+  `severity: warning` on equal `[alertname, namespace, cluster]`. The `equal` set
+  includes `cluster` — an *external* label the consumer's Prometheus stamps. If
+  `spec.externalLabels.cluster` is absent (or differs between the Prometheus and
+  Alertmanager paths), the `equal: cluster` match never fires and the inhibit rule is
+  silently inoperative: both the critical and the warning are delivered (duplicate
+  notifications, **not** silent alert loss). Setting the `cluster` external label
+  (overlay point below) is therefore a hard consumer obligation, not just for routing.
 - **Receivers**: **placeholders only** — `null`, `watchdog`, `critical`, `warning`
   with **no** integrations, **no** endpoints, **no** `secretKeyRef`, **no**
   credentials. See [Consumer obligation: receivers + secrets](#consumer-obligation-receivers--secrets).
@@ -113,6 +133,17 @@ to A's. Each side alerts on the **absence** of the peer's Watchdog — if A's wh
 Prometheus → Alertmanager → notification path dies, B notices the missing heartbeat
 (and vice versa). The peer Alertmanager receiver endpoint is per-cluster identity,
 so the consumer wires it; the catalog ships only the Watchdog route + rule.
+
+> **Watchdog route-shadowing — a consumer MUST guard against it.** Because
+> `alertmanagerConfigMatcherStrategy: None` merges *every* labeled
+> `AlertmanagerConfig` into one flat runtime route list, and sub-routes are evaluated
+> first-match, a consumer-authored route placed *before* the platform Watchdog route
+> can match `alertname: Watchdog` first. A consumer-authored route that can match the
+> Watchdog MUST carry `continue: true` (or simply not match `Watchdog`), or it
+> short-circuits the heartbeat to the wrong receiver and the cross-cluster
+> dead-man's-switch silently stops — the exact failure the Watchdog exists to catch.
+> Merge order is not guaranteed across consumer additions, so do not rely on the
+> platform route winning by position.
 
 ## Kustomize overlay points (per-cluster, ADR-0023/0024 plain-value overlay)
 
@@ -170,12 +201,15 @@ pod-security.kubernetes.io/enforce: restricted
 
 **`restricted` is the derived level.** The `Alertmanager` CR sets pod-level
 `runAsNonRoot: true` + `seccompProfile.type: RuntimeDefault` + a non-root
-`runAsUser`/`fsGroup`, and the Prometheus Operator applies a restrictive *container*
-securityContext (`allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`,
-`readOnlyRootFilesystem: true`) to the reconciled `StatefulSet`. The pods use no
-host access, hostPath, host namespace, or host port, so `restricted` rejects nothing
-at admission. (The shared namespace's effective level is the strictest among its
-co-tenants; this component imposes no floor above `restricted`.)
+`runAsUser`/`fsGroup` (visible in the rendered manifest), and the Prometheus Operator
+applies a restrictive *container* securityContext (`allowPrivilegeEscalation: false`,
+`capabilities.drop: [ALL]`, `readOnlyRootFilesystem: true`) to the reconciled
+`StatefulSet` at runtime
+([operator API](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#alertmanagerspec))
+— so the container-level half is not locally verifiable from this artifact. The pods
+use no host access, hostPath, host namespace, or host port, so `restricted` rejects
+nothing at admission. (The shared namespace's effective level is the strictest among
+its co-tenants; this component imposes no floor above `restricted`.)
 
 ## Capability
 
