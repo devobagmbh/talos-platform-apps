@@ -12,12 +12,13 @@ See [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-d
 
 | Component | sync-wave | Source | OCI |
 |---|---|---|---|
+| [`external-secrets-crds`](components/external-secrets-crds/) | -1 | The 23 ESO CRDs (strict-B `-crds` half, ADR-0028) vendored from chart 2.5.0 | `oci://.../secrets/external-secrets-crds:vX.Y.Z` |
 | [`cert-manager`](components/cert-manager/) | 0 | Helm `cert-manager` @ jetstack v1.20.2 — TLS issuance controller + CRDs | `oci://.../secrets/cert-manager:vX.Y.Z` |
-| [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` | `oci://.../secrets/external-secrets:vX.Y.Z` |
+| [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` — CRD-free ESO operator (strict-B workload half; requires `external-secrets-crds`) | `oci://.../secrets/external-secrets:vX.Y.Z` |
 | [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate manifests | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
 | [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA `ClusterIssuer`, CA key via ESO from Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |
 
-Wave 0 brings the CRDs (`ExternalSecret`, `ClusterSecretStore`). Wave 10 the default `ClusterSecretStore` resources `vault-local` (in-cluster Vault consumer) and `vault-office-lab-remote` (cross-cluster Vault consumer); concrete Vault endpoints are overridden in layer 3. Wave 20 the CA `ClusterIssuer`, which signs TLS leaf certs for `*.office-lab.devoba.de` from the Devoba-owned CA (CA root rolled out into the client trust via Jamf; planning update 2026-05-27 — replaces the dropped `dns` sub-layer with ACME-DNS01).
+Wave -1 brings the ESO CRDs (`ExternalSecret`, `ClusterSecretStore`, …) — the separate `external-secrets-crds` artifact, which the consumer wires at sync-wave -1 with `Prune=false,ServerSideApply=true` (ADR-0028 strict-B). Wave 0 brings the CRD-free ESO operator (`external-secrets`) plus the cert-manager controller. Wave 10 the default `ClusterSecretStore` resources `vault-local` (in-cluster Vault consumer) and `vault-office-lab-remote` (cross-cluster Vault consumer); concrete Vault endpoints are overridden in layer 3. Wave 20 the CA `ClusterIssuer`, which signs TLS leaf certs for `*.office-lab.devoba.de` from the Devoba-owned CA (CA root rolled out into the client trust via Jamf; planning update 2026-05-27 — replaces the dropped `dns` sub-layer with ACME-DNS01).
 
 **Not in this sub-layer**: Vault Helm release, Vault policies, Vault KV structures, Vault auth-method config.
 

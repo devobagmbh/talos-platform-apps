@@ -115,6 +115,10 @@
     "sub-layers/secrets/components/external-secrets": {
       "component": "secrets/external-secrets"
     },
+    "sub-layers/secrets/components/external-secrets-crds": {
+      "component": "secrets/external-secrets-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/storage-block/components/democratic-csi": {
       "component": "storage-block/democratic-csi"
     },
