@@ -19,6 +19,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
 | [`blackbox-exporter`](components/blackbox-exporter/) | 0 | Helm `prometheus-community/prometheus-blackbox-exporter` (synthetic HTTP/TCP/DNS probing — Alloy scrape target + bidirectional cross-cluster watchdog) | `oci://.../observability/blackbox-exporter:vX.Y.Z` |
+| [`alertmanager`](components/alertmanager/) | 10 | Raw CRs — identity-free `Alertmanager` + base `AlertmanagerConfig` + Watchdog `PrometheusRule` template (ADR-0009 CR-template component, not a Helm chart) | `oci://.../observability/alertmanager:vX.Y.Z` |
 
 > **`kube-prometheus-stack` is a stack, not a component** — there is **no**
 > `components/kube-prometheus-stack/` directory and **no**
@@ -30,11 +31,11 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 > `validate:crd-split`). The stack itself is the *composition* of the components
 > above, documented in the dedicated section below.
 
-Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
+Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics. Wave 10: three storage endpoints (all against Garage) + the `alertmanager` routing instance (its `Alertmanager` CR needs the operator + CRDs present first). Wave 20: collector + UI (need the endpoints from wave 10).
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
-The bidirectional watchdog AlertmanagerConfig (between two consumer clusters) currently lives as a cross-cluster resource in the consumer repo — once issue #36 is implemented it can become its own `observability/watchdog` component.
+The Watchdog dead-man's-switch (route + `PrometheusRule`) ships in the [`alertmanager`](components/alertmanager/) component as an identity-free template; the consumer wires the **bidirectional** cross-cluster peer endpoint (each cluster's `watchdog` receiver targets the other's Alertmanager) as per-cluster identity. See [`components/alertmanager/`](components/alertmanager/) for the routing skeleton and the consumer wiring obligation.
 
 ## The `kube-prometheus-stack` composition
 
@@ -45,12 +46,12 @@ The upstream `prometheus-community/kube-prometheus-stack` chart bundles operator
 | Operator (controller) | [`prometheus-operator`](components/prometheus-operator/) | api-surface only | [#46](https://github.com/devobagmbh/talos-platform-apps/issues/46) | yes |
 | Operator CRDs (strict-B) | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | api-surface only | [#46](https://github.com/devobagmbh/talos-platform-apps/issues/46) | yes |
 | Prometheus instance | `prometheus` (consumer-instantiated via the operator `Prometheus` CR) | scrape / store / query — served by `alloy` + `mimir` in this catalog | [#20](https://github.com/devobagmbh/talos-platform-apps/issues/20) | no |
-| Alertmanager | `alertmanager` (consumer-instantiated via the operator `Alertmanager` CR) | `alert-routing` | [#43](https://github.com/devobagmbh/talos-platform-apps/issues/43) | no |
+| Alertmanager | [`alertmanager`](components/alertmanager/) (catalog CR-template: identity-free `Alertmanager` CR + routing skeleton + Watchdog rules; consumer overlays topology + receivers) | `alert-routing` | [#43](https://github.com/devobagmbh/talos-platform-apps/issues/43) | yes |
 | node-exporter | `node-exporter` | — (scrape target) | [#44](https://github.com/devobagmbh/talos-platform-apps/issues/44) | no |
 | kube-state-metrics | [`kube-state-metrics`](components/kube-state-metrics/) | — (scrape target) | [#45](https://github.com/devobagmbh/talos-platform-apps/issues/45) | yes |
 | Grafana | [`grafana`](components/grafana/) | `dashboards` | [#24](https://github.com/devobagmbh/talos-platform-apps/issues/24) | no |
 
-Long-term metric storage and query are served by [`mimir`](components/mimir/) (`metrics-storage` / `metrics-query`); scraping/forwarding by [`alloy`](components/alloy/) (`metrics-scrape`). The Prometheus and Alertmanager *instances* are consumer concerns wired via the operator CRs, not published catalog artifacts.
+Long-term metric storage and query are served by [`mimir`](components/mimir/) (`metrics-storage` / `metrics-query`); scraping/forwarding by [`alloy`](components/alloy/) (`metrics-scrape`). The Prometheus *instance* is still a consumer concern wired via the operator `Prometheus` CR (issue #20, not yet a catalog artifact). The Alertmanager instance, by contrast, now **ships as the catalog CR-template component** [`alertmanager`](components/alertmanager/): the catalog publishes the identity-free `Alertmanager` CR + routing skeleton + Watchdog rules, and the consumer overlays cluster topology + real receivers.
 
 ## Consumed by
 

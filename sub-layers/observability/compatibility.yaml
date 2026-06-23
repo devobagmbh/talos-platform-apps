@@ -8,6 +8,7 @@ components:
   - loki                    # sync-wave 10 — needs a Garage bucket
   - mimir                   # sync-wave 10 — needs a Garage bucket
   - tempo                   # sync-wave 10 — needs a Garage bucket
+  - alertmanager            # sync-wave 10 — identity-free Alertmanager CR-template (ADR-0009); needs prometheus-operator(+-crds) present first
   - alloy                   # sync-wave 20 — needs the Loki/Mimir/Tempo endpoints
   - grafana                 # sync-wave 20 — datasources point to Loki/Mimir/Tempo
   - hubble                  # sync-wave 0  — Cilium network-flow visibility (relay/ui); independent of LGTM, needs the Cilium-agent Hubble server

@@ -120,7 +120,7 @@ capabilities:
     name: Alert-Routing / Notification
     domain: observability
     implementations:
-      - {name: alertmanager, status: active, swap_class: drop-in}  # Alertmanager (#43): the chosen implementation, but NOT a catalog OCI artifact and (by design) NO components/alertmanager dir — the catalog ships the operator; the consumer instantiates an Alertmanager CR. 'active' = chosen design, not shippable-today.
+      - {name: alertmanager, status: active, swap_class: drop-in}  # Alertmanager (#43): shipped as the catalog CR-template component observability/alertmanager — the catalog publishes the identity-free Alertmanager CR + base routing AlertmanagerConfig + Watchdog PrometheusRule template; the consumer overlays cluster topology + real receivers (ADR-0009 CR-template, mirrors secrets/Vault-CR + databases/cnpg Cluster-CR templates). The prometheus-operator reconciles the CR at runtime. DESIGN CHANGE (PR for #43): flips the prior 'NOT a catalog OCI artifact / no components/alertmanager dir' note — ratified via that PR.
       - {name: grafana-oncall, status: considered, swap_class: drop-in}
 
   # — Observability: Network ——————————————————————————————————

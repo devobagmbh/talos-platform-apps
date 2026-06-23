@@ -64,6 +64,10 @@
     "sub-layers/network/components/multus-cni-crds": {
       "component": "network/multus-cni-crds"
     },
+    "sub-layers/observability/components/alertmanager": {
+      "component": "observability/alertmanager",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/alloy": {
       "component": "observability/alloy"
     },
