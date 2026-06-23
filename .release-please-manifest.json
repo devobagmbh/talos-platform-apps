@@ -29,5 +29,6 @@
   "sub-layers/storage-block/components/piraeus-operator-crds": "0.2.0",
   "sub-layers/storage-block/components/synology-csi": "0.2.0",
   "sub-layers/storage-objects/components/garage": "0.2.0",
-  "sub-layers/storage-objects/components/garage-crds": "0.2.0"
+  "sub-layers/storage-objects/components/garage-crds": "0.2.0",
+  "sub-layers/security/components/tetragon": "0.1.0"
 }
