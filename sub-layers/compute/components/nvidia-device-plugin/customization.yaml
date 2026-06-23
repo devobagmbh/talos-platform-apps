@@ -1,6 +1,6 @@
 # Customization Contract v2 (ADR-0024) for nvidia-device-plugin. The workload (the
-# nvidia-device-plugin Namespace, the device-plugin DaemonSet, the MPS control-daemon
-# DaemonSet, and their RBAC/ServiceAccounts) is the signed, pre-rendered artifact —
+# nvidia-device-plugin Namespace, the device-plugin DaemonSet, and the MPS control-daemon
+# DaemonSet) is the signed, pre-rendered artifact —
 # catalog-owned, never consumer-patched. This component renders ZERO CRDs, so it is a
 # single (non-strict-B) artifact: no -crds sibling.
 #

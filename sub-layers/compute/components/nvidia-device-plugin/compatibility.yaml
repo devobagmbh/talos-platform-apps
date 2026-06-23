@@ -1,7 +1,7 @@
 # compute/nvidia-device-plugin — the GPU-scheduling half of the nvidia-stack. Ships the
 # device-plugin DaemonSet (advertises nvidia.com/gpu to the kubelet) + the MPS
 # control-daemon DaemonSet (dormant unless a node carries nvidia.com/mps.capable:
-# "true") + their RBAC/ServiceAccounts. Renders 0 CRDs, so NO crd-bearing marker and no
+# "true"). Renders 0 CRDs, so NO crd-bearing marker and no
 # strict-B -crds sibling (ADR-0028 not triggered).
 #
 # requires compute/node-feature-discovery: the device-plugin's default affinity matches
