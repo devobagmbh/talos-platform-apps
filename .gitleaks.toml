@@ -23,3 +23,23 @@ description = "local E2E test fixtures — dummy values only (AGENTS.md: no real
 paths = [
   '''local/fixtures/''',
 ]
+
+# CRD OpenAPI schema description fields document key-bearing API fields with a PEM
+# PLACEHOLDER (e.g. external-secrets ServiceAccountCreds documents the expected JSON
+# with "-----BEGIN PRIVATE KEY-----\n<private-key>\n-----END PRIVATE KEY-----"). The
+# built-in private-key rule matches the BEGIN/END markers in that documentation — a
+# false positive (real key material lives in SOPS-encrypted files, never in a CRD schema).
+#
+# Scope is deliberately MINIMAL: only the private-key rule, and only when the matched
+# block contains the literal placeholder `<private-key>`. A real PEM key's bytes are
+# base64 and can never contain `<private-key>`, so a genuine key — even in the same
+# file — is still detected. Keyed on the placeholder marker (regexTarget=match), NOT a
+# path/file exemption, so it is durable across squash-merge (a .gitleaksignore fingerprint
+# embeds the commit SHA and would go stale on merge — gitleaks#1355). See issue #334.
+[[allowlists]]
+description = "CRD schema PEM-header placeholder (<private-key>) in OpenAPI description fields is documentation, not a real key (#334)"
+targetRules = ["private-key"]
+regexTarget = "match"
+regexes = [
+  '''<private-key>''',
+]
