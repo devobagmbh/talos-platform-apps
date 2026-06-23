@@ -1231,15 +1231,41 @@ tasks:
         fi
 
   scan:secrets:
-    desc: gitleaks secret-scan over the full committed history (CI backstop to the lefthook hook)
+    desc: 'gitleaks secret-scan (CI backstop to the lefthook hook); scoped to GITLEAKS_SCAN_RANGE if set, else full history'
     summary: |
       Server-side secret-detection backstop (ADR-0032 §Residual e). The lefthook
       `secrets` pre-commit job scans only staged hunks and is bypassable via
-      `git commit --no-verify`; this scans the full git history on every PR/push.
-      The .gitleaks.toml allowlist exempts local/fixtures/ (dummy E2E values only,
-      per AGENTS.md "no real secrets even in tests"). Catalog code (sub-layers/) is
-      fully scanned.
-    cmd: gitleaks git --config .gitleaks.toml --no-banner --redact
+      `git commit --no-verify`; this is the CI backstop.
+
+      Scope: with GITLEAKS_SCAN_RANGE="<base>..<head>" set, scans only that commit
+      range (the PR/push diff); unset, scans the FULL committed history across all
+      refs. security-scan.yml scopes pull_request/push to the event range so an
+      unrelated in-flight branch's finding cannot fail this PR (apps#340); the weekly
+      schedule leaves it unset → full all-refs sweep (the catch-all for history). An
+      unresolvable range (empty, or an all-zeros/force-push 'before' SHA) falls back
+      to a full scan, so the gate never errors on a degenerate range. The env-override
+      mirrors validate:release-config's RP_CONFIG/RP_MANIFEST seam — no GHA-specific
+      code in the task; locally `task scan:secrets` is the full scan.
+
+      The .gitleaks.toml allowlist exempts local/fixtures/ (dummy E2E values only, per
+      AGENTS.md "no real secrets even in tests") and the CRD-schema PEM placeholder
+      (apps#334). Catalog code (sub-layers/) is fully scanned.
+    cmd: |
+      set -u
+      range="${GITLEAKS_SCAN_RANGE:-}"
+      # Scoped scan only when BOTH endpoints resolve to real commits AND the range is
+      # non-empty; otherwise fall back to a full all-refs scan. The non-empty check
+      # closes an empty-range no-op (base==head, or a reversed range, would scan zero
+      # commits and pass); a degenerate/empty/unresolvable range must over-scan (full),
+      # never under-scan — the gate fails safe toward more scanning, never a green pass
+      # on an unscanned diff.
+      if [ -n "$range" ] && git rev-parse -q --verify "${range%%..*}^{commit}" >/dev/null 2>&1 && git rev-parse -q --verify "${range##*..}^{commit}" >/dev/null 2>&1 && [ "$(git rev-list --count "${range}" 2>/dev/null || echo 0)" -gt 0 ]; then
+        echo "gitleaks: scoped scan of ${range}"
+        gitleaks git --config .gitleaks.toml --no-banner --redact --log-opts "${range}"
+      else
+        [ -n "$range" ] && echo "gitleaks: range '${range}' empty or unresolvable — running full scan"
+        gitleaks git --config .gitleaks.toml --no-banner --redact
+      fi
 
   scan:trivy:
     desc: Trivy-Misconfig-Scan über sub-layers/, SARIF-Output
