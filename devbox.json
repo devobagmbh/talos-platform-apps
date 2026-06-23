@@ -10,7 +10,7 @@
     "trivy@latest",
     "conftest@latest",
     "kubeconform@latest",
-    "gitleaks@latest",
+    "gitleaks@8.30.1",
     "yamllint@latest",
     "markdownlint-cli@latest",
     "go-task@latest",
