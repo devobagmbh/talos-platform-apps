@@ -7,7 +7,7 @@ provides:
   - name: grafana
     version:
       sot: app
-      app: v13.0.2  # running Grafana app version (chart appVersion)
+      app: 13.0.2  # running Grafana app version (chart appVersion; bare — matches the rendered image tag + app.kubernetes.io/version label)
       chart: 12.4.8  # grafana-community/grafana chart version
     api_surface: []
     capabilities:
