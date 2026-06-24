@@ -1,0 +1,30 @@
+# The component's own namespace. mimir is the sole catalog occupant (dedicated
+# namespace), so this component ships the Namespace object — a shipped manifest takes
+# precedence over Argo `managedNamespaceMetadata`, making the PSA posture authoritative
+# and self-contained (see the build skill's CONVENTIONS.md § Namespace & PSA).
+#
+# enforce: restricted — confirmed against EVERY rendered mimir-distributed workload pod
+# (the 8 classic microservices: distributor, querier, query-frontend, query-scheduler
+# (Deployments) + ruler, compactor, ingester, store-gateway (StatefulSets); 15 workload
+# containers total, no initContainers, no hostNetwork/hostPID):
+#   - Pod: runAsNonRoot:true + seccompProfile RuntimeDefault (+ runAsUser/Group 10001,
+#     fsGroup 10001) — set by the chart default, identical across all 8 pods.
+#   - Container: allowPrivilegeEscalation:false + capabilities.drop:[ALL]
+#     (+ readOnlyRootFilesystem) — identical across all 15 containers.
+# Unlike the loki chart (which omits the pod seccompProfile), mimir-distributed sets a
+# fully restricted-compliant securityContext out of the box, so the helm values add NO
+# securityContext overrides — the chart default already satisfies `restricted` for every
+# pod kind, and the namespace label holds cluster-wide.
+#
+# The consumer adds the PNI trust-anchor labels (platform.io/provide.*), the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor), and the
+# audit/warn modes in its Argo overlay; the catalog ships only the enforce level and
+# the ownership labels. See the README §Namespace & Pod Security.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mimir
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: mimir
