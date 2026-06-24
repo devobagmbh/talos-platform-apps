@@ -14,7 +14,8 @@
 # tempo-runtime-config + tempo-runtime-secret). Every required.* key below maps to a
 # real ${VAR} reference in the rendered tempo config (storage.trace.s3):
 #   bucket=${S3_BUCKET_TRACES}, endpoint=${S3_ENDPOINT}, region=${S3_REGION},
-#   access_key=${S3_ACCESS_KEY_ID}, secret_key=${S3_SECRET_ACCESS_KEY}.
+#   access_key=${S3_ACCESS_KEY_ID}, secret_key=${S3_SECRET_ACCESS_KEY},
+#   insecure=${S3_INSECURE}.
 freeze_line:
   workload: rendered/manifest.yaml # StatefulSet + Service + ServiceAccount + config ConfigMap + Namespace — never consumer-patched
 provided_refs:
@@ -26,6 +27,7 @@ required:
     - S3_ENDPOINT # explicit Garage S3 endpoint URL (e.g. https://garage.<cluster>:3900)
     - S3_REGION # Garage region (typically `garage`)
     - S3_BUCKET_TRACES # bucket for Tempo trace blocks
+    - S3_INSECURE # S3 endpoint TLS mode: "false"=TLS/HTTPS (default, secure), "true"=plain HTTP (TLS-less Garage)
   config_files: [] # no Shape (b) whole-file config — the tempo config is catalog-rendered, only ${VAR}s are consumer-fed
   secret_keys: # Shape (c) — set in the tempo-runtime-secret Secret
     - S3_ACCESS_KEY_ID # Garage S3 access key id

@@ -25,7 +25,7 @@
 # endpoints/keys); Tempo resolves them at runtime from consumer-supplied env via the
 # `-config.expand-env=true` flag. Two refs:
 #   - ConfigMap tempo-runtime-config (envFrom, non-secret): S3_ENDPOINT, S3_REGION,
-#     S3_BUCKET_TRACES
+#     S3_BUCKET_TRACES, S3_INSECURE
 #   - Secret    tempo-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
 #     S3_SECRET_ACCESS_KEY
 #
@@ -91,14 +91,15 @@ values:
     # templates/statefulset.yaml `envFrom: {{- toYaml .Values.tempo.extraEnvFrom }}`.
     extraEnvFrom:
       - configMapRef:
-          name: tempo-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_TRACES
+          name: tempo-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_TRACES, S3_INSECURE
       - secretRef:
           name: tempo-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
 
     # S3 object storage (Garage). The connection values are ${VAR} placeholders, NOT
     # real endpoints/keys: the freeze-line keeps the S3 connection 100% consumer-owned.
     # Tempo uses ONE bucket (trace blocks). Garage specifics: path-style addressing
-    # (forcepathstyle: true), TLS on (insecure: false), region a ${VAR}, explicit
+    # (forcepathstyle: true, baked), TLS mode consumer-owned via ${S3_INSECURE}
+    # (default TLS-on), region a ${VAR}, explicit
     # endpoint. Rendered into storage.trace.s3 by the config template; expanded at
     # runtime by -config.expand-env=true. The chart's default `local:` backend is
     # dropped via `local: null` (Helm deletes a key whose override value is null during
@@ -115,8 +116,8 @@ values:
           region: ${S3_REGION}
           access_key: ${S3_ACCESS_KEY_ID}
           secret_key: ${S3_SECRET_ACCESS_KEY}
-          insecure: false        # TLS to the Garage S3 endpoint
-          forcepathstyle: true   # Garage requires path-style addressing
+          insecure: ${S3_INSECURE} # consumer-owned: "false"=TLS/HTTPS (default), "true"=plain HTTP (TLS-less Garage)
+          forcepathstyle: true   # Garage requires path-style addressing (baked, not consumer-tunable)
         wal:
           path: /var/tempo/wal
 
