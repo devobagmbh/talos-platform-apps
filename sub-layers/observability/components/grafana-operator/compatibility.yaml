@@ -1,0 +1,27 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for the Grafana Operator. This is the
+# controller half; the CRD half is the SEPARATE component
+# `observability/grafana-operator-crds`. There is deliberately NO `crd-bearing: true`
+# marker here — that marker belongs ONLY on the -crds half; this workload renders 0
+# CustomResourceDefinitions (the build gate asserts == 0 here, > 0 in the -crds
+# artifact).
+requires:
+  # The grafana.integreatly.org CRDs must exist before the controller comes up (the
+  # operator's RBAC references them and it reconciles their CRs). The -crds artifact
+  # lands at Argo sync-wave -1, this workload at 0.
+  observability/grafana-operator-crds: ">=v0.1.0"
+
+# api-surface-only, NO capability — `capabilities: []` is the deliberate design, NOT a
+# deferral, so there is no `# TODO:`. The `dashboards` capability belongs to a running
+# Grafana INSTANCE (observability/grafana, issue #24), not to this controller: the
+# grafana-operator is a Kubernetes controller that reconciles Grafana instances via the
+# grafana.integreatly.org CRDs — it is not itself a dashboard frontend. No other index
+# capability fits. Precedent for the api-surface-only, no-TODO pattern:
+# observability/prometheus-operator and lifecycle/providers.
+provides:
+  - name: grafana-operator
+    version:
+      sot: app
+      app: v5.24.0   # Grafana Operator app version (== chart appVersion for this chart)
+      chart: 5.24.0
+    api_surface: []
+    capabilities: []

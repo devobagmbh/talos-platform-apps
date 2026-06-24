@@ -71,6 +71,14 @@
       "component": "observability/grafana",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/grafana-operator": {
+      "component": "observability/grafana-operator",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/grafana-operator-crds": {
+      "component": "observability/grafana-operator-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/hubble": {
       "component": "observability/hubble"
     },
