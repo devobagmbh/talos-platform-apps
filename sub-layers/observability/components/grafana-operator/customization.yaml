@@ -1,0 +1,19 @@
+# Customization Contract v2 (ADR-0024). Strict-B WORKLOAD artifact (ADR-0028): the
+# Grafana Operator controller + its RBAC + Service. The controller is cluster-agnostic
+# at the freeze line — it needs nothing from the consumer to render a valid, signed
+# workload, so every provided/required shape is empty. Consumer configuration (watched
+# namespaces, Grafana instance URLs) flows through grafana.integreatly.org CRs at
+# runtime, not at catalog-bake time. The controller lands at sync-wave 0, after the
+# CRDs (-crds artifact, wave -1).
+freeze_line:
+  workload: rendered/manifest.yaml  # operator Deployment + RBAC + Service — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - observability/grafana-operator-crds
