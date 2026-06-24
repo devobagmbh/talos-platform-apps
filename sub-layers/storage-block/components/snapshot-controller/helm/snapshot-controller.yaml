@@ -40,6 +40,18 @@ values:
       # explicitly). Renders `- --leader-election=true` in the container args.
       # No replicaCount pin — that is a consumer-owned cluster property (ADR-0024).
       leaderElection: true
+    # -- Resource requests/limits for the snapshot-controller container. Chart
+    # default is `{}`, which fails the `base.required_resource_limits` conftest
+    # gate. These are CATALOG-DEFAULT baselines for a lightweight cluster-singleton
+    # controller (a single reconcile loop, no data path) — NOT consumer-specific.
+    # `limits.cpu` is intentionally omitted to avoid CPU throttling of the
+    # reconcile loop; the gate requires only requests.cpu/memory + limits.memory.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
     # -- CONTAINER-level securityContext (controller.securityContext). The chart
     # default already sets capabilities.drop=[ALL], readOnlyRootFilesystem=true,
     # runAsNonRoot=true, runAsUser=1000 but omits allowPrivilegeEscalation, which

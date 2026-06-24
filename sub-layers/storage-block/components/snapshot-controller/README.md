@@ -21,9 +21,10 @@ disabled.
 
 A single render of the chart with the values above plus a dedicated Namespace:
 
-- **`snapshot-controller-snapshot-controller` Deployment** — the cluster-singleton
-  controller (the release name equals the component name `snapshot-controller`, so
-  the chart-suffixed Deployment name is `snapshot-controller-snapshot-controller`).
+- **`snapshot-controller` Deployment** — the cluster-singleton controller (the
+  release name equals the chart name `snapshot-controller`, so the piraeus chart
+  deduplicates the name rather than rendering a chart-suffixed
+  `snapshot-controller-snapshot-controller`).
 - **ClusterRole + ClusterRoleBinding** — the controller is cluster-scoped (it
   watches snapshot objects in every namespace); this cluster-wide RBAC is intrinsic
   to a cluster-singleton snapshot controller and matches upstream.
@@ -81,65 +82,25 @@ The consumer cluster repo wires **two** Argo `Application`s, the `-crds` app fir
 `compatibility.yaml` declares `requires: storage-block/snapshot-controller-crds:
 ">=v0.1.0"` and `customization.yaml` lists it under `external_dependencies`.
 
-## Consumer enablement path
+## Consumer obligations
 
-The snapshot-controller is the cluster machinery; the snapshot *policy* (which
-driver, which volumes) is consumer-owned. End to end:
+The snapshot-controller is the cluster machinery; the snapshot *policy* (which CSI
+driver, which volumes) is consumer-owned. A consumer that enables this component
+(plus its `-crds` sibling) provides:
 
-1. **Enable both components.** The consumer adds the
-   `storage-block/snapshot-controller-crds` Argo Application (wave -1) and the
-   `storage-block/snapshot-controller` Argo Application (wave 0) to their cluster
-   composition.
-2. **Author a `VolumeSnapshotClass`.** In the consumer-cluster repo overlay, create
-   a `VolumeSnapshotClass` naming the CSI driver, e.g.:
+- a `VolumeSnapshotClass` authored for the consumer's CSI driver (naming that
+  driver and the desired `deletionPolicy`).
 
-   ```yaml
-   apiVersion: snapshot.storage.k8s.io/v1
-   kind: VolumeSnapshotClass
-   metadata:
-     name: linstor-snapshots
-   driver: linstor.csi.linbit.com
-   deletionPolicy: Retain
-   ```
+With those in place, the standard SIG-Storage flow works against any PVC bound to
+a snapshot-capable StorageClass: a `VolumeSnapshot` of an existing PVC is
+reconciled by this controller into a `VolumeSnapshotContent`, and a new PVC can
+restore from that snapshot via a `dataSource` referencing the `VolumeSnapshot`.
 
-3. **Create a `VolumeSnapshot`** of an existing PVC (e.g. a `fast-rwo-r2` PVC):
-
-   ```yaml
-   apiVersion: snapshot.storage.k8s.io/v1
-   kind: VolumeSnapshot
-   metadata:
-     name: my-data-snap
-   spec:
-     volumeSnapshotClassName: linstor-snapshots
-     source:
-       persistentVolumeClaimName: my-data
-   ```
-
-   The snapshot-controller reconciles it into a `VolumeSnapshotContent`.
-4. **Restore via a PVC `dataSource`.** Create a new PVC referencing the snapshot:
-
-   ```yaml
-   apiVersion: v1
-   kind: PersistentVolumeClaim
-   metadata:
-     name: my-data-restored
-   spec:
-     storageClassName: fast-rwo-r2
-     dataSource:
-       name: my-data-snap
-       kind: VolumeSnapshot
-       apiGroup: snapshot.storage.k8s.io
-     accessModes: [ReadWriteOnce]
-     resources:
-       requests:
-         storage: 10Gi
-   ```
-
-The `VolumeSnapshotClass`, `VolumeSnapshot`, and restore PVC are **consumer-owned**
-and live in the consumer-cluster repo, not in this catalog component. The live
-end-to-end snapshot → restore round-trip is a **consumer-cluster E2E test** (it
-requires a running cluster with an active CSI driver) and is **not** verified in
-this repo.
+The `VolumeSnapshotClass`, the `VolumeSnapshot` objects, and the restore PVCs are
+**consumer-owned** and live in the consumer-cluster repo, not in this catalog
+component. The live end-to-end snapshot → restore round-trip is a
+**consumer-cluster E2E test** (it requires a running cluster with an active CSI
+driver) and is **not** verified in this repo.
 
 ## Capability
 
