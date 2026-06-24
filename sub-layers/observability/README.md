@@ -1,6 +1,6 @@
 # Sub-layer `observability`
 
-LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + the Prometheus operator (`prometheus-operator` + `prometheus-operator-crds`) + Hubble (Cilium network-flow visibility).
+LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + the Prometheus operator (`prometheus-operator` + `prometheus-operator-crds`) + the Grafana operator (`grafana-operator` + `grafana-operator-crds`) + Hubble (Cilium network-flow visibility).
 
 OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a forwarder-only consumer = operator + Alloy forwarder, a full-stack consumer = full stack).
 
@@ -11,6 +11,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Helm `prometheus-community/prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
 | [`grafana-operator-crds`](components/grafana-operator-crds/) | -1 | Vendored manifests from Helm `grafana/grafana-operator` (strict-B CRDs artifact, ADR-0028 — the `grafana.integreatly.org` CRDs) | `oci://.../observability/grafana-operator-crds:vX.Y.Z` |
 | [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
+| [`grafana-operator`](components/grafana-operator/) | 0 | Helm `grafana/grafana-operator` (operator controller, strict-B workload artifact, ADR-0028) | `oci://.../observability/grafana-operator:vX.Y.Z` |
 | [`loki`](components/loki/) | 10 | Helm `grafana/loki` (SingleBinary) | `oci://.../observability/loki:vX.Y.Z` |
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` | `oci://.../observability/mimir:vX.Y.Z` |
 | [`tempo`](components/tempo/) | 10 | Helm `grafana/tempo-distributed` | `oci://.../observability/tempo:vX.Y.Z` |
