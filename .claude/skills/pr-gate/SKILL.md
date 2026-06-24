@@ -78,8 +78,12 @@ Five load-bearing invariants:
    - **base**: `baseRefName == main` is the ordinary case; a base of
      `catalog-build/*-crds` (or any non-`main` branch) is a **stacked PR** → Phase 6
      merge guard.
-5. Re-read `state` + `mergeStateStatus` **freshly** again before any merge (Phase 6);
-   a value read here is stale by then, and a squash-merge deletes the head branch.
+5. Re-read `state` (+ `isDraft`) **freshly** before the Phase-5 post AND `state` +
+   `mergeStateStatus` before any merge (Phase 6) — a value read here is stale by then, the PR can
+   close / merge / convert-to-draft mid-review (a long multi-agent fan-out widens that window), and
+   a squash-merge deletes the head branch. The head SHA can also move mid-review; the skill does
+   **not** mechanically pin it (a persisted anchor would be the fix) — that drift is a labelled
+   Phase-5 residual, not a guard.
 
 ## Phase 1 — Deterministic gate (GHA authoritative; local trust-gated)
 
@@ -206,6 +210,30 @@ Discipline:
 
 ## Phase 5 — Post the review
 
+**Re-read PR freshness before posting** (`gh pr view <N> --json state,isDraft,closedAt,mergedAt`).
+A review post is outward-facing, so it earns the same terminal-arm guard as the Phase-6 merge,
+applied *before the post*: the PR can settle between Phase 0 and here, and a long multi-agent
+review widens that window (Phase 0's read will not see it). Cite only fields this read returned
+(invariant 2). Abort arms — **report, post nothing, clean up any Phase-1 worktree, stop**:
+
+- `state ∈ {MERGED, CLOSED}` → "PR <merged/closed> mid-review", citing `mergedAt` / `closedAt`
+  when the read returned them (omit if null — never cite an absent field) — a verdict on a settled
+  PR is noise.
+- `isDraft == true` → "converted back to draft".
+
+Only `state == OPEN` **and** ready → proceed. (Read-only `gh` + a conditional abort → still
+background-safe.) **Residuals (acknowledged, not mechanically closed — the scope here is the
+settled-state defect, not a full staleness guard):** (1) a close / merge in the gap between this
+read and the `gh pr review` call still races — no API offers atomic check-and-post, so this
+*narrows* the window, it does not eliminate it; (2) the head SHA can move mid-review (force-push /
+new commit) with `state` still `OPEN`, so the posted verdict reflects the head read at Phase 0,
+not necessarily the current head — the skill does not pin it; (3) a GitHub approval persists across
+a close→reopen, so a stale prior `APPROVE` can outlive its head. Every abort is **reported to the
+operator** (not silent to them) and a settled / draft PR cannot merge — re-run `/pr-gate` on any
+reopen or known head change so the verdict re-binds to the current head. (A persisted head-anchor +
+a Phase-6 head re-check would mechanically close (2)/(3); that is a deliberate follow-up, not this
+fix.)
+
 Write the body to a temp file and post via `--body-file` (never an empty body — an empty
 COMMENT 422s). The body carries: the verdict, the review **mode** (multi-agent / partial
 / inline-degraded), the deterministic-gate evidence (required-check status + local
@@ -295,6 +323,12 @@ order; no consumer-cluster name or RFC1918 IP in the diff or the posted review.
   evidence refutes it. Parallel personas, not sequential rounds.
 - **Injection → merge chain** — the mandatory pre-merge confirmation, the
   `approved`-vs-evidence cross-check (Phase 4), and the diff-as-untrusted-data framing.
+- **Stale-state outward action** — re-read `state` (+ `isDraft`) immediately before the Phase-5
+  post (and `state` + `mergeStateStatus` before the Phase-6 merge), so a PR that closed / merged /
+  drafted mid-review yields "report, post nothing" instead of a verdict landing on a settled PR.
+  The re-read narrows but cannot close the post-read TOCTOU race (no atomic check-and-post), and
+  head-SHA drift / approval-persisting-across-reopen stay **acknowledged residuals** (re-run on a
+  head change) — labelled, not hidden.
 - **Memory over evidence** — verify Kubernetes / PSA / ArgoCD facts against render/live.
 - **Self-review masquerade** — the self-approval 422 is the feature; surface it, never
   fabricate an approval for an own PR.
@@ -307,8 +341,9 @@ order; no consumer-cluster name or RFC1918 IP in the diff or the posted review.
 
 ## Completion predicate
 
-Done = one of: (a) an early stop in Phase 0 (`state != OPEN` or draft) reported, nothing
-posted; or (b) a review posted with its verdict, mode, and evidence — and, when the
+Done = one of: (a) an early stop reported with nothing posted — at Phase 0 (`state != OPEN`
+or draft) OR at the Phase-5 pre-post re-check (PR closed / merged / drafted mid-review); or
+(b) a review posted with its verdict, mode, and evidence — and, when the
 operator asked to merge an `approved` PR, the merge either completed (merge-commit SHA
 reported) or was skipped with the named blocking gate / merge guard. Every verdict and
 finding is backed by in-session `gh` / `task` output. This skill never uses `--admin`,
