@@ -1,0 +1,49 @@
+# Argo Application for observability/grafana-operator (local test environment).
+# Strict-B workload half (ADR-0028): the Grafana Operator CONTROLLER only — no
+# Grafana instance, no Grafana/GrafanaDashboard/GrafanaDatasource CRs; the
+# grafana.integreatly.org CRDs come from the separate grafana-operator-crds
+# artifact (sync-wave -1).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-grafana-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: grafana-operator
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/observability
+    chart: grafana-operator
+    targetRevision: ${TAG}
+    helm:
+      releaseName: grafana-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  # K8s 1.32+ adds .status.terminatingReplicas to Deployment.status; Argo's
+  # structured-merge-diff caches the old OpenAPI schema and cannot type the
+  # field ("field not declared in schema"). Ignoring is safe — status fields
+  # are not Argo-managed.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
