@@ -22,20 +22,24 @@ Diese Repo nutzt **Conftest in CI + Kyverno im Cluster** mit getrennten Rollen. 
 
 ## Mapping — welche Policy gehört wohin
 
-| Policy | Conftest | Kyverno | Begründung |
-|---|---|---|---|
-| `no_latest_image_tag` | ✅ | ✅ | Defense-in-Depth |
-| `no_inline_secrets` | ✅ | ❌ | Conftest-only: Git-Repo-Inhalt |
-| `reserved_labels` | ✅ | ✅ | Defense-in-Depth (PNI v2) |
-| `capability_selectors` | ✅ | ❌ | Conftest-only: Sub-Layer-Source-Konvention |
-| `gateway_api_only` | ✅ | ❌ | Conftest-only: kein Ingress-Controller im Cluster |
-| `required_resource_limits` | ✅ | ✅ | Defense-in-Depth |
-| `no_privileged_containers` | ✅ | ✅ | Defense-in-Depth + Allow-Liste |
-| `image_verify_platform_oci` | ❌ | ✅ | Kyverno-only: cosign keyless, braucht Sigstore-Backend |
-| `auto_default_netpol` | ❌ | ✅ | Kyverno-only: Generate-Policy bei Namespace-Create |
-| `imagepullsecret_inject` | ❌ | ✅ | Kyverno-only: Mutate-Policy |
+`Zuordnung (Ziel)` = geplante Conftest/Kyverno-Aufteilung des Phase-1-Vollausbaus; `Impl.` = aktueller On-Disk-Stand (`✅` = `.rego` existiert, `➖` = noch nicht angelegt).
 
-→ **5 Conftest-only, 3 Kyverno-only, 4 Defense-in-Depth.** Quelle für die Defense-in-Depth-Policies bleibt die Conftest-Rego-Datei in diesem Verzeichnis; die Kyverno-Variante in `sub-layers/secrets/manifests/policies/` wird **per Hand konsistent gehalten** (compatibility-reviewer-Subagent prüft Drift).
+| Policy | Zuordnung (Ziel) | Impl. | Begründung |
+|---|---|---|---|
+| `no_latest_image_tag` | beide | ✅ | Defense-in-Depth |
+| `pod_security_standards` | Conftest | ✅ | PSA-Namespace-Label-Enforcement, Conftest-only |
+| `pod_security_conformance` | Conftest | ✅ | PSA-Konformanz-Prüfung (task scan:psa-conformance), Conftest-only |
+| `no_inline_secrets` | Conftest | ➖ | Conftest-only: Git-Repo-Inhalt |
+| `reserved_labels` | beide | ➖ | Defense-in-Depth (PNI v2) |
+| `capability_selectors` | Conftest | ➖ | Conftest-only: Sub-Layer-Source-Konvention |
+| `gateway_api_only` | Conftest | ➖ | Conftest-only: kein Ingress-Controller im Cluster |
+| `required_resource_limits` | beide | ➖ | Defense-in-Depth |
+| `no_privileged_containers` | beide | ➖ | Defense-in-Depth + Allow-Liste |
+| `image_verify_platform_oci` | Kyverno | ➖ | Kyverno-only: cosign keyless, braucht Sigstore-Backend |
+| `auto_default_netpol` | Kyverno | ➖ | Kyverno-only: Generate-Policy bei Namespace-Create |
+| `imagepullsecret_inject` | Kyverno | ➖ | Kyverno-only: Mutate-Policy |
+
+→ **3 implementiert (Conftest), 9 geplant.** Quelle für die Defense-in-Depth-Policies bleibt die Conftest-Rego-Datei in diesem Verzeichnis; die Kyverno-Variante in `sub-layers/secrets/manifests/policies/` wird **per Hand konsistent gehalten** (compatibility-reviewer-Subagent prüft Drift).
 
 ## Struktur
 
@@ -44,18 +48,12 @@ policies/
 ├── README.md                       — diese Datei
 ├── base/                           — Generische Hardening (Defense-in-Depth-Kandidaten)
 │   ├── no_latest_image_tag.rego
-│   ├── reserved_labels.rego
-│   ├── required_resource_limits.rego
-│   └── no_privileged_containers.rego
-├── apps/                           — Repo-Hygiene (Conftest-only)
-│   ├── no_inline_secrets.rego
-│   ├── gateway_api_only.rego
-│   └── (Helm-Chart-Source-Allow-Liste, README-Pflicht, etc.)
-├── platform/                       — Plattform-spezifisch (PNI v2 etc.)
-│   └── capability_selectors.rego
-└── testdata/                       — Beispiel-Manifeste für conftest verify
-    ├── valid/
-    └── invalid/
+│   ├── no_latest_image_tag_test.rego
+│   ├── pod_security_standards.rego
+│   └── pod_security_standards_test.rego
+└── conformance/                    — PSA-Konformanz-Prüfung
+    ├── pod_security_conformance.rego
+    └── pod_security_conformance_test.rego
 ```
 
 ## Lokal ausführen
@@ -93,11 +91,13 @@ conftest verify --policy policies/
 
 Phase-1-Vollausbau gemäß [ADR-0018 § Phase-1-Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — alle 21 Conftest-Policies + 7 Kyverno-ClusterPolicies werden initial implementiert. Begründung: die Defense-in-Depth-Architektur ist gewollt, „später aktivieren" wäre durch die testdata/-Pflege-Disziplin teurer als sofortige Vollabdeckung.
 
+Die nachfolgenden Subsektionen (`base/`, `apps/`, `platform/`) strukturieren den **geplanten** Vollausbau; sie entsprechen nicht zwingend existierenden Verzeichnissen. Den aktuellen On-Disk-Stand zeigt der `## Struktur`-Baum oben.
+
 ### Conftest-Policies (21 total)
 
 #### `base/` — generische Hardening
 
-- [ ] `no_latest_image_tag` (MUST) — Helm-Defaults dürfen keine `:latest`-Image-Tags rendern
+- [x] `no_latest_image_tag` (MUST) — Helm-Defaults dürfen keine `:latest`-Image-Tags rendern
 - [ ] `reserved_labels` (MUST) — Reserved Keys (`platform.io/provide.*`, `capability-provider.*`) nur auf Producer-Resources, namespace-anchored
 - [ ] `required_resource_limits` (MUST) — alle Container brauchen `resources.{requests.{cpu,memory},limits.memory}`
 - [ ] `no_privileged_containers` (MUST) — `securityContext.privileged: false` außer Allow-Liste
@@ -124,6 +124,10 @@ Phase-1-Vollausbau gemäß [ADR-0018 § Phase-1-Scope](https://github.com/devoba
 - [ ] `capability_selectors` (MUST) — CCNPs nutzen `capability-provider.<cap>`/`capability-consumer.<cap>`, keine Tool-Name-Selectors
 - [ ] `instanced_suffix_required` (SHOULD) — bei `consume.<instanced-cap>` muss `.<inst>`-Suffix gesetzt sein
 - [ ] `network_default_deny_egress` (SHOULD) — jeder Workload-Namespace hat Default-Deny-Egress-CCNP
+
+#### `conformance/` — PSA-Konformanz
+
+- [x] `pod_security_conformance` (MUST) — gerenderte Workloads konformieren mit dem deklarierten `enforce`-Level (`task scan:psa-conformance`)
 
 ### Kyverno-ClusterPolicies (7 total)
 
