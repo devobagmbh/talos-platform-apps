@@ -6,7 +6,7 @@
 
 # DR-0001 — Specification-driven catalog component build (render-bound PSA, values-contract, deterministic scaffold)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-24
 - **Record class:** repo-local decision record (`docs/decisions/`), distinct from the platform-wide ADR series in `talos-platform-docs/adr/`.
 - **Review:** 2-round harness-evolution review (R1 parallel personas — adversarial + architecture + simplicity; R2 verification + regression). All R1 findings closed; R2 spec-refinements folded as explicit open implementation items (§Implementation notes). Reviews were read-only subagent dispatches; their load-bearing factual claims were spot-verified against the schemas/rego/tree.
@@ -109,7 +109,7 @@ Four decisions follow.
 - **`workload_type` is a derivation/cross-check hub** (PSA class + scaffold defaults) — a wrong classification can touch several outputs, the same single-point-of-failure shape this ADR criticizes in copy-neighbor (R1-architect). What de-risks it is exactly D1's render-binding: the type is *checked against the render*, so a wrong type fails its agreement gate instead of silently driving a wrong default.
 - The existing 37 components are on the old pattern; migration is **incremental** (new/edited adopt; back-migration opportunistic). The spec is derived from the **external standard where one exists** (PSS, Helm values-schema, ADR-0024/0028) — but `workload_type` itself has **no canonical industry taxonomy** (the research found none): it is a *composed* set carrying the same base-case risk one level up, so it is reviewed as a deliberate design artifact, never presented as "derived from a standard". This is the load-bearing migration caveat.
 
-### Honest limitations of this draft
+### Honest limitations of this record
 
 - Drift numbers are deterministic counts but **method-sensitive** — re-derive with a robust pattern before quoting. The namespace count was corrected mid-review from 19 to **20** (a single-space `^kind: Namespace` grep missed a namespace whose key carried extra whitespace; the robust `kind:[[:space:]]+Namespace` count = 20 declaring / 17 not; enforce-bearing = 21, itself method-sensitive). The three Namespace-family totals count subtly different predicates and are NOT interchangeable: **20** components declare a `kind: Namespace`; **21** carry a `pod-security.kubernetes.io/enforce` string somewhere (one applies the label without a matched `kind: Namespace` line); the PSA-level row's **10+6+3=19** counts only those whose declared-Namespace enforce level the level-census actually resolved. The thesis (gated⇒consistent) is unaffected, but no cell is "solid" without its extraction method, and these three must not be summed or cross-subtracted.
 - The "freeze-line vacuous in 27/37" figure includes components that are *legitimately* cluster-agnostic — the deterministic gate cannot distinguish a hollow contract from a genuine one at rest, which **is** the §D3 gap, not 27 defects. Wherever 27/37 appears above it is an **upper bound on the addressable set**, not a defect count.
