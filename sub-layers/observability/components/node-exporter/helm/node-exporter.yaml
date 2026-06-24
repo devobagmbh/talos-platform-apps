@@ -32,6 +32,12 @@ metadata:
   namespace: node-exporter
 
 values:
+  # fullnameOverride so the rendered objects are named `node-exporter` (DaemonSet /
+  # Service / ServiceAccount), matching the namespace and the README — instead of the
+  # chart fullname `node-exporter-prometheus-node-exporter`. The README directs the
+  # consumer to scrape the Service /metrics endpoint, so the names must agree.
+  fullnameOverride: node-exporter
+
   # ServiceMonitor — kept DISABLED (chart default, restated explicitly). The
   # ServiceMonitor (and any PrometheusRule) is a consumer-overlay concern per
   # ADR-0024 / #183: Grafana Alloy scrapes the rendered Service /metrics endpoint
@@ -51,12 +57,17 @@ values:
   # Pod-level securityContext pins (explicit-not-inherited). The chart key is
   # `securityContext` (not `podSecurityContext`). The chart's defaults are already
   # non-root 65534; pinned here so a future chart bump cannot silently weaken the
-  # pod-level posture.
+  # pod-level posture. seccompProfile RuntimeDefault is pinned (the chart omits it):
+  # on a default Talos kubelet (SeccompDefault off) the container would otherwise run
+  # Unconfined — the worst posture for a hostPID/hostNetwork pod reading host /proc,
+  # /sys and / — and both sibling exporters (kube-state-metrics, blackbox-exporter) pin it.
   securityContext:
     runAsNonRoot: true
     runAsUser: 65534
     runAsGroup: 65534
     fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
 
   # Container-level securityContext pins (explicit-not-inherited). The chart sets
   # only `readOnlyRootFilesystem: true` by default and omits
@@ -71,6 +82,19 @@ values:
     capabilities:
       drop:
         - ALL
+
+  # Resource requests/limits. node-exporter is a per-node, node-health-critical
+  # DaemonSet; with no requests it runs BestEffort QoS and is first to be OOM-killed
+  # under node memory pressure — exactly when node_* metrics matter most. Conservative
+  # requests make the pod Burstable; the limits cap a runaway scrape. node-exporter is
+  # very light (a few MiB RSS), so these are generous headroom, not a tight bound.
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 64Mi
 
   # NOTE: no DaemonSet-tuning, tolerations or nodeSelector overrides. A node
   # exporter runs on every node by chart default; placement tweaks (tolerations
