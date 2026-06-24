@@ -1,0 +1,49 @@
+# Argo Application for compute/node-feature-discovery-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the three nfd.k8s-sigs.io CRDs (nodefeatures,
+# nodefeaturegroups, nodefeaturerules) ship as their own OCI artifact, synced at
+# sync-wave -1 ahead of the NFD workload (wave 0) so the master/worker reconcile
+# against established CRDs.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-node-feature-discovery-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: node-feature-discovery-crds
+spec:
+  project: default
+  source:
+    repoURL: ${REGISTRY}/compute
+    chart: node-feature-discovery-crds
+    targetRevision: ${TAG}
+    helm:
+      releaseName: node-feature-discovery-crds
+  destination:
+    server: https://kubernetes.default.svc
+    # CRD objects are cluster-scoped; the destination namespace is nominal. The
+    # node-feature-discovery namespace is created by the workload half (wave 0), so
+    # this -crds app never creates or manages it (CreateNamespace=false).
+    namespace: node-feature-discovery
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRDs are never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # NodeFeature / NodeFeatureRule / NodeFeatureGroup CRs.
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: blocks
+      # pruning on BOTH automated and manual sync-with-prune.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit — the
+      # NodeFeature CRD schema is large.
+      - ServerSideApply=true

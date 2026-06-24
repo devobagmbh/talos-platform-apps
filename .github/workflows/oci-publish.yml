@@ -51,6 +51,11 @@ jobs:
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+        with:
+          # fetch-depth: 0 so all git tags are present: `task ci` → validate:release-config
+          # guard E asserts every released (tagged) component is in the manifest, and a
+          # tag-less shallow checkout would blind it (it fails loud rather than vacuously). #318
+          fetch-depth: 0
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -76,6 +81,10 @@ jobs:
       packages: write   # GHCR push
       id-token: write   # cosign keyless OIDC
     steps:
+      # No fetch-depth: 0 here — the publish job runs `task ci:artifact`, which does NOT
+      # include the release-coverage guard (validate:release-config / guard E), so it does
+      # not need the full tag set. Tags would only matter for guard E, which is a PR-gate
+      # concern, not a per-publish one (#318 review).
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
 
       - name: Devbox setup
@@ -126,8 +135,10 @@ jobs:
           echo "version=$version"           >> "$GITHUB_OUTPUT"
           echo "Tag '$full' → component_id='$component_id', version='$version'"
 
-      - name: Lokale CI-Pipeline (lint + render + conftest)
-        run: devbox run -- task ci
+      - name: "Lokale CI-Pipeline (artifact validation: lint + render + crd-split + conftest)"
+        # ci:artifact, NOT full ci — the publish job validates the artifact it is about to
+        # sign; the catalog-wide release-coverage gates run at the PR gate, not per-publish (#318).
+        run: devbox run -- task ci:artifact
 
       - name: helm + cosign gegen GHCR authentifizieren
         run: |

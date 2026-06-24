@@ -1,0 +1,131 @@
+# Node Feature Discovery (NFD) — the kubernetes-sigs node-labeling enabler for the
+# Devoba platform. Layer-2 default values for talos-platform-apps. NFD detects
+# hardware/kernel/OS features on each node and exposes them as
+# `feature.node.kubernetes.io/*` labels + NodeFeature CRs, so feature-aware
+# consumers (gpu-runtime, vm-runtime) can target nodes with nodeSelectors.
+#
+# Strict-B CRD split (ADR-0028): the 3 nfd.k8s-sigs.io CRDs (NodeFeature,
+# NodeFeatureRule, NodeFeatureGroup) ship as a SEPARATE artifact
+# (compute/node-feature-discovery-crds, sync-wave -1), NOT inline with this
+# workload. The chart keeps those CRDs in its helm-native `crds/` directory, which
+# `helm template` excludes WITHOUT `--include-crds` — and `task render:one` renders
+# without that flag — so this workload renders ZERO CustomResourceDefinitions. The
+# build gate (`task validate:crd-split`) asserts kind: CustomResourceDefinition
+# count == 0 here.
+#
+# Cluster-specific bits (replica counts, node placement, tolerations, NodeFeatureRule
+# CRs) are consumer-owned (Layer 3) — see customization.yaml + README. This component
+# is cluster-agnostic at the freeze line: it needs nothing from the consumer to render
+# a valid, signed workload.
+
+metadata:
+  chart: node-feature-discovery
+  repo: https://kubernetes-sigs.github.io/node-feature-discovery/charts
+  version: 0.18.3  # appVersion v0.18.3 (helm show chart, 2026-06-22)
+  # >>> VERIFY the current chart at push (`helm show chart node-feature-discovery
+  #     --repo .../charts --version <v>`). Bump the chart pin and re-vendor the
+  #     compute/node-feature-discovery-crds manifests TOGETHER (version coupling — see README).
+  namespace: node-feature-discovery
+
+values:
+  # -- Deterministic object names (node-feature-discovery-{master,worker,gc}) so the
+  # rendered + signed workload is stable across chart-internal naming changes.
+  fullnameOverride: node-feature-discovery
+
+  # -- postDeleteCleanup OFF (chart default is true). When true the chart renders a
+  # post-delete Helm hook bundle (ServiceAccount + ClusterRole + ClusterRoleBinding +
+  # Job, all annotated `helm.sh/hook: post-delete`) whose Job runs `nfd-master -prune`,
+  # stripping every `feature.node.kubernetes.io/*` label from every node. ArgoCD does
+  # NOT execute Helm lifecycle hooks — it applies each rendered object as a regular
+  # live resource — so for an Argo-managed (catalog) deployment that prune Job would
+  # run on the FIRST sync (not on delete) and wipe the node labels every GPU/VM-runtime
+  # consumer nodeSelects on. Disabling it removes those hook objects entirely; node-label
+  # cleanup on NFD removal becomes a documented manual/consumer step (an acceptable
+  # trade vs. a sync-time label-strip).
+  postDeleteCleanup: false
+
+  image:
+    # -- Image pull policy for all NFD workloads.
+    pullPolicy: IfNotPresent
+    # image.tag is intentionally left UNSET so the chart falls back to its appVersion
+    # (v0.18.3 for chart 0.18.3) — a concrete, pinned tag, never :latest. The catalog's
+    # no_latest_image_tag conftest policy is satisfied without hardcoding a tag that
+    # would drift from the chart version on the next bump (cnpg precedent).
+
+  featureGates:
+    # -- NodeFeatureGroupAPI is a chart default of false; pinned here so a chart-default
+    # drift cannot silently enable the alpha NodeFeatureGroup API server feature. The
+    # NodeFeatureGroup CRD still ships in the -crds artifact regardless (the gate
+    # controls the API-server feature, not CRD presence).
+    NodeFeatureGroupAPI: false
+
+  topologyUpdater:
+    # -- topologyUpdater is OFF. This is the operative backstop against the
+    # topologyUpdater DaemonSet's root container (its chart default is runAsUser: 0):
+    # keeping it disabled means that container is never rendered. The namespace runs at
+    # PSA enforce: privileged (forced by the worker's hostPath, see the worker block),
+    # which enforces nothing — so this explicit pin, NOT the PSA label, is what keeps a
+    # root container out of the workload. Consumers that need NUMA-aware topology export
+    # enable it in their own overlay and accept the resulting PSA posture.
+    enable: false
+
+  prometheus:
+    # -- Prometheus scraping is OFF: enabling it renders a monitoring.coreos.com
+    # ServiceMonitor whose CRD is not guaranteed at sync-wave 0 (observability is
+    # consumer-deployed and lands later). Consumers running the Prometheus operator
+    # enable it in their overlay — a cluster property, not a catalog default (cnpg
+    # PodMonitor precedent).
+    enable: false
+
+  master:
+    # -- master Deployment container securityContext. The first four fields are chart
+    # defaults, pinned here belt-and-suspenders against chart-default drift;
+    # seccompProfile is the only addition (the chart omits it), raising the master to a
+    # restricted-grade securityContext as defense-in-depth.
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+
+  worker:
+    # -- worker DaemonSet container securityContext. Same shape as master. The worker
+    # mounts hostPath volumes (/sys, /boot, /etc/os-release, /usr/lib, /lib,
+    # /proc/swaps) for host feature detection — "HostPath Volumes" is a PSA *Baseline*
+    # control, so BOTH baseline and restricted forbid hostPath; the namespace must
+    # enforce privileged. These container hardening fields are still pinned as
+    # defense-in-depth (the worker is otherwise restricted-grade: readOnly hostPath
+    # mounts, hostNetwork: false, no hostPID/IPC, no hostPort, no privileged — verified
+    # against the rendered pod).
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+
+  gc:
+    # -- gc (garbage-collector) Deployment container securityContext. The chart
+    # HARD-CODES the gc CONTAINER securityContext (allowPrivilegeEscalation: false,
+    # capabilities.drop: [ALL], readOnlyRootFilesystem: true, runAsNonRoot: true) and
+    # does NOT read .Values.gc.securityContext — so the seccompProfile cannot be set on
+    # the gc CONTAINER via values. It is set on the gc POD securityContext below
+    # instead (podSecurityContext IS templated); a pod-level seccompProfile applies to
+    # every container in the pod, so the gc pod is restricted-grade for seccomp too.
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    # -- gc POD securityContext. Carries seccompProfile for the gc pod because the gc
+    # container securityContext (above) is chart-hard-coded and cannot take it (chart
+    # template nfd-gc.yaml). Pod-level seccompProfile is honored for all containers.
+    podSecurityContext:
+      seccompProfile:
+        type: RuntimeDefault

@@ -1,0 +1,31 @@
+# Strict-B CRDs artifact (ADR-0028) for compute/node-feature-discovery. The 3
+# nfd.k8s-sigs.io CRDs are objects that depend on nothing in the catalog → requires
+# is empty.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
+# workload half is `compute/node-feature-discovery`. The build gate uses this
+# marker to assert kind: CustomResourceDefinition count > 0 here (and == 0 in the
+# workload artifact). The compatibility.yaml schema
+# (schemas/compatibility.schema.json) permits this crd-bearing top-level field.
+crd-bearing: true
+
+requires: {}
+
+# api-surface-only, NO capability. The nfd.k8s-sigs.io CRDs are the API surface
+# (schemas), not the swappable operational capability. NFD labels/extends nodes
+# (the master+worker workload that reconciles the NodeFeature/NodeFeatureRule/
+# NodeFeatureGroup CRs); it is not itself a swappable interface a consumer would
+# swap out independently, so neither the NFD workload nor its CRDs carry a
+# capability id. Carrying capabilities: [] here is the deliberate design (precedent:
+# compute/kubevirt-cdi-crds and observability/prometheus-operator-crds, both
+# api-surface-only with no capability), NOT a deferral — so no `# TODO:` here.
+provides:
+  - name: node-feature-discovery-crds
+    version:
+      sot: crd-schema
+      crd_schema: v0.18.3   # nfd.k8s-sigs.io CRDs vendored from chart node-feature-discovery 0.18.3 (appVersion v0.18.3)
+    api_surface:
+      - nfd.k8s-sigs.io/NodeFeature@v1alpha1       # nodefeatures.nfd.k8s-sigs.io (Namespaced; served+storage: v1alpha1)
+      - nfd.k8s-sigs.io/NodeFeatureGroup@v1alpha1  # nodefeaturegroups.nfd.k8s-sigs.io (Namespaced; served+storage: v1alpha1)
+      - nfd.k8s-sigs.io/NodeFeatureRule@v1alpha1   # nodefeaturerules.nfd.k8s-sigs.io (Cluster; served+storage: v1alpha1)
+    capabilities: []

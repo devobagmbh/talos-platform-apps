@@ -1,0 +1,9 @@
+requires: {} # no catalog-internal deps: the eBPF agent depends only on the kernel ABI on any Talos node; the tetragon-operator manages its own CRDs at runtime
+provides:
+  - name: tetragon
+    version:
+      sot: app          # provenance SOT: the running Tetragon agent app-version (chart appVersion)
+      app: 1.7.0        # Tetragon — the running workload (chart cilium/tetragon 1.7.0 ships appVersion 1.7.0, resolved via `helm show chart`)
+    api_surface: []     # TracingPolicy/TracingPolicyNamespaced CRDs are operator-installed at runtime, not exposed by this rendered artifact
+    capabilities:
+      - {id: runtime-security, swap_class: rewrite-required}

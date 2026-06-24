@@ -114,17 +114,28 @@ source ever does:
 rendered `securityContext`, never assume the chart default:**
 
 - `restricted` — the pod sets `runAsNonRoot` + `seccompProfile: RuntimeDefault` and
-  every container sets `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`.
-- `baseline` — the safe floor when the chart sets no compliant securityContext;
-  `restricted` would reject the pods at admission.
-- `privileged` — only for workloads that genuinely need host access (CSI, host
-  networking).
+  every container sets `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]`,
+  AND the workload uses no Baseline-forbidden field (see `privileged`).
+- `baseline` — for a workload that clears every Baseline control but is not
+  restricted-grade. `baseline` is NOT a catch-all floor: it forbids hostPath volumes,
+  host namespaces (hostNetwork/hostPID/hostIPC), privileged containers, host ports,
+  Unconfined seccomp, and non-Default procMount exactly as `restricted` does. A
+  workload using any of those is NOT baseline-admissible.
+- `privileged` — REQUIRED (not merely "host access nice-to-have") for any workload
+  using a Baseline-forbidden field: a **hostPath** volume (CSI/CNI/node agents —
+  "HostPath Volumes" is a *Baseline* PSS control, so baseline AND restricted reject
+  it), host namespaces, a privileged container, or a host port. `privileged` is the
+  ONLY PSS level that admits these.
 
-Setting `restricted` on a workload that does not comply is an admission-reject
-footgun. The deterministic gate (`pod_security_standards` conftest policy) enforces
-that every *declared* Namespace carries a valid `enforce` level; the catalog-evaluator's
-semantic AC additionally catches a dedicated-namespace component that ships no
-`Namespace` object at all (the gate only sees declared namespaces). Cross-component
+Setting `baseline` or `restricted` on a workload that does not comply is an
+admission-reject footgun. **Two** deterministic gates back this:
+`base.pod_security_standards` asserts every declared Namespace carries a valid
+`enforce` level, and `conformance.pod_security` (`task scan:psa-conformance`,
+per-component `conftest --combine`) asserts the workloads actually CONFORM to that
+declared level — the check that catches a too-strict label before live admission
+(apps PR #328). The catalog-evaluator's semantic AC additionally catches a
+dedicated-namespace component that ships no `Namespace` object at all (the gate only
+sees declared namespaces). Cross-component
 namespace-name uniqueness (two components both shipping the same namespace name,
 each passing its own per-component check, colliding only at Argo apply with
 "managed by multiple Applications") is NOT yet mechanically enforced — it lands

@@ -1,0 +1,48 @@
+# node-feature-discovery's own namespace. The NFD workload (master Deployment,
+# worker DaemonSet, gc Deployment) is the sole catalog occupant (dedicated
+# namespace), so this workload artifact ships the Namespace object — a shipped
+# manifest takes precedence over Argo `managedNamespaceMetadata`, making the PSA
+# posture authoritative and self-contained (build skill CONVENTIONS.md
+# § Namespace & PSA). The strict-B CRD half (compute/node-feature-discovery-crds)
+# ships NO Namespace; this workload is the sole claimant. The chart itself renders
+# ZERO Namespace objects (verified), so this label set is authored here, not copied.
+#
+# enforce: privileged — FORCED by the worker DaemonSet, and the ONLY admissible PSA
+# level for it. The worker mounts hostPath volumes (/sys, /boot, /etc/os-release,
+# /usr/lib, /lib, /proc/swaps + the features.d dir) for host feature detection —
+# architecturally required, cannot be removed. In the Pod Security Standards
+# "HostPath Volumes" is a *Baseline* control ("hostPath volumes must be forbidden"),
+# so BOTH `enforce: baseline` AND `enforce: restricted` reject a hostPath pod at
+# admission — only `privileged` permits hostPath. A single Namespace carries one
+# enforce level for ALL its pods (master, worker, gc share it), so the worker's
+# mandatory hostPath forces the namespace to `privileged`. Verified on a live k8s
+# 1.36 cluster: under `enforce: baseline` the worker DaemonSet is rejected
+# ("violates PodSecurity baseline:latest: hostPath volumes"); under `privileged` it
+# is admitted and becomes Ready (local E2E, 2026-06-22). This matches how every
+# node-level hostPath agent is deployed (node-exporter, CSI/CNI node DaemonSets,
+# local-path-provisioner — all run in privileged-PSA namespaces).
+#
+# audit: restricted + warn: restricted — the enforce level is the loosest the worker
+# needs, but audit/warn stay at `restricted` so the namespace is NOT a silent
+# privilege hole: the master and gc pods ARE restricted-grade (their container
+# securityContext pins runAsNonRoot, drops ALL caps, readOnlyRootFilesystem,
+# allowPrivilegeEscalation: false + a seccompProfile — independent of the namespace
+# enforce level) and pass the restricted audit cleanly, while the worker's hostPath
+# usage surfaces as a non-blocking audit-log entry + apiserver warning. So the
+# restricted-grade master/gc posture stays visible and any NEW non-conformance
+# (e.g. a future `privileged: true` slipping into master/gc) is surfaced, even
+# though enforce admits the worker.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: node-feature-discovery
+    app.kubernetes.io/part-of: node-feature-discovery
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+  name: node-feature-discovery
