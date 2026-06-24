@@ -40,8 +40,8 @@ A `kind: helm` wrapper over the `mimir-distributed` chart
 
 - Eight workloads running `grafana/mimir:2.17.0` (pinned to the chart appVersion, never
   `:latest`): `Deployment`s `mimir-distributor`, `mimir-querier`,
-  `mimir-query-frontend`, `mimir-query-scheduler`; `StatefulSet`s `mimir-ingester`,
-  `mimir-store-gateway`, `mimir-compactor`, `mimir-ruler`.
+  `mimir-query-frontend`, `mimir-query-scheduler`, `mimir-ruler`; `StatefulSet`s
+  `mimir-ingester`, `mimir-store-gateway`, `mimir-compactor`.
 - The `Service`s (per-component HTTP/gRPC + memberlist), `ServiceAccount`s, and the
   chart RBAC.
 - The chart-generated `mimir-config` `ConfigMap` (the Mimir runtime config) and the
