@@ -1,0 +1,58 @@
+# grafana-operator — the WORKLOAD half of the strict-B pair (ADR-0028). Ships ONLY
+# the Grafana Operator controller (Deployment + RBAC + Service). The CRD half is the
+# SEPARATE component `observability/grafana-operator-crds` (sync-wave -1); this
+# workload (sync-wave 0) comes up against the grafana.integreatly.org CRDs that
+# already exist.
+#
+# Rendered from the upstream `grafana-operator` chart with default values — the chart
+# emits the controller framework only (1 Deployment + its RBAC + 1 Service), zero
+# Grafana instances and zero consumer CRs. Grafana / GrafanaDashboard /
+# GrafanaDatasource and the rest of the grafana.integreatly.org surface are consumer
+# CRs the running operator reconciles, NEVER shipped in this artifact.
+#
+# Cluster-specific bits (operator replica count, watched namespaces, resource tuning)
+# are consumer-owned (Layer 3) — see customization.yaml. The controller is
+# cluster-agnostic at the freeze line: it needs nothing from the consumer to render a
+# valid signed workload.
+
+metadata:
+  chart: grafana-operator
+  repo: https://grafana.github.io/helm-charts
+  version: 5.24.0  # appVersion v5.24.0 (Grafana Operator); pairs with grafana-operator-crds (same upstream release). Bump the two together — CRD schema drift otherwise.
+  # >>> VERIFY the current chart at push (`helm search repo grafana/grafana-operator`).
+  namespace: monitoring  # shared monitoring namespace — NOT shipped here (consumer-owned, see README § Namespace & PSA)
+
+values:
+  # -- (object) CRDs live in the SEPARATE -crds artifact (strict-B, ADR-0028). Written
+  # EXPLICITLY at the chart default (true) to make the strict-B contract visible: with
+  # immutable CRDs the chart references them from `crds/` and renders 0
+  # CustomResourceDefinitions in this workload. NEVER set false here — a mutable-CRD
+  # render emits CRDs into the workload and both this artifact and the -crds artifact
+  # would own them, making Argo report "managed by multiple Applications".
+  crds:
+    immutable: true
+
+  # -- (object) Pod-level security context. The chart default is `{}` (no seccomp
+  # profile), which PSA-restricted admission REJECTS. Pin seccompProfile RuntimeDefault
+  # so the operator pod is admissible under the `restricted` enforce label the consumer
+  # sets on the shared monitoring namespace (see README § Namespace & PSA).
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+  # -- (object) Container-level security context. Every field below matches the chart
+  # default; each is pinned EXPLICITLY because it is the producing values-pin for an
+  # asserted-rendered PSA-restricted control — the workload's restricted-admissibility
+  # rests on these four values being present in the render, so they are pinned here
+  # rather than left implicit at the chart default.
+  securityContext:
+    # -- (bool) Run the operator container as a non-root user (PSA-restricted control).
+    runAsNonRoot: true
+    # -- (bool) Mount the container root filesystem read-only.
+    readOnlyRootFilesystem: true
+    # -- (bool) Forbid privilege escalation (PSA-restricted control).
+    allowPrivilegeEscalation: false
+    # -- (object) Drop all Linux capabilities (PSA-restricted control).
+    capabilities:
+      drop:
+        - ALL
