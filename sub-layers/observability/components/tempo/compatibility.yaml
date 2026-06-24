@@ -1,8 +1,13 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 backend for blocks
+  storage-objects/garage: ">=v0.1.0" # S3 endpoint/API for trace blocks (StatefulSet, wave 0)
+  storage-objects/garage-buckets: ">=v0.1.0" # provisions the traces bucket (wave 10)
 provides:
   - name: tempo
-    api_surface: [] # filled in with issue #17
+    version:
+      sot: app
+      app: 2.10.7 # Tempo appVersion (image tag grafana/tempo:2.10.7)
+      chart: 2.2.3 # grafana-community/tempo chart version
+    api_surface: [] # monolithic single binary ships no CRDs / exposed API groups
     capabilities:
       - {id: traces-storage, swap_class: data-migration}
       - {id: traces-query, swap_class: drop-in}
