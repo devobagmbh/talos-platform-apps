@@ -56,3 +56,17 @@ values:
     capabilities:
       drop:
         - ALL
+
+  # -- (object) Controller container resources. The chart default is `{}` (no requests
+  # or limits). Pinned because the `required_resource_limits` Conftest gate (policies/
+  # base/) DENIES any rendered container missing requests.{cpu,memory} + limits.memory,
+  # and this NEW component is not in that gate's grandfather register. Conservative
+  # footprint for a single lightweight controller-runtime operator; the consumer tunes
+  # it per cluster (Layer 3). No CPU limit by design — a ceiling on a reconcile loop
+  # adds throttling latency without bounding the OOM-relevant axis (memory).
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
