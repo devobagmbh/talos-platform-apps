@@ -15,8 +15,12 @@ once from the main chart, not as a Helm reference.
 
 ## What ships
 
-Exactly 13 cluster-scoped CustomResourceDefinitions, all in the
-`grafana.integreatly.org` API group, served version `v1beta1`:
+Exactly 13 `grafana.integreatly.org` CustomResourceDefinition objects, served
+version `v1beta1`. A CRD object is itself a cluster-scoped Kubernetes resource
+(as every CRD is — it registers an API type cluster-wide), but the custom
+resources these CRDs **define** (`Grafana`, `GrafanaDashboard`,
+`GrafanaDatasource`, …) are **namespace-scoped** (`spec.scope: Namespaced`) —
+consumers create those CRs inside a namespace:
 
 - `grafanas.grafana.integreatly.org`
 - `grafanadashboards.grafana.integreatly.org`
@@ -34,8 +38,10 @@ Exactly 13 cluster-scoped CustomResourceDefinitions, all in the
 
 No pods, no Services, no RBAC, no Namespace — the artifact is purely the CRD
 schemas. The Grafana Operator workload Namespace (and its Pod Security Admission
-`enforce` label) stays with the `observability/grafana-operator` workload artifact;
-CRDs are cluster-scoped and require no namespace.
+`enforce` label) stays with the `observability/grafana-operator` workload artifact.
+The CRD objects register the API types cluster-wide (no namespace of their own),
+while the `Grafana` / `GrafanaDashboard` / `GrafanaDatasource` CRs the consumer
+creates are namespace-scoped and live inside a namespace.
 
 ## Strict-B consumer wiring (ADR-0028)
 
