@@ -13,7 +13,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
 | [`grafana-operator`](components/grafana-operator/) | 0 | Helm `grafana/grafana-operator` (operator controller, strict-B workload artifact, ADR-0028) | `oci://.../observability/grafana-operator:vX.Y.Z` |
 | [`loki`](components/loki/) | 10 | Helm `grafana/loki` (SingleBinary) | `oci://.../observability/loki:vX.Y.Z` |
-| [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` | `oci://.../observability/mimir:vX.Y.Z` |
+| [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` (microservices) | `oci://.../observability/mimir:vX.Y.Z` |
 | [`tempo`](components/tempo/) | 10 | Helm `grafana-community/tempo` (monolithic single binary) | `oci://.../observability/tempo:vX.Y.Z` |
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
