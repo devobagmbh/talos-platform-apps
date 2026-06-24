@@ -1,162 +1,162 @@
-# Conftest-Policies
+# Conftest Policies
 
-Rego-Policies, die gegen alle gerenderten Sub-Layer-Manifeste laufen. Aufruf via `task scan` lokal (Devbox-Shell) oder als CI-Job im `security-scan.yml`-Workflow.
+Rego policies that run against all rendered sub-layer manifests. Invoked via `task scan` locally (Devbox shell) or as a CI job in the `security-scan.yml` workflow.
 
-## Was bedeutet PNI v2?
+## What does PNI v2 mean?
 
-Mehrere Policies im `platform/`-Verzeichnis setzen das **Platform Network Interface (PNI) v2 Capability-First Contract** durch. PNI v2 stammt aus dem Upstream-Repo [`talos-platform-base`](https://github.com/Nosmoht/talos-platform-base/blob/main/AGENTS.md#platform-network-interface-pni--v2-capability-first-contract) und ist die zentrale Konvention für Producer-/Consumer-Netzwerkbeziehungen im Cluster:
+Several policies in the `platform/` directory enforce the **Platform Network Interface (PNI) v2 capability-first contract**. PNI v2 originates in the upstream repo [`talos-platform-base`](https://github.com/Nosmoht/talos-platform-base/blob/main/AGENTS.md#platform-network-interface-pni--v2-capability-first-contract) and is the central convention for producer/consumer network relationships in the cluster:
 
-- **Capability statt Tool-Name**: `CiliumClusterwideNetworkPolicy` (CCNP) referenziert eine Capability (`capability-provider.cnpg-postgres`) statt einen Tool-Namen (`app.kubernetes.io/name: cnpg`). Tool-Swap (z. B. Postgres durch CockroachDB) ist dann ein Label-Move auf dem Producer-Pod, kein CCNP-Edit.
-- **Reserved Labels namespace-anchored**: `platform.io/provide.<cap>` darf nur auf Namespaces gesetzt werden, die durch Base-RBAC dazu autorisiert sind. `platform.io/capability-provider.<cap>` auf einem Pod ist nur valide, wenn der Namespace die passende `provide.*`-Label trägt.
-- **Instanced Capabilities**: Capabilities mit mehreren möglichen Instanzen (`cnpg-postgres`, `vault-secrets`, `redis-managed`, `rabbitmq-managed`, `kafka-managed`, `s3-object`) brauchen einen `.<inst>`-Suffix beim Konsumieren (`consume.cnpg-postgres.atlantis-db`), damit klar ist welche Instanz gemeint ist.
+- **Capability instead of tool name**: a `CiliumClusterwideNetworkPolicy` (CCNP) references a capability (`capability-provider.cnpg-postgres`) instead of a tool name (`app.kubernetes.io/name: cnpg`). Swapping the tool (e.g. Postgres for CockroachDB) is then a label move on the producer pod, not a CCNP edit.
+- **Reserved labels namespace-anchored**: `platform.io/provide.<cap>` may only be set on namespaces authorized for it by base RBAC. `platform.io/capability-provider.<cap>` on a pod is valid only if the namespace carries the matching `provide.*` label.
+- **Instanced capabilities**: capabilities with multiple possible instances (`cnpg-postgres`, `vault-secrets`, `redis-managed`, `rabbitmq-managed`, `kafka-managed`, `s3-object`) require a `.<inst>` suffix when consumed (`consume.cnpg-postgres.atlantis-db`) so it is clear which instance is meant.
 
-Die drei `platform/`-Policies hier (`capability_selectors`, `instanced_suffix_required`, `network_default_deny_egress`) erzwingen diese Konvention für jeden Sub-Layer-Manifest-Output **bevor** das OCI-Artefakt publiziert wird. Konsumenten-Cluster sehen damit nur PNI-konforme Manifeste.
+The three `platform/` policies here (`capability_selectors`, `instanced_suffix_required`, `network_default_deny_egress`) enforce this convention for every sub-layer manifest output **before** the OCI artifact is published. Consumer clusters therefore see only PNI-conformant manifests.
 
-## Rolle im Policy-Stack
+## Role in the policy stack
 
-Diese Repo nutzt **Conftest in CI + Kyverno im Cluster** mit getrennten Rollen. Siehe [ADR-0018 Policy-Stack](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md) für die vollständige Begründung.
+This repo uses **Conftest in CI + Kyverno in the cluster** with separate roles. See [ADR-0018 Policy Stack](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md) for the full rationale.
 
-**Conftest hier**: Pre-OCI-Push-Validation der `rendered/`-Manifeste, bevor sie als signierte OCI-Artefakte publiziert werden. CI-Sekundenfeedback im PR.
+**Conftest here**: pre-OCI-push validation of the `rendered/` manifests before they are published as signed OCI artifacts. Seconds-fast feedback in the PR.
 
-**Kyverno später** in Konsumenten-Clustern (Seeder + Office-Lab): Admission-Webhook-Validation + Kyverno-exklusive Features (cosign-Image-Verify, Auto-Generate, Mutate). Lebt in `sub-layers/secrets/manifests/policies/`.
+**Kyverno later** in consumer clusters (Seeder + Office-Lab): admission-webhook validation + Kyverno-exclusive features (cosign image verification, auto-generate, mutate). Lives in `sub-layers/secrets/manifests/policies/`.
 
-## Mapping — welche Policy gehört wohin
+## Mapping — which policy goes where
 
-`Zuordnung (Ziel)` = geplante Conftest/Kyverno-Aufteilung des Phase-1-Vollausbaus; `Impl.` = aktueller On-Disk-Stand (`✅` = `.rego` existiert, `➖` = noch nicht angelegt).
+`Assignment (target)` = the planned Conftest/Kyverno split of the Phase-1 full build-out; `Impl.` = the current on-disk state (`✅` = `.rego` exists, `➖` = not yet created).
 
-| Policy | Zuordnung (Ziel) | Impl. | Begründung |
+| Policy | Assignment (target) | Impl. | Rationale |
 |---|---|---|---|
-| `no_latest_image_tag` | beide | ✅ | Defense-in-Depth |
-| `pod_security_standards` | Conftest | ✅ | PSA-Namespace-Label-Enforcement, Conftest-only |
-| `pod_security_conformance` | Conftest | ✅ | PSA-Konformanz-Prüfung (task scan:psa-conformance), Conftest-only |
-| `no_inline_secrets` | Conftest | ➖ | Conftest-only: Git-Repo-Inhalt |
-| `reserved_labels` | beide | ➖ | Defense-in-Depth (PNI v2) |
-| `capability_selectors` | Conftest | ➖ | Conftest-only: Sub-Layer-Source-Konvention |
-| `gateway_api_only` | Conftest | ➖ | Conftest-only: kein Ingress-Controller im Cluster |
-| `required_resource_limits` | beide | ➖ | Defense-in-Depth |
-| `no_privileged_containers` | beide | ➖ | Defense-in-Depth + Allow-Liste |
-| `image_verify_platform_oci` | Kyverno | ➖ | Kyverno-only: cosign keyless, braucht Sigstore-Backend |
-| `auto_default_netpol` | Kyverno | ➖ | Kyverno-only: Generate-Policy bei Namespace-Create |
-| `imagepullsecret_inject` | Kyverno | ➖ | Kyverno-only: Mutate-Policy |
+| `no_latest_image_tag` | both | ✅ | Defense-in-depth |
+| `pod_security_standards` | Conftest | ✅ | PSA namespace-label enforcement, Conftest-only |
+| `pod_security_conformance` | Conftest | ✅ | PSA conformance check (`task scan:psa-conformance`), Conftest-only |
+| `no_inline_secrets` | Conftest | ➖ | Conftest-only: Git repo content |
+| `reserved_labels` | both | ➖ | Defense-in-depth (PNI v2) |
+| `capability_selectors` | Conftest | ➖ | Conftest-only: sub-layer source convention |
+| `gateway_api_only` | Conftest | ➖ | Conftest-only: no ingress controller in the cluster |
+| `required_resource_limits` | both | ➖ | Defense-in-depth |
+| `no_privileged_containers` | both | ➖ | Defense-in-depth + allow-list |
+| `image_verify_platform_oci` | Kyverno | ➖ | Kyverno-only: cosign keyless, needs a Sigstore backend |
+| `auto_default_netpol` | Kyverno | ➖ | Kyverno-only: generate policy on namespace create |
+| `imagepullsecret_inject` | Kyverno | ➖ | Kyverno-only: mutate policy |
 
-→ **3 implementiert (Conftest), 9 geplant.** Quelle für die Defense-in-Depth-Policies bleibt die Conftest-Rego-Datei in diesem Verzeichnis; die Kyverno-Variante in `sub-layers/secrets/manifests/policies/` wird **per Hand konsistent gehalten** (compatibility-reviewer-Subagent prüft Drift).
+→ **3 implemented (Conftest), 9 planned.** The source of truth for the defense-in-depth policies remains the Conftest Rego file in this directory; the Kyverno variant in `sub-layers/secrets/manifests/policies/` is **kept consistent by hand** (the `compatibility-reviewer` subagent checks for drift).
 
-## Struktur
+## Structure
 
 ```text
 policies/
-├── README.md                       — diese Datei
-├── base/                           — Generische Hardening (Defense-in-Depth-Kandidaten)
+├── README.md                       — this file
+├── base/                           — generic hardening (defense-in-depth candidates)
 │   ├── no_latest_image_tag.rego
 │   ├── no_latest_image_tag_test.rego
 │   ├── pod_security_standards.rego
 │   └── pod_security_standards_test.rego
-└── conformance/                    — PSA-Konformanz-Prüfung
+└── conformance/                    — PSA conformance check
     ├── pod_security_conformance.rego
     └── pod_security_conformance_test.rego
 ```
 
-## Lokal ausführen
+## Run locally
 
 ```bash
-# Alle Sub-Layer rendern + scannen
+# Render + scan all sub-layers
 task scan
 
-# Nur ein Sub-Layer
+# A single sub-layer only
 task scan -- observability
 
-# Direkt mit conftest
+# Directly with conftest
 conftest test sub-layers/observability/rendered/ --policy policies/
 
-# Policy-Selbsttests (testdata/ gegen erwartete Outcomes)
+# Policy self-tests (testdata/ against expected outcomes)
 conftest verify --policy policies/
 ```
 
-## Quellen für Vorlagen
+## Template sources
 
-- [Conftest-Docs](https://www.conftest.dev/)
-- [OPA-Rego-Reference](https://www.openpolicyagent.org/docs/latest/policy-language/)
-- [OPA Gatekeeper Library](https://github.com/open-policy-agent/gatekeeper-library) — Rego-Quellen für Standard-Hardening
-- [Upstream-Base-Policies](https://github.com/Nosmoht/talos-platform-base/tree/main/policies) — als Vorlage für PNI-spezifische Policies
+- [Conftest docs](https://www.conftest.dev/)
+- [OPA Rego reference](https://www.openpolicyagent.org/docs/latest/policy-language/)
+- [OPA Gatekeeper Library](https://github.com/open-policy-agent/gatekeeper-library) — Rego sources for standard hardening
+- [Upstream base policies](https://github.com/Nosmoht/talos-platform-base/tree/main/policies) — template for PNI-specific policies
 
-## Konventionen
+## Conventions
 
-- **Ein Rego-File pro Regel** (`<rule_name>.rego`)
-- **Package-Name** spiegelt den Pfad: `package base.no_latest_image_tag`
-- **Deny-Statements** klar formuliert: `deny[msg] { ... msg := sprintf("...", [...]) }`
-- **Tests** zu jeder Policy: `<rule_name>_test.rego` mit `test_<name>`-Funktionen (`conftest verify`)
-- **Severity** über `metadata`-Annotations: `# METADATA\n# title: ...\n# severity: high`
+- **One Rego file per rule** (`<rule_name>.rego`)
+- **Package name** mirrors the path: `package base.no_latest_image_tag`
+- **Deny statements** stated clearly: `deny[msg] { ... msg := sprintf("...", [...]) }`
+- **Tests** for every policy: `<rule_name>_test.rego` with `test_<name>` functions (`conftest verify`)
+- **Severity** via `metadata` annotations: `# METADATA\n# title: ...\n# severity: high`
 
-## Status (Bundle-C-Audit 2026-05-26)
+## Status (Bundle C audit 2026-05-26)
 
-Phase-1-Vollausbau gemäß [ADR-0018 § Phase-1-Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — alle 21 Conftest-Policies + 7 Kyverno-ClusterPolicies werden initial implementiert. Begründung: die Defense-in-Depth-Architektur ist gewollt, „später aktivieren" wäre durch die testdata/-Pflege-Disziplin teurer als sofortige Vollabdeckung.
+Phase-1 full build-out per [ADR-0018 § Phase-1 Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — all 21 Conftest policies + 7 Kyverno ClusterPolicies are implemented initially. Rationale: the defense-in-depth architecture is intentional, and "activate later" would be more expensive than immediate full coverage given the testdata/ maintenance discipline.
 
-Die nachfolgenden Subsektionen (`base/`, `apps/`, `platform/`) strukturieren den **geplanten** Vollausbau; sie entsprechen nicht zwingend existierenden Verzeichnissen. Den aktuellen On-Disk-Stand zeigt der `## Struktur`-Baum oben.
+The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** full build-out; they do not necessarily correspond to existing directories. The current on-disk state is shown by the `## Structure` tree above.
 
-### Conftest-Policies (21 total)
+### Conftest Policies (21 total)
 
-#### `base/` — generische Hardening
+#### `base/` — generic hardening
 
-- [x] `no_latest_image_tag` (MUST) — Helm-Defaults dürfen keine `:latest`-Image-Tags rendern
-- [ ] `reserved_labels` (MUST) — Reserved Keys (`platform.io/provide.*`, `capability-provider.*`) nur auf Producer-Resources, namespace-anchored
-- [ ] `required_resource_limits` (MUST) — alle Container brauchen `resources.{requests.{cpu,memory},limits.memory}`
-- [ ] `no_privileged_containers` (MUST) — `securityContext.privileged: false` außer Allow-Liste
-- [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` außer Cilium/CSI-Allow-Liste
-- [ ] `endpointslices_only` (SHOULD) — kein `kind: Endpoints` (deprecated seit K8s 1.33)
-- [ ] `storage_class_explicit` (SHOULD) — jede PVC hat `storageClassName` explizit gesetzt
-- [ ] `probes_required` (SHOULD) — `livenessProbe` + `readinessProbe` pro Container
-- [ ] `no_cluster_admin_binding` (SHOULD) — keine `cluster-admin`-Bindings für Workload-SAs
-- [ ] `no_host_path` (SHOULD) — kein `volumeMounts: hostPath:` außer Allow-Liste
-- [ ] `namespace_quota` (COULD) — jeder Workload-Namespace hat `ResourceQuota`
-- [ ] `limit_range` (COULD) — jeder Workload-Namespace hat `LimitRange` mit Defaults
-- [ ] `service_no_externalip` (COULD) — kein `Service.spec.externalIPs`
-- [x] `pod_security_standards` (COULD) — jeder deklarierte Namespace trägt `pod-security.kubernetes.io/enforce` (`privileged`|`baseline`|`restricted`); strengstes Level, das der Workload erfüllt
-- [ ] `image_digest_pinning` (COULD) — Image-Refs nutzen `@sha256:…`-Digest
+- [x] `no_latest_image_tag` (MUST) — Helm defaults must not render `:latest` image tags
+- [ ] `reserved_labels` (MUST) — reserved keys (`platform.io/provide.*`, `capability-provider.*`) only on producer resources, namespace-anchored
+- [ ] `required_resource_limits` (MUST) — every container needs `resources.{requests.{cpu,memory},limits.memory}`
+- [ ] `no_privileged_containers` (MUST) — `securityContext.privileged: false` except for an allow-list
+- [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` except for the Cilium/CSI allow-list
+- [ ] `endpointslices_only` (SHOULD) — no `kind: Endpoints` (deprecated since K8s 1.33)
+- [ ] `storage_class_explicit` (SHOULD) — every PVC sets `storageClassName` explicitly
+- [ ] `probes_required` (SHOULD) — `livenessProbe` + `readinessProbe` per container
+- [ ] `no_cluster_admin_binding` (SHOULD) — no `cluster-admin` bindings for workload SAs
+- [ ] `no_host_path` (SHOULD) — no `volumeMounts: hostPath:` except for an allow-list
+- [ ] `namespace_quota` (COULD) — every workload namespace has a `ResourceQuota`
+- [ ] `limit_range` (COULD) — every workload namespace has a `LimitRange` with defaults
+- [ ] `service_no_externalip` (COULD) — no `Service.spec.externalIPs`
+- [x] `pod_security_standards` (COULD) — every declared namespace carries `pod-security.kubernetes.io/enforce` (`privileged`|`baseline`|`restricted`); the strictest level the workload satisfies
+- [ ] `image_digest_pinning` (COULD) — image refs use an `@sha256:…` digest
 
-#### `apps/` — Repo-Hygiene (Conftest-only)
+#### `apps/` — repo hygiene (Conftest-only)
 
-- [ ] `no_inline_secrets` (MUST) — keine `stringData`/`data` außer SOPS-encrypted oder ESO-Referenz
-- [ ] `gateway_api_only` (MUST) — kein `kind: Ingress`, nur `Gateway`/`HTTPRoute`
-- [ ] `helm_chart_source_official` (SHOULD) — Helm-Chart-Repo-URL aus Allow-Liste
+- [ ] `no_inline_secrets` (MUST) — no `stringData`/`data` except SOPS-encrypted or an ESO reference
+- [ ] `gateway_api_only` (MUST) — no `kind: Ingress`, only `Gateway`/`HTTPRoute`
+- [ ] `helm_chart_source_official` (SHOULD) — Helm chart repo URL from an allow-list
 
 #### `platform/` — PNI v2
 
-- [ ] `capability_selectors` (MUST) — CCNPs nutzen `capability-provider.<cap>`/`capability-consumer.<cap>`, keine Tool-Name-Selectors
-- [ ] `instanced_suffix_required` (SHOULD) — bei `consume.<instanced-cap>` muss `.<inst>`-Suffix gesetzt sein
-- [ ] `network_default_deny_egress` (SHOULD) — jeder Workload-Namespace hat Default-Deny-Egress-CCNP
+- [ ] `capability_selectors` (MUST) — CCNPs use `capability-provider.<cap>`/`capability-consumer.<cap>`, no tool-name selectors
+- [ ] `instanced_suffix_required` (SHOULD) — a `consume.<instanced-cap>` must set the `.<inst>` suffix
+- [ ] `network_default_deny_egress` (SHOULD) — every workload namespace has a default-deny-egress CCNP
 
-#### `conformance/` — PSA-Konformanz
+#### `conformance/` — PSA conformance
 
-- [x] `pod_security_conformance` (MUST) — gerenderte Workloads konformieren mit dem deklarierten `enforce`-Level (`task scan:psa-conformance`)
+- [x] `pod_security_conformance` (MUST) — rendered workloads conform to the declared `enforce` level (`task scan:psa-conformance`)
 
-### Kyverno-ClusterPolicies (7 total)
+### Kyverno ClusterPolicies (7 total)
 
-Spiegel der Defense-in-Depth-Policies + Kyverno-only Features. Leben in `sub-layers/secrets/manifests/policies/` (Layer-2-Modul) und werden in Konsumenten-Clustern deployed.
+Mirror of the defense-in-depth policies + Kyverno-only features. They live in `sub-layers/secrets/manifests/policies/` (a layer-2 module) and are deployed in consumer clusters.
 
-- [ ] `no_latest_image_tag` (Defense-in-Depth-Spiegel)
-- [ ] `reserved_labels` / `pni-reserved-labels-enforce` (Defense-in-Depth-Spiegel; teilweise upstream in `talos-platform-base`)
-- [ ] `required_resource_limits` (Defense-in-Depth-Spiegel)
-- [ ] `no_privileged_containers` (Defense-in-Depth-Spiegel)
+- [ ] `no_latest_image_tag` (defense-in-depth mirror)
+- [ ] `reserved_labels` / `pni-reserved-labels-enforce` (defense-in-depth mirror; partly upstream in `talos-platform-base`)
+- [ ] `required_resource_limits` (defense-in-depth mirror)
+- [ ] `no_privileged_containers` (defense-in-depth mirror)
 - [ ] `image_verify_platform_oci` (Kyverno-only — cosign keyless; [Issue #18](https://github.com/devobagmbh/talos-platform-docs/issues/22))
-- [ ] `auto_default_netpol` (Kyverno-only — Generate-Policy bei NS-Create)
-- [ ] `imagepullsecret_inject` (Kyverno-only — Mutate-Policy)
+- [ ] `auto_default_netpol` (Kyverno-only — generate policy on NS create)
+- [ ] `imagepullsecret_inject` (Kyverno-only — mutate policy)
 
-### Test-Disziplin
+### Test discipline
 
-Pro Policy: `<rule_name>_test.rego` (Conftest) bzw. `<policy>-test.yaml` (Kyverno) mit Mindestabdeckung:
+Per policy: `<rule_name>_test.rego` (Conftest) or `<policy>-test.yaml` (Kyverno) with minimum coverage:
 
-- 1 valid-Manifest (passes)
-- 1 invalid-Manifest (denies, mit erwarteter Fehler-Message)
+- 1 valid manifest (passes)
+- 1 invalid manifest (denies, with the expected error message)
 
-Die 4 doppelten Policies haben **gemeinsame `testdata/`** unter `policies/testdata/` — Conftest und Kyverno müssen denselben Test-Korpus bestehen. Drift wird vom `compatibility-reviewer`-Subagent in PRs gefangen.
+The 4 duplicated policies have **shared `testdata/`** under `policies/testdata/` — Conftest and Kyverno must pass the same test corpus. Drift is caught by the `compatibility-reviewer` subagent in PRs.
 
-### Sub-Issue-Aufteilung von #11.8
+### Sub-issue breakdown of #11.8
 
-Vollausbau erfordert Strukturierung. Vorschlag: aus #11.8 werden Sub-Sub-Issues, gebündelt nach Verzeichnis:
+Full build-out requires structuring. Proposal: #11.8 becomes sub-sub-issues, bundled by directory:
 
-- `#11.8.1` — `policies/base/` (15 Policies, ein PR-Bündel mit shared testdata)
-- `#11.8.2` — `policies/apps/` (3 Policies, separates Bündel)
-- `#11.8.3` — `policies/platform/` (3 Policies, eng mit PNI v2, separates Bündel)
-- `#11.8.4` — `sub-layers/secrets/manifests/policies/` (7 Kyverno-ClusterPolicies)
+- `#11.8.1` — `policies/base/` (15 policies, one PR bundle with shared testdata)
+- `#11.8.2` — `policies/apps/` (3 policies, separate bundle)
+- `#11.8.3` — `policies/platform/` (3 policies, tightly coupled to PNI v2, separate bundle)
+- `#11.8.4` — `sub-layers/secrets/manifests/policies/` (7 Kyverno ClusterPolicies)
 
-Damit ist Vollausbau in vier Reviewer-tauglichen PRs zerlegbar.
+This decomposes the full build-out into four reviewer-friendly PRs.
