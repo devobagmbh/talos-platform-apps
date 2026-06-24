@@ -1,6 +1,6 @@
 # Conftest-Policies
 
-Rego-Policies, die gegen alle gerenderten Sub-Layer-Manifeste laufen. Aufruf via `task scan` lokal (Devbox-Shell) oder als CI-Job im `security-scan.yml`-Workflow.
+Rego policies that run against all rendered sub-layer manifests. Invoked via `task scan` locally (Devbox shell) or as a CI job in the `security-scan.yml` workflow.
 
 ## Was bedeutet PNI v2?
 
@@ -89,41 +89,51 @@ conftest verify --policy policies/
 - **Tests** zu jeder Policy: `<rule_name>_test.rego` mit `test_<name>`-Funktionen (`conftest verify`)
 - **Severity** über `metadata`-Annotations: `# METADATA\n# title: ...\n# severity: high`
 
-## Status (Bundle-C-Audit 2026-05-26)
+## Status (issue #236, 2026-06-24)
 
-Phase-1-Vollausbau gemäß [ADR-0018 § Phase-1-Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — alle 21 Conftest-Policies + 7 Kyverno-ClusterPolicies werden initial implementiert. Begründung: die Defense-in-Depth-Architektur ist gewollt, „später aktivieren" wäre durch die testdata/-Pflege-Disziplin teurer als sofortige Vollabdeckung.
+Phase-1 build-out per [ADR-0018 § Phase-1-Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — 21 Conftest-policies + 7 Kyverno-ClusterPolicies planned; see sub-issue breakdown below for what is implemented vs deferred.
+
+### Grandfather / allow-list debt register
+
+The three newly enforcing policies carry transitional grandfather sets or permanent allow-lists derived from the current rendered catalog (`task render` probe, issue #236). These are marked FROZEN — a diff growing them is a blocking reviewer finding.
+
+| Policy | Type | Size | Retirement tracker |
+|---|---|---|---|
+| `required_resource_limits` | grandfather `(namespace, kind, name)` | 23 workloads | [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349) |
+| `no_privileged_containers` | permanent allow-list `(namespace, kind, workload, container)` | 11 containers | ADR or reviewer sign-off per entry |
+| `no_inline_secrets` | grandfather `(namespace, name)` | 6 secrets | [#350](https://github.com/devobagmbh/talos-platform-apps/issues/350) |
 
 ### Conftest-Policies (21 total)
 
-#### `base/` — generische Hardening
+#### `base/` — generic hardening
 
-- [ ] `no_latest_image_tag` (MUST) — Helm-Defaults dürfen keine `:latest`-Image-Tags rendern
-- [ ] `reserved_labels` (MUST) — Reserved Keys (`platform.io/provide.*`, `capability-provider.*`) nur auf Producer-Resources, namespace-anchored
-- [ ] `required_resource_limits` (MUST) — alle Container brauchen `resources.{requests.{cpu,memory},limits.memory}`
-- [ ] `no_privileged_containers` (MUST) — `securityContext.privileged: false` außer Allow-Liste
-- [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` außer Cilium/CSI-Allow-Liste
-- [ ] `endpointslices_only` (SHOULD) — kein `kind: Endpoints` (deprecated seit K8s 1.33)
-- [ ] `storage_class_explicit` (SHOULD) — jede PVC hat `storageClassName` explizit gesetzt
-- [ ] `probes_required` (SHOULD) — `livenessProbe` + `readinessProbe` pro Container
-- [ ] `no_cluster_admin_binding` (SHOULD) — keine `cluster-admin`-Bindings für Workload-SAs
-- [ ] `no_host_path` (SHOULD) — kein `volumeMounts: hostPath:` außer Allow-Liste
-- [ ] `namespace_quota` (COULD) — jeder Workload-Namespace hat `ResourceQuota`
-- [ ] `limit_range` (COULD) — jeder Workload-Namespace hat `LimitRange` mit Defaults
-- [ ] `service_no_externalip` (COULD) — kein `Service.spec.externalIPs`
-- [x] `pod_security_standards` (COULD) — jeder deklarierte Namespace trägt `pod-security.kubernetes.io/enforce` (`privileged`|`baseline`|`restricted`); strengstes Level, das der Workload erfüllt
-- [ ] `image_digest_pinning` (COULD) — Image-Refs nutzen `@sha256:…`-Digest
+- [x] `no_latest_image_tag` (MUST) — Helm defaults MUST NOT render `:latest` image tags; refactored to depth-1 Object recursion (issue #236)
+- [ ] `reserved_labels` (MUST) — Reserved keys (`platform.io/provide.*`, `capability-provider.*`) only on Producer resources, namespace-anchored
+- [x] `required_resource_limits` (MUST) — all containers need `resources.{requests.{cpu,memory},limits.memory}`; **enforcing for new components — 23 existing workloads grandfathered pending [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349)**
+- [x] `no_privileged_containers` (MUST) — `securityContext.privileged: true` forbidden except permanent allow-list (11 containers); infrastructure-level necessity documented per entry
+- [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` except Cilium/CSI allow-list
+- [ ] `endpointslices_only` (SHOULD) — no `kind: Endpoints` (deprecated since K8s 1.33)
+- [ ] `storage_class_explicit` (SHOULD) — every PVC has `storageClassName` set explicitly
+- [ ] `probes_required` (SHOULD) — `livenessProbe` + `readinessProbe` per container
+- [ ] `no_cluster_admin_binding` (SHOULD) — no `cluster-admin` bindings for workload SAs
+- [ ] `no_host_path` (SHOULD) — no `volumeMounts: hostPath:` except allow-list
+- [ ] `namespace_quota` (COULD) — every workload namespace has `ResourceQuota`
+- [ ] `limit_range` (COULD) — every workload namespace has `LimitRange` with defaults
+- [ ] `service_no_externalip` (COULD) — no `Service.spec.externalIPs`
+- [x] `pod_security_standards` (COULD) — every declared Namespace carries `pod-security.kubernetes.io/enforce` (`privileged`|`baseline`|`restricted`); strictest level the workload satisfies
+- [ ] `image_digest_pinning` (COULD) — image refs use `@sha256:…` digest
 
-#### `apps/` — Repo-Hygiene (Conftest-only)
+#### `apps/` — repo hygiene (Conftest-only)
 
-- [ ] `no_inline_secrets` (MUST) — keine `stringData`/`data` außer SOPS-encrypted oder ESO-Referenz
-- [ ] `gateway_api_only` (MUST) — kein `kind: Ingress`, nur `Gateway`/`HTTPRoute`
-- [ ] `helm_chart_source_official` (SHOULD) — Helm-Chart-Repo-URL aus Allow-Liste
+- [x] `no_inline_secrets` (MUST) — no non-empty `data`/`stringData` in rendered `Secret` manifests; **enforcing for new components — 6 harbor/crossview secrets grandfathered pending [#350](https://github.com/devobagmbh/talos-platform-apps/issues/350)**
+- [ ] `gateway_api_only` (MUST) — no `kind: Ingress`, only `Gateway`/`HTTPRoute`
+- [ ] `helm_chart_source_official` (SHOULD) — Helm chart repo URL from allow-list
 
 #### `platform/` — PNI v2
 
-- [ ] `capability_selectors` (MUST) — CCNPs nutzen `capability-provider.<cap>`/`capability-consumer.<cap>`, keine Tool-Name-Selectors
-- [ ] `instanced_suffix_required` (SHOULD) — bei `consume.<instanced-cap>` muss `.<inst>`-Suffix gesetzt sein
-- [ ] `network_default_deny_egress` (SHOULD) — jeder Workload-Namespace hat Default-Deny-Egress-CCNP
+- [ ] `capability_selectors` (MUST) — CCNPs use `capability-provider.<cap>`/`capability-consumer.<cap>`, no tool-name selectors
+- [ ] `instanced_suffix_required` (SHOULD) — `consume.<instanced-cap>` must carry `.<inst>` suffix
+- [ ] `network_default_deny_egress` (SHOULD) — every workload namespace has default-deny-egress CCNP
 
 ### Kyverno-ClusterPolicies (7 total)
 
