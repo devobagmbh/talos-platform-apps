@@ -84,32 +84,84 @@ values:
           bucket_name: ${S3_BUCKET_RULER}
 
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
-  # small single-workload cluster; no zone awareness).
+  # small single-workload cluster; no zone awareness). Each carries an explicit
+  # resources block — requests.cpu + requests.memory + limits.memory, with NO cpu
+  # limit (cpu limits only throttle; memory is the incompressible OOM risk). Sized
+  # for the replicas-1 classic footprint; ingester / store_gateway / compactor get
+  # more memory (recent series, index headers, compaction working set).
   distributor:
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
   ingester:
     replicas: 1
     # Single ingester: no cross-pod replication, so zone-aware replication is off and
     # the replication factor is 1 (chart default 3 is a multi-replica/zone value).
     zoneAwareReplication:
       enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
   querier:
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
   query_frontend:
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
   query_scheduler:
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
   store_gateway:
     replicas: 1
     zoneAwareReplication:
       enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
   compactor:
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
   ruler:
     # KEEP the ruler: it evaluates recording/alerting rules and reads them from the
     # ruler S3 bucket (ruler_storage.s3 → ${S3_BUCKET_RULER}).
     enabled: true
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
 
   # Disabled — not needed for the small single-node footprint:
   # the bundled minio (we use external Garage S3),
