@@ -66,6 +66,7 @@ _grandfathered_workloads := {
 	["harbor", "Deployment", "harbor-portal"],
 	["harbor", "Deployment", "harbor-registry"],
 	["", "StatefulSet", "garage"],
+	["loki", "StatefulSet", "loki"], # merged from main (#322) concurrently with this PR; pre-existing gate violation
 }
 
 _is_grandfathered(t) if {

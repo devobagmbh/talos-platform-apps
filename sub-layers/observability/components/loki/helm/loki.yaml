@@ -1,0 +1,182 @@
+# loki — Grafana Loki, the platform log store + LogQL query endpoint.
+# Layer-2 default values for talos-platform-apps. Deployed in SingleBinary mode
+# (one StatefulSet, replicas 1) backed by S3 (Garage) for chunks + ruler.
+# Orchestrator decision: consumers are small single-node clusters, so the
+# distributed / SimpleScalable topology is massively over-provisioned — SingleBinary
+# is the right granularity (read/write/backend scaled to 0).
+#
+# Freeze-line (ADR-0024 v2, Shapes a + c): the WORKLOAD (this rendered StatefulSet +
+# Services + RBAC + the chart-generated loki config ConfigMap) is catalog-owned and
+# signed; the S3 CONNECTION is 100% consumer-owned and per-cluster. The rendered Loki
+# config references ${VAR} placeholders (NOT hardcoded endpoints/keys); Loki resolves
+# them at runtime from consumer-supplied env via `-config.expand-env=true`. Two refs:
+#   - ConfigMap loki-runtime-config (envFrom, non-secret): S3_ENDPOINT, S3_REGION,
+#     S3_BUCKET_CHUNKS, S3_BUCKET_RULER
+#   - Secret    loki-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
+#     S3_SECRET_ACCESS_KEY
+#
+# Chart-template verification (chart 6.55.0, templates/single-binary/statefulset.yaml
+# + templates/_helpers.tpl):
+#   * The expand-env flag: the SingleBinary container `args` are
+#     `-config.file=... -target=... {{ .Values.singleBinary.extraArgs }}`, so
+#     `singleBinary.extraArgs: [-config.expand-env=true]` appends the flag (verified
+#     against statefulset.yaml `args:` block).
+#   * envFrom: the container renders `envFrom: {{ .Values.singleBinary.extraEnvFrom }}`
+#     (statefulset.yaml `envFrom:` block) — so both the ConfigMap and Secret are wired
+#     there.
+#   * The ${VAR} placeholders land in the rendered loki config via
+#     `loki.lokiStorageConfig.s3` (_helpers.tpl): it emits `endpoint:`, `region:`,
+#     `secret_access_key:`, `access_key_id:` straight from
+#     loki.storage.s3.{endpoint,region,secretAccessKey,accessKeyId} and `bucketnames:`
+#     from loki.storage.bucketNames.{chunks,ruler}. Setting those values to ${VAR}
+#     strings renders them literally into common.storage.s3 + ruler_storage.s3.
+
+metadata:
+  chart: loki
+  repo: https://grafana.github.io/helm-charts
+  version: 6.55.0  # bare SemVer — NO leading 'v' (--version v6.55.0 fails to resolve)
+  # appVersion 3.6.7 → image tag docker.io/grafana/loki:3.6.7 (chart appVersion pin,
+  # NEVER :latest; never overridden here). VERIFY at push
+  # (`helm show chart loki --repo https://grafana.github.io/helm-charts --version 6.55.0`)
+  # that 6.55.0 is still current stable and appVersion is still 3.6.7.
+  namespace: loki
+
+values:
+  # SingleBinary mode: one Loki process, one StatefulSet replica. The scalable
+  # components (read/write/backend) are scaled to 0 so the SimpleScalable topology
+  # renders no pods.
+  deploymentMode: SingleBinary
+
+  singleBinary:
+    replicas: 1
+    # Append the Loki server flag that turns on ${VAR} expansion in the config file.
+    # Verified against templates/single-binary/statefulset.yaml: the container `args`
+    # list ends with `{{- with .Values.singleBinary.extraArgs }}{{ toYaml . }}{{- end }}`.
+    extraArgs:
+      - -config.expand-env=true
+    # Shape (a)+(c) freeze-line: feed the consumer-owned S3 connection in as env so the
+    # ${VAR} placeholders in the rendered config resolve at runtime. Verified against
+    # templates/single-binary/statefulset.yaml `envFrom: {{ .Values.singleBinary.extraEnvFrom }}`.
+    extraEnvFrom:
+      - configMapRef:
+          name: loki-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_CHUNKS, S3_BUCKET_RULER
+      - secretRef:
+          name: loki-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+  # Scale the SimpleScalable components to 0 — SingleBinary serves everything.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+
+  loki:
+    # Single-process, multi-tenancy off (platform single-tenant log store).
+    auth_enabled: false
+
+    # SingleBinary runs every Loki target in one process, so the data path is not
+    # replicated across pods — replication_factor MUST be 1 (the chart default 3 is a
+    # distributed-mode value and would wedge a single-replica StatefulSet).
+    commonConfig:
+      replication_factor: 1
+
+    # S3 object storage (Garage). The connection values are ${VAR} placeholders, NOT
+    # real endpoints/keys: the freeze-line keeps the S3 connection 100% consumer-owned.
+    # Garage specifics: path-style addressing, TLS on, region `garage`, explicit
+    # endpoint URL. Rendered into common.storage.s3 and ruler_storage.s3 by the
+    # loki.lokiStorageConfig.s3 helper; expanded at runtime by -config.expand-env=true.
+    storage:
+      type: s3
+      bucketNames:
+        chunks: ${S3_BUCKET_CHUNKS}
+        ruler: ${S3_BUCKET_RULER}
+      s3:
+        endpoint: ${S3_ENDPOINT}
+        region: ${S3_REGION}
+        accessKeyId: ${S3_ACCESS_KEY_ID}
+        secretAccessKey: ${S3_SECRET_ACCESS_KEY}
+        s3ForcePathStyle: true  # Garage requires path-style addressing
+        insecure: false         # TLS to the Garage S3 endpoint
+
+    # A real Loki install requires an explicit schemaConfig (the chart default is {}).
+    # TSDB + v13, the current-generation single-store index/object layout.
+    schemaConfig:
+      configs:
+        - from: "2024-04-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+    # Pod-level securityContext: the chart default sets runAsNonRoot + runAsUser/Group
+    # 10001 + fsGroup but OMITS seccompProfile. `restricted` PSA requires a pod- or
+    # container-level seccompProfile RuntimeDefault, so add it explicitly (the chart
+    # default would only satisfy `baseline`). Re-stating the runAs* keys keeps the
+    # restricted posture pinned against a future chart default change.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      runAsGroup: 10001
+      fsGroup: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    # Container-level restricted predicates. The chart default already sets
+    # readOnlyRootFilesystem + capabilities.drop:[ALL] + allowPrivilegeEscalation:false;
+    # re-state them (+ seccompProfile) so the rendered container provably satisfies
+    # `restricted` and a chart bump cannot weaken it.
+    containerSecurityContext:
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+
+  # SingleBinary serves the read + write APIs directly, so the chart's nginx gateway
+  # is redundant — disable it.
+  gateway:
+    enabled: false
+
+  # Memcached chunk/results caches are a distributed-mode optimization; not needed for
+  # a single-node SingleBinary and they add two more Deployments + unpinned images.
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
+  # The loki-canary DaemonSet + the helm test Pod are not part of a GitOps workload
+  # (Argo would apply the test Pod as a regular resource); disable both. (`--skip-tests`
+  # in render:one already drops test hooks, but disable explicitly for clarity.)
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+
+  # The chart's k8s-sidecar (sidecar.rules) watches the cluster for rule ConfigMaps /
+  # PrometheusRules and writes them into a local folder for the ruler. This S3-backed
+  # ruler reads its rules from the ruler bucket (ruler_storage.s3), so the in-cluster
+  # rule sidecar is redundant here — disable it to keep the frozen SingleBinary pod a
+  # single container (drops the kiwigrid/k8s-sidecar image too).
+  sidecar:
+    rules:
+      enabled: false
+
+  # External scrape: Alloy scrapes Loki's metrics endpoint from outside (observability/
+  # alloy). The chart's bundled monitoring (ServiceMonitor/rules/dashboards) and
+  # selfMonitoring (a bundled grafana-agent + canary) are therefore disabled — they also
+  # depend on prometheus-operator CRDs / a grafana-agent the platform does not ship here.
+  monitoring:
+    dashboards:
+      enabled: false
+    rules:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    selfMonitoring:
+      enabled: false
