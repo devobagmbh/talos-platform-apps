@@ -22,7 +22,7 @@
 # `-config.expand-env=true`. That flag is ALREADY in every component container's
 # default args in this chart (verified rendered — no extraArgs needed). Two refs:
 #   - ConfigMap mimir-runtime-config (envFrom, non-secret): S3_ENDPOINT, S3_REGION,
-#     S3_BUCKET_BLOCKS, S3_BUCKET_RULER
+#     S3_BUCKET_BLOCKS, S3_BUCKET_RULER, S3_INSECURE
 #   - Secret    mimir-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
 #     S3_SECRET_ACCESS_KEY
 #
@@ -55,7 +55,7 @@ values:
   global:
     extraEnvFrom:
       - configMapRef:
-          name: mimir-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_BLOCKS, S3_BUCKET_RULER
+          name: mimir-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_BLOCKS, S3_BUCKET_RULER, S3_INSECURE
       - secretRef:
           name: mimir-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
 
@@ -63,7 +63,8 @@ values:
   # and renders into the mimir config ConfigMap (templates/mimir-config.yaml). The S3
   # connection values are ${VAR} placeholders, NOT real endpoints/keys: the freeze-line
   # keeps the S3 connection 100% consumer-owned. Garage specifics: path-style addressing
-  # (s3.endpoint set to the explicit URL), TLS on (insecure: false), region as ${VAR}.
+  # forced via bucket_lookup_type: path (baked), TLS mode consumer-owned via
+  # ${S3_INSECURE} (default TLS-on), region as ${VAR}.
   mimir:
     structuredConfig:
       common:
@@ -74,8 +75,13 @@ values:
             region: ${S3_REGION}
             access_key_id: ${S3_ACCESS_KEY_ID}
             secret_access_key: ${S3_SECRET_ACCESS_KEY}
-            # Garage requires path-style addressing; insecure:false keeps TLS on.
-            insecure: false
+            # Garage requires path-style addressing. bucket_lookup_type defaults to
+            # `auto` (already path-style for a non-AWS endpoint), but force `path`
+            # explicitly so it cannot silently flip to virtual-hosted.
+            bucket_lookup_type: path
+            # S3 endpoint TLS mode, consumer-owned: "false"=TLS/HTTPS (default),
+            # "true"=plain HTTP (TLS-less Garage). Resolved at runtime by -config.expand-env=true.
+            insecure: ${S3_INSECURE}
       blocks_storage:
         s3:
           bucket_name: ${S3_BUCKET_BLOCKS}

@@ -85,7 +85,7 @@ connection out of the frozen workload:
 Two consumer-supplied refs feed the placeholders:
 
 - **Shape (a)** — `ConfigMap` `mimir-runtime-config` (non-secret), `envFrom`:
-  `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`.
+  `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, `S3_INSECURE`.
 - **Shape (c)** — `Secret` `mimir-runtime-secret`, `envFrom`: `S3_ACCESS_KEY_ID`,
   `S3_SECRET_ACCESS_KEY`.
 
@@ -100,7 +100,9 @@ of these:
 
 - **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit Garage S3
   endpoint URL, e.g. `https://garage.<cluster>:3900`), `S3_REGION` (typically
-  `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`.
+  `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` — the S3 endpoint
+  TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure); `"true"` = plain
+  HTTP, for a TLS-less Garage (e.g. an internal NAS Garage).
 - **`mimir-runtime-secret` `Secret`** with keys `S3_ACCESS_KEY_ID`,
   `S3_SECRET_ACCESS_KEY` (the Garage S3 credentials).
 - **The two Garage buckets** — a blocks bucket and a ruler bucket, provisioned by
@@ -124,9 +126,11 @@ of these:
 - The Argo `Application` CR itself (with its `argocd.argoproj.io/sync-wave`
   annotation) — Argo definitions live in the consumer cluster repos, not here.
 
-The Garage specifics are baked into the workload (not consumer-tunable): path-style
-addressing, TLS on (`insecure: false`). Only the connection *values* are
-consumer-supplied.
+Path-style addressing is baked into the workload (forced via `bucket_lookup_type: path`
+— Garage requires it) and is not consumer-tunable. The S3 endpoint TLS mode is
+consumer-owned via `S3_INSECURE` (`insecure: ${S3_INSECURE}`): unset or `"false"` keeps
+TLS on (the secure default), `"true"` selects plain HTTP for a TLS-less Garage. The
+connection *values* are consumer-supplied.
 
 ## Namespace & Pod Security
 
