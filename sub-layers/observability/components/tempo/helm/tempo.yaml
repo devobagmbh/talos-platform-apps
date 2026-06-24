@@ -134,6 +134,17 @@ values:
       seccompProfile:
         type: RuntimeDefault
 
+    # Resource requests/limits (tempo.resources → the tempo container). requests.cpu +
+    # requests.memory + limits.memory, NO cpu limit (cpu limits only throttle; memory is
+    # the incompressible OOM risk). The monolithic single-replica trace store holds the
+    # recent in-memory window + WAL, so memory is the dominant axis.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
   # -- Pod-level securityContext (TOP-LEVEL `securityContext`, NOT tempo.securityContext —
   # verified against the pod spec `securityContext: {{- toYaml .Values.securityContext }}`).
   # `restricted` PSA requires a pod- or container-level seccompProfile RuntimeDefault;
