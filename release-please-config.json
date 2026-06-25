@@ -144,6 +144,10 @@
       "component": "storage-block/snapshot-controller-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/storage-block/components/snapshot-controller": {
+      "component": "storage-block/snapshot-controller",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/storage-block/components/synology-csi": {
       "component": "storage-block/synology-csi"
     },
