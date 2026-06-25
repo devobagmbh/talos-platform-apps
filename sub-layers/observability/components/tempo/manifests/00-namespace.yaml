@@ -1,0 +1,27 @@
+# The component's own namespace. tempo is the sole catalog occupant (dedicated
+# namespace), so this component ships the Namespace object — a shipped manifest takes
+# precedence over Argo `managedNamespaceMetadata`, making the PSA posture authoritative
+# and self-contained (see the build skill's CONVENTIONS.md § Namespace & PSA).
+#
+# enforce: restricted — confirmed against the rendered monolithic StatefulSet pod
+# template: the pod sets runAsNonRoot:true + seccompProfile RuntimeDefault (+ runAsUser/
+# Group/fsGroup 10001), and the tempo container sets allowPrivilegeEscalation:false +
+# capabilities.drop:[ALL] + seccompProfile RuntimeDefault (+ runAsNonRoot). The chart's
+# pod default omits seccompProfile (would only satisfy `baseline`); the helm values add
+# it, so the workload is fully restricted-compliant. The pod is a single container
+# (tempo), so the restricted container predicates hold for every container in the pod.
+# (readOnlyRootFilesystem is intentionally left default — `restricted` does not require
+# it; tempo writes scratch/WAL paths.)
+#
+# The consumer adds the PNI trust-anchor labels (platform.io/provide.*), the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor), and the
+# audit/warn modes in its Argo overlay; the catalog ships only the enforce level and
+# the ownership labels. See the README §Namespace & Pod Security.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tempo
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: tempo

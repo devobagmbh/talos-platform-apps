@@ -71,6 +71,10 @@
       "component": "observability/grafana",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/grafana-operator": {
+      "component": "observability/grafana-operator",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/grafana-operator-crds": {
       "component": "observability/grafana-operator-crds",
       "initial-version": "0.1.0"
@@ -135,6 +139,14 @@
     },
     "sub-layers/storage-block/components/piraeus-operator-crds": {
       "component": "storage-block/piraeus-operator-crds"
+    },
+    "sub-layers/storage-block/components/snapshot-controller-crds": {
+      "component": "storage-block/snapshot-controller-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/storage-block/components/snapshot-controller": {
+      "component": "storage-block/snapshot-controller",
+      "initial-version": "0.1.0"
     },
     "sub-layers/storage-block/components/synology-csi": {
       "component": "storage-block/synology-csi"
