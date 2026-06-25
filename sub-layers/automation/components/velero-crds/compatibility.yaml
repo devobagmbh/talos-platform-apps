@@ -1,0 +1,34 @@
+# Strict-B CRDs artifact (ADR-0028) for velero. The 13 velero.io CustomResource-
+# Definition objects are cluster-scoped and depend on nothing in the catalog →
+# requires is empty.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
+# workload half is `automation/velero`. The build gate uses this marker to assert
+# kind: CustomResourceDefinition count > 0 here (and == 0 in the workload artifact).
+# The compatibility.yaml schema (schemas/compatibility.schema.json) permits this
+# crd-bearing top-level field.
+crd-bearing: true
+
+requires: {}
+
+# api-surface-only, NO capability. The velero.io CRDs are the API surface (schemas),
+# not the swappable operational capability. The swappable capability `backup`
+# (Kubernetes-resource + PersistentVolume filesystem backup to an S3-compatible
+# target) is provided by the workload artifact `automation/velero` (the controller
+# Deployment + node-agent DaemonSet + RBAC that reconcile the Backup / Restore /
+# Schedule / BackupStorageLocation / etc. CRs), not by the CRD schemas. Carrying
+# capabilities: [] here is the deliberate design (precedent:
+# secrets/external-secrets-crds, api-surface-only with the capability on its
+# workload counterpart), NOT a deferral — so no `# TODO:` here.
+provides:
+  - name: velero-crds
+    version:
+      sot: crd-schema             # a CRD bundle's provenance axis is the schema it vendors (#226 A6)
+      crd_schema: v1.18.1         # upstream Velero release the chart 12.1.0 vendors (appVersion 1.18.1)
+    api_surface:
+      - velero.io/Backup@v1                  # primary served CRD kind/group
+      - velero.io/Restore@v1                 # restore counterpart
+      - velero.io/Schedule@v1                # backup scheduling
+      - velero.io/BackupStorageLocation@v1   # consumer-owned S3 target definition
+      - velero.io/DataUpload@v2alpha1         # data-mover upload (served v2alpha1)
+    capabilities: []
