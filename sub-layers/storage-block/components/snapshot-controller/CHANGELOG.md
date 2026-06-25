@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0 (2026-06-25)
+
+
+### Features
+
+* **storage-block/snapshot-controller:** external-snapshotter workload (strict-B) ([92f0cfe](https://github.com/devobagmbh/talos-platform-apps/commit/92f0cfe78711143c6b923b911dee883d2c35cd80))
+
+## Changelog
+
 ## Unreleased
 
 ### Features
