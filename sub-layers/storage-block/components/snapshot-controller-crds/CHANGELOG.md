@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0 (2026-06-25)
+
+
+### Features
+
+* **storage-block/snapshot-controller-crds:** external-snapshotter CRDs (strict-B CRD half) ([#361](https://github.com/devobagmbh/talos-platform-apps/issues/361)) ([b64f5fb](https://github.com/devobagmbh/talos-platform-apps/commit/b64f5fbc11aa01b42448911f0c1516383b6eb12d))
+
+## Changelog
+
 ## Unreleased
 
 ### Features
