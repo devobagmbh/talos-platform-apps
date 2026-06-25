@@ -1,5 +1,23 @@
-requires: {}
+# Strict-B WORKLOAD half (ADR-0028). requires the -crds artifact: the Velero
+# controller reconciles the velero.io CRs (Backup / Restore / Schedule /
+# BackupStorageLocation / etc.), so those CRDs must be established first (strict-B
+# ordering, ADR-0028). The CRD half is the SEPARATE component
+# `automation/velero-crds` (sync-wave -1) — this workload carries 0 CRDs.
+requires:
+  automation/velero-crds: ">=v0.1.0"
+
+# Provides the swappable operational capability `backup` — the Velero server
+# Deployment + node-agent DaemonSet + RBAC that reconcile the velero.io CRs
+# (Kubernetes-resource + PersistentVolume filesystem backup to an S3-compatible
+# target). The velero.io CRD schemas are the api-surface of the `-crds` half, NOT
+# this workload, so api_surface is empty here (mirror secrets/external-secrets:
+# capability on the workload, api-surface on the -crds half).
 provides:
   - name: velero
-    api_surface: [] # filled in with issue #16
-    capabilities: [] # TODO: define backup capability (proposed, contract open)
+    version:
+      sot: app
+      app: v1.18.1
+      chart: 12.1.0
+    api_surface: []
+    capabilities:
+      - {id: backup, swap_class: rewrite-required}

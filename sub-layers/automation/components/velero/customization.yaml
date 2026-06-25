@@ -1,0 +1,21 @@
+# Customization Contract v2 (ADR-0024). Strict-B WORKLOAD half (ADR-0028): the
+# rendered workload is the Velero server Deployment + node-agent DaemonSet + RBAC,
+# 0 CRDs (those ship in automation/velero-crds at wave -1). The consumer supplies the
+# object-store credential Secret (key `cloud`); the BackupStorageLocation /
+# VolumeSnapshotLocation / Schedule CRs and the velero-plugin-for-aws initContainer
+# live in the consumer repos (Layer 3), authored against the velero.io CRDs from the
+# -crds half. This workload lands at wave 0, after the CRDs (wave -1).
+freeze_line:
+  workload: rendered/manifest.yaml # the Velero server + node-agent + RBAC — never consumer-patched
+provided_refs:
+  secret: velero-s3-credentials # the AWS-format object-store credential Secret the workload mounts
+provided_selectors: {} # no consumer-labeled CRs
+required:
+  env_keys: []
+  config_files: []
+  secret_keys:
+    - cloud # key in velero-s3-credentials; the consumer authors the AWS-format credentials file
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - automation/velero-crds

@@ -1,24 +1,86 @@
 # Component `automation/velero`
 
-Velero (Helm `vmware-tanzu/velero`) with Restic — backup of K8s resources and PVCs to the DS720+ Garage (S3).
+The **strict-B WORKLOAD half** (talos-platform-docs ADR-0028) of
+[Velero](https://velero.io/), sourced from the upstream `vmware-tanzu/velero` Helm
+chart **12.1.0** (appVersion `1.18.1`).
 
-**Skeleton** — implementation in issue [#16](https://github.com/devobagmbh/talos-platform-apps/issues/?q=sub-layer+automation).
+It ships the Velero **server Deployment**, the **node-agent DaemonSet** (filesystem
+/ Kopia PodVolume backup), and the supporting **RBAC** (ServiceAccount,
+ClusterRole, ClusterRoleBinding) — **no CustomResourceDefinitions**. The 13
+`velero.io` CRDs are a **separate** component, `automation/velero-crds`, wired first
+at sync-wave -1. The two together form the strict-B pair: CRDs first, operator after.
+
+This artifact renders **0 CRDs** (`upgradeCRDs: false`), no chart-default
+`BackupStorageLocation` / `VolumeSnapshotLocation` (`backupsEnabled: false`,
+`snapshotsEnabled: false`), and no CRD-upgrade Job.
+
+## What ships
+
+- Velero server `Deployment` (`velero`) + RBAC
+- node-agent `DaemonSet` (`node-agent`) — Kopia PodVolume filesystem backup
+- the `velero` `Namespace` (PSA `enforce: privileged`)
+- NO CRDs (those are `automation/velero-crds`), no `BackupStorageLocation`,
+  no `VolumeSnapshotLocation`, no `Schedule`
+
+## Consumer obligations
+
+This is the catalog default; cluster-specific composition is the consumer's (Layer
+3). The consumer MUST:
+
+1. **Pre-create the credential Secret.** Create a `Secret` named
+   `velero-s3-credentials` in the `velero` namespace with key `cloud` holding an
+   AWS-format credentials file (the catalog ships **no** credential material — Hard
+   Constraint: no real secrets in the repo). It is the freeze-line
+   `required.secret_keys: [cloud]` entry the workload mounts.
+2. **Supply the object-store plugin.** Add the `velero-plugin-for-aws`
+   initContainer in the Layer-3 overlay — the catalog bakes in **none**
+   (`initContainers: []`), because a versioned plugin image is a consumer-composition
+   concern.
+3. **Create the location and schedule CRs.** Author the `BackupStorageLocation`
+   (S3 endpoint / bucket / region), the `VolumeSnapshotLocation`, and any `Schedule`
+   CRs against the `velero.io` API surface from the `-crds` half — all Layer-3
+   consumer-owned.
+4. **PSA posture.** The shipped `velero` namespace carries
+   `pod-security.kubernetes.io/enforce: privileged` — REQUIRED because the node-agent
+   DaemonSet mounts the kubelet hostPaths (`/var/lib/kubelet/pods`,
+   `/var/lib/kubelet/plugins`) and runs as root; Baseline and Restricted both forbid
+   hostPath volumes, so privileged is the only admissible level.
+
+## Strict-B consumer wiring (ADR-0028)
+
+The consumer wires **two** Argo `Application`s — the `-crds` app **before** this
+workload:
+
+1. **`automation/velero-crds`** at `argocd.argoproj.io/sync-wave: "-1"` with
+   `Prune=false,ServerSideApply=true`.
+2. **`automation/velero`** (this artifact) at sync-wave `0`, which then comes up
+   against CRDs that already exist.
+
+## Capability
+
+Provides the swappable operational capability **`backup`**
+(`swap_class: rewrite-required`) — the controller + node-agent that reconcile the
+`velero.io` CRs. The CRD schemas are the api-surface of the `-crds` half, so
+`api_surface: []` here (precedent: `secrets/external-secrets`, capability on the
+workload, api-surface on its `-crds` counterpart).
 
 ## Sync-wave
 
-`0` — no inter-component dependency.
+`0` — after the CRDs (`automation/velero-crds`, wave -1).
 
 ## OCI
 
-```
+```text
 oci://ghcr.io/devobagmbh/talos-platform-apps/automation/velero:vX.Y.Z
 ```
 
-## Consumed by
-
-- A bootstrap / control-plane consumer — backups of tf-state, ArgoCD config, Harbor
-- A workload consumer — full backup
+The git tag is `automation/velero-vX.Y.Z` (first release `v0.1.0`); `task push`
+strips the leading `v`, so the OCI registry tag is the bare SemVer.
 
 ## Related ADRs
 
-- [ADR-0008 — Backup-Strategy (tier-2 via DS720+/Garage)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
+- [ADR-0008 — Backup strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md)
+- [ADR-0024 — Workload/Config freeze-line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
+- [ADR-0028 — CRD management (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)
+- [ADR-0021 — Capability layer model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0021-capability-layer-model.md)
+- [ADR-0018 — Policy stack (Conftest)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md)
