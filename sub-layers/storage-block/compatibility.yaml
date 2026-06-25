@@ -5,5 +5,6 @@ components:
   - piraeus-operator-crds # strict-B CRD half — 4 piraeus.io Linstor CRDs (sync-wave -1, ADR-0028); pairs with piraeus-operator
   - piraeus-operator # strict-B workload half — LINSTOR/DRBD operator, capability block-storage-replicated (sync-wave 0); requires piraeus-operator-crds
   - snapshot-controller-crds # strict-B CRD half — 6 external-snapshotter CRDs (snapshot + groupsnapshot, sync-wave -1, ADR-0028); pairs with snapshot-controller
+  - snapshot-controller # strict-B workload half — cluster-singleton CSI snapshot-controller (leader-election, sync-wave 0); requires snapshot-controller-crds
   - democratic-csi # NAS iSCSI block storage, Talos-native (nsenter) — synology-iscsi driver (sync-wave 0)
   - synology-csi # DEPRECATED: official Synology CSI; does NOT work on Talos (chroot /host). Superseded by democratic-csi.

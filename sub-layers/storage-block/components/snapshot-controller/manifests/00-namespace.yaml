@@ -1,0 +1,17 @@
+# snapshot-controller namespace. PSA `restricted`: the snapshot-controller
+# Deployment runs fully restricted-conformant — pod-level seccompProfile
+# RuntimeDefault + runAsNonRoot, container-level allowPrivilegeEscalation=false +
+# capabilities.drop=[ALL] + readOnlyRootFilesystem + runAsUser=1000, no hostPath /
+# host namespace / host port. The chart ships no Namespace object, so this
+# dedicated namespace (the sole-claimant source of the PSA label) is provided here.
+# The name is a CATALOG DEFAULT, not a consumer-overridable config surface.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: snapshot-controller
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    platform.devoba.de/sub-layer: storage-block
+    platform.devoba.de/component: snapshot-controller
