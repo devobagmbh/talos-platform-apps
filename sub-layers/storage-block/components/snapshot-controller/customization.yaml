@@ -1,0 +1,22 @@
+# Customization Contract v2 (ADR-0024). Workload half (ADR-0028 strict-B) of the
+# snapshot-controller pair. The snapshot-controller is a cluster singleton driven
+# entirely by the presence of snapshot API objects (VolumeSnapshot etc.); it has
+# NO cluster-specific config surface in its own manifest — no env, no config files,
+# no secrets, no selector CRs. The dedicated namespace name (`snapshot-controller`)
+# is a catalog default, not a consumer override. The webhook is disabled with
+# autogenerate=false, so the render is deterministic and Secret-free. Every
+# provided/required shape is therefore genuinely (not vacuously) empty. The
+# workload lands at sync-wave 0, after the CRDs (storage-block/snapshot-controller-crds,
+# wave -1).
+freeze_line:
+  workload: rendered/manifest.yaml  # the snapshot-controller Deployment + RBAC + Namespace — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - storage-block/snapshot-controller-crds
