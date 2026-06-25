@@ -1,0 +1,40 @@
+# Strict-B CRDs artifact (ADR-0028) for snapshot-controller. Ships ONLY the six
+# external-snapshotter CustomResourceDefinitions (the snapshot.storage.k8s.io and
+# groupsnapshot.storage.k8s.io API groups). The CR objects are namespaced /
+# cluster-scoped, but the CRD objects themselves depend on nothing in the catalog
+# → requires is empty. The workload counterpart of this strict-B pair is
+# `storage-block/snapshot-controller` (sync-wave 0), which carries 0 CRDs.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair. The
+# build gate uses this marker to assert kind: CustomResourceDefinition count > 0
+# here (and == 0 in the workload artifact). The compatibility.yaml schema
+# (schemas/compatibility.schema.json) permits this crd-bearing top-level field.
+crd-bearing: true
+
+requires: {}
+
+# api-surface-only, NO capability. The external-snapshotter CRDs are the API
+# surface (schema), not the swappable operational capability. The snapshot-controller
+# is the sole reference implementation of the snapshot.storage.k8s.io API defined by
+# SIG-Storage — there is no swappable alternative, so no capability id is defined.
+# Carrying capabilities: [] here is the deliberate design (precedent:
+# storage-block/piraeus-operator-crds, observability/prometheus-operator-crds, and
+# storage-objects/garage-crds, all api-surface-only with no capability), NOT a
+# deferral — so no `# TODO:` here.
+provides:
+  - name: snapshot-controller-crds
+    version:
+      sot: crd-schema
+      crd_schema: v8.5.0   # external-snapshotter v8.5.0 CRDs via chart 5.0.4
+    # Served versions VERIFIED against the rendered CRDs (chart 5.0.4): the
+    # snapshot.storage.k8s.io group serves v1 (storage v1); the
+    # groupsnapshot.storage.k8s.io group serves v1beta1 + v1beta2 with v1beta2 as
+    # the storage version — the api_surface names the storage version.
+    api_surface:
+      - snapshot.storage.k8s.io/VolumeSnapshotClass@v1
+      - snapshot.storage.k8s.io/VolumeSnapshot@v1
+      - snapshot.storage.k8s.io/VolumeSnapshotContent@v1
+      - groupsnapshot.storage.k8s.io/VolumeGroupSnapshotClass@v1beta2
+      - groupsnapshot.storage.k8s.io/VolumeGroupSnapshot@v1beta2
+      - groupsnapshot.storage.k8s.io/VolumeGroupSnapshotContent@v1beta2
+    capabilities: []
