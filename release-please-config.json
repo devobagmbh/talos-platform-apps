@@ -8,6 +8,10 @@
       "component": "automation/velero",
       "initial-version": "0.1.0"
     },
+    "sub-layers/automation/components/velero-crds": {
+      "component": "automation/velero-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/compute/components/kubevirt": {
       "component": "compute/kubevirt"
     },
