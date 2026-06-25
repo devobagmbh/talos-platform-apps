@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/loki-v0.1.0...observability/loki-v0.1.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **observability/loki:** clarify S3_INSECURE is a required key ([#377](https://github.com/devobagmbh/talos-platform-apps/issues/377)) ([063375e](https://github.com/devobagmbh/talos-platform-apps/commit/063375e6f2b9ba3eae6ce166da68e2b1abf10dc9))
+
 ## 0.1.0 (2026-06-24)
 
 
