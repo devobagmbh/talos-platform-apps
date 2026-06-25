@@ -86,8 +86,9 @@ of these:
 - **`loki-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit Garage S3
   endpoint URL, e.g. `https://garage.<cluster>:3900`), `S3_REGION` (typically
   `garage`), `S3_BUCKET_CHUNKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` — the S3 endpoint
-  TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure); `"true"` = plain
-  HTTP, for a TLS-less Garage (e.g. an internal NAS Garage).
+  TLS mode, a required key set to the lowercase string `"false"` (TLS/HTTPS to the S3
+  endpoint — the secure choice) or `"true"` (plain HTTP, for a TLS-less Garage, e.g. an
+  internal NAS Garage).
 - **`loki-runtime-secret` `Secret`** with keys `S3_ACCESS_KEY_ID`,
   `S3_SECRET_ACCESS_KEY` (the Garage S3 credentials).
 - **The two Garage buckets** — a chunks bucket and a ruler bucket, provisioned by
@@ -113,9 +114,9 @@ of these:
 
 Path-style addressing (`s3forcepathstyle: true`) is baked into the workload (Garage
 requires it) and is not consumer-tunable. The S3 endpoint TLS mode is consumer-owned via
-`S3_INSECURE` (`insecure: ${S3_INSECURE}`): unset or `"false"` keeps TLS on (the secure
-default), `"true"` selects plain HTTP for a TLS-less Garage. The connection *values* are
-consumer-supplied.
+`S3_INSECURE` (`insecure: ${S3_INSECURE}`), a required key: `"false"` keeps TLS on (the
+secure choice), `"true"` selects plain HTTP for a TLS-less Garage. The connection *values*
+are consumer-supplied.
 
 ## Namespace & Pod Security
 

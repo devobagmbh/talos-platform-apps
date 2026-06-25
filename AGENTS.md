@@ -59,7 +59,7 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 
 | Command | Purpose |
 |---|---|
-| `task lint` | YAML/Markdown lint over `sub-layers/`, `.github/`, `Taskfile.yml` |
+| `task lint` | YAML lint over `sub-layers/`, `.github/`, `Taskfile.yml`; Markdown lint over **all tracked `.md`** (`git ls-files '*.md'`, excluding `CHANGELOG.md`) |
 | `task lint:rendered` | `kubeconform` over all components' `rendered/` outputs |
 | `task render:one -- <sub-layer>/<component>` | `helm template` for one component |
 | `task render:sublayer -- <sub-layer>` | renders all components of one sub-layer |
