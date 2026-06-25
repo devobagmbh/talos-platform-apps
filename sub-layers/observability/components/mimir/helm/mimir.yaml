@@ -88,6 +88,15 @@ values:
       ruler_storage:
         s3:
           bucket_name: ${S3_BUCKET_RULER}
+      # Ruler → Alertmanager target, consumer-overridable. The built-in alertmanager is
+      # disabled (alertmanager.enabled: false below) because the platform uses a STANDALONE
+      # alertmanager; but the mimir-distributed chart default would point the ruler at the
+      # now-absent mimir-alertmanager-headless → alerts go nowhere. So set it from a
+      # consumer env var (resolved by -config.expand-env=true): RULER_ALERTMANAGER_URL in
+      # mimir-runtime-config = the consumer's AM (e.g. http://alertmanager-operated.monitoring.svc:9093).
+      # Unset → empty → the ruler evaluates rules but does not notify (safe default).
+      ruler:
+        alertmanager_url: ${RULER_ALERTMANAGER_URL}
       # Single-replica footprint (replicas 1, zone-awareness off below): the rings
       # MUST run replication factor 1, else Mimir's default RF of 3 makes the
       # read/write quorum (2) unreachable with one instance → every query and write
