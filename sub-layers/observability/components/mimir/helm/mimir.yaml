@@ -88,6 +88,17 @@ values:
       ruler_storage:
         s3:
           bucket_name: ${S3_BUCKET_RULER}
+      # Single-replica footprint (replicas 1, zone-awareness off below): the rings
+      # MUST run replication factor 1, else Mimir's default RF of 3 makes the
+      # read/write quorum (2) unreachable with one instance → every query and write
+      # fails with "too many unhealthy instances in the ring". Block durability comes
+      # from the consumer's replicated block storage, not from Mimir RF.
+      ingester:
+        ring:
+          replication_factor: 1
+      store_gateway:
+        sharding_ring:
+          replication_factor: 1
 
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
   # small single-workload cluster; no zone awareness). Each carries an explicit
