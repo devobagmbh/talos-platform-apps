@@ -36,7 +36,7 @@
   "sub-layers/compute/components/node-feature-discovery": "0.1.0",
   "sub-layers/observability/components/blackbox-exporter": "0.1.0",
   "sub-layers/observability/components/loki": "0.1.1",
-  "sub-layers/observability/components/mimir": "0.2.0",
+  "sub-layers/observability/components/mimir": "0.2.1",
   "sub-layers/observability/components/tempo": "0.2.0",
   "sub-layers/observability/components/grafana-operator": "0.2.0",
   "sub-layers/observability/components/grafana-operator-crds": "0.2.0",
