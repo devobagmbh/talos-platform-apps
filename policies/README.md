@@ -29,17 +29,17 @@ This repo uses **Conftest in CI + Kyverno in the cluster** with separate roles. 
 | `no_latest_image_tag` | both | ✅ | Defense-in-depth |
 | `pod_security_standards` | Conftest | ✅ | PSA namespace-label enforcement, Conftest-only |
 | `pod_security_conformance` | Conftest | ✅ | PSA conformance check (`task scan:psa-conformance`), Conftest-only |
-| `no_inline_secrets` | Conftest | ➖ | Conftest-only: Git repo content |
+| `no_inline_secrets` | Conftest | ✅ | Conftest-only: Git repo content |
 | `reserved_labels` | both | ➖ | Defense-in-depth (PNI v2) |
 | `capability_selectors` | Conftest | ➖ | Conftest-only: sub-layer source convention |
 | `gateway_api_only` | Conftest | ➖ | Conftest-only: no ingress controller in the cluster |
-| `required_resource_limits` | both | ➖ | Defense-in-depth |
-| `no_privileged_containers` | both | ➖ | Defense-in-depth + allow-list |
+| `required_resource_limits` | both | ✅ | Defense-in-depth |
+| `no_privileged_containers` | both | ✅ | Defense-in-depth + allow-list |
 | `image_verify_platform_oci` | Kyverno | ➖ | Kyverno-only: cosign keyless, needs a Sigstore backend |
 | `auto_default_netpol` | Kyverno | ➖ | Kyverno-only: generate policy on namespace create |
 | `imagepullsecret_inject` | Kyverno | ➖ | Kyverno-only: mutate policy |
 
-→ **3 implemented (Conftest), 9 planned.** The source of truth for the defense-in-depth policies remains the Conftest Rego file in this directory; the Kyverno variant in `sub-layers/secrets/manifests/policies/` is **kept consistent by hand** (the `compatibility-reviewer` subagent checks for drift).
+→ **6 implemented (Conftest), 6 planned.** The source of truth for the defense-in-depth policies remains the Conftest Rego file in this directory; the Kyverno variant in `sub-layers/secrets/manifests/policies/` is **kept consistent by hand** (the `compatibility-reviewer` subagent checks for drift).
 
 ## Structure
 
@@ -49,8 +49,15 @@ policies/
 ├── base/                           — generic hardening (defense-in-depth candidates)
 │   ├── no_latest_image_tag.rego
 │   ├── no_latest_image_tag_test.rego
+│   ├── no_privileged_containers.rego
+│   ├── no_privileged_containers_test.rego
 │   ├── pod_security_standards.rego
-│   └── pod_security_standards_test.rego
+│   ├── pod_security_standards_test.rego
+│   ├── required_resource_limits.rego
+│   └── required_resource_limits_test.rego
+├── apps/                           — repo hygiene (Conftest-only)
+│   ├── no_inline_secrets.rego
+│   └── no_inline_secrets_test.rego
 └── conformance/                    — PSA conformance check
     ├── pod_security_conformance.rego
     └── pod_security_conformance_test.rego
@@ -87,20 +94,30 @@ conftest verify --policy policies/
 - **Tests** for every policy: `<rule_name>_test.rego` with `test_<name>` functions (`conftest verify`)
 - **Severity** via `metadata` annotations: `# METADATA\n# title: ...\n# severity: high`
 
-## Status (Bundle C audit 2026-05-26)
+## Status (issue #236, 2026-06-24)
 
-Phase-1 full build-out per [ADR-0018 § Phase-1 Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — all 21 Conftest policies + 7 Kyverno ClusterPolicies are implemented initially. Rationale: the defense-in-depth architecture is intentional, and "activate later" would be more expensive than immediate full coverage given the testdata/ maintenance discipline.
+Phase-1 build-out per [ADR-0018 § Phase-1 Scope](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0018-policy-stack.md#phase-1-scope) — 21 Conftest policies + 7 Kyverno ClusterPolicies planned; the checkboxes below show implemented vs deferred. Issue #236 implemented the three hardening policies (`required_resource_limits`, `no_privileged_containers`, `no_inline_secrets`) and refactored `no_latest_image_tag` to recurse (depth-1) into `Object.spec.forProvider.manifest`.
 
-The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** full build-out; they do not necessarily correspond to existing directories. The current on-disk state is shown by the `## Structure` tree above.
+### Grandfather / allow-list debt register
+
+The three newly enforcing policies carry transitional grandfather sets or a permanent allow-list derived from the current rendered catalog (`task render` probe, issue #236). They are marked FROZEN — a diff growing a set is a blocking reviewer finding; rename-in-place to track an upstream chart rename is allowed.
+
+| Policy | Type | Size | Retirement tracker |
+|---|---|---|---|
+| `required_resource_limits` | grandfather `(namespace, kind, name)` | 25 workloads | [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349) |
+| `no_privileged_containers` | permanent allow-list `(namespace, kind, workload, container)` | 11 containers | per-entry reviewer/ADR sign-off |
+| `no_inline_secrets` | grandfather `(namespace, name)` | 6 secrets | [#350](https://github.com/devobagmbh/talos-platform-apps/issues/350) |
+
+The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** full build-out. The current on-disk state is shown by the `## Structure` tree above.
 
 ### Conftest Policies (21 total)
 
 #### `base/` — generic hardening
 
-- [x] `no_latest_image_tag` (MUST) — Helm defaults must not render `:latest` image tags
+- [x] `no_latest_image_tag` (MUST) — Helm defaults must not render `:latest` image tags; recurses (depth-1) into `Object.spec.forProvider.manifest` (issue #236)
 - [ ] `reserved_labels` (MUST) — reserved keys (`platform.io/provide.*`, `capability-provider.*`) only on producer resources, namespace-anchored
-- [ ] `required_resource_limits` (MUST) — every container needs `resources.{requests.{cpu,memory},limits.memory}`
-- [ ] `no_privileged_containers` (MUST) — `securityContext.privileged: false` except for an allow-list
+- [x] `required_resource_limits` (MUST) — every container needs `resources.{requests.{cpu,memory},limits.memory}`; **enforcing for new components — 25 existing workloads grandfathered pending [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349)**
+- [x] `no_privileged_containers` (MUST) — `securityContext.privileged: true` forbidden except a permanent container-level allow-list (11 containers); infrastructure-level necessity documented per entry
 - [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` except for the Cilium/CSI allow-list
 - [ ] `endpointslices_only` (SHOULD) — no `kind: Endpoints` (deprecated since K8s 1.33)
 - [ ] `storage_class_explicit` (SHOULD) — every PVC sets `storageClassName` explicitly
@@ -115,7 +132,7 @@ The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** 
 
 #### `apps/` — repo hygiene (Conftest-only)
 
-- [ ] `no_inline_secrets` (MUST) — no `stringData`/`data` except SOPS-encrypted or an ESO reference
+- [x] `no_inline_secrets` (MUST) — no non-empty `data`/`stringData` in rendered `Secret` manifests; **enforcing for new components — 6 harbor/crossview secrets grandfathered pending [#350](https://github.com/devobagmbh/talos-platform-apps/issues/350)**
 - [ ] `gateway_api_only` (MUST) — no `kind: Ingress`, only `Gateway`/`HTTPRoute`
 - [ ] `helm_chart_source_official` (SHOULD) — Helm chart repo URL from an allow-list
 
