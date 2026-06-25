@@ -43,5 +43,6 @@
   "sub-layers/storage-block/components/snapshot-controller-crds": "0.1.0",
   "sub-layers/storage-block/components/snapshot-controller": "0.1.0",
   "sub-layers/observability/components/grafana": "0.1.0",
-  "sub-layers/secrets/components/clustersecretstore-defaults": "0.1.0"
+  "sub-layers/secrets/components/clustersecretstore-defaults": "0.1.0",
+  "sub-layers/automation/components/velero": "0.1.0"
 }
