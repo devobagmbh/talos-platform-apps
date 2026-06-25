@@ -1,0 +1,26 @@
+# Workload half (ADR-0028 strict-B) of the snapshot-controller pair. Ships the
+# cluster-singleton snapshot-controller Deployment + its cluster-scoped RBAC + a
+# dedicated Namespace; carries 0 CustomResourceDefinitions. The CRD-bearing half
+# is the sibling `storage-block/snapshot-controller-crds` (sync-wave -1).
+#
+# NO `crd-bearing` marker here — this is the workload half. The build gate
+# (task validate:crd-split) asserts kind: CustomResourceDefinition count == 0 in
+# this artifact and > 0 in the -crds sibling.
+#
+# requires: the workload needs the snapshot CRDs to exist first; the consumer
+# wires the -crds Argo Application at sync-wave -1 before this one (wave 0).
+requires:
+  storage-block/snapshot-controller-crds: ">=v0.1.0"
+
+# api-surface-only, NO capability. The snapshot-controller is the sole SIG-Storage
+# reference implementation of the snapshot.storage.k8s.io API — there is no
+# swappable alternative, so no capability id is defined. Carrying capabilities: []
+# here is the deliberate, permanent design (precedent: the -crds halves and other
+# api-surface-only components), NOT a deferral — so no `# TODO:` here.
+provides:
+  - name: snapshot-controller
+    version:
+      sot: app
+      app: v8.5.0   # external-snapshotter appVersion from chart 5.0.4
+    api_surface: []
+    capabilities: []
