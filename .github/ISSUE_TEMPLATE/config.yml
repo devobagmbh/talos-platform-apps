@@ -6,6 +6,6 @@ contact_links:
   - name: Architecture Decisions (ADRs)
     url: https://github.com/devobagmbh/talos-platform-docs/tree/main/adr
     about: Platform-wide architecture decisions live in talos-platform-docs
-  - name: Day-Zero-Backlog
+  - name: Day-Zero Backlog
     url: https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md
-    about: Overall platform backlog (~60 issues, phases 0–7)
+    about: The platform's overall backlog (~60 issues, phases 0–7)
