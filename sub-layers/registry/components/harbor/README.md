@@ -15,7 +15,7 @@ The currently rendered profile targets a **single-node pull-through-cache consum
   - `harbor-db` — key `password` (Postgres; CNPG auto-creates `<cluster>-app` with this key).
   - `harbor-redis` — key `REDIS_PASSWORD` (Redis; map from the Valkey-operator secret).
   - Internal service secrets (core/xsrf/jobservice/registry-http) are still Harbor-generated.
-- **externalURL**: placeholder `https://REPLACE-ME.harbor.invalid` → consumer patches via Kustomize (Class-A structural value).
+- **externalURL** (ADR-0023, Class A — consumer-supplied env): harbor-core's `EXT_ENDPOINT` (Harbor's OIDC redirect + registry/UI base URL) is taken from a consumer `harbor-runtime-config` ConfigMap, key `EXTERNAL_URL` (explicit env, overrides the baked placeholder `https://REPLACE-ME.harbor.invalid`; `optional:true` → placeholder fallback if absent, non-breaking). The consumer MUST set it (`https://harbor.<cluster>.…`) for OIDC/redirects to work — no Kustomize patch of the signed workload (ADR-0024).
 
 The concrete CNPG `Cluster` (`harbor-pg` → service `harbor-pg-rw`) and `Valkey` CR (`harbor-cache:6379`) are **consumer-owned** (consumer repo), not part of this render. Customization contract: [`customization.yaml`](customization.yaml).
 

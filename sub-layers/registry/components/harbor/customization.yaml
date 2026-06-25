@@ -4,10 +4,12 @@
 freeze_line:
   workload: rendered/manifest.yaml # Harbor Deployment/Service/DB — never consumer-patched
 provided_refs:
+  env: harbor-runtime-config # Shape (a): the per-cluster external hostname (EXT_ENDPOINT)
   secret: harbor-runtime-secret # Shape (c)
 provided_selectors: {}
 required:
-  env_keys: []
+  env_keys: # Shape (a) — set in the harbor-runtime-config ConfigMap (harbor-core EXT_ENDPOINT)
+    - EXTERNAL_URL # https://harbor.<cluster>… — Harbor's OIDC redirect + registry/UI base URL
   config_files: []
   secret_keys: # Shape (c) — keys in harbor-runtime-secret the consumer MUST supply
     - HARBOR_ADMIN_PASSWORD # Harbor admin login
@@ -15,12 +17,14 @@ required:
   selector_crs: []
 sync_wave: "0"
 external_dependencies: []
-# NOTE externalURL (open v2 follow-up, not machine-checked): in v1 this was a
-# consumer Kustomize structural-patch of spec.externalURL (placeholder
-# https://REPLACE-ME.harbor.invalid in the harbor-core ConfigMap, EXT_ENDPOINT).
-# ADR-0024 removes consumer Kustomize-patching of the signed workload, so the
-# hostname must be re-modelled as Shape (a) env. Deferred to the harbor v2 pilot
-# (ADR-0024 §Validierung) — out of scope for this schema migration.
+# externalURL → Shape (a) env (resolved, was the open v2 follow-up): the chart still
+# bakes the placeholder https://REPLACE-ME.harbor.invalid into the harbor-core ConfigMap
+# (EXT_ENDPOINT), but harbor-core now also carries an explicit env EXT_ENDPOINT
+# valueFrom configMapKeyRef harbor-runtime-config/EXTERNAL_URL (optional:true). The
+# explicit env overrides the baked envFrom value, so the consumer sets the real
+# per-cluster hostname WITHOUT Kustomize-patching the signed workload (ADR-0024). With
+# the ConfigMap absent the placeholder still applies (non-breaking), but OIDC redirects
+# + the registry/UI base URL only work once the consumer provides EXTERNAL_URL.
 #
 # NOTE external backends (#84) — beyond harbor-runtime-secret above, the consumer
 # wires the cnpg-postgres + redis-managed capabilities. The concrete CNPG `Cluster`
