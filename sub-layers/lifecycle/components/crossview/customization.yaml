@@ -30,7 +30,7 @@ required:
 # wires the cnpg-postgres capability. The chart reaches the DB password through a
 # SECOND consumer-supplied secret `crossview-db` key `password` — point it at the
 # CNPG auto-created `<cluster>-app` secret (key `password`). The concrete CNPG
-# `Cluster` (crossview-pg → crossview-pg-rw) is consumer-owned (seeder repo). This
+# `Cluster` (crossview-pg → crossview-pg-rw) is consumer-owned. This
 # is a capability edge (see compatibility.yaml requires), not a provided_ref.
 sync_wave: "30"
 external_dependencies:
