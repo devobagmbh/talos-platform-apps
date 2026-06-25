@@ -18,6 +18,36 @@ values:
   ingress:
     enabled: false
 
+  # Consumer OIDC/CORS override path (ADR-0024 Shape b/c) — WITHOUT patching the
+  # signed workload. The chart bakes OIDC_*/CORS_ORIGIN as explicit env from the
+  # rendered `<release>-config` ConfigMap (cluster-agnostic localhost defaults, SSO
+  # off). These `app.extraEnv` entries are rendered LAST, so a consumer that creates
+  # the `crossview-oidc-config` ConfigMap (+ the runtime-secret OIDC key) overrides
+  # them (k8s: last duplicate env wins). Each ref is `optional: true`, so when the
+  # consumer supplies nothing (the SSO-off default) the kubelet SKIPS the ref and the
+  # baked default stands — no breakage, byte-stable render. The consumer enables Dex
+  # SSO purely additively (ConfigMap + Secret key), see README + customization.yaml.
+  app:
+    extraEnv:
+      - name: OIDC_ENABLED
+        valueFrom:
+          configMapKeyRef: { name: crossview-oidc-config, key: OIDC_ENABLED, optional: true }
+      - name: OIDC_ISSUER
+        valueFrom:
+          configMapKeyRef: { name: crossview-oidc-config, key: OIDC_ISSUER, optional: true }
+      - name: OIDC_CLIENT_ID
+        valueFrom:
+          configMapKeyRef: { name: crossview-oidc-config, key: OIDC_CLIENT_ID, optional: true }
+      - name: OIDC_CALLBACK_URL
+        valueFrom:
+          configMapKeyRef: { name: crossview-oidc-config, key: OIDC_CALLBACK_URL, optional: true }
+      - name: CORS_ORIGIN   # public root URL; else post-login redirect goes to localhost
+        valueFrom:
+          configMapKeyRef: { name: crossview-oidc-config, key: CORS_ORIGIN, optional: true }
+      - name: OIDC_CLIENT_SECRET   # Shape c — same value as the Dex client secret
+        valueFrom:
+          secretKeyRef: { name: crossview-runtime-secret, key: oidc-client-secret, optional: true }
+
   # External Postgres via the cnpg-postgres capability (#85). The chart's bundled
   # Postgres is OFF — `database.enabled=false` drops the crossview-postgres
   # Deployment + PVC. The DB lifecycle is owned by a consumer CNPG `Cluster`
@@ -44,8 +74,10 @@ values:
         # cluster-wide via the chart-shipped RBAC (read ClusterRole + SA).
         defaultRole: viewer
     # SSO is cluster-specific (Dex issuer/clientId/callbackURL, ADR-0010) →
-    # consumer-owned (ADR-0024 Shape b config + Shape c OIDCClientSecret).
-    # Disabled here; the consumer enables + wires Dex in its overlay.
+    # consumer-owned (ADR-0024 Shape b config + Shape c OIDCClientSecret). Stays
+    # OFF + cluster-agnostic here; the consumer enables Dex additively via the
+    # `crossview-oidc-config` ConfigMap + the `oidc-client-secret` runtime-secret key
+    # (the app.extraEnv override block above), NOT by patching the signed workload.
     sso:
       oidc:
         enabled: false

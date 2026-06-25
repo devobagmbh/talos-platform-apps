@@ -10,11 +10,22 @@ provided_refs:
 provided_selectors: {} # no consumer-labeled CRs
 required:
   env_keys: []
-  config_files: [] # SSO/OIDC config (Shape b) only when SSO is enabled by the consumer
+  config_files: [] # no files; SSO config is an additive ConfigMap (see OIDC note below)
   secret_keys: # Shape (c) — keys in crossview-runtime-secret the consumer MUST supply
     - admin-password
     - session-secret
+    # + oidc-client-secret ONLY when the consumer enables Dex SSO (see OIDC note below)
   selector_crs: []
+# OIDC / Dex SSO (Shape b/c, ADR-0010/0024) — ADDITIVE, never a workload patch.
+# The signed workload reads OIDC_*/CORS_ORIGIN from the baked `crossview-config`
+# (cluster-agnostic localhost defaults, SSO off). To enable Dex SSO the consumer:
+#   1. creates a `crossview-oidc-config` ConfigMap with OIDC_ENABLED=true, OIDC_ISSUER
+#      (Dex), OIDC_CLIENT_ID, OIDC_CALLBACK_URL (= <public>/api/auth/oidc/callback),
+#      CORS_ORIGIN (= <public root URL>);
+#   2. adds `oidc-client-secret` to crossview-runtime-secret (= the Dex client secret).
+# The workload's app.extraEnv references both as `optional: true`, rendered LAST: present
+# → overrides the baked defaults (k8s last-duplicate-env wins); absent → skipped → defaults
+# stand. No Kustomize patch of the signed workload (ADR-0024).
 # NOTE external DB (#85): besides crossview-runtime-secret above, the consumer
 # wires the cnpg-postgres capability. The chart reaches the DB password through a
 # SECOND consumer-supplied secret `crossview-db` key `password` — point it at the
