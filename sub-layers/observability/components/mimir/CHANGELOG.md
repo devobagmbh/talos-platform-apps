@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.2.0...observability/mimir-v0.2.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **observability/mimir:** set replication_factor 1 for single-replica footprint ([#380](https://github.com/devobagmbh/talos-platform-apps/issues/380)) ([64b9920](https://github.com/devobagmbh/talos-platform-apps/commit/64b992028c767996ced8feadb2f99c2b3bfaf9aa)), closes [#379](https://github.com/devobagmbh/talos-platform-apps/issues/379)
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.1.0...observability/mimir-v0.2.0) (2026-06-25)
 
 

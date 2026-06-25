@@ -32,7 +32,7 @@ jobs:
     name: gitleaks (secret-scan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
         with:
           # fetch-depth: 0 is load-bearing for BOTH gitleaks paths: the full all-refs
           # sweep (schedule) AND resolving GITLEAKS_SCAN_RANGE's base/head endpoints
@@ -58,7 +58,7 @@ jobs:
     name: trivy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -87,7 +87,7 @@ jobs:
     name: conftest (Rego-Policies)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0

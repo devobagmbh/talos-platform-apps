@@ -1,0 +1,21 @@
+# node-exporter is fully cluster-agnostic: a per-node DaemonSet that reads the
+# host's /proc, /sys and root filesystem to emit the node_* series. It needs only
+# host access (a substrate precondition, not a catalog component edge or capability
+# dep — ADR-0009, #71) and no other catalog component or capability. No base
+# version-coupling line. `requires:` carries only component-refs and
+# capability-ids, so it is empty here.
+requires: {}
+provides:
+  - name: node-exporter
+    version:
+      sot: app
+      app: 1.11.1   # real node_exporter app version (chart appVersion)
+      chart: 4.55.0
+    api_surface: []
+    # No-capability by design (api-surface-only). node-exporter is the canonical,
+    # sole provider of the node_* host metrics (CPU/memory/disk/network/filesystem)
+    # over a Prometheus /metrics endpoint — there is no drop-in swap alternative
+    # implementing the same interface, so it provides no swappable capability
+    # (precedent: lifecycle/providers). This is a design state, not a deferral —
+    # NO `# TODO:`.
+    capabilities: []
