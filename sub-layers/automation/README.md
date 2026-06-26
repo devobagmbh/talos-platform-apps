@@ -9,6 +9,7 @@ OCI distribution per component (ADR-0009).
 | Component | sync-wave | Source | OCI |
 |---|---|---|---|
 | [`velero-crds`](components/velero-crds/) | -1 | Velero CRDs (strict-B, ADR-0028) | `oci://.../automation/velero-crds:vX.Y.Z` |
+| [`actions-runner-controller-crds`](components/actions-runner-controller-crds/) | -1 | The 4 `actions.github.com` CRDs (strict-B `-crds` half, ADR-0028) from gha-runner-scale-set-controller v0.14.2 | `oci://.../automation/actions-runner-controller-crds:vX.Y.Z` |
 | [`velero`](components/velero/) | 0 | Helm `vmware-tanzu/velero` with Restic | `oci://.../automation/velero:vX.Y.Z` |
 
 ## Consumed by
