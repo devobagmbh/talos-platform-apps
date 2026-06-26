@@ -176,6 +176,17 @@ capabilities:
     # Satisfied by GitHub Dependabot (native, .github/dependabot.yml) — NOT a
     # self-hosted catalog component. renovate was removed (Robert, 2026-06-10).
     implementations: []
+  - id: ci-runner
+    name: Self-Hosted CI Runner (GitHub Actions)
+    domain: automation
+    status: proposed
+    # Network-isolated, ephemeral GitHub Actions self-hosted runners (issue #397).
+    # Contract (interface, provider/consumer semantics, swap_class) still to be
+    # defined — proposed, not guessed. Implemented by actions-runner-controller
+    # (ARC, gha-runner-scale-set model); the catalog ships the controller + CRDs
+    # + CiliumClusterwideNetworkPolicy isolation, the consumer deploys scale-sets.
+    implementations:
+      - {name: gha-runner-scale-set-controller, status: active, swap_class: rewrite-required}  # ARC; contract open
   - id: bare-metal-boot
     name: Bare-Metal-Boot / PXE
     domain: lifecycle
