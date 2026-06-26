@@ -57,6 +57,17 @@ data:
       printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//'
     }
 
+    # Redact known secret-bearing JSON fields from an API response body before it
+    # is logged on an error path (CWE-532). The Garage admin API may reflect a
+    # submitted secret (e.g. the imported secretAccessKey) in an error body; logging
+    # the raw body would leak it into pod logs. Covers every field that could carry
+    # secret material; the HTTP status code is logged separately, never the raw body.
+    redact() {
+      sed -e 's/"secretAccessKey":"[^"]*"/"secretAccessKey":"***"/g' \
+          -e 's/"secretKey":"[^"]*"/"secretKey":"***"/g' \
+          -e 's/"adminToken":"[^"]*"/"adminToken":"***"/g'
+    }
+
     # Extract the flat top-level JSON string field "id" from a bucket response.
     extract_id() {
       sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
@@ -66,8 +77,8 @@ data:
     # minimal block-style YAML list of {name, key_alias} maps; we parse the two
     # fields with POSIX tools (no yq in the image).
     #   buckets:
-    #     - name: tf-state
-    #       key_alias: seeder-tf
+    #     - name: <bucket-name>
+    #       key_alias: <key-alias>
     # Emits "name<TAB>key_alias" lines.
     parse_buckets() {
       awk '
@@ -119,13 +130,13 @@ data:
       elif [ "$HTTP_CODE" = "404" ]; then
         echo "  creating bucket '${BUCKET}'"
         BODY="$(api POST "/v2/CreateBucket" "{\"globalAlias\":\"${BUCKET}\"}")"
-        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: CreateBucket '${BUCKET}' failed (HTTP $HTTP_CODE): $BODY" >&2; exit 1; }
+        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: CreateBucket '${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
       else
-        echo "ERROR: GetBucketInfo '${BUCKET}' failed (HTTP $HTTP_CODE): $BODY" >&2
+        echo "ERROR: GetBucketInfo '${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2
         exit 1
       fi
       BUCKET_ID="$(printf '%s' "$BODY" | extract_id)"
-      [ -n "$BUCKET_ID" ] || { echo "ERROR: could not extract bucket id for '${BUCKET}' from: $BODY" >&2; exit 1; }
+      [ -n "$BUCKET_ID" ] || { echo "ERROR: could not extract bucket id for '${BUCKET}' from: $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
 
       # --- Key: GET then ImportKey (idempotent; imports consumer-known material) ---
       BODY="$(api GET "/v2/GetKeyInfo?id=${ACCESS_KEY_ID}")"
@@ -134,9 +145,9 @@ data:
       elif [ "$HTTP_CODE" = "404" ]; then
         echo "  importing key '${ALIAS}' (${ACCESS_KEY_ID})"
         BODY="$(api POST "/v2/ImportKey" "{\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"secretAccessKey\":\"${SECRET_KEY}\",\"name\":\"${ALIAS}\"}")"
-        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: ImportKey '${ALIAS}' failed (HTTP $HTTP_CODE): $BODY" >&2; exit 1; }
+        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: ImportKey '${ALIAS}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
       else
-        echo "ERROR: GetKeyInfo '${ALIAS}' failed (HTTP $HTTP_CODE): $BODY" >&2
+        echo "ERROR: GetKeyInfo '${ALIAS}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2
         exit 1
       fi
 
@@ -144,7 +155,7 @@ data:
       #     bucket UUID (.id), NOT the globalAlias. ---
       echo "  granting key '${ALIAS}' read+write on '${BUCKET}'"
       BODY="$(api POST "/v2/AllowBucketKey" "{\"bucketId\":\"${BUCKET_ID}\",\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":false}}")"
-      [ "$HTTP_CODE" = "200" ] || { echo "ERROR: AllowBucketKey '${ALIAS}'->'${BUCKET}' failed (HTTP $HTTP_CODE): $BODY" >&2; exit 1; }
+      [ "$HTTP_CODE" = "200" ] || { echo "ERROR: AllowBucketKey '${ALIAS}'->'${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
     done
 
     echo "garage-buckets: done"
