@@ -86,11 +86,13 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on **Podman**, but the Talos docker provisioner runs the node as a privileged container with nested services, so it **requires a rootful Podman machine** — rootless cannot write `oom_score_adj` / `/proc/sys` kernel params and the node never finishes bootstrapping. Starting from a default (rootless) Podman machine on macOS, four deltas apply:
 
 - **Rootful machine** (the decisive prerequisite): `podman machine set --rootful`, then restart the machine. This is what makes the Talos node bootstrap at all.
-- **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error.
+- **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error. **The devbox shell sets this for you** (see *Automatic devbox fallback* below) — the manual export is only needed outside the devbox shell.
 - **VM size ≥ 6–8 GiB**: `podman machine set --memory 8192`. The default 2 GiB OOMs once Cilium + ArgoCD + a few components are up (same reason as the VM-headroom note above).
 - **Host ports**: the validated run mapped the NodePorts to high host ports (`8080:30080`, `8443:30443`) instead of `80`/`443`, so the Argo/registry endpoints carry the high port. (Binding the privileged `80`/`443` ports was not exercised in this run.)
 
 Docker Desktop, Colima, and Orbstack provision a rootful daemon by default and need none of these. Validated end-to-end on 2026-06-14 (issue #168).
+
+**Automatic devbox fallback.** The devbox `init_hook` removes the two CLI-level deltas: when the shell activates and finds `podman` but **no** working `docker` daemon, it (1) exports `DOCKER_HOST` from `podman machine inspect`, and (2) drops an `exec podman "$@"` shim into the gitignored `.direnv/bin/` and prepends it to `PATH`. This is what makes `task local:*` work even when `docker` is missing or aliased to a wrapper that drops arguments (the classic `Error: missing command 'podman COMMAND'`). It is a strict no-op for anyone with a real `docker` daemon (Docker Desktop / Colima / Orbstack). The shim lives under `.direnv/`, so nothing is committed. **Still manual** (devbox cannot provision the VM): `podman machine set --rootful --memory 8192` plus the machine restart, and the host-port mapping if `80`/`443` are unavailable.
 
 ## Quickstart
 
