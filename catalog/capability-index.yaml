@@ -329,3 +329,16 @@ capabilities:
     implementations:
       - {name: tetragon, status: active, swap_class: rewrite-required}
       - {name: falco, status: considered, swap_class: rewrite-required}
+  - id: namespace-tenancy
+    name: Namespace-Multi-Tenancy / Tenant-Isolation
+    domain: security
+    # Stable interface: a Tenant object bundling multiple namespaces of one owner
+    # under an aggregated ResourceQuota + owner-RBAC + admission guardrails. The
+    # active implementation (capsule) reconciles capsule.clastix.io/Tenant CRs;
+    # alternatives expose their own tenant CR surface, so a swap is rewrite-required
+    # (consumer Tenant CRs must be re-authored against the new tool's schema).
+    implementations:
+      - {name: capsule, status: active, swap_class: rewrite-required}
+      - {name: kiosk, status: considered, swap_class: rewrite-required}
+      - {name: vcluster, status: considered, swap_class: rewrite-required}
+      - {name: hierarchical-namespace-controller, status: considered, swap_class: rewrite-required}
