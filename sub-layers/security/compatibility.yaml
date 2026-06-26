@@ -4,3 +4,4 @@
 components:
   - tetragon # eBPF runtime-security observability — capability runtime-security (sync-wave 0)
   - capsule-crds # strict-B CRDs artifact for Capsule (ADR-0028) — api-surface-only, no capability (sync-wave -1)
+  - capsule # Capsule multi-tenancy operator workload — capability namespace-tenancy (sync-wave 0)
