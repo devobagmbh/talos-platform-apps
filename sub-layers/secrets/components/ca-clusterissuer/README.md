@@ -1,7 +1,7 @@
 # Component `secrets/ca-clusterissuer`
 
 A cert-manager `ClusterIssuer` of type **CA**. It holds the Devoba-owned CA and
-signs leaf certificates for the cluster domain (e.g. `*.office-lab.devoba.de`).
+signs leaf certificates for the cluster domain (e.g. `*.example.com`).
 
 ## What ships
 
@@ -23,7 +23,7 @@ see below).
 TLS no longer runs via Let's Encrypt / DNS01-ACME but via an **own CA**:
 
 - The CA **root** is rolled out into the system trust of Devoba clients (Macs) via
-  **Jamf**, so browsers and CLIs trust every `*.office-lab.devoba.de` certificate.
+  **Jamf**, so browsers and CLIs trust every `*.example.com` certificate.
 - Inside the cluster, this `ClusterIssuer` signs the leaf certs from the CA key.
 - DNS comes from Unifi (wildcard -> cluster ingress VIP) — there is no in-cluster
   DNS server, no External-DNS, and no DNS01 solver.
