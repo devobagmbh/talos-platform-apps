@@ -1,0 +1,41 @@
+# Customization Contract v2 (ADR-0024). The workload (the provisioning Job, the
+# ConfigMap carrying the catalog-owned provision.sh, and the ServiceAccount) is
+# the signed, pre-rendered artifact and is never consumer-patched. The freeze line
+# splits ownership: everything the Job ACTS ON is 100% consumer-owned and supplied
+# via the refs below — the catalog ships NO default bucket list (app buckets like
+# mimir-blocks / tf-state are consumer composition, kept out of the catalog).
+#
+# The Job reads buckets.yaml to learn each bucket's name + key_alias, then reads
+# /etc/garage-keys/<alias>.access-key-id and <alias>.secret-key to import the key
+# and grant it read+write on the bucket via the Garage admin API v2.
+freeze_line:
+  workload: rendered/manifest.yaml # Job + provision ConfigMap + ServiceAccount — never consumer-patched
+provided_refs:
+  # Shape (b): the consumer ConfigMap holding the bucket->alias mapping, mounted
+  # whole at /etc/garage-buckets/buckets.yaml.
+  config: garage-buckets-config
+  # Shape (c): the consumer Secret holding the admin token (via secretKeyRef) AND,
+  # mounted as a volume at /etc/garage-keys/, the per-alias key material.
+  secret: garage-buckets-secret
+provided_selectors: {} # no operator-assembled config
+required:
+  env_keys: []
+  config_files:
+    # The buckets.yaml the consumer authors: a block-style list of
+    # {name, key_alias} maps. Mounted whole; lists which key-alias maps to each
+    # bucket name.
+    - path: /etc/garage-buckets/buckets.yaml
+      ref: garage-buckets-config
+      key: buckets.yaml
+  secret_keys:
+    # adminToken: read via secretKeyRef into GARAGE_ADMIN_TOKEN (Bearer auth to the
+    # admin API). The per-alias key entries (<alias>.access-key-id / <alias>.secret-key)
+    # are consumer-shaped by buckets.yaml and mounted from this same Secret at
+    # /etc/garage-keys/ — they are not enumerable here (their names depend on the
+    # consumer's chosen aliases); the README documents the convention.
+    - adminToken
+  selector_crs: []
+sync_wave: "10" # after garage (wave 0) provides the S3 endpoint + admin API
+external_dependencies:
+  - storage-objects/garage # the running Garage instance + admin API this Job drives
+  - secrets/external-secrets # the consumer syncs adminToken + key material from Vault via ESO

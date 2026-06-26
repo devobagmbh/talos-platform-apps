@@ -1,0 +1,150 @@
+# Catalog-owned provisioning script. It drives the Garage admin HTTP API v2
+# (port 3903, Bearer <adminToken>) to make buckets + consumer-supplied access
+# keys exist idempotently. It is shipped by the catalog and never consumer-patched
+# (it is part of the signed workload). The DATA it acts on is 100% consumer-owned:
+# the bucket→alias mapping (ConfigMap garage-buckets-config, key buckets.yaml,
+# mounted at /etc/garage-buckets/) and the key material + admin token (Secret
+# garage-buckets-secret — adminToken via env, per-alias keys mounted at
+# /etc/garage-keys/<alias>.access-key-id and <alias>.secret-key).
+#
+# JSON parsing note: the image is curlimages/curl (no jq). The only field this
+# script extracts from a response is the bucket `.id` (a flat string), pulled with
+# POSIX grep/sed — sufficient and dependency-free. See README § Image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-buckets-provision
+  namespace: garage
+  labels:
+    app.kubernetes.io/name: garage-buckets
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-buckets
+data:
+  provision.sh: |
+    #!/bin/sh
+    # Idempotent Garage S3 bucket + key provisioner (admin API v2).
+    # Re-running is a no-op: every mutating call is guarded by a GET, so a
+    # second run exits 0 with no duplicates.
+    set -eu
+
+    ADMIN_URL="${ADMIN_URL:-http://garage.garage.svc.cluster.local:3903}"
+    BUCKETS_FILE="${BUCKETS_FILE:-/etc/garage-buckets/buckets.yaml}"
+    KEYS_DIR="${KEYS_DIR:-/etc/garage-keys}"
+
+    : "${GARAGE_ADMIN_TOKEN:?GARAGE_ADMIN_TOKEN env (from Secret garage-buckets-secret key adminToken) is required}"
+
+    # api METHOD PATH [BODY] -> prints body to stdout, sets HTTP_CODE.
+    # Body and status code are separated by a sentinel so a 404 body does not
+    # masquerade as success.
+    api() {
+      _method="$1"; _path="$2"; _body="${3:-}"
+      _out="$(
+        if [ -n "$_body" ]; then
+          curl -sS -X "$_method" \
+            -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -w '\n__HTTP_CODE__%{http_code}' \
+            -d "$_body" \
+            "${ADMIN_URL}${_path}"
+        else
+          curl -sS -X "$_method" \
+            -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
+            -w '\n__HTTP_CODE__%{http_code}' \
+            "${ADMIN_URL}${_path}"
+        fi
+      )"
+      HTTP_CODE="$(printf '%s' "$_out" | sed -n 's/.*__HTTP_CODE__\([0-9]*\)$/\1/p')"
+      printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//'
+    }
+
+    # Extract the flat top-level JSON string field "id" from a bucket response.
+    extract_id() {
+      sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
+    }
+
+    # Read a scalar value for a key from the consumer buckets.yaml. The file is a
+    # minimal block-style YAML list of {name, key_alias} maps; we parse the two
+    # fields with POSIX tools (no yq in the image).
+    #   buckets:
+    #     - name: tf-state
+    #       key_alias: seeder-tf
+    # Emits "name<TAB>key_alias" lines.
+    parse_buckets() {
+      awk '
+        /^[[:space:]]*-[[:space:]]*name:/ {
+          if (name != "") print name "\t" alias
+          name = $0; sub(/.*name:[[:space:]]*/, "", name); gsub(/["\x27[:space:]]/, "", name)
+          alias = ""
+          next
+        }
+        /^[[:space:]]*key_alias:/ {
+          alias = $0; sub(/.*key_alias:[[:space:]]*/, "", alias); gsub(/["\x27[:space:]]/, "", alias)
+        }
+        END { if (name != "") print name "\t" alias }
+      ' "$BUCKETS_FILE"
+    }
+
+    test -r "$BUCKETS_FILE" || { echo "ERROR: bucket list $BUCKETS_FILE not readable (consumer ConfigMap garage-buckets-config missing?)" >&2; exit 1; }
+
+    echo "garage-buckets: provisioning against ${ADMIN_URL}"
+
+    parse_buckets | while IFS="$(printf '\t')" read -r BUCKET ALIAS; do
+      [ -n "$BUCKET" ] || continue
+      if [ -z "$ALIAS" ]; then
+        echo "ERROR: bucket '$BUCKET' has no key_alias in $BUCKETS_FILE" >&2
+        exit 1
+      fi
+
+      AKID_FILE="${KEYS_DIR}/${ALIAS}.access-key-id"
+      SKEY_FILE="${KEYS_DIR}/${ALIAS}.secret-key"
+      test -r "$AKID_FILE" || { echo "ERROR: missing access-key-id for alias '$ALIAS' at $AKID_FILE (consumer Secret garage-buckets-secret)" >&2; exit 1; }
+      test -r "$SKEY_FILE" || { echo "ERROR: missing secret-key for alias '$ALIAS' at $SKEY_FILE (consumer Secret garage-buckets-secret)" >&2; exit 1; }
+      ACCESS_KEY_ID="$(cat "$AKID_FILE")"
+      SECRET_KEY="$(cat "$SKEY_FILE")"
+
+      # Garage S3 access-key-ids are always GK-prefixed. Reject anything else
+      # with an actionable message rather than importing an invalid key.
+      case "$ACCESS_KEY_ID" in
+        GK*) : ;;
+        *)
+          echo "ERROR: access-key-id for alias '$ALIAS' must start with 'GK' (Garage convention) — fix the consumer Secret garage-buckets-secret entry '${ALIAS}.access-key-id'" >&2
+          exit 1
+          ;;
+      esac
+
+      # --- Bucket: GET then CreateBucket (idempotent) ---
+      BODY="$(api GET "/v2/GetBucketInfo?globalAlias=${BUCKET}")"
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "  bucket '${BUCKET}' exists"
+      elif [ "$HTTP_CODE" = "404" ]; then
+        echo "  creating bucket '${BUCKET}'"
+        BODY="$(api POST "/v2/CreateBucket" "{\"globalAlias\":\"${BUCKET}\"}")"
+        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: CreateBucket '${BUCKET}' failed (HTTP $HTTP_CODE): $BODY" >&2; exit 1; }
+      else
+        echo "ERROR: GetBucketInfo '${BUCKET}' failed (HTTP $HTTP_CODE): $BODY" >&2
+        exit 1
+      fi
+      BUCKET_ID="$(printf '%s' "$BODY" | extract_id)"
+      [ -n "$BUCKET_ID" ] || { echo "ERROR: could not extract bucket id for '${BUCKET}' from: $BODY" >&2; exit 1; }
+
+      # --- Key: GET then ImportKey (idempotent; imports consumer-known material) ---
+      BODY="$(api GET "/v2/GetKeyInfo?id=${ACCESS_KEY_ID}")"
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "  key '${ALIAS}' (${ACCESS_KEY_ID}) exists"
+      elif [ "$HTTP_CODE" = "404" ]; then
+        echo "  importing key '${ALIAS}' (${ACCESS_KEY_ID})"
+        BODY="$(api POST "/v2/ImportKey" "{\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"secretAccessKey\":\"${SECRET_KEY}\",\"name\":\"${ALIAS}\"}")"
+        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: ImportKey '${ALIAS}' failed (HTTP $HTTP_CODE): $BODY" >&2; exit 1; }
+      else
+        echo "ERROR: GetKeyInfo '${ALIAS}' failed (HTTP $HTTP_CODE): $BODY" >&2
+        exit 1
+      fi
+
+      # --- Grant: AllowBucketKey is idempotent; call unconditionally with the
+      #     bucket UUID (.id), NOT the globalAlias. ---
+      echo "  granting key '${ALIAS}' read+write on '${BUCKET}'"
+      BODY="$(api POST "/v2/AllowBucketKey" "{\"bucketId\":\"${BUCKET_ID}\",\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":false}}")"
+      [ "$HTTP_CODE" = "200" ] || { echo "ERROR: AllowBucketKey '${ALIAS}'->'${BUCKET}' failed (HTTP $HTTP_CODE): $BODY" >&2; exit 1; }
+    done
+
+    echo "garage-buckets: done"
