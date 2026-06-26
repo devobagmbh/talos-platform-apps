@@ -81,19 +81,25 @@ The signed workload is never patched.
 The consumer supplies, in its own cluster repo / Argo overlay — the catalog ships
 none of these:
 
-- **`grafana-runtime-config` ConfigMap** carrying the non-secret env keys:
-  `GF_SERVER_ROOT_URL`, `GF_AUTH_GENERIC_OAUTH_ENABLED`,
+- **`grafana-runtime-config` ConfigMap** carrying the non-secret env keys.
+  **Required:** `GF_SERVER_ROOT_URL` (the cluster's public root URL). **Optional —
+  only when enabling Dex SSO** (nothing bakes `GF_AUTH_GENERIC_OAUTH_ENABLED`, so
+  omitting these still runs a valid workload): `GF_AUTH_GENERIC_OAUTH_ENABLED`,
   `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`, `GF_AUTH_GENERIC_OAUTH_AUTH_URL`,
   `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`, `GF_AUTH_GENERIC_OAUTH_API_URL`,
   `GF_AUTH_GENERIC_OAUTH_SCOPES`. These point at the cluster's public root URL and
   the Dex OIDC endpoints and live nowhere in the catalog.
-- **`grafana-runtime-secret` Secret** carrying the secret keys:
-  `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD`, and
-  `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` (the Dex static-client secret) — via SOPS
-  (seeder) / Vault + ESO (office-lab). The catalog ships no secrets. The Secret
-  MUST carry **only** these three keys (the same set as `secret_keys` in
-  `customization.yaml`): the whole Secret is injected via `envFrom`, so any extra
-  key would also become a Grafana environment variable.
+- **`grafana-runtime-secret` Secret** carrying the secret keys — via the consumer's
+  secret lane (SOPS or Vault + ESO); the catalog ships no secrets. **Mandatory today:**
+  `GF_SECURITY_ADMIN_USER` + `GF_SECURITY_ADMIN_PASSWORD` — the chart's admin
+  `secretKeyRef` is non-optional, so omitting them yields `CreateContainerConfigError`
+  (this is the one constraint blocking an OIDC-only, no-local-admin consumer; the fix
+  is a small upstream `optional: true` patch on the community chart, after which the
+  local admin becomes freely on/off). **Optional — only with Dex SSO:**
+  `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` (the Dex static-client secret). The whole
+  Secret is injected via `envFrom`, so it MUST carry **only** recognized `GF_*` keys
+  (the admin pair, plus the OAUTH client secret when SSO is on) — any extra key would
+  also become a Grafana environment variable.
 - **Labelled datasource / dashboard ConfigMaps** (`grafana_datasource=1` /
   `grafana_dashboard=1`) for the Loki/Mimir/Tempo datasources and any dashboards.
   These ConfigMaps MUST be created **in the `grafana` namespace**: the sidecar

@@ -1,8 +1,13 @@
 requires:
-  observability/loki: ">=v0.1.0"
-  observability/mimir: ">=v0.1.0"
-  observability/tempo: ">=v0.1.0"
-  identity/dex: ">=v0.1.0"  # OIDC SSO via generic_oauth → dex (ADR-0010)
+  # Capability-first (ADR-0021): the backends are SWAPPABLE, so grafana requires their
+  # query/OIDC capabilities, not fixed component paths. grafana's helm render needs none
+  # of them at build time (the datasources are consumer-supplied label-discovery
+  # ConfigMaps, Shape d) — these are deploy-time, capability-satisfied deps. Hence
+  # external_dependencies: [] in customization.yaml (no build/merge-order coupling).
+  logs-query: "*"      # loki
+  metrics-query: "*"   # mimir
+  traces-query: "*"    # tempo
+  identity-oidc: "*"   # dex — OIDC SSO via generic_oauth (ADR-0010)
 provides:
   - name: grafana
     version:

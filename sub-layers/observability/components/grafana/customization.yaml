@@ -38,26 +38,30 @@ provided_refs:
 provided_selectors:
   datasources: {grafana_datasource: "1"}  # Shape (d): label the datasource ConfigMaps carry
   dashboards: {grafana_dashboard: "1"}  # Shape (d): label the dashboard ConfigMaps carry
+# NOTE on `required` vs optional. The schema has only a `required` category ("what the
+# consumer MUST supply"), no `optional` one — so consumer-owned-but-not-mandatory keys are
+# documented inline here + in the README, not listed under required (same pattern as
+# alloy/dex). OIDC is fully optional: nothing bakes GF_AUTH_GENERIC_OAUTH_ENABLED, so a
+# consumer that omits the OAUTH keys still runs a valid workload. The OAUTH env + secret
+# keys below are therefore RECOMMENDED-when-enabling-SSO, not required.
+#   env  (grafana-runtime-config): GF_AUTH_GENERIC_OAUTH_ENABLED / _CLIENT_ID / _AUTH_URL /
+#        _TOKEN_URL / _API_URL / _SCOPES
+#   secret (grafana-runtime-secret): GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
 required:
   env_keys:  # Shape (a) — consumer sets these in grafana-runtime-config
-    - GF_SERVER_ROOT_URL
-    - GF_AUTH_GENERIC_OAUTH_ENABLED
-    - GF_AUTH_GENERIC_OAUTH_CLIENT_ID
-    - GF_AUTH_GENERIC_OAUTH_AUTH_URL
-    - GF_AUTH_GENERIC_OAUTH_TOKEN_URL
-    - GF_AUTH_GENERIC_OAUTH_API_URL
-    - GF_AUTH_GENERIC_OAUTH_SCOPES
+    - GF_SERVER_ROOT_URL  # the cluster's public root URL (OIDC redirect + correct links)
   config_files: []  # no Shape (b) merged file — grafana config is GF_ env, not a mounted file
   secret_keys:  # Shape (c) — consumer sets these in grafana-runtime-secret
+    # GF_SECURITY_ADMIN_* are mandatory TODAY: the chart's admin secretKeyRef is
+    # non-optional (a consumer omitting them → CreateContainerConfigError). Once the
+    # upstream `optional: true` patch on grafana-community/grafana lands + releases, the
+    # local admin becomes freely on/off and these move to recommended (see README §Auth).
     - GF_SECURITY_ADMIN_USER
     - GF_SECURITY_ADMIN_PASSWORD
-    - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
   selector_crs:  # Shape (d) — the consumer creates + labels these ConfigMaps; the sidecars import them
     - {kind: ConfigMap, label: {grafana_datasource: "1"}}
     - {kind: ConfigMap, label: {grafana_dashboard: "1"}}
 sync_wave: "20"
-external_dependencies:
-  - observability/loki
-  - observability/mimir
-  - observability/tempo
-  - identity/dex
+external_dependencies: []  # capabilities are deploy-time sinks (compatibility.yaml requires:),
+                           # not build/merge-order deps — grafana's helm render needs none of
+                           # loki/mimir/tempo/dex (mirrors alloy's resolved convention)
