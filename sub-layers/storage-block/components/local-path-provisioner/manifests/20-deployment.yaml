@@ -20,7 +20,6 @@ spec:
           imagePullPolicy: IfNotPresent
           command:
             - local-path-provisioner
-            - --debug
             - start
             - --config
             - /etc/config/config.json
