@@ -5,3 +5,4 @@ provides:
     api_surface: [] # filled in with issue #17
     capabilities:
       - {id: metrics-storage, swap_class: data-migration}
+      - {id: metrics-query, swap_class: drop-in}  # PromQL query endpoint (capability-index: mimir = active provider) — consumed by grafana/alloy
