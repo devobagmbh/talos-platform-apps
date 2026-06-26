@@ -43,3 +43,13 @@ values:
   # CustomResourceDefinition / ServiceMonitor (node-exporter precedent).
   serviceMonitor:
     enabled: false
+
+  # Tolerations — pinned EMPTY to override the chart default, which tolerates the
+  # control-plane taint (`node-role.kubernetes.io/control-plane:NoSchedule`). This
+  # is a privileged (SYS_ADMIN, runAsUser:0, hostPath) GPU exporter; it belongs
+  # ONLY on GPU worker nodes, which carry the NVIDIA GPU / DCGM backend it reads.
+  # Control-plane nodes have no GPU/DCGM backend, so the chart default would
+  # schedule a privileged pod onto them with nothing to export. A consumer who
+  # actually runs GPUs on control-plane nodes re-adds the appropriate toleration
+  # via their overlay (alongside the GPU-node nodeSelector — see README).
+  tolerations: []
