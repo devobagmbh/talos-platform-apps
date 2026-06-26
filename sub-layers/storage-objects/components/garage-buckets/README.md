@@ -63,8 +63,8 @@ baseline-or-stricter level the consumer chooses:
 
 ## Consumer obligations
 
-The catalog ships **no** default bucket list — the bucket names (e.g.
-`tf-state`, `mimir-blocks`) are consumer composition. The consumer MUST supply:
+The catalog ships **no** default bucket list — the bucket names are consumer
+composition. The consumer MUST supply:
 
 ### `ConfigMap garage-buckets-config` (mounted at `/etc/garage-buckets/`)
 
@@ -73,10 +73,10 @@ key-alias that gets read+write on it:
 
 ```yaml
 buckets:
-  - name: tf-state
-    key_alias: seeder-tf
-  - name: mimir-blocks
-    key_alias: obs-mimir
+  - name: <bucket-name>
+    key_alias: <key-alias>
+  - name: <bucket-name>
+    key_alias: <key-alias>
 ```
 
 ### `Secret garage-buckets-secret`
@@ -84,9 +84,9 @@ buckets:
 - Key `adminToken` — read via `secretKeyRef` into `GARAGE_ADMIN_TOKEN` (Bearer
   auth to the admin API).
 - Per-alias key material, mounted as a volume at `/etc/garage-keys/`, following
-  the convention `<alias>.access-key-id` and `<alias>.secret-key`. For the
-  example above: `seeder-tf.access-key-id`, `seeder-tf.secret-key`,
-  `obs-mimir.access-key-id`, `obs-mimir.secret-key`.
+  the convention `<alias>.access-key-id` and `<alias>.secret-key` — i.e. for a
+  `key_alias: <key-alias>` entry, the keys `<key-alias>.access-key-id` and
+  `<key-alias>.secret-key`.
 
 > **GK prefix required.** Every `<alias>.access-key-id` MUST start with `GK`
 > (the Garage access-key-id convention). The script validates this and exits
@@ -99,6 +99,34 @@ These secrets are synced into the cluster from Vault via
 
 `sync-wave: "10"` — needs an active Garage (wave 0) and the consumer's key
 material synced via `secrets/external-secrets`.
+
+## Bootstrap caveats
+
+On a **fresh cluster** the Garage admin API (wave 0) MAY not be ready when this
+Job runs at wave 10 — Garage must first finish `garage layout apply` before the
+admin API serves bucket/key calls. If the Job reaches terminal `Failed` before
+Garage is ready, the operator triggers a force-resync of this component after
+confirming Garage is healthy:
+
+```sh
+kubectl -n garage exec <garage-pod> -- garage status
+```
+
+The Job is idempotent (GET-then-create/import guards), so a re-run is always
+safe. Note also that the `Force=true,Replace=true` sync-option means an Argo
+resync **mid-run** can kill and recreate the Job, leaving a transient
+partial-provisioning window; because the Job is additive and idempotent, this
+self-heals on the next completion.
+
+## Disaster recovery
+
+After a **Garage Raft restore**, force-resync this component. The provisioning
+Job re-runs idempotently (the GET-then-import guards make every call a no-op when
+state already matches) and re-registers any access keys missing from the restored
+snapshot. This component **never deletes bucket data** — it is additive-only
+(`CreateBucket` / `ImportKey` / `AllowBucketKey`, `owner: false`, no delete
+calls), so a resync after a restore can only re-create missing buckets and
+re-register missing keys, never remove anything.
 
 ## OCI
 
