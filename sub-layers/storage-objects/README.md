@@ -10,7 +10,7 @@ OCI distribution per component (ADR-0009).
 |---|---|---|---|
 | [`garage-crds`](components/garage-crds/) | -1 | `GarageNode` CRD (strict-B CRD half, ADR-0028) | `oci://.../storage-objects/garage-crds:vX.Y.Z` |
 | [`garage`](components/garage/) | 0 | Helm `garage` 0.9.3 (vendored, appVersion v2.3.0) | `oci://.../storage-objects/garage:vX.Y.Z` |
-| [`garage-buckets`](components/garage-buckets/) | 10 | Bucket CRs + ESO access-key sync | `oci://.../storage-objects/garage-buckets:vX.Y.Z` |
+| [`garage-buckets`](components/garage-buckets/) | 10 | Bucket + key provisioning via the Garage admin API v2 (consumer-supplied keys, ESO-synced) | `oci://.../storage-objects/garage-buckets:vX.Y.Z` |
 
 Wave -1 establishes the `GarageNode` CRD (strict-B CRD half), wave 0 provides the S3 endpoint, wave 10 the bucket definitions (bucket + access key via ESO from Vault).
 
