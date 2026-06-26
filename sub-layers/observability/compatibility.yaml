@@ -17,3 +17,4 @@ components:
   - kube-state-metrics      # sync-wave 0  — Kubernetes object-state metrics (kube_* series); independent, scraped by Alloy, needs only the K8s control-plane API
   - node-exporter           # sync-wave 0  — host/node metrics (node_* series); independent per-node DaemonSet with host access (privileged ns), scraped by Alloy
   - blackbox-exporter       # sync-wave 0  — synthetic HTTP/TCP/DNS probing; Alloy scrape target + bidirectional cross-cluster watchdog (ADR-0015); probe targets are consumer Probe CRs
+  - nvidia-dcgm-exporter    # sync-wave 0  — per-GPU-node DaemonSet, DCGM_FI_* GPU metrics (privileged ns: SYS_ADMIN + hostPath); telemetry facet of the nvidia-stack gpu-runtime impl; GPU-node nodeSelector is a consumer obligation
