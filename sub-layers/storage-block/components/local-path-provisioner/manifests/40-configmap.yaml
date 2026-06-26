@@ -1,0 +1,44 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: local-path-config
+  namespace: local-path-storage
+data:
+  # Talos overlay (a): node path is /var/mnt/local-path-provisioner, NOT the
+  # upstream /opt/local-path-provisioner — /opt is read-only on Talos. The
+  # consumer MUST mount a disk there via a Talos UserVolumeConfig (see README).
+  config.json: |-
+    {
+            "nodePathMap":[
+            {
+                    "node":"DEFAULT_PATH_FOR_NON_LISTED_NODES",
+                    "paths":["/var/mnt/local-path-provisioner"]
+            }
+            ]
+    }
+  setup: |-
+    #!/bin/sh
+    set -eu
+    mkdir -m 0777 -p "$VOL_DIR"
+  teardown: |-
+    #!/bin/sh
+    set -eu
+    rm -rf "$VOL_DIR"
+  # Talos overlay (b): the helper Pod's busybox image is pinned to an immutable
+  # digest (registry-verified). NOTE: the conftest no_latest_image_tag policy does
+  # NOT scan ConfigMap data, so this pin is enforced by content + review only.
+  helperPod.yaml: |-
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: helper-pod
+        image: docker.io/library/busybox:1.37.0@sha256:9532d8c39891ca2ecde4d30d7710e01fb739c87a8b9299685c63704296b16028
+        imagePullPolicy: IfNotPresent

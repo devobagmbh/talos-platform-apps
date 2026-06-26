@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: local-path-storage
+  labels:
+    # privileged is REQUIRED: the provisioner spawns a helper Pod that mounts a
+    # hostPath (the node's local path) — a Baseline-forbidden field, so baseline
+    # AND restricted reject it. This component is the sole claimant of this NS.
+    pod-security.kubernetes.io/enforce: privileged
