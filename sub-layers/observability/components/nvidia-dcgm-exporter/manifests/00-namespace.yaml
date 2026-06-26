@@ -1,0 +1,33 @@
+# The component's own namespace. nvidia-dcgm-exporter is the sole occupant
+# (dedicated namespace, sole-claimant rule), so this component ships the Namespace
+# object — a shipped manifest takes precedence over Argo `managedNamespaceMetadata`,
+# making the PSA posture authoritative and self-contained (see the build skill's
+# CONVENTIONS.md § Namespace & PSA, and talos-platform-docs ADR-0032). The chart
+# ships NO Namespace, so this manifest is the sole one, concatenated into the render.
+#
+# enforce: privileged — DERIVED from the rendered DaemonSet pod template, NOT
+# copied from a template. A DCGM exporter MUST access the host to correlate GPU
+# metrics with pods, and the render carries Baseline-forbidden fields:
+#   - capabilities.add: ["SYS_ADMIN"]  (rendered/manifest.yaml — added capabilities
+#     beyond the Baseline allow-list; "Capabilities" is a Baseline PSS control)
+#   - runAsNonRoot: false / runAsUser: 0  (rendered/manifest.yaml — runs as root)
+#   - a hostPath volume mounting /var/lib/kubelet/pod-resources
+#     (rendered/manifest.yaml — the "HostPath Volumes" Baseline control)
+# Each of these is rejected by BOTH the Baseline and the Restricted PSS levels
+# ("HostPath Volumes" and "Capabilities" beyond the allow-list are Baseline
+# controls), so `privileged` is the ONLY level that admits this workload
+# (precedent: storage-block/synology-csi and observability/node-exporter, also
+# privileged for host access). This is unavoidable, not a posture weakening.
+#
+# The consumer adds — per ADR-0032 — the PNI labels (platform.io/provide.*,
+# network-*) and the pod-security.kubernetes.io/enforce-version pin (its cluster
+# minor), plus audit/warn modes, in its Argo overlay; the catalog ships neither
+# (they are consumer-composition concerns). See the README §Consumer obligations.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvidia-dcgm-exporter
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: nvidia-dcgm-exporter
