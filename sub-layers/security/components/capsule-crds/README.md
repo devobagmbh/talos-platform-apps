@@ -30,7 +30,7 @@ Exactly 11 resources, all in group `capsule.clastix.io`, served version `v1beta2
 | `resourcepoolclaims.capsule.clastix.io` | ResourcePoolClaim | Namespaced |
 | `resourcepools.capsule.clastix.io` | ResourcePool | Cluster |
 | `rulestatuses.capsule.clastix.io` | RuleStatus | Namespaced |
-| `tenantowners.capsule.clastix.io` | TenantOwner | Namespaced |
+| `tenantowners.capsule.clastix.io` | TenantOwner | Cluster |
 | `tenantresources.capsule.clastix.io` | TenantResource | Namespaced |
 | `tenants.capsule.clastix.io` | Tenant | Cluster |
 
