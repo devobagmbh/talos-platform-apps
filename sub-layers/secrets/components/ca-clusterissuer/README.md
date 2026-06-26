@@ -1,32 +1,92 @@
-# Komponente `secrets/ca-clusterissuer`
+# Component `secrets/ca-clusterissuer`
 
-cert-manager-`ClusterIssuer` vom Typ **CA**, der die Devoba-eigene CA hält und Leaf-Zertifikate für `*.office-lab.devoba.de` (bzw. die jeweilige Cluster-Domain) signiert.
+A cert-manager `ClusterIssuer` of type **CA**. It holds the Devoba-owned CA and
+signs leaf certificates for the cluster domain (e.g. `*.office-lab.devoba.de`).
 
-**Skelett** — Implementation im TLS-Issue.
+## What ships
 
-## Hintergrund (Planungsupdate 2026-05-27)
+The signed catalog workload (`rendered/manifest.yaml`) contains **exactly one**
+resource: a cert-manager `ClusterIssuer` named `ca-clusterissuer` whose
+`spec.ca.secretName` is the fixed, catalog-owned name `ca-key-pair`. Consumers
+reference the issuer via the `cert-manager.io/cluster-issuer: ca-clusterissuer`
+annotation on their `Certificate` CRs.
 
-TLS läuft **nicht** mehr über Let's-Encrypt / DNS01-ACME, sondern über eine **eigene CA**:
+The CR is cluster-agnostic — the same rendered manifest ships unchanged to every
+consumer. It carries no consumer-specific values and **no real key material**
+(Hard Constraint: no real secrets in this repo). It ships **no** `Namespace`
+object (the CA Secret lives in cert-manager's own namespace, a foreign namespace
+this component does not declare) and **no** `ExternalSecret` (consumer-owned glue,
+see below).
 
-- Die CA-**Root** wird via **Jamf** in den System-Trust der Devoba-Clients (Macs) ausgerollt — Browser/CLI vertrauen damit allen `*.office-lab.devoba.de`-Zertifikaten.
-- Im Cluster signiert dieser `ClusterIssuer` die Leaf-Certs aus dem CA-Key. Strukturell identisch zum lokalen mkcert-Setup (`local/mkcert-cluster-issuer.yaml`), nur mit der echten Devoba-CA.
-- DNS kommt von Unifi (Wildcard → Cluster-Ingress-VIP) — kein In-Cluster-DNS-Server, kein External-DNS, kein DNS01-Solver. Der frühere `dns`-Sub-Layer entfällt komplett.
+## Background (planning update 2026-05-27)
 
-## CA-Key-Herkunft
+TLS no longer runs via Let's Encrypt / DNS01-ACME but via an **own CA**:
 
-Der CA-Key (`ca.crt` + `ca.key`) ist sensibles Material und gehört **nicht** in dieses Repo. Er wird via ESO (`secrets/external-secrets`) aus Vault (Layer 3) in ein Secret synchronisiert, das der `ClusterIssuer` referenziert. Diese Komponente liefert nur die `ClusterIssuer`-Resource + das `ExternalSecret`-Template; der konkrete Vault-Pfad ist cluster-spezifisch (Konsumenten-Repo).
+- The CA **root** is rolled out into the system trust of Devoba clients (Macs) via
+  **Jamf**, so browsers and CLIs trust every `*.office-lab.devoba.de` certificate.
+- Inside the cluster, this `ClusterIssuer` signs the leaf certs from the CA key.
+- DNS comes from Unifi (wildcard -> cluster ingress VIP) — there is no in-cluster
+  DNS server, no External-DNS, and no DNS01 solver.
 
-## Sync-Wave
+## Consumer obligation
 
-`20` — braucht `secrets/external-secrets` (CRDs + laufenden Operator, der den CA-Key aus Vault zieht) und cert-manager (aus base).
+The CA key pair is sensitive material and is **not** part of this repo or the OCI
+artifact. The consumer **MUST** populate a `kubernetes.io/tls` Secret named
+`ca-key-pair` in the `cert-manager` namespace with keys `tls.crt` and `tls.key`
+**before** the `ClusterIssuer` reconciles (sync-wave 20). cert-manager reads that
+Secret from its own (cluster-resource) namespace; a namespace mismatch is a
+**silent runtime failure** — there is no admission error.
+
+`cert-manager` itself is **base substrate** (`talos-platform-base`), a co-equal
+input the consumer integrates — never an apps catalog dependency. The
+`ClusterIssuer` CRD therefore comes from base and **MUST** exist before
+sync-wave 20.
+
+### ExternalSecret example template (consumer-owned, NOT shipped/signed)
+
+The recommended mechanism to satisfy the obligation is an ExternalSecret that
+pulls the CA cert and key from Vault. This template is **README-only** — it is not
+rendered, not signed, and not part of the OCI artifact. Its `secretStoreRef.name`
+and `remoteRef.key` values are consumer-supplied (cluster-specific) and belong in
+the consumer cluster repo:
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ca-key-pair
+  namespace: cert-manager # cert-manager default namespace; MUST match consumer's actual cert-manager namespace
+spec:
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: <consumer-supplied> # e.g. vault-backend
+  target:
+    name: ca-key-pair
+    template:
+      type: kubernetes.io/tls
+  data:
+    - secretKey: tls.crt
+      remoteRef:
+        key: <consumer-supplied> # Vault KV path to CA cert
+    - secretKey: tls.key
+      remoteRef:
+        key: <consumer-supplied> # Vault KV path to CA private key
+```
+
+## Sync-wave
+
+`20` — requires `secrets/external-secrets` (the running ESO operator that
+populates the CA Secret), `secrets/external-secrets-crds` (the `ExternalSecret`
+CRD source), and cert-manager (from base, for the `ClusterIssuer` CRD).
 
 ## OCI
 
-```
+```text
 oci://ghcr.io/devobagmbh/talos-platform-apps/secrets/ca-clusterissuer:vX.Y.Z
 ```
 
-## Verwandte ADRs
+## Related ADRs
 
-- [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
-- ADR-0019 — TLS via eigene CA (Jamf-verteilt) *(neu)*
+- [ADR-0011 — Secrets management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
+- [ADR-0019 — TLS via own CA (Jamf-distributed)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0019-tls-own-ca.md)
+- [ADR-0024 — Workload/Config freeze-line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
