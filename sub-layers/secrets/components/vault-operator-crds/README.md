@@ -17,7 +17,7 @@ as a Helm reference.
 
 ## What ships
 
-Exactly **one** namespace-scoped CustomResourceDefinition:
+Exactly **one** CustomResourceDefinition (its instances are namespace-scoped):
 
 - `vaults.vault.banzaicloud.com` (group `vault.banzaicloud.com`, kind `Vault`,
   served version `v1alpha1`) — the Vault instance CR the operator reconciles.
