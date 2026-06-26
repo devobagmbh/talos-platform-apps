@@ -84,31 +84,46 @@ webhook spec; the running controller-manager creates and manages the actual
 `ValidatingWebhookConfiguration` / `MutatingWebhookConfiguration` objects at runtime
 once it is healthy.
 
-All tenant-scoped webhook rules in the `CapsuleConfiguration` use a
-`namespaceSelector: matchExpressions: [{key: capsule.clastix.io/tenant, operator:
-Exists}]` guard — they fire **only in namespaces labelled as Capsule tenant namespaces**.
-The `capsule-system` namespace itself is **not** a tenant namespace and carries no such
-label, so:
+**No-self-wedge on fresh install — the load-bearing reason is the *runtime
+installation*, not the per-hook selectors.** This artifact renders **zero** standalone
+`ValidatingWebhookConfiguration` / `MutatingWebhookConfiguration` objects; the controller
+creates them at runtime once it is healthy. So at the moment `capsule-system` and the
+controller Deployment are first applied, **no admission hook for Capsule exists yet** —
+nothing can intercept the bootstrap. Only after the controller starts and obtains its
+cert-manager-issued TLS cert does it install the runtime hooks. That ordering, not a
+namespace selector, is what makes a fresh install safe.
 
-1. **The webhook cannot intercept traffic in its own bootstrap namespace.** Pod/namespace
-   creation in `capsule-system` is never routed to the Capsule admission endpoint, even
-   before the TLS certificate is available.
-2. **CapsuleConfiguration is a Cluster-scoped resource** — the Capsule validating/mutating
-   hooks that act on `capsule.clastix.io` CRs (Tenant, TenantOwner, ResourcePool, etc.)
-   do not use a `namespaceSelector` restricted to `capsule-system`, but they match on the
-   `capsule.clastix.io` API group only — not on the `capsule-system` namespace bootstrap
-   path (namespace and pod CREATE in `capsule-system`).
-3. The `config.validating.projectcapsule.dev` hook (for `CapsuleConfiguration` updates)
-   uses `failurePolicy: Ignore` — a degraded controller cannot block its own
-   configuration update.
-4. The `managed.validating.projectcapsule.dev` hook also uses `failurePolicy: Ignore`.
-   All other tenant-scoped hooks use `failurePolicy: Fail`, but since `capsule-system`
-   is excluded by the namespace selector, this does not affect bootstrap.
+Per-hook detail (from the rendered `CapsuleConfiguration.spec.validation`/`mutation`):
 
-**Conclusion:** on a fresh install, the Capsule admission hooks cannot wedge the
-`capsule-system` namespace bootstrap. The controller-manager starts, obtains its
-TLS certificate (via cert-manager), and then installs the runtime webhook
-configurations — at which point only tenant-scoped traffic is intercepted.
+1. **Tenant-namespace-scoped hooks** (e.g. `pods.validating.projectcapsule.dev`) carry
+   `namespaceSelector: matchExpressions: [{key: capsule.clastix.io/tenant, operator:
+   Exists}]` — they fire only in namespaces labelled as Capsule tenant namespaces.
+   `capsule-system` is not a tenant namespace, so these never touch it.
+2. **`namespaces.validating.projectcapsule.dev` is cluster-wide** — it matches core
+   `namespaces` (apiGroup `""`, scope `*`, CREATE/UPDATE/DELETE) with **`failurePolicy:
+   Fail` and NO `namespaceSelector`**. This is intentional (a fail-open namespace hook
+   would let tenant users create unconstrained namespaces). It cannot wedge the *bootstrap*
+   (point above — the hook does not exist yet at first apply), but see the steady-state
+   note below.
+3. The `config.validating.projectcapsule.dev` and `managed.validating.projectcapsule.dev`
+   hooks use `failurePolicy: Ignore` — a degraded controller cannot block its own config.
+
+**Steady-state dependency (accepted, upstream-standard):** once the controller has
+installed the runtime hooks, the cluster-wide `namespaces.validating` hook (failurePolicy
+`Fail`) means that **if the Capsule controller is unavailable, namespace CREATE/UPDATE/DELETE
+cluster-wide is blocked** until it recovers. This is inherent to strict tenant-namespace
+enforcement and is the upstream Capsule default; the cert-manager-issued cert auto-renews,
+so the common degradation (cert expiry) is managed. Consumers running this in production
+should treat the Capsule controller as a cluster-availability-critical workload.
+
+**RBAC posture (accepted, upstream chart default):** the Capsule controller's
+`ServiceAccount` is bound to `cluster-admin` (the upstream `projectcapsule/charts` 0.13.7
+default, shipped unchanged). A full-stack tenancy operator legitimately needs broad
+cluster authority — it creates/manages namespaces, ResourceQuotas, RBAC, and arbitrary
+tenant-scoped resources — but this does grant cluster-wide Secret read and makes a
+controller compromise cluster-wide in blast radius. This is an **accepted risk** for the
+operator class (the platform did not widen it); a finer-grained role is a future upstream
+improvement to track, not a local override.
 
 ## Freeze-line (ADR-0024)
 
