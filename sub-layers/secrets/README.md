@@ -17,6 +17,7 @@ See [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-d
 | [`vault-operator-crds`](components/vault-operator-crds/) | -1 | The single `vaults.vault.banzaicloud.com` CRD (strict-B `-crds` half, ADR-0028) vendored from chart `vault-operator` v1.24.0 | `oci://.../secrets/vault-operator-crds:vX.Y.Z` |
 | [`cert-manager`](components/cert-manager/) | 0 | Helm `cert-manager` @ jetstack v1.20.2 — TLS issuance controller + CRDs | `oci://.../secrets/cert-manager:vX.Y.Z` |
 | [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` — CRD-free ESO operator (strict-B workload half; requires `external-secrets-crds`) | `oci://.../secrets/external-secrets:vX.Y.Z` |
+| [`vault-operator`](components/vault-operator/) | 0 | Helm `vault-operator` v1.24.0 — Bank-Vaults Vault Operator (strict-B workload half; requires `vault-operator-crds`) | `oci://.../secrets/vault-operator:vX.Y.Z` |
 | [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate manifests | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
 | [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA `ClusterIssuer`, CA key via ESO from Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |
 
