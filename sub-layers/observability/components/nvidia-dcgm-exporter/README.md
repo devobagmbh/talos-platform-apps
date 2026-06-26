@@ -30,7 +30,8 @@ A `kind: helm` wrapper over the `dcgm-exporter` chart
 - `DaemonSet` (`dcgm-exporter`) — one pod per GPU node, **not** a Deployment.
 - `Service` (`dcgm-exporter`, ClusterIP) exposing the `/metrics` endpoint.
 - `ServiceAccount` (`dcgm-exporter`).
-- A `ConfigMap` (`dcgm-exporter`) carrying the DCGM metrics field selection.
+- A `ConfigMap` (`exporter-metrics-config-map`) carrying the DCGM metrics field
+  selection (the chart's `fullnameOverride` does **not** rename this ConfigMap).
 - chart RBAC (`Role`/`RoleBinding`, and `ClusterRole`/`ClusterRoleBinding` where
   the chart ships them).
 - A dedicated `nvidia-dcgm-exporter` `Namespace` (the chart ships none).
@@ -91,6 +92,12 @@ ships none of them:
   starts but emits no metrics (no NVIDIA GPU / DCGM backend present). The consumer
   MUST add a nodeSelector matching its GPU nodes (e.g. a GPU-feature-discovery
   label) in its overlay so the DaemonSet lands only on GPU nodes.
+- **Control-plane toleration** — the catalog default does **not** tolerate
+  control-plane taints (`tolerations: []` pins out the chart default, which would
+  tolerate `node-role.kubernetes.io/control-plane:NoSchedule`). This GPU exporter
+  targets GPU **worker** nodes; control-plane nodes carry no GPU/DCGM backend. A
+  consumer that actually runs GPUs on control-plane nodes adds the appropriate
+  toleration via its overlay (alongside the GPU-node nodeSelector above).
 - **`runtimeClassName: nvidia`** — if the cluster does **not** run the NVIDIA
   GPU-operator (which injects the runtime class automatically), the consumer adds
   `runtimeClassName: nvidia` via overlay so the pod gets the NVIDIA container
