@@ -64,6 +64,17 @@ operator to a fixed namespace set and narrow the `ClusterRole` accordingly; this
 is **out of scope** for the catalog default and would be a consumer-side
 composition concern.
 
+## Known limitations
+
+The operator's log level is **hardcoded to `debug`** in chart `vault-operator`
+v1.24.0 (`OPERATOR_LOG_LEVEL: debug`, set literally in the chart's Deployment
+template). The chart exposes **no** values key to override it, so the catalog
+cannot ship a quieter default and a consumer cannot lower it through Helm values
+either. Operators SHOULD be aware that the operator logs verbosely and MAY
+surface `Vault` reconciliation detail (CR paths, token references) in its logs;
+lowering the level requires a post-render patch in the consumer repo or an
+upstream change to make the level configurable.
+
 ## Strict-B consumer wiring (ADR-0028)
 
 The consumer cluster repo wires **two** Argo `Application`s — the `-crds` app
