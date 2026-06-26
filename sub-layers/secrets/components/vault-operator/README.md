@@ -47,6 +47,23 @@ adds, in its Argo overlay:
 - any PNI labels (`platform.io/provide.*`, `consume.*`, `network-profile`) —
   these are consumer-composition concerns.
 
+## Cluster-wide RBAC
+
+The chart ships a `ClusterRole` + `ClusterRoleBinding` granting the operator
+**cluster-wide** `verbs: ["*"]` on core `secrets` (and on `apps`
+`deployments`/`statefulsets`). This is the **upstream chart default** and is
+functionally required: the operator provisions `Vault` instances together with
+their TLS, unseal, and token `Secrets` in **arbitrary consumer namespaces**, so
+the grant **cannot** be narrowed without forking the chart RBAC. The catalog
+**accepts** this grant for that reason.
+
+The blast radius is a **known property** of this operator pattern: a compromised
+operator can read, write, and delete `Secrets` cluster-wide. A future hardening
+option, if a consumer constrains where `Vault` CRs may run, is to confine the
+operator to a fixed namespace set and narrow the `ClusterRole` accordingly; this
+is **out of scope** for the catalog default and would be a consumer-side
+composition concern.
+
 ## Strict-B consumer wiring (ADR-0028)
 
 The consumer cluster repo wires **two** Argo `Application`s — the `-crds` app
