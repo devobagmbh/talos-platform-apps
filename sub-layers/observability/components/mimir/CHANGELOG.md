@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.2.1...observability/mimir-v0.3.0) (2026-06-27)
+
+
+### Features
+
+* **observability/mimir:** raise per-tenant ingestion limits ([#411](https://github.com/devobagmbh/talos-platform-apps/issues/411)) ([4b526fa](https://github.com/devobagmbh/talos-platform-apps/commit/4b526fa765df918259ba354917033eb742eb89f2)), closes [#410](https://github.com/devobagmbh/talos-platform-apps/issues/410)
+
+
+### Bug Fixes
+
+* **observability/mimir:** make ruler.alertmanager_url consumer-overridable ([#403](https://github.com/devobagmbh/talos-platform-apps/issues/403)) ([bc9c440](https://github.com/devobagmbh/talos-platform-apps/commit/bc9c4402696c678aa538b7cd45f4992f2f54ab37)), closes [#402](https://github.com/devobagmbh/talos-platform-apps/issues/402)
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.2.0...observability/mimir-v0.2.1) (2026-06-25)
 
 
