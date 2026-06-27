@@ -3,9 +3,11 @@
 # Tiered validation: staff-reviewer primary artifact + on-demand escalation artifacts.
 #
 # STATUS: dormant — intentionally NOT bound in .claude/settings.json (no "hooks"
-# block). With a single maintainer, fail-closed self-review enforcement would be
-# self-sabotage; the hook is reactivated when a second maintainer onboards. Until
-# then this script is the contract the review agents emit against, not a live gate.
+# block). M2 is reached and fail-closed review enforcement is warranted (two
+# maintainers); the hook binds in the final reactivation stage, after the
+# .claude/reviews/ emission substrate it depends on is wired — binding it before
+# that substrate exists would block every commit. Until then this script is the
+# contract the review agents emit against, not a live gate.
 #
 # Review-artifact contract (kept in parity with .claude/agents/* and the live
 # verdict schema in .claude/workflows/catalog-fleet.js):
@@ -16,11 +18,10 @@
 #   .claude/reviews/<change-id>/review-<domain>.md  — one per escalated domain
 #     <domain> is a closed set: security | operational-safety | provenance |
 #                               compatibility | architecture
-#     NOTE: only `security` and `operational-safety` have a backing reviewer agent
-#     today. `provenance` / `compatibility` / `architecture` are reserved for M2
-#     onboarding; escalating to one of those denies (no agent can produce its
-#     artifact) until the reviewer is restored. staff-reviewer's triage table
-#     marks these as M2-deferred so it does not route into that dead end.
+#     NOTE: all five domains now have a backing reviewer agent (the provenance /
+#     compatibility / architecture reviewers were restored at M2). staff-reviewer
+#     may route any of them in escalations[]; each escalated domain requires its
+#     review-<domain>.md before this gate (when bound) allows the commit.
 #     verdict:       approved | rejected | needs-info
 #     reviewer-role: <domain>-reviewer
 #
