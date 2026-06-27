@@ -99,18 +99,21 @@ values:
       store_gateway:
         sharding_ring:
           replication_factor: 1
-      # Per-tenant ingestion limits. Mimir's defaults (ingestion_rate 10000 samples/s,
-      # ingestion_burst_size 200000, max_global_series_per_user 150000) are sized for a
-      # demo and are far too low for a real multi-node cluster: the metrics volume of
-      # kube-state-metrics + node-exporter + cAdvisor + apiserver + CNI across all nodes
-      # makes the distributor drop samples with reason="rate_limited", so series like
-      # up / kube_pod_info / node_cpu never land → "No data" panels in Grafana. Raised to
-      # the platform footprint. NOTE: max_global_series_per_user scales the single
-      # ingester's memory — bump the ingester resources in step if a consumer needs more.
+      # Per-tenant ingestion RATE limits. Mimir's defaults (ingestion_rate 10000
+      # samples/s, ingestion_burst_size 200000) are demo-sized and far too low for a real
+      # multi-node cluster: the metrics volume of kube-state-metrics + node-exporter +
+      # cAdvisor + apiserver + CNI across all nodes makes the distributor drop samples
+      # with reason="rate_limited", so series like up / kube_pod_info / node_cpu never
+      # land → "No data" panels in Grafana. Raised to the platform footprint.
+      # max_global_series_per_user (the cardinality CEILING) is deliberately left at the
+      # chart default here: a single replicas-1 / RF-1 ingester capped at 512Mi (see the
+      # ingester resources block below) holds far fewer than the chart default's series,
+      # so raising the ceiling would not add reachable headroom — it would only replace a
+      # clean per-user-series-limit rejection with an OOMKill of the one stateful
+      # component. Raise it only in lockstep with the ingester memory limit.
       limits:
         ingestion_rate: 150000
         ingestion_burst_size: 1500000
-        max_global_series_per_user: 1000000
 
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
   # small single-workload cluster; no zone awareness). Each carries an explicit
