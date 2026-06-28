@@ -1,8 +1,5 @@
 requires:
-  # Object-store dependency is the s3-object capability (#427), not the concrete
-  # Garage component — any s3-object impl (garage/minio-operator/external-s3, all
-  # drop-in) satisfies it. Bucket provisioning (blocks + ruler) is consumer-side and
-  # provider-specific, so it is not a catalog-component requirement.
+  # s3-object capability — instanced, consumer-supplied endpoint; not a concrete component. See catalog/README.md (#427).
   s3-object: "*"
 provides:
   - name: mimir
