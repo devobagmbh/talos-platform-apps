@@ -34,7 +34,4 @@ required:
     - S3_SECRET_ACCESS_KEY # S3 secret access key
   selector_crs: []
 sync_wave: "10" # needs an s3-object endpoint + its traces bucket present (consumer-provisioned, provider-specific)
-# Object store is the s3-object CAPABILITY (see compatibility.yaml requires), not a
-# concrete catalog component — so there is no <sub-layer>/<component> entry here. The S3
-# endpoint + the traces bucket are consumer-provisioned (provider-specific).
-external_dependencies: []
+external_dependencies: [] # object store is the s3-object capability (see compatibility.yaml requires); this field takes only <sub-layer>/<component> paths

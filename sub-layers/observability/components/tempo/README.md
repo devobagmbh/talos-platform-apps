@@ -167,9 +167,8 @@ Tempo writes scratch/WAL paths and `restricted` PSA does not require it. Enablin
 
 `10` — Tempo needs the cluster's `s3-object` endpoint + the traces bucket present; for a
 Garage backend the foundational `storage-objects/garage` (sync-wave 0) provides the
-endpoint and `storage-objects/garage-buckets` (sync-wave 10) the bucket. The trace
-forwarder `observability/alloy` (sync-wave 20)
-forwards OTLP to Tempo, so it comes after.
+endpoint and `storage-objects/garage-buckets` (sync-wave 10) the bucket. The trace forwarder
+`observability/alloy` (sync-wave 20) forwards OTLP to Tempo, so it comes after.
 
 ## OCI
 
