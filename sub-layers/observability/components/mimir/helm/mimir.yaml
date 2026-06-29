@@ -147,9 +147,13 @@ values:
     resources:
       requests:
         cpu: 100m
-        memory: 256Mi
+        memory: 1Gi
+      # On restart the ingester replays its on-disk WAL + holds the in-memory series;
+      # 512Mi OOMKilled mid-replay → CrashLoop death spiral (never Ready → WAL never
+      # flushes → grows → OOM). A Mimir ingester needs GBs. 4Gi gives ample replay
+      # headroom for the single-ingester office-lab profile; tune per consumer volume.
       limits:
-        memory: 512Mi
+        memory: 4Gi
   querier:
     replicas: 1
     resources:
