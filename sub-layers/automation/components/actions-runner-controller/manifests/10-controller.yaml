@@ -1,0 +1,323 @@
+# ARC controller workload (strict-B workload half, ADR-0028) for
+# automation/actions-runner-controller. Controller Deployment + RBAC + ServiceAccount
+# that reconcile the actions.github.com CRs (AutoscalingRunnerSet / AutoscalingListener /
+# EphemeralRunner / EphemeralRunnerSet). CRDs ship in actions-runner-controller-crds
+# (sync-wave -1); this workload is sync-wave 0, rendered with --skip-crds. Pull-based: the
+# controller/listener connect OUTBOUND to GitHub; no inbound route is required.
+#
+# Source chart: gha-runner-scale-set-controller 0.14.2 (appVersion 0.14.2),
+#   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+# render:one uses `helm template --repo <https>` (no OCI) → VENDORED (not the render path),
+# hardened for PSA restricted + resource requests/limits (memory limit only). Regenerate on
+# a chart bump with the helm template command in README.md § Vendoring.
+---
+# Source: gha-runner-scale-set-controller/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: arc-gha-rs-controller
+  namespace: arc-system
+  labels:
+    helm.sh/chart: gha-rs-controller-0.14.2
+    app.kubernetes.io/name: gha-rs-controller
+    app.kubernetes.io/namespace: arc-system
+    app.kubernetes.io/instance: arc
+    app.kubernetes.io/version: "0.14.2"
+    app.kubernetes.io/part-of: gha-rs-controller
+    app.kubernetes.io/managed-by: Helm
+---
+# Source: gha-runner-scale-set-controller/templates/manager_cluster_role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: arc-gha-rs-controller
+rules:
+- apiGroups:
+  - actions.github.com
+  resources:
+  - autoscalingrunnersets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - actions.github.com
+  resources:
+  - autoscalingrunnersets/finalizers
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - autoscalingrunnersets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - autoscalinglisteners
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - actions.github.com
+  resources:
+  - autoscalinglisteners/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - autoscalinglisteners/finalizers
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - ephemeralrunnersets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - actions.github.com
+  resources:
+  - ephemeralrunnersets/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - ephemeralrunnersets/finalizers
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - ephemeralrunners
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - actions.github.com
+  resources:
+  - ephemeralrunners/finalizers
+  verbs:
+  - patch
+  - update
+- apiGroups:
+  - actions.github.com
+  resources:
+  - ephemeralrunners/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  verbs:
+  - list
+  - watch
+  - patch
+---
+# Source: gha-runner-scale-set-controller/templates/manager_cluster_role_binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: arc-gha-rs-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: arc-gha-rs-controller
+subjects:
+- kind: ServiceAccount
+  name: arc-gha-rs-controller
+  namespace: arc-system
+---
+# Source: gha-runner-scale-set-controller/templates/manager_listener_role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: arc-gha-rs-controller-listener
+  namespace: arc-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - delete
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - pods/status
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+---
+# Source: gha-runner-scale-set-controller/templates/manager_listener_role_binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: arc-gha-rs-controller-listener
+  namespace: arc-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: arc-gha-rs-controller-listener
+subjects:
+- kind: ServiceAccount
+  name: arc-gha-rs-controller
+  namespace: arc-system
+---
+# Source: gha-runner-scale-set-controller/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arc-gha-rs-controller
+  namespace: arc-system
+  labels:
+    helm.sh/chart: gha-rs-controller-0.14.2
+    app.kubernetes.io/name: gha-rs-controller
+    app.kubernetes.io/namespace: arc-system
+    app.kubernetes.io/instance: arc
+    app.kubernetes.io/version: "0.14.2"
+    app.kubernetes.io/part-of: gha-rs-controller
+    app.kubernetes.io/managed-by: Helm
+    actions.github.com/controller-service-account-namespace: arc-system
+    actions.github.com/controller-service-account-name: arc-gha-rs-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gha-rs-controller
+      app.kubernetes.io/namespace: arc-system
+      app.kubernetes.io/instance: arc
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: "manager"
+      labels:
+        app.kubernetes.io/part-of: gha-rs-controller
+        app.kubernetes.io/component: controller-manager
+        app.kubernetes.io/version: 0.14.2
+        app.kubernetes.io/name: gha-rs-controller
+        app.kubernetes.io/namespace: arc-system
+        app.kubernetes.io/instance: arc
+    spec:
+      serviceAccountName: arc-gha-rs-controller
+      containers:
+      - name: manager
+        image: "ghcr.io/actions/gha-runner-scale-set-controller:0.14.2"
+        imagePullPolicy: IfNotPresent
+        args:
+        - "--auto-scaling-runner-set-only"
+        - "--log-level=debug"
+        - "--log-format=text"
+        - "--runner-max-concurrent-reconciles=2"
+        - "--update-strategy=immediate"
+        - "--listener-metrics-addr=0"
+        - "--listener-metrics-endpoint="
+        - "--metrics-addr=0"
+        command:
+        - "/manager"
+        env:
+        - name: CONTROLLER_MANAGER_CONTAINER_IMAGE
+          value: "ghcr.io/actions/gha-runner-scale-set-controller:0.14.2"
+        - name: CONTROLLER_MANAGER_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: tmp
+        emptyDir: {}
