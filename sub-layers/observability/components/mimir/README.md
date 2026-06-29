@@ -85,13 +85,20 @@ connection out of the frozen workload:
 Two consumer-supplied refs feed the placeholders:
 
 - **Shape (a)** — `ConfigMap` `mimir-runtime-config` (non-secret), `envFrom`:
-  `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, `S3_INSECURE`.
+  `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, `S3_INSECURE`,
+  `RULER_ALERTMANAGER_URL`.
 - **Shape (c)** — `Secret` `mimir-runtime-secret`, `envFrom`: `S3_ACCESS_KEY_ID`,
   `S3_SECRET_ACCESS_KEY`.
 
 These map into `common.storage.s3` (credentials/endpoint/region),
-`blocks_storage.s3.bucket_name` (blocks), and `ruler_storage.s3.bucket_name` (ruler) in
-the rendered config. See `customization.yaml`.
+`blocks_storage.s3.bucket_name` (blocks), `ruler_storage.s3.bucket_name` (ruler), and
+`ruler.alertmanager_url` (`RULER_ALERTMANAGER_URL`) in the rendered config. See
+`customization.yaml`.
+
+**`RULER_ALERTMANAGER_URL`** — the built-in alertmanager is disabled (the platform uses a
+standalone one), so the ruler must be pointed at the consumer's Alertmanager (e.g.
+`http://alertmanager-operated.monitoring.svc:9093`). Unset → empty → the ruler evaluates
+rules but does not notify (safe default).
 
 ## Consumer obligations (out of scope here)
 

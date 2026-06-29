@@ -88,6 +88,15 @@ values:
       ruler_storage:
         s3:
           bucket_name: ${S3_BUCKET_RULER}
+      # Ruler → Alertmanager target, consumer-overridable. The built-in alertmanager is
+      # disabled (alertmanager.enabled: false below) because the platform uses a STANDALONE
+      # alertmanager; but the mimir-distributed chart default would point the ruler at the
+      # now-absent mimir-alertmanager-headless → alerts go nowhere. So set it from a
+      # consumer env var (resolved by -config.expand-env=true): RULER_ALERTMANAGER_URL in
+      # mimir-runtime-config = the consumer's AM (e.g. http://alertmanager-operated.monitoring.svc:9093).
+      # Unset → empty → the ruler evaluates rules but does not notify (safe default).
+      ruler:
+        alertmanager_url: ${RULER_ALERTMANAGER_URL}
       # Single-replica footprint (replicas 1, zone-awareness off below): the rings
       # MUST run replication factor 1, else Mimir's default RF of 3 makes the
       # read/write quorum (2) unreachable with one instance → every query and write
@@ -99,6 +108,21 @@ values:
       store_gateway:
         sharding_ring:
           replication_factor: 1
+      # Per-tenant ingestion RATE limits. Mimir's defaults (ingestion_rate 10000
+      # samples/s, ingestion_burst_size 200000) are demo-sized and far too low for a real
+      # multi-node cluster: the metrics volume of kube-state-metrics + node-exporter +
+      # cAdvisor + apiserver + CNI across all nodes makes the distributor drop samples
+      # with reason="rate_limited", so series like up / kube_pod_info / node_cpu never
+      # land → "No data" panels in Grafana. Raised to the platform footprint.
+      # max_global_series_per_user (the cardinality CEILING) is deliberately left at the
+      # chart default here: a single replicas-1 / RF-1 ingester capped at 512Mi (see the
+      # ingester resources block below) holds far fewer than the chart default's series,
+      # so raising the ceiling would not add reachable headroom — it would only replace a
+      # clean per-user-series-limit rejection with an OOMKill of the one stateful
+      # component. Raise it only in lockstep with the ingester memory limit.
+      limits:
+        ingestion_rate: 150000
+        ingestion_burst_size: 1500000
 
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
   # small single-workload cluster; no zone awareness). Each carries an explicit
