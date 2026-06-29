@@ -33,7 +33,7 @@ values:
   # Config is consumer-owned (Shape c): reference an EXISTING secret instead of
   # creating one from inline `config`. The catalog ships NO dex config + NO
   # secrets (base Hard-Constraint). The consumer creates `dex-config` (key
-  # `config.yaml`) via SOPS (seeder) / Vault+ESO (office-lab) before sync.
+  # `config.yaml`) via SOPS (seed cluster) / Vault+ESO (a consumer cluster) before sync.
   configSecret:
     create: false
     name: dex-config
