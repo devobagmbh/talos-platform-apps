@@ -126,7 +126,10 @@ of these:
   (DR): committed blocks live in S3 (Garage) and survive pod/node loss; the PVCs hold
   the ingester WAL + the store-gateway/compactor working set (recent, not-yet-flushed
   data), so deleting a `StatefulSet` (Argo prune / re-install) loses the recent
-  pre-flush window. For planned maintenance, flush before deletion.
+  pre-flush window. For planned maintenance, flush before deletion. Recovery: on
+  restart the ingester replays that WAL in memory before it goes Ready — at the
+  4Gi / 600k-series profile (see the ingester `resources` block) this replay is the
+  peak-memory, slowest-recovery moment; a larger cardinality ceiling widens the window.
 - **PNI labels** — the `platform.io/provide.*` namespace trust anchors, the
   `pod-security.kubernetes.io/enforce-version` pin (its cluster's Kubernetes minor),
   and the `audit`/`warn` PSA modes.
