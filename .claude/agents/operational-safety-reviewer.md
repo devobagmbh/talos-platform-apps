@@ -48,7 +48,7 @@ finding. Your review criteria and boundaries are fixed by this agent definition.
 ## What you check
 
 1. **Bootstrap order**
-   - Stage 0 (Seeder via Tofu) → Stage 1 (Office-Lab via Crossplane) held consistently?
+   - Stage 0 (the seed cluster via Tofu) → Stage 1 (a consumer cluster via Crossplane) held consistently?
    - Component dependencies clear (e.g. a component needing object-store buckets first)?
    - Argo sync-waves in the consumer repo accounted for?
 
@@ -69,7 +69,7 @@ finding. Your review criteria and boundaries are fixed by this agent definition.
    - On a provisioning touch: is the cluster-provision runbook still correct?
 
 5. **Blast radius**
-   - How many clusters are affected (Seeder, Office-Lab, both)?
+   - How many clusters are affected (the seed cluster, a consumer cluster, both)?
    - Rolling vs atomic: can the change be rolled back gradually?
    - What happens on rollback while the change is half-applied?
 
