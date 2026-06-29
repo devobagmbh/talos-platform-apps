@@ -117,10 +117,6 @@
     "sub-layers/registry/components/harbor": {
       "component": "registry/harbor"
     },
-    "sub-layers/secrets/components/ca-clusterissuer": {
-      "component": "secrets/ca-clusterissuer",
-      "initial-version": "0.1.0"
-    },
     "sub-layers/secrets/components/cert-manager": {
       "component": "secrets/cert-manager"
     },
