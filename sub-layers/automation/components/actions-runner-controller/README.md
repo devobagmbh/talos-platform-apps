@@ -40,4 +40,5 @@ helm template arc \
   --set securityContext.seccompProfile.type=RuntimeDefault \
   | awk '/^(apiVersion:|---)/{f=1} f'   # → manifests/10-controller.yaml (below the header)
 ```
+
 Bump the chart version here **and** in `actions-runner-controller-crds` (keep the strict-B pair in lockstep) + `compatibility.yaml`.
