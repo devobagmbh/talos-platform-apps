@@ -185,7 +185,8 @@ capabilities:
     # Contract (interface, provider/consumer semantics, swap_class) still to be
     # defined — proposed, not guessed. Implemented by actions-runner-controller
     # (ARC, gha-runner-scale-set model); the catalog ships the controller + CRDs
-    # + CiliumClusterwideNetworkPolicy isolation, the consumer deploys scale-sets.
+    # (network isolation TBD by the component plan, #397 — mechanism unresolved); the
+    # consumer deploys scale-sets.
     implementations:
       - {name: gha-runner-scale-set-controller, status: active, swap_class: rewrite-required}  # ARC; contract open
   - id: bare-metal-boot
