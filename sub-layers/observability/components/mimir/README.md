@@ -3,8 +3,9 @@
 [Grafana Mimir](https://grafana.com/docs/mimir/latest/) — the platform **metrics
 store** and **PromQL query endpoint** (OSS, AGPL-3.0). Deployed in the **classic
 microservices architecture** (the `mimir-distributed` chart 5.x, no Kafka), every core
-component at one replica, backed by **S3 (Garage)** for both the TSDB blocks and the
-ruler. Mimir is the long-term metrics analogue of `observability/loki` (logs).
+component at one replica, backed by an **S3-compatible object store** (the `s3-object`
+capability) for both the TSDB blocks and the ruler. Mimir is the long-term metrics
+analogue of `observability/loki` (logs).
 
 It implements **two** capabilities in `catalog/capability-index.yaml`:
 
@@ -50,8 +51,9 @@ A `kind: helm` wrapper over the `mimir-distributed` chart
 - A dedicated `mimir` `Namespace` carrying `pod-security.kubernetes.io/enforce:
   restricted`.
 
-Disabled (not needed for the small single-node footprint): `minio` (external Garage S3
-instead), `nginx`/`gateway` (a consumer fronts Mimir via its own gateway),
+Disabled (not needed for the small single-node footprint): `minio` (external S3 is used
+instead of the chart's bundled minio), `nginx`/`gateway` (a consumer fronts Mimir via
+its own gateway),
 `alertmanager` (the platform ships a standalone alertmanager component, so no
 alertmanager S3 bucket is needed here), `overrides_exporter`, `rollout_operator` (only
 needed for zone-aware HA StatefulSet rollouts — we run replicas 1 with no zone
@@ -105,25 +107,26 @@ rules but does not notify (safe default).
 The consumer supplies, in its own cluster repo / Argo overlay — the catalog ships none
 of these:
 
-- **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit Garage S3
-  endpoint URL, e.g. `https://garage.<cluster>:3900`), `S3_REGION` (typically
-  `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` — the S3 endpoint
-  TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure); `"true"` = plain
-  HTTP, for a TLS-less Garage (e.g. an internal NAS Garage).
+- **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit S3
+  endpoint URL, e.g. `https://garage.<cluster>:3900`), `S3_REGION` (S3 region; the
+  Garage impl uses `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` —
+  the S3 endpoint TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure);
+  `"true"` = plain HTTP, for a TLS-less S3 endpoint (e.g. an internal NAS).
 - **`mimir-runtime-secret` `Secret`** with keys `S3_ACCESS_KEY_ID`,
-  `S3_SECRET_ACCESS_KEY` (the Garage S3 credentials).
-- **The two Garage buckets** — a blocks bucket and a ruler bucket, provisioned by
-  `storage-objects/garage-buckets` (sync-wave 10), not the `garage` workload (wave 0);
-  their names are what `S3_BUCKET_BLOCKS` / `S3_BUCKET_RULER` point at. NOTE: the
-  buckets MUST exist before Mimir can write — the ingester/compactor/store-gateway
+  `S3_SECRET_ACCESS_KEY` (the S3 credentials).
+- **The required buckets** — a blocks bucket and a ruler bucket — must exist in the
+  `s3-object` backend before the workload runs; their names are what `S3_BUCKET_BLOCKS` /
+  `S3_BUCKET_RULER` point at. The platform's active impl (Garage) provisions them via
+  `storage-objects/garage-buckets` (sync-wave 10), not the `garage` workload (wave 0).
+  NOTE: the buckets MUST exist before Mimir can write — the ingester/compactor/store-gateway
   CrashLoop on a missing S3 bucket until it appears (a visible, self-healing failure).
-  Since `garage-buckets` and `mimir` share sync-wave 10, the consumer SHOULD ensure
+  Since `garage-buckets` and `mimir` share sync-wave 10, the consumer MUST ensure
   bucket readiness, e.g. by ordering `garage-buckets` ahead of `mimir` in its
   composition.
 - **Persistent storage** — the ingester / store-gateway / compactor `StatefulSet`s bind
   their data volume claims to the cluster's default StorageClass; tune the chart
   `persistence` values in the consumer overlay if a specific class/size is needed. NOTE
-  (DR): committed blocks live in S3 (Garage) and survive pod/node loss; the PVCs hold
+  (DR): committed blocks live in the S3 object store and survive pod/node loss; the PVCs hold
   the ingester WAL + the store-gateway/compactor working set (recent, not-yet-flushed
   data), so deleting a `StatefulSet` (Argo prune / re-install) loses the recent
   pre-flush window. For planned maintenance, flush before deletion.
@@ -134,10 +137,11 @@ of these:
   annotation) — Argo definitions live in the consumer cluster repos, not here.
 
 Path-style addressing is baked into the workload (forced via `bucket_lookup_type: path`
-— Garage requires it) and is not consumer-tunable. The S3 endpoint TLS mode is
-consumer-owned via `S3_INSECURE` (`insecure: ${S3_INSECURE}`): unset or `"false"` keeps
-TLS on (the secure default), `"true"` selects plain HTTP for a TLS-less Garage. The
-connection *values* are consumer-supplied.
+— the self-hosted / path-style S3 standard; MinIO, Garage and similar require it) and is
+not consumer-tunable. The S3 endpoint TLS mode is consumer-owned via `S3_INSECURE`
+(`insecure: ${S3_INSECURE}`): unset or `"false"` keeps TLS on (the secure default),
+`"true"` selects plain HTTP for a TLS-less S3 endpoint. The connection *values* are
+consumer-supplied.
 
 ## Namespace & Pod Security
 
@@ -161,9 +165,9 @@ cluster-wide for every pod kind the chart renders.
 
 ## Sync-wave
 
-`10` — Mimir needs the cluster's Garage S3 endpoint + the blocks/ruler buckets, which
-the foundational `storage-objects/garage` (sync-wave 0) provides. The metrics collector
-`observability/alloy` (sync-wave 20) forwards to Mimir, so it comes after.
+`10` — Mimir needs the cluster's S3 endpoint + the blocks/ruler buckets (s3-object
+capability; the platform's Garage impl provides them at sync-wave 0/10). The metrics
+collector `observability/alloy` (sync-wave 20) forwards to Mimir, so it comes after.
 
 ## OCI
 
