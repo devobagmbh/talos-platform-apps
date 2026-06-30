@@ -1,5 +1,5 @@
 # Strict-B CRDs artifact (ADR-0028) for automation/actions-runner-controller. The 4
-# actions.github.com CustomResourceDefinition objects are namespaced but cluster-level
+# actions.github.com CustomResourceDefinition objects are cluster-scoped and define namespaced custom resources (cluster-level
 # API surface and depend on nothing in the catalog → requires is empty.
 #
 # crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
