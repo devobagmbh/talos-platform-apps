@@ -2,8 +2,9 @@
 
 [Grafana Tempo](https://grafana.com/docs/tempo/latest/) — the platform **trace store**
 and **trace-query endpoint** (OSS, AGPL-3.0). Deployed in **monolithic single-binary**
-mode (one `StatefulSet`, one replica, every Tempo target in a single process) backed by
-**S3 (Garage)** for the trace blocks, ingesting **OTLP** traces.
+mode (one `StatefulSet`, one replica, every Tempo target in a single process) shipped
+backed by an **S3-compatible object store** (the `s3-object` capability) for the trace
+blocks, ingesting **OTLP** traces.
 
 It implements **two** capabilities in `catalog/capability-index.yaml`:
 
@@ -108,24 +109,24 @@ distinct from Loki's `accessKeyId` naming. See `customization.yaml`.
 The consumer supplies, in its own cluster repo / Argo overlay — the catalog ships none
 of these:
 
-- **`tempo-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit Garage
-  S3 endpoint URL, e.g. `https://garage.<consumer-domain>:3900`), `S3_REGION` (typically
-  `garage`), `S3_BUCKET_TRACES`, and `S3_INSECURE` — the S3 endpoint TLS mode:
-  `"false"` = TLS/HTTPS to the S3 endpoint (default, secure); `"true"` = plain HTTP, for
-  a TLS-less Garage (e.g. an internal NAS Garage).
+- **`tempo-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit S3
+  endpoint URL of the `s3-object` provider, e.g. `https://s3.<consumer-domain>:3900`),
+  `S3_REGION` (provider-specific; e.g. `garage` for a Garage backend), `S3_BUCKET_TRACES`,
+  and `S3_INSECURE` — the S3 endpoint TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint
+  (default, secure); `"true"` = plain HTTP, for a TLS-less S3 endpoint.
 - **`tempo-runtime-secret` `Secret`** with keys `S3_ACCESS_KEY_ID`,
-  `S3_SECRET_ACCESS_KEY` (the Garage S3 credentials).
-- **The Garage traces bucket** — provisioned by `storage-objects/garage-buckets`
-  (sync-wave 10), not the `garage` workload (wave 0); its name is what `S3_BUCKET_TRACES`
-  points at. NOTE: the traces bucket MUST exist before Tempo flushes blocks; because
-  `storage-objects/garage-buckets` shares sync-wave 10 with `tempo`, consumers MUST
-  order `garage-buckets` ahead of `tempo` in their composition (e.g. a lower Argo
-  sync-wave for `garage-buckets`, or an Argo sync-phase/readiness gate on bucket
-  provisioning) to avoid a first-deploy CrashLoop window — Tempo errors/CrashLoops on
-  the S3 flush against a missing bucket until it appears (visible + self-healing).
+  `S3_SECRET_ACCESS_KEY` (the S3 credentials).
+- **The traces bucket** — provisioned consumer-side by whatever mechanism the chosen
+  `s3-object` provider uses (for a Garage backend that is `storage-objects/garage-buckets`,
+  sync-wave 10, not the `garage` workload at wave 0); its name is what `S3_BUCKET_TRACES`
+  points at. NOTE: the traces bucket MUST exist before Tempo flushes blocks; consumers
+  MUST order the bucket provisioning ahead of `tempo` in their composition (e.g. a lower
+  Argo sync-wave on it, or an Argo sync-phase/readiness gate) to avoid a first-deploy
+  CrashLoop window — Tempo errors/CrashLoops on the S3 flush against a missing bucket
+  until it appears (visible + self-healing).
 - **Persistent storage** — the `StatefulSet`'s WAL volume claim binds to the cluster's
   default StorageClass (no `storageClassName` is pinned; consumer-tunable). NOTE (DR):
-  committed trace blocks live in S3 (Garage) and survive pod/node loss; the PVC holds
+  committed trace blocks live in the object store and survive pod/node loss; the PVC holds
   only the WAL (recent, not-yet-flushed window) and uses
   `persistentVolumeClaimRetentionPolicy: whenDeleted/whenScaled: Delete`, so deleting
   the `StatefulSet` (Argo prune / re-install) loses the recent pre-flush window. For
@@ -136,11 +137,11 @@ of these:
 - The Argo `Application` CR itself (with its `argocd.argoproj.io/sync-wave`
   annotation) — Argo definitions live in the consumer cluster repos, not here.
 
-Path-style addressing (`forcepathstyle: true`) is baked into the workload (Garage
-requires it) and is not consumer-tunable. The S3 endpoint TLS mode is consumer-owned via
-`S3_INSECURE` (`insecure: ${S3_INSECURE}`): unset or `"false"` keeps TLS on (the secure
-default), `"true"` selects plain HTTP for a TLS-less Garage. The connection *values* are
-consumer-supplied.
+Path-style addressing (`forcepathstyle: true`) is baked into the workload — the standard
+for self-hosted S3 (Garage, MinIO, …) — and is not consumer-tunable. The S3 endpoint TLS
+mode is consumer-owned via `S3_INSECURE` (`insecure: ${S3_INSECURE}`): unset or `"false"`
+keeps TLS on (the secure default), `"true"` selects plain HTTP for a TLS-less S3 endpoint.
+The connection *values* are consumer-supplied.
 
 ## Namespace & Pod Security
 
@@ -164,10 +165,10 @@ Tempo writes scratch/WAL paths and `restricted` PSA does not require it. Enablin
 
 ## Sync-wave
 
-`10` — Tempo needs the cluster's Garage S3 endpoint + the traces bucket, which the
-foundational `storage-objects/garage` (sync-wave 0) and `storage-objects/garage-buckets`
-(sync-wave 10) provide. The trace forwarder `observability/alloy` (sync-wave 20)
-forwards OTLP to Tempo, so it comes after.
+`10` — Tempo needs the cluster's `s3-object` endpoint + the traces bucket present; for a
+Garage backend the foundational `storage-objects/garage` (sync-wave 0) provides the
+endpoint and `storage-objects/garage-buckets` (sync-wave 10) the bucket. The trace forwarder
+`observability/alloy` (sync-wave 20) forwards OTLP to Tempo, so it comes after.
 
 ## OCI
 

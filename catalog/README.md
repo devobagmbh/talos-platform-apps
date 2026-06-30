@@ -64,14 +64,22 @@ Rules:
 - In `requires:`, a fixed catalog component MUST be referenced **concretely**
   as `<sub-layer>/<component>: ">=vX.Y.Z"` — even when it itself provides a
   capability (e.g. `alloy`/`grafana` → `observability/loki|mimir|tempo`,
-  **not** the `*-query` capabilities; `storage-objects/garage`, not
-  `s3-object`). A **capability ID** in `requires:` is reserved exclusively for
-  *instanced*, consumer-provided services (today `cnpg-postgres`,
-  `redis-managed`; both `instanced: true`). Rule of thumb: a capability ID
-  only where a real, index-listed swap contract exists *and* the consumer
-  supplies the instance; a tool-specific contract (Grafana-shaped dashboard
-  payload, tool-specific CRs or metric names) is referenced **concretely** —
-  otherwise the capability claims a swap-freedom that does not exist.
+  **not** the `*-query` capabilities). A **capability ID** in `requires:` is
+  reserved for *instanced* services whose **instance the consumer supplies**
+  (today `cnpg-postgres`, `redis-managed`, `s3-object`; all `instanced: true`).
+  Rule of thumb: a capability ID only where a real, index-listed swap contract
+  exists *and* the consumer supplies the instance; a tool-specific contract
+  (Grafana-shaped dashboard payload, tool-specific CRs or metric names) is
+  referenced **concretely** — otherwise the capability claims a swap-freedom
+  that does not exist.
+  - **`s3-object` (#427):** the observability stores (`loki`/`mimir`/`tempo`)
+    take their S3 endpoint, buckets, and credentials from consumer-owned
+    `${S3_*}` env — they never reference the in-cluster `storage-objects/garage`
+    Service — so the consumer supplies the object-store instance, exactly the
+    `cnpg-postgres` shape. They therefore reference the `s3-object` capability,
+    not `storage-objects/garage`. A component that consumes the in-cluster
+    Garage workload **directly** still references `storage-objects/garage`
+    concretely (the rule above).
 
 ### `version:` — version provenance (apps#226)
 

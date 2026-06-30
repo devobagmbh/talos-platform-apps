@@ -1,6 +1,6 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 endpoint/API for trace blocks (StatefulSet, wave 0)
-  storage-objects/garage-buckets: ">=v0.1.0" # provisions the traces bucket (wave 10)
+  # s3-object capability — instanced, consumer-supplied endpoint; not a concrete component. See catalog/README.md (#427).
+  s3-object: "*"
 provides:
   - name: tempo
     version:
