@@ -17,7 +17,7 @@ reference.
 
 ## What ships
 
-Exactly 4 namespaced CustomResourceDefinitions in the `actions.github.com` API group,
+Exactly 4 CustomResourceDefinitions (defining namespaced custom resources) in the `actions.github.com` API group,
 each served at `v1alpha1`:
 
 - `autoscalinglisteners.actions.github.com`
