@@ -12,6 +12,10 @@
       "component": "automation/velero-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/automation/components/actions-runner-controller-crds": {
+      "component": "automation/actions-runner-controller-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/compute/components/kubevirt": {
       "component": "compute/kubevirt"
     },
