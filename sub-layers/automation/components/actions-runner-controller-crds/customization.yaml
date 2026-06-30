@@ -1,5 +1,5 @@
 # Customization Contract v2 (ADR-0024). Strict-B CRDs artifact (ADR-0028): the
-# rendered workload is purely the 4 namespaced actions.github.com CRDs. A CRD schema
+# rendered workload is purely the 4 actions.github.com CRDs (defining namespaced custom resources). A CRD schema
 # has NO consumer config surface — no env, no config files, no secrets, no selector CRs
 # — so this component is fully cluster-agnostic: every provided/required shape is empty.
 # The CRDs land at sync-wave -1, before the operator workload
