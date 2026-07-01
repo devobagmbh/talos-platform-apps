@@ -33,9 +33,11 @@ data:
 
     : "${GARAGE_ADMIN_TOKEN:?GARAGE_ADMIN_TOKEN env (from Secret garage-buckets-secret key adminToken) is required}"
 
-    # api METHOD PATH [BODY] -> prints body to stdout, sets HTTP_CODE.
-    # Body and status code are separated by a sentinel so a 404 body does not
-    # masquerade as success.
+    # api METHOD PATH [BODY] -> sets BODY + HTTP_CODE in the CALLER's scope.
+    # MUST be invoked as a bare statement, e.g. `api GET "/path"`, never as
+    # `x="$(api ...)"` — a command substitution around the call would run
+    # api() itself in a subshell, and the BODY/HTTP_CODE assignments below
+    # would then be invisible to the caller once that subshell exits.
     api() {
       _method="$1"; _path="$2"; _body="${3:-}"
       _out="$(
@@ -54,7 +56,7 @@ data:
         fi
       )"
       HTTP_CODE="$(printf '%s' "$_out" | sed -n 's/.*__HTTP_CODE__\([0-9]*\)$/\1/p')"
-      printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//'
+      BODY="$(printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//')"
     }
 
     # Redact known secret-bearing JSON fields from an API response body before it
@@ -124,12 +126,12 @@ data:
       esac
 
       # --- Bucket: GET then CreateBucket (idempotent) ---
-      BODY="$(api GET "/v2/GetBucketInfo?globalAlias=${BUCKET}")"
+      api GET "/v2/GetBucketInfo?globalAlias=${BUCKET}"
       if [ "$HTTP_CODE" = "200" ]; then
         echo "  bucket '${BUCKET}' exists"
       elif [ "$HTTP_CODE" = "404" ]; then
         echo "  creating bucket '${BUCKET}'"
-        BODY="$(api POST "/v2/CreateBucket" "{\"globalAlias\":\"${BUCKET}\"}")"
+        api POST "/v2/CreateBucket" "{\"globalAlias\":\"${BUCKET}\"}"
         [ "$HTTP_CODE" = "200" ] || { echo "ERROR: CreateBucket '${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
       else
         echo "ERROR: GetBucketInfo '${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2
@@ -139,12 +141,12 @@ data:
       [ -n "$BUCKET_ID" ] || { echo "ERROR: could not extract bucket id for '${BUCKET}' from: $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
 
       # --- Key: GET then ImportKey (idempotent; imports consumer-known material) ---
-      BODY="$(api GET "/v2/GetKeyInfo?id=${ACCESS_KEY_ID}")"
+      api GET "/v2/GetKeyInfo?id=${ACCESS_KEY_ID}"
       if [ "$HTTP_CODE" = "200" ]; then
         echo "  key '${ALIAS}' (${ACCESS_KEY_ID}) exists"
       elif [ "$HTTP_CODE" = "404" ]; then
         echo "  importing key '${ALIAS}' (${ACCESS_KEY_ID})"
-        BODY="$(api POST "/v2/ImportKey" "{\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"secretAccessKey\":\"${SECRET_KEY}\",\"name\":\"${ALIAS}\"}")"
+        api POST "/v2/ImportKey" "{\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"secretAccessKey\":\"${SECRET_KEY}\",\"name\":\"${ALIAS}\"}"
         [ "$HTTP_CODE" = "200" ] || { echo "ERROR: ImportKey '${ALIAS}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
       else
         echo "ERROR: GetKeyInfo '${ALIAS}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2
@@ -154,7 +156,7 @@ data:
       # --- Grant: AllowBucketKey is idempotent; call unconditionally with the
       #     bucket UUID (.id), NOT the globalAlias. ---
       echo "  granting key '${ALIAS}' read+write on '${BUCKET}'"
-      BODY="$(api POST "/v2/AllowBucketKey" "{\"bucketId\":\"${BUCKET_ID}\",\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":false}}")"
+      api POST "/v2/AllowBucketKey" "{\"bucketId\":\"${BUCKET_ID}\",\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":false}}"
       [ "$HTTP_CODE" = "200" ] || { echo "ERROR: AllowBucketKey '${ALIAS}'->'${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
     done
 
