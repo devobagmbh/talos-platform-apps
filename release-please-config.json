@@ -143,6 +143,10 @@
       "component": "secrets/vault-config-operator-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/secrets/components/vault-operator-crds": {
+      "component": "secrets/vault-operator-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/security/components/tetragon": {
       "component": "security/tetragon",
       "initial-version": "0.1.0"
