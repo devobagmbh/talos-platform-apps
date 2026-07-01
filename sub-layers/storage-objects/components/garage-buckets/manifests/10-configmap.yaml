@@ -153,21 +153,29 @@ data:
     #   buckets:
     #     - name: <bucket-name>
     #       key_alias: <key-alias>
-    # Emits "name<TAB>key_alias" lines. Trims only trailing whitespace and, if
-    # the WHOLE value is wrapped in one matching pair of quotes, that outer
-    # pair — never characters inside the value. Stripping quotes/whitespace
-    # anywhere in the string (as an earlier version did) would silently turn
-    # e.g. `name: "bad name"` into `badname`, defeating the character-class
-    # check below the parser: a rejected value must reach that check intact,
-    # not get silently normalized into an accepted one first.
+    # Emits "name<TAB>key_alias" lines, ONE PER `- name:` LINE SEEN, even if
+    # the parsed name is empty (e.g. `name: ""`) — `have_entry` tracks "is
+    # there a pending entry to flush" independently of the name's own
+    # emptiness, so an empty name is reported to the caller as an empty
+    # BUCKET field rather than silently dropped (an earlier version used
+    # `name != ""` as that sentinel, which conflated "no entry yet" with
+    # "entry present but its name normalized to empty" and made the entry
+    # vanish with no error). Trims only trailing whitespace and, if the WHOLE
+    # value is wrapped in one matching pair of quotes, that outer pair — never
+    # characters inside the value. Stripping quotes/whitespace anywhere in the
+    # string (as an earlier version did) would silently turn e.g.
+    # `name: "bad name"` into `badname`, defeating the character-class check
+    # below the parser: a rejected value must reach that check intact, not get
+    # silently normalized into an accepted one first.
     parse_buckets() {
       awk '
         /^[[:space:]]*-[[:space:]]*name:/ {
-          if (name != "") print name "\t" alias
+          if (have_entry) print name "|" alias
           name = $0; sub(/.*name:[[:space:]]*/, "", name); sub(/[[:space:]]+$/, "", name)
           if (name ~ /^"[^"]*"$/) { sub(/^"/, "", name); sub(/"$/, "", name) }
           else if (name ~ /^\x27[^\x27]*\x27$/) { sub(/^\x27/, "", name); sub(/\x27$/, "", name) }
           alias = ""
+          have_entry = 1
           next
         }
         /^[[:space:]]*key_alias:/ {
@@ -175,7 +183,7 @@ data:
           if (alias ~ /^"[^"]*"$/) { sub(/^"/, "", alias); sub(/"$/, "", alias) }
           else if (alias ~ /^\x27[^\x27]*\x27$/) { sub(/^\x27/, "", alias); sub(/\x27$/, "", alias) }
         }
-        END { if (name != "") print name "\t" alias }
+        END { if (have_entry) print name "|" alias }
       ' "$BUCKETS_FILE"
     }
 
@@ -183,8 +191,19 @@ data:
 
     echo "garage-buckets: provisioning against ${ADMIN_URL}"
 
-    parse_buckets | while IFS="$(printf '\t')" read -r BUCKET ALIAS; do
-      [ -n "$BUCKET" ] || continue
+    # `|` (not tab) as the field separator: with IFS made of "IFS whitespace"
+    # characters (tab included), POSIX `read` strips LEADING/TRAILING runs of
+    # it before splitting, so an empty BUCKET field silently vanished into the
+    # ALIAS field instead of staying empty (verified: `printf '\tx' | IFS=$(printf
+    # '\t') read -r a b` yields a=x b="", not a="" b=x). `|` isn't IFS
+    # whitespace, so both empty leading and trailing fields are preserved. `|`
+    # can never appear in a value that passes the character-class check below,
+    # so this can't collide with legitimate bucket/alias content.
+    parse_buckets | while IFS='|' read -r BUCKET ALIAS; do
+      if [ -z "$BUCKET" ]; then
+        echo "ERROR: found a bucket entry with an empty/missing name in $BUCKETS_FILE" >&2
+        exit 1
+      fi
       if [ -z "$ALIAS" ]; then
         echo "ERROR: bucket '$BUCKET' has no key_alias in $BUCKETS_FILE" >&2
         exit 1
