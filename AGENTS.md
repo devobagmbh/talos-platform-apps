@@ -108,7 +108,7 @@ Validation is primarily render- and policy-focused; for end-to-end deployability
 - **Signed commits are mandatory**: `main` enforces branch-protection `required_signatures`. An unsigned commit makes the PR `mergeStateStatus: BLOCKED`; the fix is to sign, never to admin-override the gate. Configure commit signing **once, globally** on your machine (`git config --global gpg.format ssh` / `user.signingkey <your-public-key.pub>` / `commit.gpgsign true`) — a per-machine identity setting that covers every repo, clone, and worktree, so there is no per-clone step. See `README.md` § Commit signing for the GitHub-side steps (register the key as a *Signing* key, verify the committer email). Distinct from cosign OCI artifact signing. If the signing key is passphrase-protected it MUST be loaded into the ssh-agent, otherwise non-interactive / agent-driven commits fail to sign.
 - **Breaking-change bumps**: a new major tag (`<sub-layer>/<component>-v2.0.0`) requires a `BREAKING CHANGE:` footer in the commit and an entry in the top-level `CHANGELOG.md` (if present).
 - PR body: what changed + why + validation steps (see `.github/PULL_REQUEST_TEMPLATE.md`).
-- PRs should go through **subagent reviews** (see Multi-Agent Coordination below). The `require-review.sh` hook is **deliberately inactive** (not bound in `settings.json`) until M2 onboards — with a single maintainer, fail-closed would be self-sabotage. The hook scripts stay in the repo and are reactivated once a multi-maintainer workflow becomes real.
+- PRs should go through **subagent reviews** (see Multi-Agent Coordination below). The `require-review.sh` hook is **currently inactive** (not bound in `settings.json`). M2 is reached and fail-closed review enforcement is warranted (two maintainers); the hook binds in the **final** reactivation stage, after the `.claude/reviews/` emission substrate it depends on is wired — binding it before that substrate exists would block every commit.
 
 ## CI conventions (binding)
 
@@ -184,7 +184,7 @@ These **MUST NOT** be relaxed without explicit maintainer approval.
 
 ## Multi-Agent Coordination
 
-`.claude/agents/` lists specialized subagents. **5 impl/review roles** (2026-05-26, Bobby's bus-factor critique) — with a single maintainer, a differentiated 9-role *review* hierarchy is self-review theater. On top comes **`catalog-evaluator`** as a separate build-time acceptance verifier: this is orthogonal to the review-role count — an agent that builds and verifies its own work is the documented self-verification failure (MAST FC3; arXiv:2410.21819 + 2402.08115), hence judge-builder separation instead of convenience. At M2 onboarding, `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer`, and `compatibility-reviewer` come back from the git history. The "5" count concerns only the **impl/review** axis; the **plan phase** is a separate axis and adds the pair `catalog-planner` (writes the app plan, no verdict) + `plan-reviewer` (read-only, canonical verdict enum, conformance/adversarial persona per brief) — judge-builder separation as with implementation/verify.
+`.claude/agents/` lists specialized subagents. The 2026-05-26 reduction (Bobby's bus-factor critique) trimmed the apparatus to 5 impl/review roles while M2 was pending; **M2 is now reached (2026-06, two maintainers)** and the escalation reviewers are restored — `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer` (architecture / provenance / compatibility). The fourth parked role, `senior-plan-reviewer`, is **not** restored: `plan-reviewer` subsumes it (same tools/model/verdict, dual conformance/adversarial stance), so a separate one is an A5 vanity split. **`catalog-evaluator`** remains a separate build-time acceptance verifier (not a review role) — an agent that builds and verifies its own work is the documented self-verification failure (MAST FC3; arXiv:2410.21819 + 2402.08115), hence judge-builder separation. The **plan phase** is a separate axis and adds the pair `catalog-planner` (writes the app plan, no verdict) + `plan-reviewer` (read-only, canonical verdict enum, conformance/adversarial persona per brief) — judge-builder separation as with implementation/verify.
 
 | Phase | Agent | Output |
 |---|---|---|
@@ -193,9 +193,12 @@ These **MUST NOT** be relaxed without explicit maintainer approval.
 | **Verify (build-time)** (deterministic gate + semantic ACs, separate context) | `catalog-evaluator` | Pass/Fail + findings |
 | Security review (Vault/SOPS/cosign/RBAC/policies) | `security-reviewer` | Findings |
 | Operational safety (bootstrap/DR/backup) | `operational-safety-reviewer` | Findings |
+| Architecture escalation (sub-layer/OCI/ADR/API-shape) | `principal-architect-reviewer` | Findings |
+| Provenance escalation (cosign/SLSA/SBOM/source trust) | `provenance-reviewer` | Findings |
+| Compatibility escalation (compatibility.yaml/CRD/consumer breaks) | `compatibility-reviewer` | Findings |
 | **Gate** (triage + approve or block) | `staff-reviewer` | Approve or block |
 
-**Self-review is undesirable even with a single maintainer, but not hard-blocked** — switching the agent hat is an anti-drift mechanism, not a substitute for the four-eyes principle. Once M2 is here, the `require-review.sh` hook is reactivated and the full 9-agent model is brought back.
+**Self-review is undesirable and not a substitute for the four-eyes principle** — switching the agent hat is an anti-drift mechanism; the human PR review under CODEOWNERS + branch protection is the real gate. With M2 reached the escalation reviewers are restored (above); the `require-review.sh` hook binds in the final reactivation stage, after the `.claude/reviews/` emission substrate lands.
 
 **Catalog ship orchestrator**: the `ship-catalog-app` skill orchestrates the full plan→approve→build arc of ONE app in a single session as a thin layer over the two skills below (it does not duplicate their logic). Three invariants: a **mandatory human plan-approval gate** between plan and build (headless → stop-after-plan); a **mechanically pre-classified merge gate with the build skill as backstop** — dependent components need their dependency merged before the fresh worktree off `origin/main` sees it; ship's conservative pre-check is only a dispatch-saving optimization ahead of this backstop — the sole guarantee is **no wrong build** (the authoritative build check stops every inadmissible component); both misclassifications are harmless (over-admission → wasted dispatch; false-stall on a dependency merged externally after the fetch → transient, resolved by a re-run); and **re-run resumability** from git status, no ship-state file. Spec/DRY source: the SKILL.md (no separate CONVENTIONS.md). For single components without a plan, `build-catalog-component` directly suffices.
 
@@ -213,7 +216,7 @@ Before PR open:
 - [ ] `compatibility.yaml` updated when the Helm chart version changed
 - [ ] README in the affected sub-layer updated when components or consumers changed
 - [ ] Conventional-commits style with sub-layer scope
-- [ ] At least one reviewer subagent run; for pipeline/signing topics, record the provenance risks in the `notes` field — `provenance-reviewer` is M2-deferred (no backing agent today), is reactivated at M2 onboarding and becomes mandatory here then
+- [ ] At least one reviewer subagent run; for pipeline/signing topics, escalate to `provenance-reviewer` (restored at M2; route it via `escalations[]` — orchestrator-dispatched until the hook binds)
 
 ## References
 
