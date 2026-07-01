@@ -1,6 +1,6 @@
 # `storage-block/democratic-csi`
 
-NAS-backed iSCSI block storage via **[democratic-csi](https://github.com/democratic-csi/democratic-csi)** (`synology-iscsi` driver) against the Synology DS720+ — a consumer's durable tier for stateful workloads (ADR-0026). Provides the default StorageClass `synology-iscsi-storage`.
+NAS-backed iSCSI block storage via **[democratic-csi](https://github.com/democratic-csi/democratic-csi)** (`synology-iscsi` driver) against a Synology NAS — a consumer's durable tier for stateful workloads (ADR-0026). Provides the default StorageClass `synology-iscsi-storage`.
 
 - **OCI path:** `ghcr.io/devobagmbh/talos-platform-apps/storage-block/democratic-csi`
 - **sync-wave:** `0` (storage substrate — Ready before stateful consumers like harbor, wave 30)
@@ -10,7 +10,7 @@ NAS-backed iSCSI block storage via **[democratic-csi](https://github.com/democra
 
 The official `synology/synology-csi` node-plugin runs iscsiadm via `chroot /host`, which **cannot work on Talos** — the host rootfs has no userland (`/usr/bin/env`, no iscsiadm). Sidero closed that as "not planned". The portable Talos pattern is **`nsenter` into the iscsi-tools extension's iscsid namespace**, which democratic-csi supports as a first-class config (`ISCSIADM_HOST_STRATEGY=nsenter`). See `helm/democratic-csi.yaml` `node.driver.extraEnv`.
 
-> The `synology-iscsi` driver is upstream-marked **experimental** — verify the LUN type / DSM compatibility against the DS720+ during the pilot.
+> The `synology-iscsi` driver is upstream-marked **experimental** — verify the LUN type / DSM compatibility against the Synology NAS during the pilot.
 
 ## Talos prerequisite
 
