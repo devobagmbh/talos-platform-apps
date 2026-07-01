@@ -1332,6 +1332,349 @@ tasks:
       snyk iac test sub-layers/ \
         --sarif-file-output=snyk-results.sarif
 
+  # --- Image-CVE gate (G3b/E5, ADR-0018): extractor + scanner + PR/weekly/publish paths ---
+
+  scan:extract-images:
+    desc: 'Extract scannable image refs from rendered manifest(s): TRIVY_MANIFESTS="<paths>" task scan:extract-images'
+    summary: |
+      Pure, network-free image-ref extractor — the SINGLE source of the extraction
+      regex, shared by the CVE-scan tasks and bound red-green by `task
+      test:trivy-extract` (in `task ci` AND `task ci:artifact`). Reads rendered
+      manifest paths from TRIVY_MANIFESTS (space-separated; catalog paths are
+      `[a-z0-9-]`, so the intentional unquoted word-split is safe) and prints the
+      unique scannable refs.
+
+      Extraction (key-based, extends the proven validate:version pattern at
+      Taskfile ~416/465):
+        - matches `<prefix>[Ii]mage: <ref>` → catches image:, valkeyImage:,
+          exporterImage:, initImage:, bare `busybox:1.37`. The value capture
+          `[^"' ]+` keeps the WHOLE ref INCLUDING an `@sha256:` digest, so a
+          `repo:tag@sha256` (scanned by digest) AND a digest-only `repo@sha256`
+          pin (the most secure form) are both extracted and scanned.
+        - TAG/DIGEST FILTER `:[^/]+$` (colon in the last path segment) keeps only
+          refs carrying a tag or digest — the same shape the `base.no_latest_image_tag`
+          conftest predicate `_has_explicit_tag_or_digest` accepts. A workload
+          container image lacking both is already conftest-blocked (in ci:artifact,
+          before publish), so the filter never drops a real workload image; it drops
+          untagged non-pullable operator-config bare names (piraeus `csi-attacher`)
+          and CRD-description prose (`image: docker.io/grafana/grafana.`), where
+          scanning would fail-closed on a legitimate publish. `grep -vE '^-'` drops a
+          malformed leading-`-` ref (trivy would parse it as a flag).
+      SCOPE (not a completeness claim): only `[Ii]mage:`-keyed refs in the rendered
+      artifact are covered. Image fields conftest does NOT police — env operands
+      (`RELATED_IMAGE_*: value:`), Crossplane `spec.package`, nested-map
+      `image:{repository,tag}` splits, non-`[Ii]mage` CR keys — are the operator-
+      runtime / consumer-Kyverno layer's responsibility (ADR-0018). See the AGENTS.md
+      residuals; the gate scans what the apps artifact directly declares, not every
+      image an operator materialises at runtime.
+    cmd: |
+      set -eu
+      manifests="${TRIVY_MANIFESTS:?usage: TRIVY_MANIFESTS=\"<rendered manifest paths>\" task scan:extract-images}"
+      # grep no-match (exit 1) is masked by the trailing sort (exits 0 on empty
+      # input) — "no images" is a valid, expected result. No pipefail (mvdan/sh).
+      # `["']?` + `[^"' ]` tolerate double/single-quoted values and keep the whole
+      # `repo[:tag][@sha256:digest]` ref; `:[^/]+$` requires a tag or digest;
+      # `^-` refs (trivy flag-injection) are dropped. $manifests is intentionally
+      # word-split (space-separated multi-path); catalog paths are `[a-z0-9-]`.
+      grep -hoE "[a-zA-Z]*[Ii]mage: [\"']?[^\"' ]+" $manifests 2>/dev/null \
+        | sed -E "s/^[a-zA-Z]*[Ii]mage: [\"']?//" \
+        | grep -E ':[^/]+$' \
+        | grep -vE '^-' \
+        | sort -u
+
+  scan:trivy-images-of:
+    desc: 'CVE-scan a rendered component (or all): TRIVY_COMPONENT=<sl>/<c> task scan:trivy-images-of'
+    summary: |
+      The image-CVE gate scanner (E1/E5). Resolves the rendered manifest(s) in scope
+      (TRIVY_COMPONENT=<sub-layer>/<component> → that one; unset → every component),
+      extracts refs via scan:extract-images, and runs `trivy image` per ref. The E5
+      wiring in oci-publish.yml is currently `continue-on-error` (advisory) during the
+      catalog remediation; the fail-closed exit is what makes the eventual hard flip a
+      one-line workflow change.
+
+      Precondition: the in-scope component(s) MUST already be rendered (the caller
+      renders — E5 via ci:artifact, the PR-check/weekly via render). A missing or
+      empty rendered manifest exits non-zero (fail closed). A component that
+      legitimately renders 0 scannable images (a `-crds` / config-only artifact)
+      exits 0 — "nothing to scan". Extraction CORRECTNESS (that a component WITH
+      images does not silently extract 0 through a regex regression) is guarded
+      red-green at build time by test:trivy-extract, wired into BOTH `task ci` and
+      `task ci:artifact` — there is deliberately no runtime "expected images" flag
+      (it could not distinguish a legitimately-empty `-crds` render from a broken
+      extractor, so it was dead weight / false confidence).
+
+      trivy: `--scanners vuln --severity HIGH,CRITICAL --exit-code 1` (NO
+      `--ignore-unfixed` → unfixed HIGH/CRITICAL also block, per E1);
+      `--ignorefile .trivyignore.yaml` (native `expired_at:`); `-- "$img"` so a
+      malformed leading-`-` ref cannot be parsed as a flag. Default `--db-repository`
+      (`mirror.gcr.io/...,ghcr.io/...`) gives mirror-first + GHCR fallback.
+
+      Exit: 0 = clean, non-zero = a CVE finding OR a scan/infra error (unpullable ref,
+      DB miss, registry 429) — so E5 fails closed on either. go-task collapses any
+      non-zero exit to a single code, so the CVE-vs-error distinction the weekly job
+      needs is emitted on a stable `RESULT=cve|error|clean` line (the weekly greps
+      `RESULT=cve`), so an infra flake is never mislabelled as a CVE finding.
+
+      Severity policy (E1): blocks ALL HIGH/CRITICAL, incl. unfixed, by default.
+      TRIVY_IGNORE_UNFIXED=1 adds `--ignore-unfixed` (block only fixable). It is NOT
+      wired as a silent GHA repo variable — the E5 step pins it empty, so activation
+      is a CODEOWNERS-reviewed workflow edit, not an out-of-band Settings toggle.
+    cmd: |
+      set -eu
+      comp="${TRIVY_COMPONENT:-}"
+      unfixed=""
+      [ -n "${TRIVY_IGNORE_UNFIXED:-}" ] && unfixed="--ignore-unfixed"
+      if [ -n "$comp" ]; then
+        manifests="sub-layers/${comp%/*}/components/${comp#*/}/rendered/manifest.yaml"
+        if [ ! -s "$manifests" ]; then
+          echo "scan:trivy-images-of: rendered manifest missing/empty for '$comp' ($manifests) — render it first (fail closed)" >&2
+          echo "scan:trivy-images-of: RESULT=error"
+          exit 1
+        fi
+      else
+        manifests="$(find sub-layers -path '*/components/*/rendered/manifest.yaml' -size +0 -type f | sort | tr '\n' ' ')"
+        if [ -z "$(printf '%s' "$manifests" | tr -d '[:space:]')" ]; then
+          echo "scan:trivy-images-of: no rendered manifests found — run 'task render' first (fail closed)" >&2
+          echo "scan:trivy-images-of: RESULT=error"
+          exit 1
+        fi
+      fi
+      images="$(TRIVY_MANIFESTS="$manifests" task scan:extract-images)"
+      count="$(printf '%s\n' "$images" | grep -cE '[^[:space:]]' || true)"
+      if [ "${count:-0}" -eq 0 ]; then
+        echo "scan:trivy-images-of: 0 scannable images in scope — nothing to scan (OK)"
+        echo "scan:trivy-images-of: RESULT=clean"
+        exit 0
+      fi
+      imgfile="$(mktemp)"
+      trap 'rm -f "$imgfile"' EXIT
+      printf '%s\n' "$images" > "$imgfile"
+      cve=0; err=0
+      echo "scan:trivy-images-of: scanning ${count} image(s)${comp:+ for $comp}"
+      while IFS= read -r img; do
+        [ -n "$img" ] || continue
+        if trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 \
+             $unfixed --ignorefile .trivyignore.yaml --quiet -- "$img"; then
+          echo "  OK    $img"
+        else
+          rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "  BLOCK $img — HIGH/CRITICAL vulnerabilit(ies) found"
+            cve=1
+          else
+            echo "  ERROR $img — trivy rc=$rc (scan/infra error)"
+            err=1
+          fi
+        fi
+      done < "$imgfile"
+      # go-task collapses ANY non-zero cmd exit to a single code (201), so a distinct
+      # 1-vs-2 exit is NOT observable by the caller. The exit is therefore just
+      # pass/fail (0 = clean; non-zero → E5 fails closed on a CVE *or* a scan/infra
+      # error), and the CVE-vs-error distinction the weekly job needs is emitted on a
+      # stable RESULT= line it greps — so an infra flake is not mislabelled as a CVE.
+      if [ "$cve" -eq 1 ]; then echo "scan:trivy-images-of: RESULT=cve"; exit 1; fi
+      if [ "$err" -eq 1 ]; then echo "scan:trivy-images-of: RESULT=error"; exit 1; fi
+      echo "scan:trivy-images-of: RESULT=clean"
+      exit 0
+
+  scan:trivy-cve:
+    desc: 'Advisory diff-scoped image-CVE scan (PR early-warning; TRIVY_SCAN_RANGE=<base>..<head>)'
+    summary: |
+      E2 advisory PR-check: CVE-scans the images of the components changed in
+      TRIVY_SCAN_RANGE (three-dot merge-base diff), rendering each in scope first.
+      Fail-safe: any changed file that is neither inside a component dir nor
+      pure-docs (a shared file — devbox.*, catalog/, policies/, workflows, Taskfile
+      — can change every render) → full-catalog scan; unset/unresolvable range →
+      full scan. ADVISORY: security-scan.yml runs it non-required (its diff-scope
+      edge cases never block a merge); the HARD block is the E5 publish scan
+      (scan:trivy-images-of in oci-publish.yml). Mirrors the scan:secrets
+      GITLEAKS_SCAN_RANGE env-seam (apps#340).
+    cmd: |
+      set -eu
+      range="${TRIVY_SCAN_RANGE:-}"
+      full=no
+      if [ -z "$range" ]; then
+        full=yes
+      elif [ "${range%%..*}" = "$range" ] \
+        || ! git rev-parse -q --verify "${range%%..*}^{commit}" >/dev/null 2>&1 \
+        || ! git rev-parse -q --verify "${range##*..}^{commit}" >/dev/null 2>&1 \
+        || ! git merge-base "${range%%..*}" "${range##*..}" >/dev/null 2>&1; then
+        echo "scan:trivy-cve: range '${range}' unresolvable — full-catalog scan"
+        full=yes
+      else
+        changed="$(git -c core.quotePath=false diff --no-renames --name-only "${range%%..*}...${range##*..}" 2>/dev/null)" || full=yes
+      fi
+      if [ "$full" = no ]; then
+        outside="$(printf '%s\n' "$changed" \
+          | grep -vE '(^$|\.md$|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST))' \
+          | grep -vE '^sub-layers/[^/]+/components/[^/]+/' || true)"
+        if [ -n "$(printf '%s' "$outside" | tr -d '[:space:]')" ]; then
+          echo "scan:trivy-cve: shared/non-component change in range → full-catalog scan"
+          full=yes
+        fi
+      fi
+      if [ "$full" = yes ]; then
+        task render >/dev/null
+        task scan:trivy-images-of
+        exit $?
+      fi
+      comps="$(printf '%s\n' "$changed" \
+        | grep -oE '^sub-layers/[^/]+/components/[^/]+/' \
+        | sed -E 's#^sub-layers/([^/]+)/components/([^/]+)/#\1/\2#' | sort -u || true)"
+      if [ -z "$(printf '%s' "$comps" | tr -d '[:space:]')" ]; then
+        echo "scan:trivy-cve: no component changes in range — nothing to scan"
+        exit 0
+      fi
+      rc=0
+      for c in $comps; do
+        echo "scan:trivy-cve: $c"
+        task render:one -- "$c" >/dev/null
+        TRIVY_COMPONENT="$c" task scan:trivy-images-of || rc=1
+      done
+      exit $rc
+
+  scan:trivy-cve-all:
+    desc: 'Full-catalog image-CVE scan (weekly advisory + local baseline pre-flight)'
+    summary: |
+      Renders the whole catalog and CVE-scans every extracted image. Advisory: the
+      local baseline pre-flight is `task scan:trivy-cve-all` over current main
+      (remediate/.trivyignore.yaml-accept every HIGH/CRITICAL before the first
+      post-merge publish, else it strands). The weekly security-scan.yml job renders
+      and scans as SEPARATE steps (so a render flake is not mislabelled) and opens a
+      `risk: high` issue only on a real CVE finding (scanner exit 1). Exit codes
+      follow scan:trivy-images-of: 1 = HIGH/CRITICAL, 2 = scan/infra error.
+    deps: [render]
+    cmd: |
+      task scan:trivy-images-of
+
+  test:trivy-extract:
+    desc: 'Hermetic red-green test for the scan:extract-images image extractor (G3b AC6-extraction; in task ci)'
+    summary: |
+      Binding acceptance test for the CVE-gate image extractor (issue G3b
+      AC6-extraction). Network-free: writes a fixture rendered manifest and asserts
+      scan:extract-images' output (9 kept / 5 dropped + a total-count bound).
+      Red-green: the key-regex, the tag/digest filter and the leading-`-` reject are
+      the single source in scan:extract-images; reverting ANY turns an assertion red —
+      a bare-name / CRD-prose ref would be extracted, a real tag+digest or digest-only
+      ref dropped, or a malformed `-`-ref kept. Refs are drawn from the real catalog
+      renders (hubble tag+digest, valkey custom keys, grafana-operator-crds prose,
+      piraeus bare names) plus a digest-only pin (A1) and a flag-injection ref (V3).
+    cmd: |
+      set -eu
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+      fixture="$work/manifest.yaml"
+      cat > "$fixture" <<'YAML'
+      apiVersion: apps/v1
+      kind: Deployment
+      spec:
+        template:
+          spec:
+            containers:
+              - name: a
+                image: busybox:1.37
+              - name: b
+                image: "nginx:1.27-alpine"
+            initContainers:
+              - name: c
+                image: docker.io/busybox:1.37.0
+      ---
+      apiVersion: grafana.integreatly.org/v1beta1
+      kind: Grafana
+      spec:
+        deployment:
+          spec:
+            template:
+              spec:
+                containers:
+                  - image: grafana/mimir:2.17.0
+      ---
+      apiVersion: hyperspike.io/v1
+      kind: Valkey
+      spec:
+        valkeyImage: ghcr.io/hyperspike/valkey:8.1.4
+        exporterImage: "ghcr.io/hyperspike/valkey-sidecar:v0.0.51"
+      ---
+      apiVersion: v1
+      kind: Pod
+      spec:
+        containers:
+          - name: single-quoted
+            image: 'registry.k8s.io/pause:3.9'
+      ---
+      apiVersion: v1
+      kind: Pod
+      spec:
+        containers:
+          - name: relay
+            image: "quay.io/cilium/hubble-relay:v1.19.4@sha256:59af8c0d561e560c2a042e7600a3496bc0367df8fbf868aa68d5834c8ec1a431"
+      ---
+      apiVersion: v1
+      kind: Pod
+      spec:
+        containers:
+          - name: digest-only
+            image: "registry.k8s.io/coredns@sha256:451eee8bedcb2f029756dc3e9d73bab0e7943c1ac55cff3a4861c52a0fdd3e98"
+          - name: leading-dash
+            image: -evil:tag
+      ---
+      apiVersion: apiextensions.k8s.io/v1
+      kind: CustomResourceDefinition
+      spec:
+        example1: Reference dashboards image, for example ghcr.io/team/dashboards:v1.4.7 here
+        example2: 'Version sets the tag of the default image: docker.io/grafana/grafana.'
+      ---
+      apiVersion: piraeus.io/v1
+      kind: LinstorSatelliteConfiguration
+      spec:
+        podTemplate:
+          spec:
+            initContainers:
+              - name: drbd
+                image: drbd9-noble
+              - name: csi
+                image: csi-attacher
+      YAML
+      images="$(TRIVY_MANIFESTS="$fixture" task scan:extract-images)"
+      echo "extracted:"; printf '%s\n' "$images" | sed 's/^/  /'
+      fail=0
+      assert_has() {
+        if ! printf '%s\n' "$images" | grep -qxF "$1"; then
+          echo "FAIL: extractor must FIND '$1' (AC6-extraction)"; fail=1
+        fi
+      }
+      assert_hasnt() {
+        if printf '%s\n' "$images" | grep -qxF "$1"; then
+          echo "FAIL: extractor must DROP '$1' (AC6-extraction)"; fail=1
+        fi
+      }
+      assert_has 'busybox:1.37'
+      assert_has 'nginx:1.27-alpine'
+      assert_has 'grafana/mimir:2.17.0'
+      assert_has 'ghcr.io/hyperspike/valkey:8.1.4'
+      assert_has 'ghcr.io/hyperspike/valkey-sidecar:v0.0.51'
+      assert_has 'docker.io/busybox:1.37.0'
+      assert_has 'registry.k8s.io/pause:3.9'
+      # tag+digest kept WHOLE (scanned by digest, not truncated to the tag)
+      assert_has 'quay.io/cilium/hubble-relay:v1.19.4@sha256:59af8c0d561e560c2a042e7600a3496bc0367df8fbf868aa68d5834c8ec1a431'
+      # digest-only pin kept + scanned (A1 — a `repo@sha256` best-practice pin must
+      # NOT be silently dropped; binds the `[^"' ]` value capture red-green)
+      assert_has 'registry.k8s.io/coredns@sha256:451eee8bedcb2f029756dc3e9d73bab0e7943c1ac55cff3a4861c52a0fdd3e98'
+      assert_hasnt 'ghcr.io/team/dashboards:v1.4.7'
+      assert_hasnt 'docker.io/grafana/grafana.'
+      assert_hasnt 'drbd9-noble'
+      assert_hasnt 'csi-attacher'
+      # malformed leading-`-` ref dropped (V3 — would otherwise arg-inject trivy)
+      assert_hasnt '-evil:tag'
+      # total-count bound (staff-L1): a widened key-regex adds spurious refs the
+      # per-item negatives do not enumerate — this catches "extractor gutted, still green".
+      count="$(printf '%s\n' "$images" | grep -cE '[^[:space:]]' || true)"
+      if [ "${count:-0}" -ne 9 ]; then
+        echo "FAIL: expected exactly 9 extracted refs, got ${count:-0}"; fail=1
+      fi
+      if [ "$fail" -eq 0 ]; then echo "test:trivy-extract OK — extractor matches AC6-extraction (9 found / 5 dropped)"; fi
+      exit "$fail"
+
   # --- Publish-Targets ---
 
   package:
@@ -1538,6 +1881,12 @@ tasks:
       # network). Wired into the PR `ci` so a regression in validate:release-config's
       # stub handling is caught automatically, not only when a dev remembers (#315 review).
       - task: test:release-config
+      # Hermetic red-green guard for the image-CVE extractor (G3b AC6-extraction,
+      # fast, no network). Wired here so a regression in the scan:extract-images
+      # regex/tag-filter — which would let a bare name fail-close a publish, or let
+      # a CVE-laden image slip past extraction — is caught at PR time, not at the
+      # E5 publish gate.
+      - task: test:trivy-extract
       - task: ci:artifact
 
   ci:artifact:
@@ -1551,6 +1900,10 @@ tasks:
       let one inconsistent tag strand a cut tag and block all publishes (#318 review).
     cmds:
       - task: check:primitives
+      # Hermetic (<1s, no network) — also in ci:artifact so a direct/backfill tag
+      # push (which runs ci:artifact, not the PR `ci`) still validates the CVE
+      # extractor before the E5 scan trusts it.
+      - task: test:trivy-extract
       - task: lint
       - task: validate:compatibility
       - task: render
