@@ -109,6 +109,22 @@ values:
     replicas: 1
   core:
     replicas: 1
+    # externalURL (rendered into harbor-core's EXT_ENDPOINT) is consumer-owned per
+    # ADR-0023 (Class A / Shape a). Harbor builds the OIDC redirect + registry/UI base
+    # URL from it, so the per-cluster hostname MUST be set by the consumer. A
+    # pre-rendered component can't be Helm-valued or Kustomize-patched at consume time
+    # (ADR-0024), so resolve it at RUNTIME: take EXT_ENDPOINT from a consumer-provided
+    # ConfigMap `harbor-runtime-config` (key EXTERNAL_URL). As an explicit env it wins
+    # over the chart's baked envFrom value. optional:true → if the consumer omits the
+    # ConfigMap the baked `externalURL` placeholder still applies (non-breaking), but
+    # OIDC/redirects only work once the consumer sets EXTERNAL_URL.
+    extraEnvVars:
+      - name: EXT_ENDPOINT
+        valueFrom:
+          configMapKeyRef:
+            name: harbor-runtime-config
+            key: EXTERNAL_URL
+            optional: true
   jobservice:
     replicas: 1
   registry:
