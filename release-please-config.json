@@ -12,6 +12,10 @@
       "component": "automation/velero-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/automation/components/actions-runner-controller-crds": {
+      "component": "automation/actions-runner-controller-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/compute/components/kubevirt": {
       "component": "compute/kubevirt"
     },
@@ -143,6 +147,10 @@
       "component": "security/tetragon",
       "initial-version": "0.1.0"
     },
+    "sub-layers/security/components/capsule-crds": {
+      "component": "security/capsule-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/storage-block/components/democratic-csi": {
       "component": "storage-block/democratic-csi"
     },
@@ -175,6 +183,10 @@
     },
     "sub-layers/observability/components/blackbox-exporter": {
       "component": "observability/blackbox-exporter",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/automation/components/actions-runner-controller": {
+      "component": "automation/actions-runner-controller",
       "initial-version": "0.1.0"
     }
   }

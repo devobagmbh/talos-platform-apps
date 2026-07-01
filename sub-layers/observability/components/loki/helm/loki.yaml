@@ -1,6 +1,6 @@
 # loki — Grafana Loki, the platform log store + LogQL query endpoint.
 # Layer-2 default values for talos-platform-apps. Deployed in SingleBinary mode
-# (one StatefulSet, replicas 1) backed by S3 (Garage) for chunks + ruler.
+# (one StatefulSet, replicas 1) backed by an S3-compatible object store for chunks + ruler.
 # Orchestrator decision: consumers are small single-node clusters, so the
 # distributed / SimpleScalable topology is massively over-provisioned — SingleBinary
 # is the right granularity (read/write/backend scaled to 0).
@@ -81,10 +81,10 @@ values:
     commonConfig:
       replication_factor: 1
 
-    # S3 object storage (Garage). The connection values are ${VAR} placeholders, NOT
+    # S3 object storage (s3-object capability). The connection values are ${VAR} placeholders, NOT
     # real endpoints/keys: the freeze-line keeps the S3 connection 100% consumer-owned.
-    # Garage specifics: path-style addressing (baked), TLS mode consumer-owned via
-    # ${S3_INSECURE} (required: "false"=TLS, "true"=plain HTTP), region `garage`, explicit
+    # Self-hosted / path-style S3 specifics: path-style addressing (baked), TLS mode consumer-owned via
+    # ${S3_INSECURE} (required: "false"=TLS, "true"=plain HTTP), region a ${VAR} (the Garage impl uses `garage`), explicit
     # endpoint URL — the connection scalars are all ${VAR}. Rendered into common.storage.s3 and ruler_storage.s3 by the
     # loki.lokiStorageConfig.s3 helper; expanded at runtime by -config.expand-env=true.
     storage:
@@ -97,8 +97,8 @@ values:
         region: ${S3_REGION}
         accessKeyId: ${S3_ACCESS_KEY_ID}
         secretAccessKey: ${S3_SECRET_ACCESS_KEY}
-        s3ForcePathStyle: true  # Garage requires path-style addressing (baked, not consumer-tunable)
-        insecure: ${S3_INSECURE} # consumer-owned, required: "false"=TLS/HTTPS, "true"=plain HTTP (TLS-less Garage)
+        s3ForcePathStyle: true  # path-style addressing — the self-hosted S3 standard (MinIO, Garage, …) (baked, not consumer-tunable)
+        insecure: ${S3_INSECURE} # consumer-owned, required: "false"=TLS/HTTPS, "true"=plain HTTP (a TLS-less S3 endpoint)
 
     # A real Loki install requires an explicit schemaConfig (the chart default is {}).
     # TSDB + v13, the current-generation single-store index/object layout.

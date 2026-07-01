@@ -1,0 +1,22 @@
+# Customization Contract v2 (ADR-0024). ARC controller workload (strict-B workload half,
+# ADR-0028; the actions.github.com CRDs ship in actions-runner-controller-crds at wave -1,
+# this controller at wave 0). The catalog ships ONLY the cluster-scoped controller +
+# RBAC + its namespace. Everything tenant/GitHub-specific is consumer-owned and lives in
+# the consumer's gha-runner-scale-set claim, NOT here:
+#   - githubConfigUrl (org or repo), runner group
+#   - the GitHub App registration secret (App id / installation id / private key) via SOPS→ESO/Vault
+#   - minRunners / maxRunners, runner node-pool selection
+#   - the runner-pod isolation NetworkPolicies (default-deny internal + egress allowlist),
+#     which live in the consumer's runner namespace — see examples/runner-isolation.example.yaml
+# The controller has no consumer config surface of its own, so every provided/required shape is empty.
+freeze_line:
+  workload: rendered/manifest.yaml  # controller Deployment + RBAC + SA — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies: []

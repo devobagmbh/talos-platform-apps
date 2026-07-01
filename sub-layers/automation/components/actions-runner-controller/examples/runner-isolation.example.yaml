@@ -1,0 +1,46 @@
+# EXAMPLE — runner-pod network isolation for the CONSUMER's runner namespace (issue #397
+# core requirement: "no access to internal infrastructure"). Not shipped in the signed
+# workload (the catalog cannot know the consumer's runner namespace). Adapt `namespace` +
+# the egress allowlist, apply alongside the gha-runner-scale-set in the consumer repo.
+#
+# Model: default-deny all, then allow ONLY (a) DNS and (b) egress to the public internet on
+# 443 for GitHub / ghcr / package + chart caches. Crucially NO egress to internal cluster
+# CIDRs (Vault, apiserver, databases, management) — those are excluded from the allowlist.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runners-default-deny
+  namespace: REPLACE-ME-runner-namespace
+spec:
+  podSelector: {}            # all pods in the runner namespace
+  policyTypes: [Ingress, Egress]
+  # no ingress/egress rules ⇒ deny all (the allow-egress policy below re-opens what's needed)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runners-allow-egress
+  namespace: REPLACE-ME-runner-namespace
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    # DNS (CoreDNS in kube-system)
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # HTTPS to the public internet (GitHub / ghcr / caches), EXCEPT internal CIDRs.
+    # Tighten the `except` list to this cluster's pod/service/node + management CIDRs.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }

@@ -1,7 +1,7 @@
 # tempo — Grafana Tempo, the platform trace store + trace-query endpoint.
 # Layer-2 default values for talos-platform-apps. Deployed in MONOLITHIC single-binary
 # mode (one StatefulSet, replicas 1, every Tempo target in a single process) backed by
-# S3 (Garage) for the trace blocks.
+# an S3-compatible object store for the trace blocks.
 # Orchestrator decision: consumers are small single-node clusters, so Tempo's
 # distributed (tempo-distributed) topology is massively over-provisioned — the
 # monolithic single binary is the right granularity (analogous to loki SingleBinary).
@@ -95,9 +95,9 @@ values:
       - secretRef:
           name: tempo-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
 
-    # S3 object storage (Garage). The connection values are ${VAR} placeholders, NOT
+    # S3 object storage (s3-object capability). The connection values are ${VAR} placeholders, NOT
     # real endpoints/keys: the freeze-line keeps the S3 connection 100% consumer-owned.
-    # Tempo uses ONE bucket (trace blocks). Garage specifics: path-style addressing
+    # Tempo uses ONE bucket (trace blocks). Self-hosted / path-style S3 specifics: path-style addressing
     # (forcepathstyle: true, baked), TLS mode consumer-owned via ${S3_INSECURE}
     # (default TLS-on), region a ${VAR}, explicit
     # endpoint. Rendered into storage.trace.s3 by the config template; expanded at
@@ -116,8 +116,8 @@ values:
           region: ${S3_REGION}
           access_key: ${S3_ACCESS_KEY_ID}
           secret_key: ${S3_SECRET_ACCESS_KEY}
-          insecure: ${S3_INSECURE} # consumer-owned: "false"=TLS/HTTPS (default), "true"=plain HTTP (TLS-less Garage)
-          forcepathstyle: true   # Garage requires path-style addressing (baked, not consumer-tunable)
+          insecure: ${S3_INSECURE} # consumer-owned: "false"=TLS/HTTPS (default), "true"=plain HTTP (a TLS-less S3 endpoint)
+          forcepathstyle: true   # path-style addressing — the self-hosted S3 standard (MinIO, Garage, …) (baked, not consumer-tunable)
         wal:
           path: /var/tempo/wal
 
@@ -160,8 +160,8 @@ values:
       type: RuntimeDefault
 
   # -- WAL persistence: Tempo's WAL needs a writable /var/tempo, only mounted when
-  # persistence is enabled. DR story (mirrors loki): committed trace blocks live in S3
-  # (Garage) and survive pod/node loss; the PVC holds only the WAL (recent,
+  # persistence is enabled. DR story (mirrors loki): committed trace blocks live in the S3
+  # object store and survive pod/node loss; the PVC holds only the WAL (recent,
   # not-yet-flushed window) and uses whenDeleted/whenScaled:Delete, so deleting the
   # StatefulSet loses the recent pre-flush window. No storageClassName is pinned
   # (consumer-tunable; binds to the cluster default StorageClass).

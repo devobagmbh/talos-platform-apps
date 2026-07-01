@@ -1,0 +1,33 @@
+# Strict-B CRDs artifact (ADR-0028) for automation/actions-runner-controller. The 4
+# actions.github.com CustomResourceDefinition objects are cluster-scoped and define namespaced custom resources (cluster-level
+# API surface and depend on nothing in the catalog → requires is empty.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair; the
+# workload half is `automation/actions-runner-controller`. The build gate uses this
+# marker to assert kind: CustomResourceDefinition count > 0 here (and == 0 in the
+# workload artifact). The compatibility.yaml schema permits this crd-bearing top-level
+# field (customization.yaml is schema-locked additionalProperties:false and cannot
+# carry it).
+crd-bearing: true
+
+requires: {}
+
+# api-surface-only, NO capability. The actions.github.com CRDs are the API surface
+# (schemas), not the swappable operational capability. The swappable capability
+# `ci-runner` (self-hosted GitHub Actions runner infrastructure) is provided by the
+# workload artifact `automation/actions-runner-controller` (the controller Deployment
+# + RBAC that reconcile the AutoscalingRunnerSet / AutoscalingListener / EphemeralRunner
+# / EphemeralRunnerSet CRs), not by the CRD schemas. Carrying capabilities: [] here is
+# the deliberate design (precedent: automation/velero-crds, api-surface-only with the
+# capability on its workload counterpart), NOT a deferral — so no `# TODO:` here.
+provides:
+  - name: actions-runner-controller-crds
+    version:
+      sot: crd-schema             # a CRD bundle's provenance axis is the schema it vendors
+      crd_schema: v0.14.2         # gha-runner-scale-set-controller chart 0.14.2 (appVersion 0.14.2)
+    api_surface:
+      - actions.github.com/AutoscalingRunnerSet@v1alpha1   # primary scale-set kind
+      - actions.github.com/AutoscalingListener@v1alpha1    # listener for the scale set
+      - actions.github.com/EphemeralRunner@v1alpha1        # individual runner pod
+      - actions.github.com/EphemeralRunnerSet@v1alpha1     # runner replica set
+    capabilities: []

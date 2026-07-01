@@ -1,7 +1,7 @@
 # mimir — Grafana Mimir, the platform metrics store + PromQL query endpoint.
 # Layer-2 default values for talos-platform-apps. Deployed in the classic
 # microservices architecture (mimir-distributed chart 5.x), every core component
-# at replicas 1, backed by S3 (Garage) for blocks + ruler.
+# at replicas 1, backed by an S3-compatible object store for blocks + ruler.
 # Orchestrator decision: consumers are small single-node clusters, so 1 replica per
 # microservice is the right footprint — these microservices are inherent to
 # mimir-distributed (do NOT force a non-chart-native monolith).
@@ -62,7 +62,7 @@ values:
   # Mimir runtime configuration. structuredConfig merges into the chart's mimir.config
   # and renders into the mimir config ConfigMap (templates/mimir-config.yaml). The S3
   # connection values are ${VAR} placeholders, NOT real endpoints/keys: the freeze-line
-  # keeps the S3 connection 100% consumer-owned. Garage specifics: path-style addressing
+  # keeps the S3 connection 100% consumer-owned. Self-hosted / path-style S3 specifics: path-style addressing
   # forced via bucket_lookup_type: path (baked), TLS mode consumer-owned via
   # ${S3_INSECURE} (default TLS-on), region as ${VAR}.
   mimir:
@@ -75,12 +75,12 @@ values:
             region: ${S3_REGION}
             access_key_id: ${S3_ACCESS_KEY_ID}
             secret_access_key: ${S3_SECRET_ACCESS_KEY}
-            # Garage requires path-style addressing. bucket_lookup_type defaults to
+            # Path-style addressing (the self-hosted S3 standard). bucket_lookup_type defaults to
             # `auto` (already path-style for a non-AWS endpoint), but force `path`
             # explicitly so it cannot silently flip to virtual-hosted.
             bucket_lookup_type: path
             # S3 endpoint TLS mode, consumer-owned: "false"=TLS/HTTPS (default),
-            # "true"=plain HTTP (TLS-less Garage). Resolved at runtime by -config.expand-env=true.
+            # "true"=plain HTTP (a TLS-less S3 endpoint). Resolved at runtime by -config.expand-env=true.
             insecure: ${S3_INSECURE}
       blocks_storage:
         s3:
@@ -88,6 +88,15 @@ values:
       ruler_storage:
         s3:
           bucket_name: ${S3_BUCKET_RULER}
+      # Ruler → Alertmanager target, consumer-overridable. The built-in alertmanager is
+      # disabled (alertmanager.enabled: false below) because the platform uses a STANDALONE
+      # alertmanager; but the mimir-distributed chart default would point the ruler at the
+      # now-absent mimir-alertmanager-headless → alerts go nowhere. So set it from a
+      # consumer env var (resolved by -config.expand-env=true): RULER_ALERTMANAGER_URL in
+      # mimir-runtime-config = the consumer's AM (e.g. http://alertmanager-operated.monitoring.svc:9093).
+      # Unset → empty → the ruler evaluates rules but does not notify (safe default).
+      ruler:
+        alertmanager_url: ${RULER_ALERTMANAGER_URL}
       # Single-replica footprint (replicas 1, zone-awareness off below): the rings
       # MUST run replication factor 1, else Mimir's default RF of 3 makes the
       # read/write quorum (2) unreachable with one instance → every query and write
@@ -99,6 +108,21 @@ values:
       store_gateway:
         sharding_ring:
           replication_factor: 1
+      # Per-tenant ingestion RATE limits. Mimir's defaults (ingestion_rate 10000
+      # samples/s, ingestion_burst_size 200000) are demo-sized and far too low for a real
+      # multi-node cluster: the metrics volume of kube-state-metrics + node-exporter +
+      # cAdvisor + apiserver + CNI across all nodes makes the distributor drop samples
+      # with reason="rate_limited", so series like up / kube_pod_info / node_cpu never
+      # land → "No data" panels in Grafana. Raised to the platform footprint.
+      # max_global_series_per_user (the cardinality CEILING) is deliberately left at the
+      # chart default here: a single replicas-1 / RF-1 ingester capped at 512Mi (see the
+      # ingester resources block below) holds far fewer than the chart default's series,
+      # so raising the ceiling would not add reachable headroom — it would only replace a
+      # clean per-user-series-limit rejection with an OOMKill of the one stateful
+      # component. Raise it only in lockstep with the ingester memory limit.
+      limits:
+        ingestion_rate: 150000
+        ingestion_burst_size: 1500000
 
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
   # small single-workload cluster; no zone awareness). Each carries an explicit
@@ -181,7 +205,7 @@ values:
         memory: 256Mi
 
   # Disabled — not needed for the small single-node footprint:
-  # the bundled minio (we use external Garage S3),
+  # the bundled minio (we use an external S3-compatible store),
   minio:
     enabled: false
   # the nginx/gateway front-end (a consumer fronts Mimir via its own gateway),

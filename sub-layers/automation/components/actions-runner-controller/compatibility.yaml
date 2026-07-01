@@ -1,0 +1,23 @@
+# Strict-B workload half (ADR-0028) for ARC. The gha-runner-scale-set-controller
+# Deployment + RBAC reconcile the actions.github.com CRs (AutoscalingRunnerSet /
+# AutoscalingListener / EphemeralRunner / EphemeralRunnerSet) → it REQUIRES those CRDs,
+# shipped by automation/actions-runner-controller-crds (wave -1).
+#
+# It PROVIDES the `ci-runner` capability — self-hosted GitHub Actions runner
+# infrastructure. This is the swappable OPERATIONAL capability (the controller that
+# reconciles the runner CRs), as opposed to the CRD schemas (api-surface on the -crds
+# half). `ci-runner` lives in catalog/capability-index.yaml (status: proposed, #412).
+# swap_class rewrite-required: alternatives (e.g. a different runner operator) expose a
+# different CR surface, so a swap requires the consumer to rewrite its scale-set claim.
+requires:
+  automation/actions-runner-controller-crds: ">=v0.1.0"
+
+provides:
+  - name: actions-runner-controller
+    version:
+      sot: app
+      app: 0.14.2        # gha-runner-scale-set-controller appVersion
+      chart: 0.14.2      # chart 0.14.2
+    api_surface: []
+    capabilities:
+      - {id: ci-runner, swap_class: rewrite-required}
