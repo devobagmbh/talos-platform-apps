@@ -79,6 +79,11 @@ buckets:
     key_alias: <key-alias>
 ```
 
+> **Character class.** Both `<bucket-name>` and `<key-alias>` MUST match
+> `[A-Za-z0-9_-]+` — they are interpolated unescaped into JSON request bodies
+> and into file paths, so the script validates and rejects anything outside
+> that class with an actionable error rather than risk a malformed API call.
+
 ### `Secret garage-buckets-secret`
 
 - Key `adminToken` — read via `secretKeyRef` into `GARAGE_ADMIN_TOKEN` (Bearer
@@ -104,13 +109,26 @@ material synced via `secrets/external-secrets`.
 
 On a **fresh cluster** the Garage admin API (wave 0) MAY not be ready when this
 Job runs at wave 10 — Garage must first finish `garage layout apply` before the
-admin API serves bucket/key calls. If the Job reaches terminal `Failed` before
-Garage is ready, the operator triggers a force-resync of this component after
-confirming Garage is healthy:
+admin API serves bucket/key calls. `provision.sh`'s `api()` retries a transport
+failure or a 5xx response with bounded backoff (10 attempts, 15s apart by
+default — override via `API_RETRY_ATTEMPTS`/`API_RETRY_DELAY_SECONDS`) before
+giving up, so a single Job attempt can ride out a short bootstrap delay instead
+of immediately spending one of the Job's 6 `backoffLimit` attempts on it. Each
+individual call is itself bounded by `--connect-timeout`/`--max-time` (5s/30s
+by default — override via `API_CONNECT_TIMEOUT_SECONDS`/`API_MAX_TIME_SECONDS`),
+so a peer that accepts the connection but never responds can't hold the pod for
+an unbounded time. All four overrides MUST be non-negative integers — the
+script validates them at start and exits with an actionable error otherwise.
+If the Job still reaches terminal `Failed` — meaning Garage was not ready even
+after that retry budget — the operator triggers a force-resync of this
+component after confirming Garage is healthy:
 
 ```sh
 kubectl -n garage exec <garage-pod> -- garage status
 ```
+
+`ttlSecondsAfterFinished: 3600` gives the operator an hour to notice a `Failed`
+Job (events/logs) before it is garbage-collected.
 
 The Job is idempotent (GET-then-create/import guards), so a re-run is always
 safe. Note also that the `Force=true,Replace=true` sync-option means an Argo

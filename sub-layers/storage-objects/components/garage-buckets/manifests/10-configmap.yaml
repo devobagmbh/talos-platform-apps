@@ -38,25 +38,97 @@ data:
     # `x="$(api ...)"` — a command substitution around the call would run
     # api() itself in a subshell, and the BODY/HTTP_CODE assignments below
     # would then be invisible to the caller once that subshell exits.
+    #
+    # Retries a transport failure (Garage unreachable) or a 5xx response with
+    # bounded backoff before returning. On a fresh cluster the admin API can
+    # be transiently unreachable or erroring while the daemon starts, or while
+    # the operator is still mid-`garage layout apply` (README § Bootstrap
+    # caveats) — this lets a single Job attempt ride that out instead of
+    # spending the Job's own backoffLimit budget on it. A 404 or other 4xx is
+    # a normal, meaningful outcome for the call sites below and is returned to
+    # the caller immediately, never retried here.
+    #
+    # --connect-timeout/--max-time bound each individual curl call so a peer
+    # that accepts the connection but never responds (a stall, not a clean
+    # refusal) can't hold the pod indefinitely — the retry-attempt count above
+    # only bounds total attempts, not the wall-clock time of any single one.
+    API_RETRY_ATTEMPTS="${API_RETRY_ATTEMPTS:-10}"
+    API_RETRY_DELAY_SECONDS="${API_RETRY_DELAY_SECONDS:-15}"
+    API_CONNECT_TIMEOUT_SECONDS="${API_CONNECT_TIMEOUT_SECONDS:-5}"
+    API_MAX_TIME_SECONDS="${API_MAX_TIME_SECONDS:-30}"
+
+    # require_nonneg_int NAME VALUE -> exit 1 with an actionable error if VALUE
+    # isn't a non-negative integer. Guards against a typo'd override (e.g.
+    # API_RETRY_ATTEMPTS=abc) turning the retry loop below into an unbounded
+    # one: `[ "$_attempt" -ge "$API_RETRY_ATTEMPTS" ]` on a non-numeric value
+    # errors on stderr but evaluates false, which under `set -e` does NOT abort
+    # the script (the test is an if-condition) — the loop would otherwise spin
+    # forever instead of failing fast.
+    require_nonneg_int() {
+      case "$2" in
+        ''|*[!0-9]*) echo "ERROR: $1 must be a non-negative integer, got '$2'" >&2; exit 1 ;;
+      esac
+    }
+    require_nonneg_int API_RETRY_ATTEMPTS "$API_RETRY_ATTEMPTS"
+    require_nonneg_int API_RETRY_DELAY_SECONDS "$API_RETRY_DELAY_SECONDS"
+    require_nonneg_int API_CONNECT_TIMEOUT_SECONDS "$API_CONNECT_TIMEOUT_SECONDS"
+    require_nonneg_int API_MAX_TIME_SECONDS "$API_MAX_TIME_SECONDS"
+
     api() {
       _method="$1"; _path="$2"; _body="${3:-}"
-      _out="$(
+      _attempt=1
+      while true; do
+        _ok=1
         if [ -n "$_body" ]; then
-          curl -sS -X "$_method" \
-            -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -w '\n__HTTP_CODE__%{http_code}' \
-            -d "$_body" \
-            "${ADMIN_URL}${_path}"
+          _out="$(
+            curl -sS -X "$_method" \
+              --connect-timeout "$API_CONNECT_TIMEOUT_SECONDS" \
+              --max-time "$API_MAX_TIME_SECONDS" \
+              -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -w '\n__HTTP_CODE__%{http_code}' \
+              -d "$_body" \
+              "${ADMIN_URL}${_path}"
+          )" || _ok=0
         else
-          curl -sS -X "$_method" \
-            -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
-            -w '\n__HTTP_CODE__%{http_code}' \
-            "${ADMIN_URL}${_path}"
+          _out="$(
+            curl -sS -X "$_method" \
+              --connect-timeout "$API_CONNECT_TIMEOUT_SECONDS" \
+              --max-time "$API_MAX_TIME_SECONDS" \
+              -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
+              -w '\n__HTTP_CODE__%{http_code}' \
+              "${ADMIN_URL}${_path}"
+          )" || _ok=0
         fi
-      )"
-      HTTP_CODE="$(printf '%s' "$_out" | sed -n 's/.*__HTTP_CODE__\([0-9]*\)$/\1/p')"
-      BODY="$(printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//')"
+
+        if [ "$_ok" = "1" ]; then
+          HTTP_CODE="$(printf '%s' "$_out" | sed -n 's/.*__HTTP_CODE__\([0-9]*\)$/\1/p')"
+          BODY="$(printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//')"
+          case "$HTTP_CODE" in
+            5[0-9][0-9]) : ;; # transient server error - fall through to retry
+            *) return 0 ;;
+          esac
+        fi
+
+        if [ "$_attempt" -ge "$API_RETRY_ATTEMPTS" ]; then
+          if [ "$_ok" = "1" ]; then
+            # retry budget exhausted on a persistent 5xx (Garage reachable,
+            # still erroring) - log it, then return with HTTP_CODE=5xx so the
+            # caller's own 200/404/else branching produces the specific error.
+            echo "  admin API still returning HTTP ${HTTP_CODE} for ${_method} ${_path} after ${_attempt} attempts - giving up, handing HTTP $HTTP_CODE to caller" >&2
+            return 0
+          fi
+          echo "ERROR: ${_method} ${ADMIN_URL}${_path} unreachable after ${_attempt} attempts - is Garage (storage-objects/garage) up? See README § Bootstrap caveats" >&2
+          exit 1
+        fi
+        if [ "$_ok" = "1" ]; then
+          echo "  admin API returned HTTP ${HTTP_CODE} for ${_method} ${_path} - retrying in ${API_RETRY_DELAY_SECONDS}s (attempt ${_attempt}/${API_RETRY_ATTEMPTS})" >&2
+        else
+          echo "  admin API unreachable for ${_method} ${_path} - retrying in ${API_RETRY_DELAY_SECONDS}s (attempt ${_attempt}/${API_RETRY_ATTEMPTS})" >&2
+        fi
+        sleep "$API_RETRY_DELAY_SECONDS"
+        _attempt=$((_attempt + 1))
+      done
     }
 
     # Redact known secret-bearing JSON fields from an API response body before it
@@ -81,17 +153,27 @@ data:
     #   buckets:
     #     - name: <bucket-name>
     #       key_alias: <key-alias>
-    # Emits "name<TAB>key_alias" lines.
+    # Emits "name<TAB>key_alias" lines. Trims only trailing whitespace and, if
+    # the WHOLE value is wrapped in one matching pair of quotes, that outer
+    # pair — never characters inside the value. Stripping quotes/whitespace
+    # anywhere in the string (as an earlier version did) would silently turn
+    # e.g. `name: "bad name"` into `badname`, defeating the character-class
+    # check below the parser: a rejected value must reach that check intact,
+    # not get silently normalized into an accepted one first.
     parse_buckets() {
       awk '
         /^[[:space:]]*-[[:space:]]*name:/ {
           if (name != "") print name "\t" alias
-          name = $0; sub(/.*name:[[:space:]]*/, "", name); gsub(/["\x27[:space:]]/, "", name)
+          name = $0; sub(/.*name:[[:space:]]*/, "", name); sub(/[[:space:]]+$/, "", name)
+          if (name ~ /^"[^"]*"$/) { sub(/^"/, "", name); sub(/"$/, "", name) }
+          else if (name ~ /^\x27[^\x27]*\x27$/) { sub(/^\x27/, "", name); sub(/\x27$/, "", name) }
           alias = ""
           next
         }
         /^[[:space:]]*key_alias:/ {
-          alias = $0; sub(/.*key_alias:[[:space:]]*/, "", alias); gsub(/["\x27[:space:]]/, "", alias)
+          alias = $0; sub(/.*key_alias:[[:space:]]*/, "", alias); sub(/[[:space:]]+$/, "", alias)
+          if (alias ~ /^"[^"]*"$/) { sub(/^"/, "", alias); sub(/"$/, "", alias) }
+          else if (alias ~ /^\x27[^\x27]*\x27$/) { sub(/^\x27/, "", alias); sub(/\x27$/, "", alias) }
         }
         END { if (name != "") print name "\t" alias }
       ' "$BUCKETS_FILE"
@@ -107,6 +189,23 @@ data:
         echo "ERROR: bucket '$BUCKET' has no key_alias in $BUCKETS_FILE" >&2
         exit 1
       fi
+
+      # BUCKET/ALIAS are interpolated unescaped into JSON request bodies below
+      # and into file paths above; reject anything outside a safe character
+      # class before either use, rather than risk a malformed API call or path
+      # from a stray quote/backslash in a consumer typo.
+      case "$BUCKET" in
+        *[!A-Za-z0-9_-]*)
+          echo "ERROR: bucket name '$BUCKET' in $BUCKETS_FILE contains characters outside [A-Za-z0-9_-]" >&2
+          exit 1
+          ;;
+      esac
+      case "$ALIAS" in
+        *[!A-Za-z0-9_-]*)
+          echo "ERROR: key_alias '$ALIAS' for bucket '$BUCKET' in $BUCKETS_FILE contains characters outside [A-Za-z0-9_-]" >&2
+          exit 1
+          ;;
+      esac
 
       AKID_FILE="${KEYS_DIR}/${ALIAS}.access-key-id"
       SKEY_FILE="${KEYS_DIR}/${ALIAS}.secret-key"

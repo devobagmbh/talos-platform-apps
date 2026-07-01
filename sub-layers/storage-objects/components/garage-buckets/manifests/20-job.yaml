@@ -24,7 +24,12 @@ metadata:
     platform.devoba.de/component: garage-buckets
 spec:
   backoffLimit: 6
-  ttlSecondsAfterFinished: 600
+  # 1h, not the previous 600s: provision.sh now retries a transient admin-API
+  # failure internally (see the ConfigMap's api() comment), so a terminal
+  # Failed here is a real signal, not a fast-exhausted retry budget -- give the
+  # operator a real window to see it before the Job is garbage-collected
+  # (README § Bootstrap caveats).
+  ttlSecondsAfterFinished: 3600
   template:
     metadata:
       labels:
