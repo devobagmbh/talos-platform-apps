@@ -8,3 +8,4 @@ components:
   - snapshot-controller # strict-B workload half — cluster-singleton CSI snapshot-controller (leader-election, sync-wave 0); requires snapshot-controller-crds
   - democratic-csi # NAS iSCSI block storage, Talos-native (nsenter) — synology-iscsi driver (sync-wave 0)
   - synology-csi # DEPRECATED: official Synology CSI; does NOT work on Talos (chroot /host). Superseded by democratic-csi.
+  - local-path-provisioner # node-local block storage (Rancher), capability block-storage-local (sync-wave 0); needs Talos UserVolumeConfig at /var/mnt/local-path-provisioner, namespace PSA privileged

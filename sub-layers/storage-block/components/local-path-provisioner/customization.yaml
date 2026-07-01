@@ -1,0 +1,16 @@
+# Customization Contract v2 (ADR-0024). The local-path-provisioner workload
+# (Namespace, RBAC, Deployment, StorageClass, ConfigMap) is the signed,
+# pre-rendered artifact — fully cluster-agnostic. The consumer's only obligation
+# is a Talos UserVolumeConfig mounting a disk at /var/mnt/local-path-provisioner,
+# which is out-of-band substrate (machineconfig), NOT a provided_refs shape.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies: []
