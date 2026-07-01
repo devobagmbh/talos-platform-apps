@@ -7,9 +7,9 @@ components:
   # components/ directory and is never built or published. The operator half lives as
   # prometheus-operator(+-crds) above; see README.md "The kube-prometheus-stack
   # composition" for the full map (#38).
-  - loki                    # sync-wave 10 — needs a Garage bucket
-  - mimir                   # sync-wave 10 — needs a Garage bucket
-  - tempo                   # sync-wave 10 — needs a Garage bucket
+  - loki                    # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
+  - mimir                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
+  - tempo                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - alloy                   # sync-wave 20 — needs the Loki/Mimir/Tempo endpoints
   - grafana                 # sync-wave 20 — datasources point to Loki/Mimir/Tempo
   - hubble                  # sync-wave 0  — Cilium network-flow visibility (relay/ui); independent of LGTM, needs the Cilium-agent Hubble server

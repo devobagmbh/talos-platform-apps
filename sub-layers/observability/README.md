@@ -33,7 +33,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 > `validate:crd-split`). The stack itself is the *composition* of the components
 > above, documented in the dedicated section below.
 
-Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
+Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter. Wave 10: three storage endpoints (each requiring the `s3-object` capability; the platform's Garage impl provides it). Wave 20: collector + UI (need the endpoints from wave 10).
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
