@@ -1,0 +1,23 @@
+# The component's own namespace. velero is the sole occupant (dedicated namespace),
+# so this component ships the Namespace object — a shipped manifest takes precedence
+# over Argo `managedNamespaceMetadata`, making the PSA posture authoritative and
+# self-contained (see the build skill's CONVENTIONS.md § Namespace & PSA).
+#
+# enforce: privileged is REQUIRED, not a nice-to-have. The node-agent DaemonSet
+# (deployNodeAgent: true) mounts the kubelet hostPaths /var/lib/kubelet/pods and
+# /var/lib/kubelet/plugins and runs as root for filesystem (Kopia) PodVolume backup.
+# "HostPath Volumes" is a Baseline PSS control, so baseline AND restricted both
+# forbid it — privileged is the only level that admits the node-agent (same reason
+# as storage-block/synology-csi).
+#
+# The consumer adds — per ADR-0027 — the PNI labels and the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor) in its Argo
+# overlay; the catalog ships neither (they are consumer-composition concerns).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: velero
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    platform.devoba.de/sub-layer: automation
+    platform.devoba.de/component: velero
