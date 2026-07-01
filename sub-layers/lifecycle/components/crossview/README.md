@@ -15,12 +15,33 @@ Postgres comes from the `cnpg-postgres` capability (#85), not a bundled Postgres
 The **workload** (Deployment/Service/RBAC) is the signed, pre-rendered artifact.
 Postgres is external (consumer-owned CNPG `Cluster`). **Consumer-owned** (Layer 3):
 
-- **Secrets (Shape c)** — `adminPassword` + `sessionSecret` (+ `OIDCClientSecret` when SSO
-  is on) via an existing Secret `crossview-runtime-secret`; the DB password via a second
-  Secret `crossview-db` key `password` (point it at CNPG's auto-created `<cluster>-app`
-  secret). The catalog ships only placeholders; never a real credential (base Hard-Constraint).
+- **Secrets (Shape c)** — `adminPassword` + `sessionSecret` via an existing Secret
+  `crossview-runtime-secret`; the DB password via a second Secret `crossview-db` key
+  `password` (point it at CNPG's auto-created `<cluster>-app` secret). The catalog ships
+  only placeholders; never a real credential (base Hard-Constraint).
 - **Config (Shape b)** — the public host / CORS origin and, when enabled, the Dex OIDC wiring
   (issuer/clientId/callbackURL, ADR-0010). SSO is off in the catalog default.
+
+### Enabling Dex SSO (additive, no workload patch — ADR-0024)
+
+The signed workload reads `OIDC_*` / `CORS_ORIGIN` from the baked `crossview-config`
+ConfigMap (cluster-agnostic localhost defaults, SSO off). The workload's `app.extraEnv`
+references an **optional** consumer ConfigMap + Secret key, rendered **last** — so when
+the consumer supplies them they override the baked defaults (k8s: last duplicate env wins),
+and when absent the kubelet skips the optional ref and the defaults stand. To enable SSO,
+the consumer (Layer 3) creates — **without patching the signed workload**:
+
+1. a `crossview-oidc-config` **ConfigMap** with:
+   - `OIDC_ENABLED: "true"`
+   - `OIDC_ISSUER` — the Dex issuer (e.g. `https://<dex-host>`)
+   - `OIDC_CLIENT_ID` — the Dex static-client id
+   - `OIDC_CALLBACK_URL` — `https://<crossview-public-host>/api/auth/oidc/callback`
+   - `CORS_ORIGIN` — `https://<crossview-public-host>` (public root URL; else the
+     post-login redirect goes to localhost)
+2. an `oidc-client-secret` key in `crossview-runtime-secret` — the same value as the Dex
+   client secret.
+
+The matching Dex static client must register the redirect URI `…/api/auth/oidc/callback`.
 
 ## External Postgres (cnpg-postgres)
 
