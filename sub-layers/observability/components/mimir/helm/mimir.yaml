@@ -132,12 +132,19 @@ values:
   # more memory (recent series, index headers, compaction working set).
   distributor:
     replicas: 1
+    # Memory scales with the inbound push load (active series in flight, batch
+    # buffering, per-consumer retry pressure), NOT with a catalog-set invariant.
+    # 256Mi OOM-crashlooped under a real multi-node cAdvisor-cardinality workload
+    # (endpoints emptied → all remote_write failed cluster-wide). Raised to give
+    # headroom. NOTE: this is load-sizing that ideally the CONSUMER tunes — the
+    # ADR-0024 freeze-line does not yet expose pod resources, so it lives here for
+    # now (see the resource-sizing carve-out follow-up).
     resources:
       requests:
         cpu: 100m
-        memory: 128Mi
-      limits:
         memory: 256Mi
+      limits:
+        memory: 1Gi
   ingester:
     replicas: 1
     # Single ingester: no cross-pod replication, so zone-aware replication is off and
