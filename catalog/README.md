@@ -61,17 +61,26 @@ Rules:
 - Components without a matching capability currently carry `capabilities: []`
   with a `# TODO` reference to the follow-up issue that defines the capability
   (status `proposed` in the index) — contracts are not guessed.
-- In `requires:`, a fixed catalog component MUST be referenced **concretely**
-  as `<sub-layer>/<component>: ">=vX.Y.Z"` — even when it itself provides a
-  capability (e.g. `alloy`/`grafana` → `observability/loki|mimir|tempo`,
-  **not** the `*-query` capabilities; `storage-objects/garage`, not
-  `s3-object`). A **capability ID** in `requires:` is reserved exclusively for
-  *instanced*, consumer-provided services (today `cnpg-postgres`,
-  `redis-managed`; both `instanced: true`). Rule of thumb: a capability ID
-  only where a real, index-listed swap contract exists *and* the consumer
-  supplies the instance; a tool-specific contract (Grafana-shaped dashboard
-  payload, tool-specific CRs or metric names) is referenced **concretely** —
-  otherwise the capability claims a swap-freedom that does not exist.
+- In `requires:`, a dependency is referenced **concretely** as
+  `<sub-layer>/<component>: ">=vX.Y.Z"` by default — and MUST be when you depend
+  on that component's *tool-specific* surface (its CRs, metric names, a
+  Grafana-shaped dashboard payload, a remote-write/PromQL shape), **even when the
+  component also provides a capability** (e.g. `alloy`/`grafana` →
+  `observability/loki|mimir|tempo`, **not** the `*-query` capabilities — they
+  speak each tool's specific API). A **capability ID** is used in `requires:`
+  only for an *instanced* (`instanced: true`), consumer-provided service consumed
+  through its **standard, swappable interface** — the consumer creates the
+  instance objects (buckets, databases, CRs) and any index-listed impl satisfies
+  the same interface (today `cnpg-postgres`, `redis-managed`, `s3-object`). The
+  discriminator is the **interface**, not who owns the connection string:
+  `s3-object` qualifies because Loki/Mimir/Tempo speak the *standard S3 API* and
+  the consumer creates the buckets, so any `drop-in` impl
+  (garage/minio-operator/external-s3) works — pinning `storage-objects/garage`
+  would over-couple to one backend. When a dependency target is **both** a
+  shipped component and an instanced-capability impl (garage is both), reference
+  it by **capability** if you use only its standard interface, **concretely** if
+  you use its tool-specific surface. Otherwise the capability claims a
+  swap-freedom that does not exist.
 
 ### `version:` — version provenance (apps#226)
 
