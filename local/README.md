@@ -4,7 +4,7 @@
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.36.0-326ce5?style=flat-square&logo=kubernetes)](https://kubernetes.io/)
 [![Cilium](https://img.shields.io/badge/Cilium-1.19.3-F8C517?style=flat-square&logo=cilium)](https://cilium.io/)
 [![Gateway API](https://img.shields.io/badge/Gateway%20API-v1.2-326CE5?style=flat-square&logo=kubernetes)](https://gateway-api.sigs.k8s.io/)
-[![ArgoCD](https://img.shields.io/badge/ArgoCD-7.7-EF7B4D?style=flat-square&logo=argo)](https://argo-cd.readthedocs.io/)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-9.4-EF7B4D?style=flat-square&logo=argo)](https://argo-cd.readthedocs.io/)
 [![cert-manager](https://img.shields.io/badge/cert--manager-1.17-0A6E32?style=flat-square)](https://cert-manager.io/)
 [![mkcert](https://img.shields.io/badge/mkcert-Local%20TLS-1F305F?style=flat-square)](https://github.com/FiloSottile/mkcert)
 [![Helm](https://img.shields.io/badge/Helm-v3-0F1689?style=flat-square&logo=helm)](https://helm.sh/)
@@ -111,7 +111,7 @@ Step order:
 5. `local:storage:install` — local-path-provisioner as the **default StorageClass** (catalog CSIs need the real NAS; local-path is the local stand-in, hostPath under `/var`, namespace PSA-privileged for Talos). Needed for stateful local tests (CNPG, …).
 6. `local:cert-manager:install` — cert-manager `v1.17` (Helm, CRDs inline)
 7. `local:certs` — `mkcert -install` + `rootCA.pem` as a cert-manager secret + the argocd-NS CA ConfigMap + `ClusterIssuer mkcert-ca`
-8. `local:argo:install` — ArgoCD 7.7.0 (headless, no Ingress)
+8. `local:argo:install` — ArgoCD chart 9.4.5 / v3.3.2 (base parity, headless, no Ingress)
 9. `local:gateway:apply` — Gateway + wildcard Certificate + ArgoCD HTTPRoute + NodePort patch `30080/30443`
 10. `local:registry:bridge` — Service + EndpointSlice with the docker IP of `kind-registry`
 
@@ -248,6 +248,13 @@ task local:argo:uninstall && task local:argo:install
 # Tear everything down (cluster + registry container)
 task local:down
 ```
+
+> **ArgoCD major-version bump (chart 7.x → 9.x, ArgoCD v2 → v3):** on an *existing* local
+> cluster prefer `task local:argo:uninstall && task local:argo:install` (shown above) over a
+> bare re-run of `local:argo:install` — a two-major in-place `helm upgrade` updates the
+> Application/AppProject CRD schemas under live Applications and can leave a brief
+> reconciliation gap. `task local:down && task local:up` is likewise clean; a first-time
+> `local:up` is unaffected.
 
 | Task | What happens | State |
 |---|---|---|
