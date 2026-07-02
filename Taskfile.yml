@@ -2476,12 +2476,16 @@ tasks:
   local:argo:install:
     desc: 'ArgoCD via Helm im Cluster installieren (HTTPRoute auf argocd.localhost.direct)'
     cmd: |
+      # Chart-Version MUSS base's argocd_chart_version spiegeln (talos-platform-base
+      # tofu/modules/talos-cluster/variables.tf): die lokale Test-Umgebung nutzt
+      # dieselbe ArgoCD-Version wie das Substrat, sonst testet man gegen eine andere
+      # ArgoCD-Version als Produktion. base pinnt argo-cd 9.4.5 (= ArgoCD v3.3.2).
       helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
       helm repo update argo
       helm upgrade --install argocd argo/argo-cd \
         --kube-context {{.LOCAL_KUBE_CONTEXT}} \
         --namespace argocd --create-namespace \
-        --version 7.7.0 \
+        --version 9.4.5 \
         --values local/argocd-values.yaml \
         --wait --timeout 5m
 
