@@ -110,6 +110,10 @@ Validation is primarily render- and policy-focused; for end-to-end deployability
 - PR body: what changed + why + validation steps (see `.github/PULL_REQUEST_TEMPLATE.md`).
 - PRs should go through **subagent reviews** (see Multi-Agent Coordination below). The `require-review.sh` hook is **deliberately inactive** (not bound in `settings.json`) until M2 onboards — with a single maintainer, fail-closed would be self-sabotage. The hook scripts stay in the repo and are reactivated once a multi-maintainer workflow becomes real.
 
+## Issue & PR Lifecycle
+
+The end-to-end issue→PR interface — how an issue becomes a merged, ADR-conform PR, the `status:` label state machine and who owns each transition, the `gh` command surface, and the ADR-conformance gates — is consolidated in **[`.claude/rules/issue-interface.md`](.claude/rules/issue-interface.md)** (the canonical reference). The collision-safe claim protocol lives in `.claude/rules/issue-claim.md`; the GitHub Actions under `.github/workflows/` own the GHA-managed `status:` label transitions at runtime. Read the reference before working an issue or opening a PR.
+
 ## CI conventions (binding)
 
 Three rules, project-wide:
