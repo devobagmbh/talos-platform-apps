@@ -981,21 +981,26 @@ tasks:
       `.vulnerabilities[]` list is read — the sole list the CVE scanner consumes
       via `--ignorefile` (misconfig/secret findings use other mechanisms). Every
       entry MUST:
-        - carry an `id:` (the waived CVE) and a non-empty `statement:` (who
-          accepted it + why — the CODEOWNERS-auditable rationale);
+        - carry an `id:` (the waived CVE) and a `statement:` that is a non-empty
+          STRING (who accepted it + why — the CODEOWNERS-auditable rationale). A
+          non-string statement (`[]`, a number) is rejected — `tostring` would
+          otherwise coerce it to a non-empty value and slip past.
         - carry `expired_at:` (trivy requires it — an entry without one never
-          expires) that is at most N days in the FUTURE. N defaults to 90;
-          override with TRIVYIGNORE_MAX_DAYS (itself bounded to 1-365 — an
-          unbounded override would re-open this same far-future hole). A
-          far-future / effectively-permanent suppression that would accrue
-          unchecked is rejected here. A PAST expired_at is left to trivy (it
-          natively stops honouring an expired entry, so the CVE blocks again);
-        - be SCOPED to a NARROW target: at least one `paths:` or `purls:` value
-          MUST narrow the waiver. A bare CVE `id`, or one scoped only by a broad
-          value — `paths: **`/`*`/`.`/`/`/`./`/empty/null, `purls: *`/`pkg:*`
-          (type-only wildcard) — still waives that CVE catalog-wide (every image /
-          package) and is rejected. A non-array `paths:`/`purls:` contributes no
-          narrow value.
+          expires) that is a REAL calendar date (a round-trip through jq
+          strptime/strftime — 2026-06-31 would silently normalize to 07-01, so it
+          is rejected) at most N days in the FUTURE. N defaults to 90; override
+          with TRIVYIGNORE_MAX_DAYS (itself bounded to 1-365 — an unbounded
+          override would re-open this same far-future hole). A far-future /
+          effectively-permanent suppression that would accrue unchecked is rejected
+          here. A PAST expired_at is left to trivy (it natively stops honouring an
+          expired entry, so the CVE blocks again);
+        - be SCOPED to a NARROW target with NO broad value: at least one `paths:`
+          or `purls:` value MUST narrow the waiver AND every value MUST be narrow.
+          A bare CVE `id`, or ANY broad value — `paths: **`/`*`/`.`/`/`/`./`/empty/
+          null, `purls: **`/`*`/`pkg:*` (type-only wildcard) — waives that CVE
+          catalog-wide (path/purl lists are OR-matched, so a broad glob beside a
+          specific path still matches everything) and is rejected. A non-array
+          `paths:`/`purls:` contributes no narrow value.
       An empty (`vulnerabilities: []`) or absent file passes trivially (no
       false-fail on the pre-campaign steady state). Wired into `task ci` as a
       repo-global merge-time gate alongside validate:release-config — deliberately
@@ -1046,20 +1051,30 @@ tasks:
         | .["value"] as $e
         | (($e.id // "") | tostring | gsub("^\\s+|\\s+$"; "")) as $id
         | ($e.expired_at // "") as $exp
+        | (($e.paths // []) | if type == "array" then length else 0 end) as $totpaths
+        | (($e.purls // []) | if type == "array" then length else 0 end) as $totpurls
         | (($e.paths // []) | if type == "array" then (map(select((type == "string") and (test("^(\\*{1,2}|\\.|\\.?/|)$") | not))) | length) else 0 end) as $narrowpaths
-        | (($e.purls // []) | if type == "array" then (map(select((type == "string") and (test("^(|\\*|pkg:\\*.*)$") | not))) | length) else 0 end) as $narrowpurls
+        | (($e.purls // []) | if type == "array" then (map(select((type == "string") and (test("^(|\\*{1,2}|pkg:\\*.*)$") | not))) | length) else 0 end) as $narrowpurls
+        | ($narrowpaths + $narrowpurls) as $narrowscope
+        | (($totpaths + $totpurls) - $narrowscope) as $broadscope
         | [
             (if $id == "" then "entry[\($i)]: missing id field (the waived CVE)" else empty end),
-            (if (($e.statement // "") | tostring | gsub("^\\s+|\\s+$"; "")) == ""
-             then "entry[\($i)] (id=\($e.id // "?")): missing/empty statement — AC2, rationale required"
+            (if ($e.statement | type) != "string"
+             then "entry[\($i)] (id=\($e.id // "?")): statement missing or not a string — AC2, a non-empty string rationale is required"
+             elif (($e.statement | gsub("^\\s+|\\s+$"; "")) == "")
+             then "entry[\($i)] (id=\($e.id // "?")): empty statement — AC2, rationale required"
              else empty end),
-            (if ($narrowpaths + $narrowpurls) == 0
-             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no narrow paths/purls value — AC3, a bare CVE or a broad glob (*, **, ., /, ./, empty, pkg:*) waives it catalog-wide"
+            (if $narrowscope == 0
+             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no narrow paths/purls value — AC3, a bare CVE or a broad glob (*, **, ., /, ./, empty, null, pkg:*) waives it catalog-wide"
+             elif $broadscope > 0
+             then "entry[\($i)] (id=\($e.id // "?")): broad scope value beside a narrow one — AC3, path/purl lists are OR-matched so any broad glob (*, **, pkg:*) still waives it catalog-wide"
              else empty end),
             (if ($exp | tostring) == ""
              then "entry[\($i)] (id=\($e.id // "?")): missing expired_at — AC1, trivy requires it (entry never expires)"
              elif (($exp | tostring) | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)
              then "entry[\($i)] (id=\($e.id // "?")): expired_at=\($exp) is not YYYY-MM-DD — AC1"
+             elif ((try (($exp | tostring) | strptime("%Y-%m-%d") | mktime | strftime("%Y-%m-%d")) catch "") != ($exp | tostring))
+             then "entry[\($i)] (id=\($e.id // "?")): expired_at=\($exp) is not a real calendar date — AC1 (strptime would silently normalize it, e.g. 06-31 → 07-01, or reject it outright)"
              elif (($exp | strptime("%Y-%m-%d") | mktime) > $cutoff)
              then "entry[\($i)] (id=\($e.id // "?")): expired_at=\($exp) is more than \($md) days out (max \($cutoffdate)) — AC1"
              else empty end)
@@ -1199,6 +1214,49 @@ tasks:
           expired_at: 2026/07/02
           paths: [usr/bin/x]
       YAML
+      # --- cross-model (Codex) review fixtures ---
+      cat > "$work/mixed-broad.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1016
+          statement: a broad glob beside a narrow path is still catalog-wide (OR-matched)
+          expired_at: $near
+          paths: ["**", "usr/bin/x"]
+      YAML
+      cat > "$work/multi-narrow.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1017
+          statement: two narrow paths, no broad value
+          expired_at: $near
+          paths: ["usr/bin/a", "usr/bin/b"]
+      YAML
+      cat > "$work/broad-purl-glob.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1018
+          statement: a bare glob purl is still a catalog-wide waiver
+          expired_at: $near
+          purls: ["**"]
+      YAML
+      cat > "$work/badcal.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1019
+          statement: June has no 31st; strptime would silently normalize it
+          expired_at: 2026-06-31
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/arr-stmt.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1020
+          statement: []
+          expired_at: $near
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/num-stmt.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1021
+          statement: 42
+          expired_at: $near
+          paths: [usr/bin/x]
+      YAML
       printf 'vulnerabilities: []\n' > "$work/empty-list.yaml"
       printf '# no vulnerabilities key\nother: value\n' > "$work/no-key.yaml"
       fail=0
@@ -1263,7 +1321,14 @@ tasks:
       assert_reject "$work/ok-paths.yaml"       "MAX_DAYS ceiling (9999 > 365)" TRIVYIGNORE_MAX_DAYS=9999
       # non-YYYY-MM-DD expired_at must be a CLEAN finding (exit 1), not a strptime setup error (exit 2) (review fix 3)
       assert_reject_clean "$work/badfmt.yaml"   "AC1 expired_at non-YYYY-MM-DD → clean finding (exit 1)"
-      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5 + review hardening"; fi
+      # --- cross-model (Codex) review: Fix A/B (broad+narrow scope), Fix C (calendar), Fix D (statement type) ---
+      assert_reject "$work/mixed-broad.yaml"      "Fix A: broad glob (**) beside a narrow path"
+      assert_accept "$work/multi-narrow.yaml"     "Fix A: two narrow paths, no broad value"
+      assert_reject "$work/broad-purl-glob.yaml"  "Fix B: bare glob purl (**)"
+      assert_reject_clean "$work/badcal.yaml"     "Fix C: calendar-invalid expired_at (2026-06-31) → clean finding"
+      assert_reject "$work/arr-stmt.yaml"         "Fix D: array statement ([])"
+      assert_reject "$work/num-stmt.yaml"         "Fix D: numeric statement (42)"
+      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5 + review hardening + cross-model fixes"; fi
       exit "$fail"
 
   validate:contract:
