@@ -46,7 +46,6 @@
   "sub-layers/secrets/components/clustersecretstore-defaults": "0.1.0",
   "sub-layers/automation/components/velero": "0.1.0",
   "sub-layers/storage-objects/components/garage-buckets": "0.1.0",
-  "sub-layers/secrets/components/ca-clusterissuer": "0.1.0",
   "sub-layers/observability/components/node-exporter": "0.1.0",
   "sub-layers/secrets/components/vault-config-operator-crds": "0.1.0",
   "sub-layers/automation/components/velero-crds": "0.1.0",
