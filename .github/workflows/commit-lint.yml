@@ -1,0 +1,60 @@
+name: commit-lint
+
+# Server-side PR-gate (G2, issue #464): validate the PR title (Conventional Commit) and
+# the whole-PR single-component scope. Under squash-only merges the PR title becomes the
+# squash commit subject that release-please parses, and the PR collapses to ONE commit
+# touching N components — this is the squash-time enforcement the per-commit
+# lint:commit-scope (a local, --no-verify-bypassable lefthook) loses.
+#
+# Runs on EVERY PR to main — intentionally NOT path-filtered. When this job is added to
+# branch-protection required_status_checks (issue #463, a separate step) a path-filtered
+# required check would never report on a PR touching none of the filtered paths, so GitHub
+# would block that PR forever waiting for a status that never arrives (see contract-validate.yml).
+#
+# Convention (AGENTS.md § CI-Konventionen): the step calls ONLY `task lint:pr`; all logic
+# lives in the Taskfile. The PR title is passed via `env:` (never an inline `${{ }}` splice
+# into a run-script argument) so a malicious title stays inert. Locally reproducible:
+# `PR_TITLE="<title>" LINT_PR_RANGE="<base>..<head>" task lint:pr`.
+
+on:
+  pull_request:
+    branches: [main]
+    # edited → re-validate when the PR title changes; synchronize → when commits change scope.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+# Only the LATEST run per PR reports. A title edit does not change head.sha, so without this an
+# older racing run (from a prior title) could post a stale conclusion for the same
+# (check, head_sha) after a newer one finishes — leaving a green while the live title (= the
+# squash subject, squash_merge_commit_title=PR_TITLE) is non-Conventional. cancel-in-progress
+# makes the newest title/scope the authoritative check.
+concurrency:
+  group: commit-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-lint:
+    name: commit-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        with:
+          # fetch-depth: 0 so the three-dot (merge-base) scope diff can reach both the PR
+          # base and head commits; a shallow clone would not have the merge-base.
+          fetch-depth: 0
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      - name: Conventional PR title + single-component scope
+        # Both inputs via env: (value assignment, never a run-script splice) so the untrusted
+        # PR title cannot inject. base.sha/head.sha are GitHub-controlled hex SHAs; lint:pr
+        # validates them with `git rev-parse --verify` and fails closed if unresolvable.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          LINT_PR_RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+        run: devbox run -- task lint:pr
