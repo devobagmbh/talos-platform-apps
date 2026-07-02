@@ -64,7 +64,7 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 | `task render:one -- <sub-layer>/<component>` | `helm template` for one component |
 | `task render:sublayer -- <sub-layer>` | renders all components of one sub-layer |
 | `task render` | render of all components of all sub-layers (matrix) |
-| `task push -- <sub-layer>/<component> <tag>` | `helm push` to `oci://.../<sub-layer>/<component>:<tag>` |
+| `task push -- <sub-layer>/<component> <tag>` | `oras push` to `oci://.../<sub-layer>/<component>:<tag>` (native OCI, single-layer manifest tarball) |
 | `task sign -- <sub-layer>/<component> <tag>` | `cosign sign --yes` (local registries → skip) |
 | `task attest -- <sub-layer>/<component> <tag>` | SBOM (syft → CycloneDX → cosign attest) + SLSA provenance — phase 2+ |
 | `task publish -- <sub-layer>/<component> <tag>` | render → package → push → sign in one go |

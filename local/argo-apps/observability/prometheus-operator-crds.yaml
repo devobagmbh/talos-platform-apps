@@ -18,11 +18,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/observability
-    chart: prometheus-operator-crds
+    repoURL: oci://${REGISTRY}/observability/prometheus-operator-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: prometheus-operator-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

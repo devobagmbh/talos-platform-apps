@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/identity
-    chart: dex
+    repoURL: oci://${REGISTRY}/identity/dex
     targetRevision: ${TAG}
-    helm:
-      releaseName: dex
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: dex

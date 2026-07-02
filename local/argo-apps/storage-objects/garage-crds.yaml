@@ -19,11 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/storage-objects
-    chart: garage-crds
+    repoURL: oci://${REGISTRY}/storage-objects/garage-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: garage-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # The GarageNode CRD object is cluster-scoped; the destination namespace is

@@ -21,11 +21,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/observability
-    chart: alloy
+    repoURL: oci://${REGISTRY}/observability/alloy
     targetRevision: ${TAG}
-    helm:
-      releaseName: alloy
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: alloy

@@ -18,11 +18,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/observability
-    chart: grafana-operator-crds
+    repoURL: oci://${REGISTRY}/observability/grafana-operator-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: grafana-operator-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
