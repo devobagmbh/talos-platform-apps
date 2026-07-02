@@ -152,6 +152,30 @@ jobs:
             --username "${{ github.actor }}" \
             --password-stdin
 
+      - name: "E5 image-CVE scan (advisory during catalog remediation)"
+        # E5 CVE scan of THIS published component's rendered images. Currently
+        # ADVISORY (continue-on-error): the baseline shows ~90% of catalog images
+        # carry FIXABLE HIGH/CRITICAL CVEs, so a hard block would strand nearly every
+        # publish. It runs here as the per-publish measurement while the catalog is
+        # remediated component-by-component (tracking epic). FLIP TO HARD by deleting
+        # `continue-on-error` once the catalog is green — the scan already fails-closed
+        # on HIGH/CRITICAL (and on a scan/infra error), so the flip is a one-line
+        # change. As a workflow STEP it is not a required status check, so once hard it
+        # avoids the `gh pr merge --admin` bypass a required-check skip allows (a direct
+        # GHCR push remains an out-of-band path). Runs AFTER GHCR auth so trivy inherits
+        # the docker config for any ghcr.io image; upstream public images pull
+        # anonymously. A CRDs-only / config-only component (0 images) publishes clean.
+        # Bounded per AC11.
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          TRIVY_COMPONENT: ${{ steps.parse.outputs.component_id }}
+          # Strict E1 (block ALL HIGH/CRITICAL) pinned explicitly. Relaxing to
+          # block-fixable-only is a CODEOWNERS-reviewed change to '1' HERE — never a
+          # silent GHA repository Settings variable.
+          TRIVY_IGNORE_UNFIXED: ''
+        run: devbox run -- task scan:trivy-images-of
+
       - name: task publish (render + push + sign keyless)
         run: |
           devbox run -- task publish -- \

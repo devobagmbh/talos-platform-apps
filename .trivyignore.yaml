@@ -1,0 +1,17 @@
+# Trivy vulnerability ignore file (YAML format) — image-CVE gate (G3b/E5, ADR-0018).
+#
+# Governs BOTH the advisory PR-check (`task scan:trivy-cve`) and the HARD publish
+# gate (E5: `task scan:trivy-images-of` in oci-publish.yml). An entry here waives a
+# HIGH/CRITICAL from both — so:
+#
+#   - Every accepted CVE MUST carry `expired_at:` (trivy enforces it natively — an
+#     expired entry stops suppressing and the CVE blocks again) AND a `statement:`
+#     recording who accepted it and why. Keep the window short; prefer an image bump.
+#   - CODEOWNERS MUST inspect every delta to this file (a same-PR or two-PR-split
+#     addition is the documented self-suppression residual — see AGENTS.md).
+#
+# Only `vulnerabilities:` is read by the CVE scanner (`--scanners vuln`); misconfig
+# and secret findings use their own mechanisms, not this file.
+#
+# Format reference: https://trivy.dev/latest/docs/configuration/filtering/
+vulnerabilities: []

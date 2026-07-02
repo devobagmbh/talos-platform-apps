@@ -24,8 +24,10 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  pull-requests: write
+  # security-events: write is granted per-job on `trivy` only (the sole SARIF
+  # uploader); gitleaks/conftest/trivy-cve need only contents: read, and
+  # trivy-cve-all raises its own job-level issues: write. pull-requests: write
+  # dropped — no job posts PR comments. Least privilege.
 
 jobs:
   gitleaks:
@@ -57,6 +59,9 @@ jobs:
   trivy:
     name: trivy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # SARIF upload (misconfig scan) — the only job that needs it
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
 
@@ -102,3 +107,107 @@ jobs:
 
       - name: Conftest verify (Policy-Selbsttests)
         run: devbox run -- task scan:conftest-verify
+
+  # Advisory image-CVE early-warning on PRs (E2). NOT a required check — its diff-
+  # scope/extraction edge cases must never block a merge; the HARD block is the E5
+  # publish scan in oci-publish.yml. Goes red on findings as a visible early warning,
+  # but merge stays possible (branch protection gates only required checks). Workload
+  # images are public upstream (quay.io/ghcr.io/registry.k8s.io/docker.io) → pulled
+  # anonymously, so no registry auth is needed here.
+  trivy-cve:
+    name: trivy-cve (image CVEs, advisory)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        with:
+          # fetch-depth: 0 resolves TRIVY_SCAN_RANGE's base/head for the three-dot
+          # (merge-base) diff scope — a shallow clone would degrade it to a full scan.
+          fetch-depth: 0
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      - name: Advisory diff-scoped image-CVE scan
+        env:
+          TRIVY_SCAN_RANGE: ${{ format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
+        run: devbox run -- task scan:trivy-cve
+
+  # Weekly full-catalog image-CVE sweep (advisory). Renders and scans as SEPARATE
+  # steps so a render flake (external Helm chart fetch — a known flake class) is not
+  # mislabelled as a CVE finding; opens/updates a risk-tagged issue only on a real
+  # finding (scanner exit 1), never on a scan/infra error (exit 2). github-script
+  # issue automation is the AGENTS.md API-orchestration carve-out, exempt from CI-rule-3.
+  trivy-cve-all:
+    name: trivy-cve-all (weekly image CVEs, advisory)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      # Render (external chart pulls — the flake surface) is a plain step: a render
+      # flake FAILS the job (visibly red — an operator signal), and skips the scan +
+      # issue steps, so a flake is neither silent-green nor a false CVE issue.
+      - name: Render all sub-layers
+        run: devbox run -- task render
+
+      - name: Full-catalog image-CVE scan
+        id: scan
+        # go-task collapses the scanner's exit code, so the CVE-vs-infra distinction is
+        # read from the scanner's stable, WHOLE-LINE RESULT contract (`grep -qxF`, so a
+        # manifest/image string containing 'RESULT=cve' cannot forge it). A CVE finding
+        # → cve=true, step green (issue opens). A clean scan → cve=false, step green.
+        # A scan/infra error or crash (no RESULT=clean line) → the final grep exits
+        # non-zero → this step FAILS → the weekly run is visibly red, WITHOUT a false
+        # CVE issue. tee keeps the scan log in the job output.
+        run: |
+          set +e
+          devbox run -- task scan:trivy-images-of 2>&1 | tee "$RUNNER_TEMP/scan.log"
+          if grep -qxF 'scan:trivy-images-of: RESULT=cve' "$RUNNER_TEMP/scan.log"; then
+            echo "cve=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "cve=false" >> "$GITHUB_OUTPUT"
+          grep -qxF 'scan:trivy-images-of: RESULT=clean' "$RUNNER_TEMP/scan.log"
+
+      # Only a real CVE finding opens the issue; a clean scan does not, and an
+      # error/flake surfaced as a red job (above) does not reach here.
+      - name: Open or update a security issue on CVE findings
+        if: steps.scan.outputs.cve == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          script: |
+            const marker = '<!-- trivy-cve-all-weekly -->';
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              'The weekly full-catalog image-CVE scan (`task scan:trivy-cve-all`) found HIGH/CRITICAL vulnerabilities.',
+              '',
+              `Run log: ${runUrl}`,
+              '',
+              'Remediate by bumping the affected image, or accept the risk in `.trivyignore.yaml` (`expired_at:` + `statement:`, CODEOWNERS-reviewed).',
+            ].join('\n');
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const existing = open.find((i) => !i.pull_request && (i.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({
+                owner, repo,
+                title: 'chore(security): weekly image-CVE scan found HIGH/CRITICAL',
+                labels: ['risk: high'],
+                body,
+              });
+            }
