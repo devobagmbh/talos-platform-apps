@@ -110,6 +110,10 @@ Validation is primarily render- and policy-focused; for end-to-end deployability
 - PR body: what changed + why + validation steps (see `.github/PULL_REQUEST_TEMPLATE.md`).
 - PRs should go through **subagent reviews** (see Multi-Agent Coordination below). The `require-review.sh` hook is **deliberately inactive** (not bound in `settings.json`) until M2 onboards — with a single maintainer, fail-closed would be self-sabotage. The hook scripts stay in the repo and are reactivated once a multi-maintainer workflow becomes real.
 
+## Issue & PR Lifecycle
+
+The end-to-end issue→PR interface — how an issue becomes a merged, ADR-conform PR, the `status:` label state machine and who owns each transition, the `gh` command surface, and the ADR-conformance gates — is consolidated in **[`.claude/rules/issue-interface.md`](.claude/rules/issue-interface.md)** (the canonical reference). The collision-safe claim protocol lives in `.claude/rules/issue-claim.md`; the GitHub Actions under `.github/workflows/` own the GHA-managed `status:` label transitions at runtime. Read the reference before working an issue or opening a PR.
+
 ## Branch protection & merge gates
 
 `main` is protected; a PR merges only when every gate below is green. **The live GitHub branch-protection config is authoritative** — this section describes the configured contract so every contributor and every agent harness knows how a PR becomes mergeable *without querying the API*. If the two ever diverge, the live config wins and this section MUST be corrected. **Never `gh pr merge --admin`**: `enforce_admins` is off, so an admin *can* bypass, but bypassing a gate is a policy violation, not a workflow — this is a multi-maintainer repo (see § Multi-Agent Coordination + `.github/CODEOWNERS`). The fix for a `mergeStateStatus: BLOCKED` PR is always to satisfy the gate.

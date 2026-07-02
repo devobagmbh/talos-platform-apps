@@ -12,6 +12,10 @@ spends expensive work, so two operators working the backlog in parallel **from
 separate clones** do not build or plan the same issue. Repo-local and
 self-contained.
 
+> Part of the issue→PR interface — see [`.claude/rules/issue-interface.md`](issue-interface.md)
+> for the full lifecycle, `status:` label state machine, command surface, and ADR gates.
+> This file owns the claim sub-protocol the interface points to.
+
 **This file is executed at runtime only via each skill's explicit "Read and apply
 `.claude/rules/issue-claim.md`" step** (the same way a skill reads its
 `CONVENTIONS.md`). The `paths:` frontmatter above only surfaces this file to a
