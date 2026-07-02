@@ -1918,6 +1918,11 @@ tasks:
       out="${root}/rendered/${component}-${chart_version}.tar.gz"
       rm -f "$out"
       # Portabler tar (GNU + bsdtar): nur die Manifest-Datei im Tarball-Root.
+      # Invariante: `task render:one` konkateniert ALLE Helm-Charts + Raw-Manifeste
+      # der Komponente in diese eine manifest.yaml — sie IST der vollständige
+      # Artefakt-Inhalt. Bräuchte eine Komponente je eine zweite Datei im
+      # Artefakt-Root (source.path '.'), müssten render:one UND dieser tar-Aufruf
+      # mitgezogen werden — heute trägt jedes Artefakt genau eine Datei.
       tar -czf "$out" -C "${root}/rendered" manifest.yaml
       echo "✓ Packaged: ${out}"
 
@@ -2614,7 +2619,7 @@ tasks:
     #   1. cert-manager-NS als TLS-Secret → ClusterIssuer für *.localhost.direct
     #   2. argocd-NS als ConfigMap → initContainer mountet die CA und appended sie
     #      an /etc/ssl/certs/ca-certificates.crt im argocd-repo-server-Pod,
-    #      damit Helm-OCI-Pulls gegen kind-registry-TLS validieren.
+    #      damit die nativen OCI-Pulls gegen kind-registry-TLS validieren.
     # Material kommt direkt aus $(mkcert -CAROOT) (kein lokales Zwischen-File,
     # vermeidet Permission-Issues beim zweiten Lauf — mkcert speichert mit 0600).
     cmd: |
