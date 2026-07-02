@@ -985,13 +985,17 @@ tasks:
           accepted it + why — the CODEOWNERS-auditable rationale);
         - carry `expired_at:` (trivy requires it — an entry without one never
           expires) that is at most N days in the FUTURE. N defaults to 90;
-          override with TRIVYIGNORE_MAX_DAYS. A far-future / effectively-permanent
-          suppression that would accrue unchecked is rejected here. A PAST
-          expired_at is left to trivy (it natively stops honouring an expired
-          entry, so the CVE blocks again);
-        - be SCOPED: a bare CVE `id` with neither `paths:` nor `purls:` waives
-          that CVE catalog-wide (every image / package) — too broad; at least one
-          of `paths:` / `purls:` MUST narrow it.
+          override with TRIVYIGNORE_MAX_DAYS (itself bounded to 1-365 — an
+          unbounded override would re-open this same far-future hole). A
+          far-future / effectively-permanent suppression that would accrue
+          unchecked is rejected here. A PAST expired_at is left to trivy (it
+          natively stops honouring an expired entry, so the CVE blocks again);
+        - be SCOPED to a NARROW target: at least one `paths:` or `purls:` value
+          MUST narrow the waiver. A bare CVE `id`, or one scoped only by a broad
+          value — `paths: **`/`*`/`.`/`/`/`./`/empty/null, `purls: *`/`pkg:*`
+          (type-only wildcard) — still waives that CVE catalog-wide (every image /
+          package) and is rejected. A non-array `paths:`/`purls:` contributes no
+          narrow value.
       An empty (`vulnerabilities: []`) or absent file passes trivially (no
       false-fail on the pre-campaign steady state). Wired into `task ci` as a
       repo-global merge-time gate alongside validate:release-config — deliberately
@@ -1015,6 +1019,13 @@ tasks:
       set -u
       f="${TRIVYIGNORE_FILE:-.trivyignore.yaml}"
       maxdays="${TRIVYIGNORE_MAX_DAYS:-90}"   # AC1: an entry may expire at most N days out; N defaults to 90.
+      # Bound the override to a positive integer ≤ 365 days: an unbounded
+      # TRIVYIGNORE_MAX_DAYS would re-open the far-future suppression hole this
+      # guard exists to close (a >1-year waiver is never acceptable).
+      case "$maxdays" in ''|*[!0-9]*) echo "✗ TRIVYIGNORE_MAX_DAYS='${maxdays}' must be a positive integer (1-365)"; exit 2 ;; esac
+      if [ "$maxdays" -lt 1 ] || [ "$maxdays" -gt 365 ]; then
+        echo "✗ TRIVYIGNORE_MAX_DAYS='${maxdays}' out of range — a suppression window must be 1-365 days"; exit 2
+      fi
       # AC5: an absent file is trivially valid (nothing suppressed yet).
       if [ ! -f "$f" ]; then echo "✓ ${f} absent — nothing to validate"; exit 0; fi
       vtype="$(yq -r '.vulnerabilities | type' "$f" 2>/dev/null)" || { echo "✗ ${f}: unreadable / not valid YAML"; exit 2; }
@@ -1035,15 +1046,15 @@ tasks:
         | .["value"] as $e
         | (($e.id // "") | tostring | gsub("^\\s+|\\s+$"; "")) as $id
         | ($e.expired_at // "") as $exp
-        | ((($e.paths // []) | if type == "array" then length else 0 end)
-           + (($e.purls // []) | if type == "array" then length else 0 end)) as $scope
+        | (($e.paths // []) | if type == "array" then (map(select((type == "string") and (test("^(\\*{1,2}|\\.|\\.?/|)$") | not))) | length) else 0 end) as $narrowpaths
+        | (($e.purls // []) | if type == "array" then (map(select((type == "string") and (test("^(|\\*|pkg:\\*.*)$") | not))) | length) else 0 end) as $narrowpurls
         | [
             (if $id == "" then "entry[\($i)]: missing id field (the waived CVE)" else empty end),
             (if (($e.statement // "") | tostring | gsub("^\\s+|\\s+$"; "")) == ""
              then "entry[\($i)] (id=\($e.id // "?")): missing/empty statement — AC2, rationale required"
              else empty end),
-            (if $scope == 0
-             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no paths/purls — AC3, a bare CVE waives it catalog-wide"
+            (if ($narrowpaths + $narrowpurls) == 0
+             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no narrow paths/purls value — AC3, a bare CVE or a broad glob (*, **, ., /, ./, empty, pkg:*) waives it catalog-wide"
              else empty end),
             (if ($exp | tostring) == ""
              then "entry[\($i)] (id=\($e.id // "?")): missing expired_at — AC1, trivy requires it (entry never expires)"
@@ -1062,7 +1073,7 @@ tasks:
         exit 1
       fi
       n="$(yq -r '.vulnerabilities | length' "$f")"
-      echo "✓ ${f}: ${n} ignore entr(y/ies) valid (expired_at ≤ ${maxdays}d out, non-empty statement, paths/purls-scoped)"
+      echo "✓ ${f}: ${n} ignore entr(y/ies) valid (expired_at ≤ ${maxdays}d out, non-empty statement, narrowly paths/purls-scoped)"
       exit 0
 
   test:validate-trivyignore:
@@ -1078,6 +1089,13 @@ tasks:
       this test reports FAIL and exits 1. The N-day boundary case (mid = today+120d)
       is bound to the cutoff math: it MUST reject at the default N=90 and accept at
       N=200, so gutting the expired_at comparison also turns this test red.
+
+      Review-hardening cases each red-green bind a further gate: broad-glob scope
+      values (paths **, purls pkg:*, null) MUST reject (fix 1 — narrowness, not
+      element count); TRIVYIGNORE_MAX_DAYS=9999 MUST reject a valid entry (fix 2 —
+      the 1-365 ceiling); a slash-separated expired_at MUST reject with a CLEAN
+      exit 1 via assert_reject_clean (fix 3 — dropping the format branch makes
+      strptime error to exit 2 instead, which that exit-code-aware assert catches).
     cmd: |
       set -eu
       work="$(mktemp -d)"
@@ -1153,6 +1171,34 @@ tasks:
           statement: this entry is unscoped
           expired_at: $near
       YAML
+      cat > "$work/broad-paths.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1012
+          statement: a recursive glob is still a catalog-wide waiver
+          expired_at: $near
+          paths: ["**"]
+      YAML
+      cat > "$work/broad-purls.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1013
+          statement: a type-only purl wildcard is still a catalog-wide waiver
+          expired_at: $near
+          purls: ["pkg:*"]
+      YAML
+      cat > "$work/null-path.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1014
+          statement: a null path element is not a narrowing scope
+          expired_at: $near
+          paths: [null]
+      YAML
+      cat > "$work/badfmt.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1015
+          statement: well formed except for a slash-separated date
+          expired_at: 2026/07/02
+          paths: [usr/bin/x]
+      YAML
       printf 'vulnerabilities: []\n' > "$work/empty-list.yaml"
       printf '# no vulnerabilities key\nother: value\n' > "$work/no-key.yaml"
       fail=0
@@ -1173,6 +1219,24 @@ tasks:
           env "$@" TRIVYIGNORE_FILE="$fx" task validate:trivyignore 2>&1 | sed 's/^/    /'
         fi
       }
+      assert_reject_clean() {   # $1=fixture $2=label ; $3.. = extra env — asserts a CLEAN finding (guard exit 1), not a setup/strptime error (exit 2)
+        # go-task remaps EVERY non-zero cmd exit to its own code (201), so `$?` cannot
+        # tell exit 1 from exit 2 through the `task` wrapper (verified). Bind instead on
+        # two output signals that DO differ: the guard prints "invalid ignore entr(y/ies):"
+        # only on its findings path, and go-task echoes the underlying "exit status 1".
+        # Drop the format elif → strptime errors → "validation program error" + "exit
+        # status 2" → neither signal present → this assert flips to FAIL (red).
+        fx="$1"; lbl="$2"; shift 2
+        out="$(env "$@" TRIVYIGNORE_FILE="$fx" task validate:trivyignore 2>&1 || true)"
+        has_finding=0; has_exit1=0
+        case "$out" in *"invalid ignore entr"*) has_finding=1 ;; esac
+        case "$out" in *"exit status 1"*) has_exit1=1 ;; esac
+        if [ "$has_finding" -eq 1 ] && [ "$has_exit1" -eq 1 ]; then
+          echo "ok reject(clean finding, exit 1): $lbl"
+        else
+          echo "FAIL: '$lbl' must be REJECTED with a clean finding (guard exit 1); got:"; printf '%s\n' "$out" | sed 's/^/    /'; fail=1
+        fi
+      }
       # AC4 / AC5 — well-formed + empty/absent PASS
       assert_accept "$work/ok-paths.yaml"       "AC4 well-formed, paths-scoped"
       assert_accept "$work/ok-purls.yaml"       "AC4 well-formed, purls-scoped"
@@ -1185,14 +1249,21 @@ tasks:
       # AC2 — statement rules
       assert_reject "$work/no-stmt.yaml"        "AC2 missing statement"
       assert_reject "$work/empty-stmt.yaml"     "AC2 whitespace-only statement"
-      # AC3 — scope rule
+      # AC3 — scope rule (bare + broad-glob narrowness; review fix 1)
       assert_reject "$work/bare.yaml"           "AC3 bare CVE, no paths/purls"
+      assert_reject "$work/broad-paths.yaml"    "AC3 broad glob paths (**)"
+      assert_reject "$work/broad-purls.yaml"    "AC3 type-only purl wildcard (pkg:*)"
+      assert_reject "$work/null-path.yaml"      "AC3 null path element (not narrowing)"
       # per-entry iteration: a single bad entry fails the whole file
       assert_reject "$work/mixed.yaml"          "one unscoped entry among valid ones"
       # AC1 N-day boundary bound to the cutoff math: +120d rejected at N=90, accepted at N=200
       assert_reject "$work/mid.yaml"            "AC1 expired_at +120d at default N=90"
       assert_accept "$work/mid.yaml"            "AC1 expired_at +120d at N=200" TRIVYIGNORE_MAX_DAYS=200
-      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5"; fi
+      # TRIVYIGNORE_MAX_DAYS ceiling (review fix 2): a valid entry rejected because the window is absurd
+      assert_reject "$work/ok-paths.yaml"       "MAX_DAYS ceiling (9999 > 365)" TRIVYIGNORE_MAX_DAYS=9999
+      # non-YYYY-MM-DD expired_at must be a CLEAN finding (exit 1), not a strptime setup error (exit 2) (review fix 3)
+      assert_reject_clean "$work/badfmt.yaml"   "AC1 expired_at non-YYYY-MM-DD → clean finding (exit 1)"
+      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5 + review hardening"; fi
       exit "$fail"
 
   validate:contract:
