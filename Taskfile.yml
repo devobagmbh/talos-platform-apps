@@ -1971,7 +1971,10 @@ tasks:
       echo "Pushing ${pkg} → oci://${ref}"
       # Aus rendered/ pushen (relativer Dateiname): oras lehnt absolute Pfade ab und
       # setzt den übergebenen Pfad als Layer-Title — so bleibt es der reine Dateiname.
-      ( cd "${root}/rendered" && oras push "$ref" \
+      # --plain-http=false erzwingt HTTPS: oras nutzt für localhost-Refs sonst per
+      # Default plain-HTTP und trifft die lokale mkcert-TLS-Registry (HTTPS) mit einem
+      # HTTP-Request → 400. Für ghcr.io (kein localhost) ist der Flag ein No-op.
+      ( cd "${root}/rendered" && oras push --plain-http=false "$ref" \
         --annotation "org.opencontainers.image.title=${component_id}" \
         --annotation "org.opencontainers.image.description=Pre-rendered Devoba-Platform-Komponente ${component_id}" \
         --annotation "org.opencontainers.image.version=${chart_version}" \
