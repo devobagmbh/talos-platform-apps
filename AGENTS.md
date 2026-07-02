@@ -114,6 +114,32 @@ Validation is primarily render- and policy-focused; for end-to-end deployability
 
 The end-to-end issue→PR interface — how an issue becomes a merged, ADR-conform PR, the `status:` label state machine and who owns each transition, the `gh` command surface, and the ADR-conformance gates — is consolidated in **[`.claude/rules/issue-interface.md`](.claude/rules/issue-interface.md)** (the canonical reference). The collision-safe claim protocol lives in `.claude/rules/issue-claim.md`; the GitHub Actions under `.github/workflows/` own the GHA-managed `status:` label transitions at runtime. Read the reference before working an issue or opening a PR.
 
+## Branch protection & merge gates
+
+`main` is protected; a PR merges only when every gate below is green. **The live GitHub branch-protection config is authoritative** — this section describes the configured contract so every contributor and every agent harness knows how a PR becomes mergeable *without querying the API*. If the two ever diverge, the live config wins and this section MUST be corrected. **Never `gh pr merge --admin`**: `enforce_admins` is off, so an admin *can* bypass, but bypassing a gate is a policy violation, not a workflow — this is a multi-maintainer repo (see § Multi-Agent Coordination + `.github/CODEOWNERS`). The fix for a `mergeStateStatus: BLOCKED` PR is always to satisfy the gate.
+
+**Merge method — squash-only.** Merge-commit and rebase merges are disabled; `gh pr merge <N> --squash` is the only path (`--merge` / `--rebase` are rejected). The squashed commit takes its **subject from the PR title** (`squash_merge_commit_title=PR_TITLE`) and its **body from the PR description** (`squash_merge_commit_message=PR_BODY`). Consequence: the **PR title MUST be a valid Conventional Commit with a single sub-layer/component scope** — that title becomes the commit release-please path-maps to a component (§ CI conventions → Release automation). `required_linear_history` keeps `main` merge-commit-free, consistent with squash-only.
+
+**Required status checks** — all MUST be green, and `strict` is on so the PR branch MUST also be up to date with `main`:
+
+| Check (context name) | Enforces |
+|---|---|
+| `ci` | `task ci` — render + kubeconform + conftest (ADR-0018) + `validate:contract` + `validate:crd-split` (ADR-0028) + `validate:release-config` |
+| `validate-contract` | component-contract schema conformance |
+| `require-issue-link` | the PR links an issue (`Closes #N`) **or** carries the `no-issue` label (`pr-issue-link.yml`) |
+| `gitleaks (secret-scan)` | no secret leaks in the PR's changed commit range (`security-scan.yml`) — the context name is the job name `gitleaks (secret-scan)`, **not** bare `gitleaks` |
+| `commit-lint` *(pending)* | Conventional PR title + single-component scope (G2, #464/#465); added as a required context once #465 merges |
+
+**Non-status-check merge gates:**
+
+- **Signed commits** (`required_signatures`) — an unsigned commit → `BLOCKED`; see § Commits & Pull Requests for the one-time setup.
+- **CODEOWNERS review** — ≥1 approving review from the code owner (`.github/CODEOWNERS`; `require_code_owner_reviews`, `required_approving_review_count: 1`; stale reviews are dismissed on a new push).
+- **Conversation resolution** (`required_conversation_resolution`) — all PR review threads MUST be resolved.
+
+**Branch integrity.** Force-pushes and branch deletion on `main` are disabled (`allow_force_pushes: false`, `allow_deletions: false`).
+
+**Not a PR merge gate (publish-time, advisory today).** The image-CVE control runs *post-merge* in `oci-publish.yml` (tag-triggered), currently advisory; the PR-level `trivy-cve` scan in `security-scan.yml` is deliberately **not** a required check. See § ADR-Abdeckung (ADR-0018) — it becomes a hard block after the E5 flip.
+
 ## CI conventions (binding)
 
 Three rules, project-wide:
