@@ -69,7 +69,9 @@ repoServer:
       emptyDir: {}
   initContainers:
     - name: append-mkcert-ca
-      image: quay.io/argoproj/argocd:v2.13.0
+      # = chart appVersion (argo-cd 9.4.5 → v3.3.2); halte diesen Tag bei einem
+      # Chart-Bump synchron zur --version in Taskfile local:argo:install.
+      image: quay.io/argoproj/argocd:v3.3.2
       command:
         - sh
         - -c
