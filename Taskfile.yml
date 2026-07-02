@@ -996,11 +996,15 @@ tasks:
           expired entry, so the CVE blocks again);
         - be SCOPED to a NARROW target with NO broad value: at least one `paths:`
           or `purls:` value MUST narrow the waiver AND every value MUST be narrow.
-          A bare CVE `id`, or ANY broad value — `paths: **`/`*`/`.`/`/`/`./`/empty/
-          null, `purls: **`/`*`/`pkg:*` (type-only wildcard) — waives that CVE
-          catalog-wide (path/purl lists are OR-matched, so a broad glob beside a
-          specific path still matches everything) and is rejected. A non-array
-          `paths:`/`purls:` contributes no narrow value.
+          A `paths:` value is narrow by a POSITIVE test — a concrete path segment
+          survives after stripping all glob/separator metacharacters (`*` `/` `.`);
+          so any value with no concrete segment (`**`, `/**`, `**/*`, `**/**`, `*`,
+          `.`, `/`, `./`, empty) is broad, while `/usr/**` / `usr/lib/**` (a real
+          subtree) stay narrow. A `purls:` value is broad if `*`/`**`/`pkg:*`
+          (type-only wildcard) or empty. A bare CVE `id`, or ANY broad value,
+          waives that CVE catalog-wide (path/purl lists are OR-matched, so a broad
+          glob beside a specific path still matches everything) and is rejected. A
+          non-array `paths:`/`purls:` contributes no narrow value.
       An empty (`vulnerabilities: []`) or absent file passes trivially (no
       false-fail on the pre-campaign steady state). Wired into `task ci` as a
       repo-global merge-time gate alongside validate:release-config — deliberately
@@ -1053,7 +1057,7 @@ tasks:
         | ($e.expired_at // "") as $exp
         | (($e.paths // []) | if type == "array" then length else 0 end) as $totpaths
         | (($e.purls // []) | if type == "array" then length else 0 end) as $totpurls
-        | (($e.paths // []) | if type == "array" then (map(select((type == "string") and (test("^(\\*{1,2}|\\.|\\.?/|)$") | not))) | length) else 0 end) as $narrowpaths
+        | (($e.paths // []) | if type == "array" then (map(select((type == "string") and ((gsub("[*/.]"; "")) != ""))) | length) else 0 end) as $narrowpaths
         | (($e.purls // []) | if type == "array" then (map(select((type == "string") and (test("^(|\\*{1,2}|pkg:\\*.*)$") | not))) | length) else 0 end) as $narrowpurls
         | ($narrowpaths + $narrowpurls) as $narrowscope
         | (($totpaths + $totpurls) - $narrowscope) as $broadscope
@@ -1065,9 +1069,9 @@ tasks:
              then "entry[\($i)] (id=\($e.id // "?")): empty statement — AC2, rationale required"
              else empty end),
             (if $narrowscope == 0
-             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no narrow paths/purls value — AC3, a bare CVE or a broad glob (*, **, ., /, ./, empty, null, pkg:*) waives it catalog-wide"
+             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no narrow paths/purls value — AC3, a bare CVE, an all-glob path (**, /**, **/*), or a broad purl (*, **, pkg:*) waives it catalog-wide"
              elif $broadscope > 0
-             then "entry[\($i)] (id=\($e.id // "?")): broad scope value beside a narrow one — AC3, path/purl lists are OR-matched so any broad glob (*, **, pkg:*) still waives it catalog-wide"
+             then "entry[\($i)] (id=\($e.id // "?")): broad scope value beside a narrow one — AC3, path/purl lists are OR-matched so an all-glob value still waives it catalog-wide"
              else empty end),
             (if ($exp | tostring) == ""
              then "entry[\($i)] (id=\($e.id // "?")): missing expired_at — AC1, trivy requires it (entry never expires)"
@@ -1240,8 +1244,44 @@ tasks:
       vulnerabilities:
         - id: CVE-2025-1019
           statement: June has no 31st; strptime would silently normalize it
-          expired_at: 2026-06-31
+          expired_at: "2026-06-31"
           paths: [usr/bin/x]
+      YAML
+      # --- review round 4 (Fix E): compound doublestar paths that match everything ---
+      cat > "$work/glob-root.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1022
+          statement: /** matches every path in trivy doublestar
+          expired_at: $near
+          paths: ["/**"]
+      YAML
+      cat > "$work/glob-anyfile.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1023
+          statement: '**/* matches every path'
+          expired_at: $near
+          paths: ["**/*"]
+      YAML
+      cat > "$work/glob-anyany.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1024
+          statement: '**/** matches every path'
+          expired_at: $near
+          paths: ["**/**"]
+      YAML
+      cat > "$work/subtree-abs.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1025
+          statement: a concrete subtree is a legitimate narrow scope
+          expired_at: $near
+          paths: ["/usr/**"]
+      YAML
+      cat > "$work/subtree-rel.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1026
+          statement: a concrete relative subtree is a legitimate narrow scope
+          expired_at: $near
+          paths: ["usr/lib/**"]
       YAML
       cat > "$work/arr-stmt.yaml" <<YAML
       vulnerabilities:
@@ -1328,7 +1368,13 @@ tasks:
       assert_reject_clean "$work/badcal.yaml"     "Fix C: calendar-invalid expired_at (2026-06-31) → clean finding"
       assert_reject "$work/arr-stmt.yaml"         "Fix D: array statement ([])"
       assert_reject "$work/num-stmt.yaml"         "Fix D: numeric statement (42)"
-      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5 + review hardening + cross-model fixes"; fi
+      # --- review round 4 (Fix E): positive-narrowness rejects compound all-glob paths, keeps subtrees ---
+      assert_reject "$work/glob-root.yaml"        "Fix E: /** (matches every path)"
+      assert_reject "$work/glob-anyfile.yaml"     "Fix E: **/* (matches every path)"
+      assert_reject "$work/glob-anyany.yaml"      "Fix E: **/** (matches every path)"
+      assert_accept "$work/subtree-abs.yaml"      "Fix E: /usr/** (concrete subtree, narrow)"
+      assert_accept "$work/subtree-rel.yaml"      "Fix E: usr/lib/** (concrete subtree, narrow)"
+      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5 + review hardening + cross-model + round-4 fixes"; fi
       exit "$fail"
 
   validate:contract:
