@@ -971,6 +971,230 @@ tasks:
       [ "$ran" -gt 0 ] && echo "✓ test:release-config OK (${ran} case(s) ran)" || echo "ℹ test:release-config: no cases applicable in the current catalog state"
       exit 0
 
+  validate:trivyignore:
+    desc: 'Guard: .trivyignore.yaml entry shape — bounded expired_at (≤ N=90 days out), non-empty statement, paths/purls scope (#478)'
+    summary: |
+      Validates the ENTRY SHAPE of the trivy CVE-ignore file BEFORE the
+      CVE-remediation campaign starts populating it (issue #478, ADR-0018
+      residual: ".trivyignore.yaml needs an entry-shape + expired_at ≤ N days +
+      scope guard built EARLY, before the file is populated"). Only the
+      `.vulnerabilities[]` list is read — the sole list the CVE scanner consumes
+      via `--ignorefile` (misconfig/secret findings use other mechanisms). Every
+      entry MUST:
+        - carry an `id:` (the waived CVE) and a non-empty `statement:` (who
+          accepted it + why — the CODEOWNERS-auditable rationale);
+        - carry `expired_at:` (trivy requires it — an entry without one never
+          expires) that is at most N days in the FUTURE. N defaults to 90;
+          override with TRIVYIGNORE_MAX_DAYS. A far-future / effectively-permanent
+          suppression that would accrue unchecked is rejected here. A PAST
+          expired_at is left to trivy (it natively stops honouring an expired
+          entry, so the CVE blocks again);
+        - be SCOPED: a bare CVE `id` with neither `paths:` nor `purls:` waives
+          that CVE catalog-wide (every image / package) — too broad; at least one
+          of `paths:` / `purls:` MUST narrow it.
+      An empty (`vulnerabilities: []`) or absent file passes trivially (no
+      false-fail on the pre-campaign steady state). Wired into `task ci` as a
+      repo-global merge-time gate alongside validate:release-config — deliberately
+      NOT in the per-component publish hot path (ci:artifact), so one bad ignore
+      entry cannot strand an already-cut tag. Red-green bound by
+      test:validate-trivyignore (in `task ci` AND `task ci:artifact`).
+
+      TRIVYIGNORE_FILE / TRIVYIGNORE_MAX_DAYS env seam mirrors
+      validate:release-config's RP_CONFIG/RP_MANIFEST — it lets
+      test:validate-trivyignore drive this exact logic against synthetic fixtures.
+      Exit 0 = valid, 1 = bad entr(y/ies), 2 = setup/structural error (unreadable
+      file, non-list `.vulnerabilities`).
+    cmd: |
+      # NOTE (mvdan/sh): no `set -o pipefail` + `grep -q` over a pipe — go-task's
+      # embedded shell SIGPIPE-aborts on the early grep close (repo convention, cf.
+      # validate:release-config). Findings are built in one yq pass (repo yq is
+      # python-yq = jq over YAML→JSON, so a jq filter reads the .vulnerabilities
+      # list directly), and the today+N-day cutoff is computed with jq date
+      # builtins (strptime/mktime/strftime) — portable, no GNU-vs-BSD `date`
+      # arithmetic. `today` itself is taken from `date` at runtime, never hardcoded.
+      set -u
+      f="${TRIVYIGNORE_FILE:-.trivyignore.yaml}"
+      maxdays="${TRIVYIGNORE_MAX_DAYS:-90}"   # AC1: an entry may expire at most N days out; N defaults to 90.
+      # AC5: an absent file is trivially valid (nothing suppressed yet).
+      if [ ! -f "$f" ]; then echo "✓ ${f} absent — nothing to validate"; exit 0; fi
+      vtype="$(yq -r '.vulnerabilities | type' "$f" 2>/dev/null)" || { echo "✗ ${f}: unreadable / not valid YAML"; exit 2; }
+      case "$vtype" in
+        null)  echo "✓ ${f}: no 'vulnerabilities' entries — nothing to validate"; exit 0 ;;   # AC5: key absent / null
+        array) : ;;
+        *)     echo "✗ ${f}: '.vulnerabilities' must be a list, got '${vtype}'"; exit 2 ;;
+      esac
+      today="$(date -u +%Y-%m-%d)"   # computed at runtime, never hardcoded (AC1)
+      findings="$(yq -r --arg today "$today" --arg maxdays "$maxdays" '
+        ($maxdays | tonumber) as $md
+        | ($today | strptime("%Y-%m-%d") | mktime) as $te
+        | ($te + ($md * 86400)) as $cutoff
+        | ($cutoff | strftime("%Y-%m-%d")) as $cutoffdate
+        | (.vulnerabilities // [])
+        | to_entries[]
+        | .["key"] as $i
+        | .["value"] as $e
+        | (($e.id // "") | tostring | gsub("^\\s+|\\s+$"; "")) as $id
+        | ($e.expired_at // "") as $exp
+        | ((($e.paths // []) | if type == "array" then length else 0 end)
+           + (($e.purls // []) | if type == "array" then length else 0 end)) as $scope
+        | [
+            (if $id == "" then "entry[\($i)]: missing id field (the waived CVE)" else empty end),
+            (if (($e.statement // "") | tostring | gsub("^\\s+|\\s+$"; "")) == ""
+             then "entry[\($i)] (id=\($e.id // "?")): missing/empty statement — AC2, rationale required"
+             else empty end),
+            (if $scope == 0
+             then "entry[\($i)] (id=\($e.id // "?")): unscoped — no paths/purls — AC3, a bare CVE waives it catalog-wide"
+             else empty end),
+            (if ($exp | tostring) == ""
+             then "entry[\($i)] (id=\($e.id // "?")): missing expired_at — AC1, trivy requires it (entry never expires)"
+             elif (($exp | tostring) | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)
+             then "entry[\($i)] (id=\($e.id // "?")): expired_at=\($exp) is not YYYY-MM-DD — AC1"
+             elif (($exp | strptime("%Y-%m-%d") | mktime) > $cutoff)
+             then "entry[\($i)] (id=\($e.id // "?")): expired_at=\($exp) is more than \($md) days out (max \($cutoffdate)) — AC1"
+             else empty end)
+          ]
+        | .[]
+      ' "$f" 2>&1)" || { echo "✗ ${f}: validation program error:"; printf '%s\n' "$findings" | sed 's/^/    /'; exit 2; }
+      if [ -n "$findings" ]; then
+        echo "✗ ${f}: invalid ignore entr(y/ies):"
+        printf '%s\n' "$findings" | sed 's/^/    /'
+        echo "  → fix the entry (prefer an image bump over a long suppression); CODEOWNERS inspects every delta."
+        exit 1
+      fi
+      n="$(yq -r '.vulnerabilities | length' "$f")"
+      echo "✓ ${f}: ${n} ignore entr(y/ies) valid (expired_at ≤ ${maxdays}d out, non-empty statement, paths/purls-scoped)"
+      exit 0
+
+  test:validate-trivyignore:
+    desc: 'Hermetic red-green test for the validate:trivyignore entry-shape guard (#478; in task ci + ci:artifact)'
+    summary: |
+      Binding acceptance test for the .trivyignore.yaml entry-shape guard (issue
+      #478). Network-free: writes fixture ignore files to a temp dir and drives the
+      REAL `task validate:trivyignore` (via the TRIVYIGNORE_FILE seam) over each,
+      asserting accept/reject per AC. Relative dates (near/mid/far) are generated
+      with jq date builtins so the test is calendar-independent — it never bit-rots
+      as the fixed 90-day window advances. Red-green (AC7): neuter the guard (make
+      it exit 0 unconditionally) and every REJECT case turns green in the guard →
+      this test reports FAIL and exits 1. The N-day boundary case (mid = today+120d)
+      is bound to the cutoff math: it MUST reject at the default N=90 and accept at
+      N=200, so gutting the expired_at comparison also turns this test red.
+    cmd: |
+      set -eu
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+      near="$(jq -rn 'now + 30*86400  | strftime("%Y-%m-%d")')"   # within 90d
+      mid="$(jq -rn  'now + 120*86400 | strftime("%Y-%m-%d")')"   # past 90d, within 200d
+      far="$(jq -rn  'now + 400*86400 | strftime("%Y-%m-%d")')"   # far future
+      # Fixtures use UNQUOTED heredocs so $near/$mid/$far interpolate; no other `$`
+      # appears in the bodies. The 6-space cmd indent is stripped by the YAML block
+      # scalar, so each body lands at column 0 (same mechanism as test:trivy-extract).
+      cat > "$work/ok-paths.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1001
+          statement: accepted 2026-07 by CODEOWNERS; upstream fix pending, image bump tracked
+          expired_at: $near
+          paths:
+            - usr/local/bin/app
+      YAML
+      cat > "$work/ok-purls.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1002
+          statement: not reachable at runtime; waived pending minor bump
+          expired_at: $near
+          purls:
+            - pkg:golang/stdlib@1.22
+      YAML
+      cat > "$work/far.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1003
+          statement: has a rationale but the window is far too long
+          expired_at: $far
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/no-exp.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1004
+          statement: no expiry, would never stop suppressing
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/no-stmt.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1005
+          expired_at: $near
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/empty-stmt.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1006
+          statement: "   "
+          expired_at: $near
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/bare.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1007
+          statement: rationale present but no scope, waives the CVE catalog-wide
+          expired_at: $near
+      YAML
+      cat > "$work/mid.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1008
+          statement: expiry between 90 and 200 days out
+          expired_at: $mid
+          paths: [usr/bin/x]
+      YAML
+      cat > "$work/mixed.yaml" <<YAML
+      vulnerabilities:
+        - id: CVE-2025-1009
+          statement: this entry is well formed
+          expired_at: $near
+          paths: [usr/bin/x]
+        - id: CVE-2025-1010
+          statement: this entry is unscoped
+          expired_at: $near
+      YAML
+      printf 'vulnerabilities: []\n' > "$work/empty-list.yaml"
+      printf '# no vulnerabilities key\nother: value\n' > "$work/no-key.yaml"
+      fail=0
+      assert_reject() {   # $1=fixture $2=label ; $3.. = extra env (KEY=VAL ...)
+        fx="$1"; lbl="$2"; shift 2
+        if env "$@" TRIVYIGNORE_FILE="$fx" task validate:trivyignore >/dev/null 2>&1; then
+          echo "FAIL: '$lbl' must be REJECTED by the guard"; fail=1
+        else
+          echo "ok reject: $lbl"
+        fi
+      }
+      assert_accept() {   # $1=fixture $2=label ; $3.. = extra env
+        fx="$1"; lbl="$2"; shift 2
+        if env "$@" TRIVYIGNORE_FILE="$fx" task validate:trivyignore >/dev/null 2>&1; then
+          echo "ok accept: $lbl"
+        else
+          echo "FAIL: '$lbl' must be ACCEPTED by the guard"; fail=1
+          env "$@" TRIVYIGNORE_FILE="$fx" task validate:trivyignore 2>&1 | sed 's/^/    /'
+        fi
+      }
+      # AC4 / AC5 — well-formed + empty/absent PASS
+      assert_accept "$work/ok-paths.yaml"       "AC4 well-formed, paths-scoped"
+      assert_accept "$work/ok-purls.yaml"       "AC4 well-formed, purls-scoped"
+      assert_accept "$work/empty-list.yaml"     "AC5 vulnerabilities: []"
+      assert_accept "$work/no-key.yaml"         "AC5 no vulnerabilities key"
+      assert_accept "$work/does-not-exist.yaml" "AC5 absent file"
+      # AC1 — expired_at rules
+      assert_reject "$work/far.yaml"            "AC1 expired_at far in the future"
+      assert_reject "$work/no-exp.yaml"         "AC1 missing expired_at"
+      # AC2 — statement rules
+      assert_reject "$work/no-stmt.yaml"        "AC2 missing statement"
+      assert_reject "$work/empty-stmt.yaml"     "AC2 whitespace-only statement"
+      # AC3 — scope rule
+      assert_reject "$work/bare.yaml"           "AC3 bare CVE, no paths/purls"
+      # per-entry iteration: a single bad entry fails the whole file
+      assert_reject "$work/mixed.yaml"          "one unscoped entry among valid ones"
+      # AC1 N-day boundary bound to the cutoff math: +120d rejected at N=90, accepted at N=200
+      assert_reject "$work/mid.yaml"            "AC1 expired_at +120d at default N=90"
+      assert_accept "$work/mid.yaml"            "AC1 expired_at +120d at N=200" TRIVYIGNORE_MAX_DAYS=200
+      if [ "$fail" -eq 0 ]; then echo "test:validate-trivyignore OK — guard matches #478 AC1–AC5"; fi
+      exit "$fail"
+
   validate:contract:
     desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1); optional: -- <sub-layer>/<component> to scope to one'
     summary: |
@@ -2088,6 +2312,11 @@ tasks:
       # other component's publish. The PR gate catches the same gap before any tag
       # exists, so the publish job does not need it (#314, #318 review).
       - task: validate:release-config
+      # Repo-global entry-shape guard for .trivyignore.yaml (#478) — bounded
+      # expired_at + non-empty statement + paths/purls scope. A merge-time gate
+      # alongside validate:release-config; deliberately NOT in ci:artifact (the
+      # publish hot path), so one malformed ignore entry cannot strand a cut tag.
+      - task: validate:trivyignore
       # Hermetic regression guard for the #314 first-release relaxation (fast, no
       # network). Wired into the PR `ci` so a regression in validate:release-config's
       # stub handling is caught automatically, not only when a dev remembers (#315 review).
@@ -2102,6 +2331,9 @@ tasks:
       # a CVE-laden image slip past extraction — is caught at PR time, not at the
       # E5 publish gate.
       - task: test:trivy-extract
+      # Hermetic red-green guard for the .trivyignore.yaml entry-shape validator
+      # (#478) — mirrors test:trivy-extract's placement (in `ci` AND `ci:artifact`).
+      - task: test:validate-trivyignore
       - task: ci:artifact
 
   ci:artifact:
@@ -2119,6 +2351,9 @@ tasks:
       # push (which runs ci:artifact, not the PR `ci`) still validates the CVE
       # extractor before the E5 scan trusts it.
       - task: test:trivy-extract
+      # Also in ci:artifact so a direct/backfill tag push (which runs ci:artifact,
+      # not the PR `ci`) still red-greens the .trivyignore.yaml guard (#478).
+      - task: test:validate-trivyignore
       - task: lint
       - task: validate:compatibility
       - task: render
