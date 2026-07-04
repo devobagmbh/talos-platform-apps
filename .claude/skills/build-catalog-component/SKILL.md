@@ -394,7 +394,8 @@ Close anything these surface before Phase 7.
 ## Phase 6.5 — Local ArgoCD E2E (gated on cluster reachability)
 
 ArgoCD deployability is feature-correctness the deterministic gate cannot prove
-(`kubeconform` skips unknown CRDs). Run it locally when — and only when — the
+(`kubeconform` skips unknown CRDs), and no CI stage runs ArgoCD — so the local E2E
+is the only pre-merge deployability proof. Run it locally when — and only when — the
 prod-shaped local Talos cluster is already reachable; do not default to deferral
 while the cluster is up (the recurring gap issue #179 tracks). This is the skill's
 ONLY cluster-mutating phase: an **orchestrator** step in a **foreground** session
@@ -409,9 +410,10 @@ cross-cluster-footgun reason — the `local:up` bring-up sub-tasks instead rely 
 teardown that goes through `task local:remove` plus the component's **own declared**
 namespace/route names — never a chart-default-name guess against the cluster.
 
-1. **Reachability + identity gate (fail-closed).** Both checks must pass; any
+1. **Reachability + identity gate (fail-closed) — actually run the probe; never
+   assert "cluster down" from memory (the #179 gap).** Both checks must pass; any
    non-zero/error/absent → record ArgoCD deployability NOT-LOCALLY-VERIFIABLE, defer
-   to GHA + consumer, skip to Phase 7.
+   to the consumer cluster, skip to Phase 7.
    - **Reachable:** `kubectl --context admin@talos-platform-apps get nodes` succeeds.
      Not `task local:status` — it ends in `... || true` and exits 0 even with the
      cluster down (fail-open).
@@ -519,9 +521,9 @@ is a finding to fix; an environment caveat is recorded, not a block.
 This repo has CODEOWNERS + branch protection. Produce the branch and, with
 explicit user approval, open a PR (`gh pr create`) summarizing: what was built,
 deterministic-gate evidence, evaluator verdict, reviewer verdicts, and the
-**NOT-locally-verifiable** items deferred to GHA/consumer (cosign sign, OCI push,
-and — when Phase 6.5 did not run because the cluster was unreachable — ArgoCD
-deploy; when Phase 6.5 ran, report its PASS-with-evidence instead). Never merge; a
+**NOT-locally-verifiable** items: cosign sign + OCI push → GHA; ArgoCD deploy → the
+consumer cluster (only when Phase 6.5 did not run because the cluster was
+unreachable; when it ran, report its PASS-with-evidence instead). Never merge; a
 human merges after CI + code-owner review.
 
 **Co-build (workload half) — stacked PR.** When this build was dispatched with a
@@ -540,8 +542,8 @@ button, but an early manual retarget is the one action that silently undoes it.
 
 **`Closes #N` — the component's own issue.** Default to `Closes #N` pointing at
 **this component's own issue** (never the epic). The **human merger is the
-done-gate**: the not-locally-verifiable ACs (cosign signature, OCI push, ArgoCD
-deploy) are deferred to GHA/consumer and listed in the PR body, but they do **not**
+done-gate**: the not-locally-verifiable ACs (cosign signature + OCI push → GHA;
+ArgoCD deploy → the consumer cluster) are deferred and listed in the PR body, but they do **not**
 block the close — a human reviews and merges only when satisfied, and the
 `status-strip.yml` GHA clears the issue's `status:` on the resulting close.
 (Do not `Closes` the epic from a component PR; the epic is human-closed after final
