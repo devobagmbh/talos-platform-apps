@@ -1,0 +1,20 @@
+# chrony is a leaf NTP service. It requires no other catalog component and no
+# capability: Cilium LB-IPAM (which assigns the LoadBalancer IP) is
+# talos-platform-base substrate, a cluster precondition — not a catalog component
+# edge (ADR-0009, #71) — so `requires` is empty. No base version-coupling line.
+requires: {}
+provides:
+  - name: chrony
+    version:
+      sot: app
+      app: 4.6.1  # chrony version in the pinned docker.io/cturra/ntp image (Alpine chrony 4.6.1-r1)
+    api_surface: []
+    # Implements the ntp-service capability: the NTP wire protocol (RFC 5905,
+    # 123/UDP) is the stable interface; chrony/ntpd/openntpd are swappable
+    # implementations of it (a real capability, not a sole-provider surface).
+    # swap_class consumer-change matches catalog/capability-index.yaml: the
+    # freeze-line exposes a tool-specific chrony.conf, so swapping the daemon
+    # forces the consumer to rewrite that config.
+    capabilities:
+      - id: ntp-service
+        swap_class: consumer-change

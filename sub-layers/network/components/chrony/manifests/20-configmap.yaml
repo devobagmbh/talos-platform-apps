@@ -1,0 +1,54 @@
+# Catalog-default chrony configuration. This is the freeze-line `config` shape
+# (customization.yaml provided_refs.config: chrony-config): the workload mounts
+# this ConfigMap at /etc/chrony.conf, and the consumer OWNS the content — the
+# consumer overrides this ConfigMap via its Argo overlay to add cluster-specific
+# client-subnet access grants (and optionally a preferred upstream source).
+#
+# The default is deliberately INERT: it grants no client access, so out of the box
+# the server answers no client and cannot act as an open NTP-amplification
+# reflector. It is functional as a workload (it starts, tracks upstream time) but
+# serves nobody until the consumer supplies scoped access grants.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chrony-config
+  namespace: chrony
+  labels:
+    app.kubernetes.io/name: chrony
+    app.kubernetes.io/component: ntp-server
+    platform.devoba.de/sub-layer: network
+    platform.devoba.de/component: chrony
+data:
+  chrony.conf: |
+    # Upstream time source — the consumer may override this key with a
+    # cluster-specific server; pool.ntp.org is a safe public default.
+    pool pool.ntp.org iburst
+
+    # Command/monitoring channel disabled — closes the remote-admin and
+    # monitoring-request vector on the control channel (distinct from, and
+    # unrelated to, the 123/UDP time-service port).
+    cmdport 0
+
+    # Response-rate limiting — defense-in-depth against 123/UDP response
+    # reflection (a spoofed or compromised in-subnet client used as an
+    # amplifier). The bare form applies chrony's compiled-in default interval
+    # and burst.
+    ratelimit
+
+    # Frequency-drift estimation — retained in serve-only mode; chronyd
+    # estimates the drift but applies NO correction to the system clock.
+    maxupdateskew 100.0
+    driftfile /run/chrony/drift
+
+    # PID file on the writable runtime volume (the container root filesystem is
+    # read-only, so the default location under the root FS is not writable).
+    pidfile /run/chrony/chronyd.pid
+
+    # No client-access grant is shipped by default (see the ConfigMap header):
+    # without a grant the server serves no client, keeping the catalog default
+    # inert. The consumer supplies subnet-scoped grants via the freeze-line
+    # config override.
+
+    # No system-clock adjustment directives are present: clock discipline is
+    # disabled by the -x process argument (see the Deployment). Served-time
+    # accuracy derives from the node clock the Talos substrate maintains.

@@ -1,0 +1,86 @@
+# Single central chrony NTP server. This is a Deployment (replicas: 1), NOT a
+# DaemonSet: chrony here serves in-cluster clients (KubeVirt VMs) and external
+# LAN/IoT devices through one LoadBalancer endpoint; it does not run per node and
+# does not discipline any node clock. HA (2+ replicas + a PodDisruptionBudget) is
+# a consumer-overlay concern (see the README §Consumer obligations).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chrony
+  namespace: chrony
+  labels:
+    app.kubernetes.io/name: chrony
+    app.kubernetes.io/component: ntp-server
+    platform.devoba.de/sub-layer: network
+    platform.devoba.de/component: chrony
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chrony
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chrony
+        app.kubernetes.io/component: ntp-server
+        platform.devoba.de/sub-layer: network
+        platform.devoba.de/component: chrony
+    spec:
+      serviceAccountName: chrony
+      automountServiceAccountToken: false
+      # Pod-level identity: run as a fixed non-root uid/gid; fsGroup makes the
+      # writable runtime emptyDir group-owned and writable by that uid.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chrony
+          image: docker.io/cturra/ntp@sha256:7224d4e7c7833aabbcb7dd70c46c8a8dcccda365314c6db047b9b10403ace3bc
+          # -n: run in the foreground (no daemonize) — required under a container
+          #     supervisor.
+          # -x: serve-only — do NOT adjust the system clock. This is the hard
+          #     serve-only line: with -x, chronyd needs no clock-control
+          #     capability and cannot collide with the Talos node time manager.
+          # -f: explicit config path (the consumer-owned chrony.conf).
+          command: ["/usr/sbin/chronyd"]
+          args: ["-n", "-x", "-f", "/etc/chrony.conf"]
+          ports:
+            - name: ntp
+              containerPort: 123
+              protocol: UDP
+          securityContext:
+            # non-root; escalation blocked; immutable root FS; drop every
+            # capability and re-add only the one needed to bind the privileged
+            # 123/UDP port as a non-root process.
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/chrony.conf
+              subPath: chrony.conf
+              readOnly: true
+            - name: runtime
+              mountPath: /run/chrony
+      volumes:
+        - name: config
+          configMap:
+            name: chrony-config
+        # Writable scratch for the drift file and PID file (root FS is read-only).
+        - name: runtime
+          emptyDir: {}
