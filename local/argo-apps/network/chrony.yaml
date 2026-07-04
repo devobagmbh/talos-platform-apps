@@ -3,8 +3,9 @@
 # 123/UDP. Ships its own dedicated `chrony` namespace
 # (pod-security.kubernetes.io/enforce: restricted); no CRDs (strict-B N/A).
 # The workload mounts an EXISTING consumer-supplied `chrony-config` ConfigMap
-# (key chrony.conf) — the local test seeds a minimal serve-only one before this
-# app syncs (the catalog ships NO chrony.conf; config is consumer-owned).
+# (key chrony.conf) — the local test seeds a minimal serve-only one via
+# `task local:fixtures -- network/chrony` before this app syncs (the catalog ships
+# NO chrony.conf; config is consumer-owned).
 # Template placeholders (envsubst via task local:apply / local:dev):
 #   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
 #   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
