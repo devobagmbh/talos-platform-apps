@@ -66,6 +66,10 @@
     "sub-layers/lifecycle/components/providers": {
       "component": "lifecycle/providers"
     },
+    "sub-layers/network/components/chrony": {
+      "component": "network/chrony",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/network/components/multus-cni": {
       "component": "network/multus-cni"
     },

@@ -1,0 +1,25 @@
+# LOCAL TEST FIXTURE ONLY — this is the consumer-owned `chrony.conf` that the
+# catalog deliberately does NOT ship (config is consumer-owned per the ADR-0024
+# freeze-line). It is seeded by `task local:fixtures -- network/chrony` before the
+# `network-chrony` Argo app's pod mounts it, so the local offline cluster has a
+# working serve-only config. NOT a production config.
+#
+# - `local stratum 10` makes chronyd serve its own clock in the offline local
+#   cluster (there is no reachable upstream time source).
+# - the two `allow` lines are the Kubernetes default pod/service CIDRs and are also
+#   FUNCTIONALLY required: without at least one `allow`, chronyd fatals "Nothing to
+#   do" and exits.
+# - `cmdport 0` removes the command/monitoring socket, so there is no monlist
+#   amplification surface.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chrony-config
+  namespace: chrony
+data:
+  chrony.conf: |
+    local stratum 10
+    allow 10.244.0.0/16
+    allow 10.96.0.0/12
+    cmdport 0
+    driftfile /run/chrony/drift
