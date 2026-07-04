@@ -29,44 +29,54 @@ that a consumer would have to rewrite to swap the daemon (see
 
 ## Contents
 
-The rendered workload (`grep '^kind:' rendered/manifest.yaml`) is:
+The catalog ships the **hardened workload only** — namespace, ServiceAccount,
+Deployment, Service. The `chrony.conf` configuration is **consumer-provided**
+(see §Consumer-provided configuration) and no NetworkPolicy is shipped (see
+§Network policy). The rendered workload (`grep '^kind:' rendered/manifest.yaml`)
+is:
 
 - `Namespace` (`chrony`, dedicated, `pod-security.kubernetes.io/enforce:
   baseline`) — sole-claimant; the component ships its own namespace.
 - `ServiceAccount` (`chrony`, `automountServiceAccountToken: false` — chrony needs
   no API-server access; no RBAC).
-- `ConfigMap` (`chrony-config`, key `chrony.conf`) — the catalog-default,
-  **inert** configuration (see below).
 - `Deployment` (`chrony`, `replicas: 1`) — a single central server, **not** a
   DaemonSet. Container `command: ["/usr/sbin/chronyd"]`, `args: ["-n", "-x", "-f",
-  "/etc/chrony.conf"]`.
+  "/etc/chrony.conf"]`. It mounts `/etc/chrony.conf` (subPath `chrony.conf`) from
+  the **consumer-provided** ConfigMap `chrony-config`, which is intentionally NOT
+  in the shipped manifests (the render is workload-only).
 - `Service` (`chrony`, `type: LoadBalancer`, one port `123/UDP`, `targetPort:
   123`) — no LB-IP annotation (consumer overlay).
-- `NetworkPolicy` (`chrony-egress`, `policyTypes: [Egress]`) — egress-only:
-  permits `53/UDP`+`53/TCP` (DNS) and `123/UDP` (upstream NTP), default-denies the
-  rest.
 
 ### Image
 
 Pinned by immutable digest:
 `docker.io/cturra/ntp@sha256:7224d4e7c7833aabbcb7dd70c46c8a8dcccda365314c6db047b9b10403ace3bc`
-— a minimal, actively-maintained Alpine-based chrony NTP server (chrony
-`4.6.1-r1`). Never `:latest`; the digest is authoritative and reproducible. The
-image's own entrypoint is bypassed — the workload runs `chronyd` directly with
-the serve-only flags above.
+— a minimal Alpine-based chrony NTP server (chrony `4.6.1-r1`). Never `:latest`;
+the digest is authoritative and reproducible. The pinned image carries known
+base-library CVEs (Alpine/OpenSSL et al.); these are advisory-tracked by the
+image-CVE gate (ADR-0018) and remediated by bumping the pinned digest when a
+fixed rebuild is published — the digest pin is not a claim of a CVE-free image.
+The image's own entrypoint is bypassed — the workload runs `chronyd` directly
+with the serve-only flags above.
 
 ## Security posture
 
-- **Serve-only (`-x`)** — `chronyd` reads and serves the system clock but never
-  adjusts it, so no clock-control capability is required and there is no collision
-  with Talos node time management. `-x` is a **process argument**, not a
-  `chrony.conf` directive.
-- **NTP-amplification hardening** — the control/monitoring channel is disabled
-  (`cmdport 0`, closing the remote-admin / monitoring-request vector) and
-  response-rate limiting is enabled (`ratelimit`, against `123/UDP` response
-  reflection). The catalog default ships **no client-access grant**, so out of the
-  box the server serves nobody and cannot act as an open reflector — it is inert
-  until the consumer supplies scoped access grants.
+- **Host-clock safety is catalog-guaranteed, regardless of consumer config** —
+  the Deployment runs `chronyd` with the serve-only `-x` **process argument** and
+  drops every capability (`capabilities.drop: [ALL]`, only `NET_BIND_SERVICE`
+  re-added — **no `CAP_SYS_TIME`**). Together these mean chronyd **cannot** step
+  or slew the system clock even if a consumer's `chrony.conf` adds a
+  clock-control directive (`makestep`, `rtcsync`, `maxslewrate`, …): the kernel
+  denies the `adjtimex`/`clock_settime` calls without `CAP_SYS_TIME`, and `-x`
+  disables the code path outright. There is therefore no collision with Talos
+  node time management no matter what the consumer configures. `-x` is a process
+  argument, not a `chrony.conf` directive, so a config-only override cannot
+  remove it.
+- **NTP-amplification hardening is a consumer obligation** — the catalog ships
+  no `chrony.conf`, so the amplification/reflection controls (`cmdport 0`,
+  `ratelimit`, and a client-scoped `allow`) live in the **consumer-provided**
+  ConfigMap. See §Consumer-provided configuration for the mandatory hardening
+  the consumer's `chrony.conf` MUST carry.
 - **Pod hardening (PSA baseline)** — non-root (`runAsNonRoot`, uid `65532`),
   `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop:
   [ALL]` with only `NET_BIND_SERVICE` re-added (the non-root privileged-port bind
@@ -75,33 +85,80 @@ the serve-only flags above.
   satisfies — Restricted forbids any added capability, so it cannot admit this
   workload.
 
-## Consumer obligations
+## Consumer-provided configuration
 
-The catalog ships the signed workload; the consumer OWNS the cluster-specific
-configuration and applies it via its Argo overlay. The consumer MUST:
+The catalog owns **100% of the config**: it ships the hardened workload only, and
+the consumer OWNS the entire `chrony.conf`, delivered via its Argo overlay. The
+Deployment mounts `/etc/chrony.conf` (subPath `chrony.conf`) from a ConfigMap
+named **`chrony-config`** in the `chrony` namespace — this is the freeze-line
+`config` shape (`customization.yaml` `provided_refs.config: chrony-config` +
+`required.config_files`). The consumer **MUST** supply that ConfigMap; without it
+the Deployment's config volume has no source and the pod will not start.
 
-- **Supply client-subnet access grants.** Override the `chrony-config` ConfigMap
-  (freeze-line `config` shape, `customization.yaml` `required.config_files`) with
-  a `chrony.conf` that grants access to the cluster's client subnets (chrony's
-  `allow <CIDR>` directive). Without this the server serves no client.
+Because the server is exposed on `123/UDP` (a LoadBalancer, potentially on a LAN
+or beyond), the consumer's `chrony.conf` **MUST** carry the NTP-amplification /
+reflection hardening the catalog can no longer ship for it:
+
+- **Client-scoped `allow`** — grant access ONLY to the specific client CIDRs that
+  must reach the server (`allow <your-client-CIDR>`). **NEVER `allow all`** on an
+  externally-exposed server: an open `allow` turns the server into an NTP
+  reflection/amplification source.
+- **`cmdport 0`** — disable the control/monitoring channel, closing the
+  remote-admin / monitoring-request vector (distinct from the `123/UDP`
+  time-service port).
+- **`ratelimit`** — enable response-rate limiting as defense-in-depth against
+  `123/UDP` response reflection from a spoofed or compromised in-subnet client.
+
+The consumer **MUST NOT** add any clock-stepping/slewing directive (`makestep`,
+`rtcsync`, `maxslewrate`, …); host-clock safety is enforced structurally by the
+workload regardless (see §Security posture), but a clock-control directive in the
+config is still a misconfiguration to avoid.
+
+RECOMMENDED secure `chrony.conf` starting point (adjust the upstream source and
+the client CIDR to the cluster):
+
+```conf
+# Upstream time source — replace with a local GPS/atomic source on an
+# enterprise cluster; pool.ntp.org is a safe public default.
+pool pool.ntp.org iburst
+
+# Control/monitoring channel disabled (remote-admin / monitoring-request vector).
+cmdport 0
+
+# Response-rate limiting — defense-in-depth against 123/UDP response reflection.
+ratelimit
+
+# Frequency-drift estimation on the writable runtime volume (the container root
+# filesystem is read-only). chronyd estimates drift but applies NO clock
+# correction (the -x process argument disables clock discipline).
+driftfile /run/chrony/drift
+
+# Client access — grant ONLY your client subnets. NEVER `allow all` on an
+# externally-exposed server (open reflector). Uncomment and scope to your CIDR:
+# allow <your-client-CIDR>
+
+# No clock-control directive (makestep / rtcsync / maxslewrate): serving only,
+# never disciplining the system clock.
+```
+
+### Network policy
+
+The catalog ships **no NetworkPolicy** — no catalog component ships one. If the
+consumer enforces network policy (native `NetworkPolicy` or a Cilium
+`CiliumNetworkPolicy`), the consumer OWNS both directions:
+
+- **Ingress** — scope `123/UDP` to the cluster's client CIDRs (the same subnets
+  the `chrony.conf` `allow` grants).
+- **Egress** — permit DNS (`53/UDP` + `53/TCP`, to resolve the upstream pool) and
+  the upstream NTP (`123/UDP`) to the configured time source; default-deny the
+  rest.
+
+### Other consumer obligations
+
 - **Assign the LoadBalancer IP.** Add the Cilium LB-IPAM annotation
   (`io.cilium/lb-ipam-pool` or a fixed `io.cilium/ip-address`) to the Service via
   the overlay — the catalog ships no IP.
-- **Optionally override the upstream source.** The default is `pool pool.ntp.org
-  iburst`; an enterprise cluster may prefer a local GPS/atomic source.
-- **Optionally ship an ingress NetworkPolicy.** The set of client subnets allowed
-  to reach `123/UDP` is cluster-specific and is delivered by the consumer
-  alongside the access grants; the catalog ships only the egress policy.
-
-When overriding `chrony.conf`, the consumer MUST **preserve** `cmdport 0` and
-`ratelimit`, MUST **NOT** add any clock-stepping/slewing directive (e.g.
-`makestep`, `rtcsync`, `maxslewrate`), and MUST **NOT** change the Deployment
-`args` — the `-x` serve-only flag is a `chronyd` process argument, not a
-`chrony.conf` directive, so a config-only override cannot remove it, but the args
-must be kept as shipped. The catalog default only guarantees these properties for
-the shipped configuration, not for a consumer-composed override.
-
-**High availability is a consumer concern.** The catalog ships a single-replica
-Deployment. A consumer that relies on NTP for VM workloads SHOULD run 2+ replicas
-with a PodDisruptionBudget via its overlay; otherwise eviction of the single pod
-leaves clients without their NTP source.
+- **High availability is a consumer concern.** The catalog ships a single-replica
+  Deployment. A consumer that relies on NTP for VM workloads SHOULD run 2+
+  replicas with a PodDisruptionBudget via its overlay; otherwise eviction of the
+  single pod leaves clients without their NTP source.
