@@ -36,7 +36,7 @@ Deployment, Service. The `chrony.conf` configuration is **consumer-provided**
 is:
 
 - `Namespace` (`chrony`, dedicated, `pod-security.kubernetes.io/enforce:
-  baseline`) — sole-claimant; the component ships its own namespace.
+  restricted`) — sole-claimant; the component ships its own namespace.
 - `ServiceAccount` (`chrony`, `automountServiceAccountToken: false` — chrony needs
   no API-server access; no RBAC).
 - `Deployment` (`chrony`, `replicas: 1`) — a single central server, **not** a
@@ -78,13 +78,14 @@ serve-only flags above.
   `ratelimit`, and a client-scoped `allow`) live in the **consumer-provided**
   ConfigMap. See §Consumer-provided configuration for the mandatory hardening
   the consumer's `chrony.conf` MUST carry.
-- **Pod hardening (PSA baseline)** — non-root (`runAsNonRoot`, uid `65532`),
+- **Pod hardening (PSA restricted)** — non-root (`runAsNonRoot`, uid `65532`),
   `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop:
   [ALL]` with only `NET_BIND_SERVICE` re-added (the non-root privileged-port bind
-  for `123/UDP`), `seccompProfile: RuntimeDefault`. No host namespaces, no
-  hostPath, no host port. `enforce: baseline` is the strictest PSA level the pod
-  satisfies — Restricted forbids any added capability, so it cannot admit this
-  workload.
+  for `123/UDP`), `seccompProfile: RuntimeDefault` (pod + container). No host
+  namespaces, no hostPath, no host port. `enforce: restricted` is the strictest
+  PSA level the pod satisfies — the workload meets every Restricted hardening
+  control, and Restricted permits the single `NET_BIND_SERVICE` capability it
+  adds.
 
 ## Consumer-provided configuration
 

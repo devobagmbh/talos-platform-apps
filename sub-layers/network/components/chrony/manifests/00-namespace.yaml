@@ -4,15 +4,16 @@
 # the PSA posture authoritative and self-contained (see the build skill's
 # CONVENTIONS.md § Namespace & PSA).
 #
-# enforce: baseline — DERIVED from the rendered Deployment pod template, NOT copied
-# from a template. The workload runs non-root with a read-only root filesystem,
-# drops ALL capabilities and adds only NET_BIND_SERVICE (the non-root privileged-
-# port bind for 123/UDP). PSA Baseline PERMITS an added capability from the
-# Baseline-allowed set (NET_BIND_SERVICE is in it); PSA Restricted FORBIDS any
-# added capability, so restricted cannot admit this pod and baseline is the
+# enforce: restricted — DERIVED from the rendered Deployment pod template, NOT
+# copied from a template. The workload meets every PSA Restricted control:
+# runAsNonRoot, seccompProfile RuntimeDefault (pod + container),
+# allowPrivilegeEscalation false, readOnlyRootFilesystem, and it drops ALL
+# capabilities. Restricted PERMITS the single capability it re-adds —
+# NET_BIND_SERVICE is the one member of the Restricted-allowed capability set
+# (the non-root privileged-port bind for 123/UDP) — so restricted is the
 # strictest level the workload provably satisfies. The workload uses NO
-# Baseline-forbidden field (no hostNetwork/hostPID/hostIPC, no hostPath, no host
-# port, no privileged container), so privileged is not required.
+# host namespaces (no hostNetwork/hostPID/hostIPC), no hostPath, no host
+# port, and no privileged container.
 #
 # The consumer adds the PNI labels and the pod-security.kubernetes.io/enforce-
 # version pin (its cluster minor) in its Argo overlay; the catalog ships neither
@@ -22,6 +23,6 @@ kind: Namespace
 metadata:
   name: chrony
   labels:
-    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce: restricted
     platform.devoba.de/sub-layer: network
     platform.devoba.de/component: chrony
