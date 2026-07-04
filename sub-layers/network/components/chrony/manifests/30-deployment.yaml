@@ -39,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: chrony
-          image: docker.io/cturra/ntp@sha256:7224d4e7c7833aabbcb7dd70c46c8a8dcccda365314c6db047b9b10403ace3bc
+          image: docker.io/dockurr/chrony@sha256:9ee7c0c9ba91d65c4fe9b9b45577a3c1470a887656cafec0b605b96c7b433d0a
           # -n: run in the foreground (no daemonize) — required under a container
           #     supervisor.
           # -x: serve-only — do NOT adjust the system clock. This is the hard

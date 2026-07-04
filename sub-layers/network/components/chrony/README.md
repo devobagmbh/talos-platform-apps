@@ -50,14 +50,15 @@ is:
 ### Image
 
 Pinned by immutable digest:
-`docker.io/cturra/ntp@sha256:7224d4e7c7833aabbcb7dd70c46c8a8dcccda365314c6db047b9b10403ace3bc`
-— a minimal Alpine-based chrony NTP server (chrony `4.6.1-r1`). Never `:latest`;
-the digest is authoritative and reproducible. The pinned image carries known
-base-library CVEs (Alpine/OpenSSL et al.); these are advisory-tracked by the
-image-CVE gate (ADR-0018) and remediated by bumping the pinned digest when a
-fixed rebuild is published — the digest pin is not a claim of a CVE-free image.
-The image's own entrypoint is bypassed — the workload runs `chronyd` directly
-with the serve-only flags above.
+`docker.io/dockurr/chrony@sha256:9ee7c0c9ba91d65c4fe9b9b45577a3c1470a887656cafec0b605b96c7b433d0a`
+— a minimal Alpine-based chrony NTP server (chrony `4.8-r7`). Never `:latest`;
+the digest is authoritative and reproducible. The pinned image is **CVE-clean**
+(0 HIGH/CRITICAL, 0 vulnerabilities all severities; Alpine 3.24, chrony `4.8`),
+verified by the image-CVE gate (ADR-0018). The base tracks Alpine's rolling
+`edge` line, which is why it ships freshly patched packages; the immutable digest
+pin keeps that state authoritative and reproducible. The image's own entrypoint
+(`/entrypoint.sh`) is bypassed — the workload runs `chronyd` directly with the
+serve-only flags above.
 
 ## Security posture
 
