@@ -1,16 +1,16 @@
 # Customization Contract v2 (ADR-0024). chrony is NOT cluster-agnostic: the
-# workload (Deployment/Service/ConfigMap/ServiceAccount/NetworkPolicy/Namespace)
-# is the signed, catalog-owned artifact, but the chrony.conf content is
-# consumer-owned. The consumer supplies a chrony.conf carrying cluster-specific
-# client-subnet access grants (and optionally a preferred upstream source) via the
-# `config` shape below; the catalog ships an inert default (no access grant, so no
-# open reflector). The LoadBalancer IP is a Service annotation applied by the
-# consumer overlay — a manifest annotation, not a referenced config object, so it
-# is not a freeze-line config_files entry.
+# workload (Deployment/Service/ServiceAccount/Namespace) is the signed,
+# catalog-owned artifact, but the chrony.conf content is consumer-owned. The
+# consumer supplies a chrony.conf carrying cluster-specific client-subnet access
+# grants (and optionally a preferred upstream source) via the `config` shape
+# below; the catalog ships no ConfigMap — the consumer provides it in full (so
+# there is no catalog-shipped open reflector). The LoadBalancer IP is a Service
+# annotation applied by the consumer overlay — a manifest annotation, not a
+# referenced config object, so it is not a freeze-line config_files entry.
 freeze_line:
-  workload: rendered/manifest.yaml  # Deployment/Service/ConfigMap/SA/NetworkPolicy/Namespace — never consumer-patched
+  workload: rendered/manifest.yaml  # Deployment/Service/SA/Namespace — never consumer-patched
 provided_refs:
-  config: chrony-config  # ConfigMap the workload mounts at /etc/chrony.conf; consumer overrides its content
+  config: chrony-config  # ConfigMap the workload mounts at /etc/chrony.conf; consumer provides its content
 provided_selectors: {}  # no operator-assembled CRs
 required:
   env_keys: []

@@ -87,8 +87,8 @@ with the serve-only flags above.
 
 ## Consumer-provided configuration
 
-The catalog owns **100% of the config**: it ships the hardened workload only, and
-the consumer OWNS the entire `chrony.conf`, delivered via its Argo overlay. The
+The consumer owns **100% of the config**: the catalog ships the hardened workload
+only, and the consumer OWNS the entire `chrony.conf`, delivered via its Argo overlay. The
 Deployment mounts `/etc/chrony.conf` (subPath `chrony.conf`) from a ConfigMap
 named **`chrony-config`** in the `chrony` namespace — this is the freeze-line
 `config` shape (`customization.yaml` `provided_refs.config: chrony-config` +
