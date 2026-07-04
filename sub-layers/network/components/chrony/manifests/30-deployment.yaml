@@ -1,0 +1,103 @@
+# Single central chrony NTP server. This is a Deployment (replicas: 1), NOT a
+# DaemonSet: chrony here serves in-cluster clients (KubeVirt VMs) and external
+# LAN/IoT devices through one LoadBalancer endpoint; it does not run per node and
+# does not discipline any node clock. HA (2+ replicas + a PodDisruptionBudget) is
+# a consumer-overlay concern (see the README §Consumer obligations).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chrony
+  namespace: chrony
+  labels:
+    app.kubernetes.io/name: chrony
+    app.kubernetes.io/component: ntp-server
+    app.kubernetes.io/version: "4.8"
+    platform.devoba.de/sub-layer: network
+    platform.devoba.de/component: chrony
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chrony
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chrony
+        app.kubernetes.io/component: ntp-server
+        app.kubernetes.io/version: "4.8"
+        platform.devoba.de/sub-layer: network
+        platform.devoba.de/component: chrony
+    spec:
+      serviceAccountName: chrony
+      automountServiceAccountToken: false
+      # Pod-level identity: run as a fixed non-root uid/gid; fsGroup makes the
+      # writable runtime emptyDir group-owned and writable by that uid.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chrony
+          image: docker.io/dockurr/chrony@sha256:9ee7c0c9ba91d65c4fe9b9b45577a3c1470a887656cafec0b605b96c7b433d0a
+          # Stale-pidfile guard (survives an in-place container restart). The
+          # runtime emptyDir at /run/chrony is Pod-scoped, so it persists across an
+          # in-place container restart (crash/OOM) while the Pod stays. chronyd's
+          # pidfile (/run/chrony/chronyd.pid) then still holds the PID of the dead
+          # process; the new PID-1 chronyd reads it and false-positives ("Another
+          # chronyd may already be running"), refusing to start → CrashLoopBackOff.
+          # The /bin/sh wrapper removes the stale pidfile before start; `exec` then
+          # replaces the shell with chronyd so it stays PID 1 for correct signal
+          # handling. The cleanup lives here (not in chrony.conf via `pidfile ""`)
+          # because chrony.conf is consumer-owned per the ADR-0024 freeze-line.
+          #
+          # -n: run in the foreground (no daemonize) — required under a container
+          #     supervisor.
+          # -x: serve-only — do NOT adjust the system clock. This is the hard
+          #     serve-only line: with -x, chronyd needs no clock-control
+          #     capability and cannot collide with the Talos node time manager.
+          # -U: disable chronyd's root-privilege check so it starts under the
+          #     non-root runAsUser (uid 65532); without it chronyd fatals
+          #     "Not superuser" as non-root. Safe here: -x means no clock control
+          #     (no CAP_SYS_TIME), and NET_BIND_SERVICE covers the 123/UDP bind.
+          # -f: explicit config path (the consumer-owned chrony.conf).
+          command: ["/bin/sh", "-c"]
+          args: ["rm -f /run/chrony/chronyd.pid; exec /usr/sbin/chronyd -n -x -U -f /etc/chrony.conf"]
+          ports:
+            - name: ntp
+              containerPort: 123
+              protocol: UDP
+          securityContext:
+            # non-root; escalation blocked; immutable root FS; drop every
+            # capability and re-add only the one needed to bind the privileged
+            # 123/UDP port as a non-root process.
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_BIND_SERVICE"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/chrony.conf
+              subPath: chrony.conf
+              readOnly: true
+            - name: runtime
+              mountPath: /run/chrony
+      volumes:
+        - name: config
+          configMap:
+            name: chrony-config
+        # Writable scratch for the drift file and PID file (root FS is read-only).
+        - name: runtime
+          emptyDir: {}

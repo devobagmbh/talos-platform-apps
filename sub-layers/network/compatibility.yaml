@@ -1,3 +1,4 @@
 components:
   - multus-cni-crds  # sync-wave -1 — strict-B CRDs artifact (ADR-0028): the NetworkAttachmentDefinition CRD, before the Multus controller
   - multus-cni       # sync-wave 0 — strict-B workload artifact (ADR-0028): the thin Multus controller DaemonSet, implements the secondary-network-attachment capability
+  - chrony           # sync-wave 0 — bespoke manifests: in-cluster NTP server (123/UDP), implements the ntp-service capability
