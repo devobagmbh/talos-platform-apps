@@ -238,12 +238,13 @@ check is gated on reachability, not skipped by default:
   `local/argo-apps/<sub-layer>/<component>.yaml` Argo Application template first
   (the #171 observability precedent), authored as part of the step.
 - **Unreachable** (no container runtime / cluster): record ArgoCD deployability
-  NOT-LOCALLY-VERIFIABLE and defer to GHA + the consumer repos. A skip is recorded
-  as NOT-LOCALLY-VERIFIABLE, never silently presented as a pass.
+  NOT-LOCALLY-VERIFIABLE and defer to the consumer cluster (GHA runs no ArgoCD).
+  A skip is recorded as NOT-LOCALLY-VERIFIABLE, never silently presented as a pass.
 
-These belong to the GHA pipeline and the consumer cluster repos. The verify step
-records them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is
-GHA + human PR review under branch protection — the local gate is triage.
+ArgoCD deployability is verified only on the consumer cluster; `task sign` / `task
+push` and offline chart-ref resolution are verified in GHA. The verify step records
+them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is GHA + human
+PR review under branch protection — the local gate is triage.
 
 ## Worktree-per-component & parallel sessions
 
