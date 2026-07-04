@@ -40,8 +40,9 @@ is:
 - `ServiceAccount` (`chrony`, `automountServiceAccountToken: false` — chrony needs
   no API-server access; no RBAC).
 - `Deployment` (`chrony`, `replicas: 1`) — a single central server, **not** a
-  DaemonSet. Container `command: ["/usr/sbin/chronyd"]`, `args: ["-n", "-x", "-f",
-  "/etc/chrony.conf"]`. It mounts `/etc/chrony.conf` (subPath `chrony.conf`) from
+  DaemonSet. Container `command: ["/usr/sbin/chronyd"]`, `args: ["-n", "-x", "-U",
+  "-f", "/etc/chrony.conf"]`. It mounts `/etc/chrony.conf` (subPath `chrony.conf`)
+  from
   the **consumer-provided** ConfigMap `chrony-config`, which is intentionally NOT
   in the shipped manifests (the render is workload-only).
 - `Service` (`chrony`, `type: LoadBalancer`, one port `123/UDP`, `targetPort:
@@ -78,6 +79,15 @@ serve-only flags above.
   `ratelimit`, and a client-scoped `allow`) live in the **consumer-provided**
   ConfigMap. See §Consumer-provided configuration for the mandatory hardening
   the consumer's `chrony.conf` MUST carry.
+- **Non-root operation depends on the `-U` process argument** — chronyd refuses
+  to start as a non-root user and fatals `Not superuser` unless told otherwise.
+  The `-U` argument disables that root-privilege check, allowing chronyd to run
+  under the non-root `runAsUser` (uid `65532`). This is safe precisely because the
+  workload is already serve-only: `-x` disables all clock discipline (no
+  `CAP_SYS_TIME` is granted), and the single re-added `NET_BIND_SERVICE` capability
+  is only what a non-root process needs to bind the privileged `123/UDP` port. `-U`
+  therefore relaxes chronyd's own uid self-check WITHOUT weakening the pod's
+  hardening — no root, no added capability, no PSA downgrade.
 - **Pod hardening (PSA restricted)** — non-root (`runAsNonRoot`, uid `65532`),
   `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities.drop:
   [ALL]` with only `NET_BIND_SERVICE` re-added (the non-root privileged-port bind
@@ -157,6 +167,14 @@ consumer enforces network policy (native `NetworkPolicy` or a Cilium
 
 ### Other consumer obligations
 
+- **Give chronyd a synchronization source, or it serves nothing.** A chrony
+  server answers clients only once it is itself synchronized. The
+  consumer-provided `chrony.conf` **MUST** carry either a reachable upstream
+  (a `pool`/`server` directive — e.g. the `pool pool.ntp.org iburst` in the
+  starting point above) **OR** a `local stratum N` directive (which lets chronyd
+  serve from its own clock as a last-resort island source). With neither,
+  chronyd runs (the pod is Healthy) but never reaches a synchronized state and
+  therefore serves no valid time to clients.
 - **Assign the LoadBalancer IP.** Add the Cilium LB-IPAM annotation
   (`io.cilium/lb-ipam-pool` or a fixed `io.cilium/ip-address`) to the Service via
   the overlay — the catalog ships no IP.

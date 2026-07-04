@@ -47,9 +47,13 @@ spec:
           # -x: serve-only — do NOT adjust the system clock. This is the hard
           #     serve-only line: with -x, chronyd needs no clock-control
           #     capability and cannot collide with the Talos node time manager.
+          # -U: disable chronyd's root-privilege check so it starts under the
+          #     non-root runAsUser (uid 65532); without it chronyd fatals
+          #     "Not superuser" as non-root. Safe here: -x means no clock control
+          #     (no CAP_SYS_TIME), and NET_BIND_SERVICE covers the 123/UDP bind.
           # -f: explicit config path (the consumer-owned chrony.conf).
           command: ["/usr/sbin/chronyd"]
-          args: ["-n", "-x", "-f", "/etc/chrony.conf"]
+          args: ["-n", "-x", "-U", "-f", "/etc/chrony.conf"]
           ports:
             - name: ntp
               containerPort: 123
