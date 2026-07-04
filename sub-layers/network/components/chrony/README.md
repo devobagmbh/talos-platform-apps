@@ -40,9 +40,13 @@ is:
 - `ServiceAccount` (`chrony`, `automountServiceAccountToken: false` — chrony needs
   no API-server access; no RBAC).
 - `Deployment` (`chrony`, `replicas: 1`) — a single central server, **not** a
-  DaemonSet. Container `command: ["/usr/sbin/chronyd"]`, `args: ["-n", "-x", "-U",
-  "-f", "/etc/chrony.conf"]`. It mounts `/etc/chrony.conf` (subPath `chrony.conf`)
-  from
+  DaemonSet. Container `command: ["/bin/sh", "-c"]`, `args: ["rm -f
+  /run/chrony/chronyd.pid; exec /usr/sbin/chronyd -n -x -U -f /etc/chrony.conf"]` —
+  a thin wrapper that clears a stale pidfile before starting chronyd (the
+  Pod-scoped `/run/chrony` emptyDir survives an in-place container restart, so a
+  leftover `chronyd.pid` would otherwise make the new PID-1 chronyd refuse to
+  start), then `exec`s chronyd so it stays PID 1. It mounts `/etc/chrony.conf`
+  (subPath `chrony.conf`) from
   the **consumer-provided** ConfigMap `chrony-config`, which is intentionally NOT
   in the shipped manifests (the render is workload-only).
 - `Service` (`chrony`, `type: LoadBalancer`, one port `123/UDP`, `targetPort:
