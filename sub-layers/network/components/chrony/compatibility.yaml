@@ -7,7 +7,7 @@ provides:
   - name: chrony
     version:
       sot: app
-      app: 4.8  # chrony version in the pinned docker.io/dockurr/chrony image (Alpine chrony 4.8-r7)
+      app: "4.8"  # chrony version in the pinned docker.io/dockurr/chrony image (Alpine chrony 4.8-r7); quoted so YAML keeps it a string (schema requires string)
     api_surface: []
     # Implements the ntp-service capability: the NTP wire protocol (RFC 5905,
     # 123/UDP) is the stable interface; chrony/ntpd/openntpd are swappable

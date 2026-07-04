@@ -11,6 +11,7 @@ metadata:
   labels:
     app.kubernetes.io/name: chrony
     app.kubernetes.io/component: ntp-server
+    app.kubernetes.io/version: "4.8"
     platform.devoba.de/sub-layer: network
     platform.devoba.de/component: chrony
 spec:
@@ -23,6 +24,7 @@ spec:
       labels:
         app.kubernetes.io/name: chrony
         app.kubernetes.io/component: ntp-server
+        app.kubernetes.io/version: "4.8"
         platform.devoba.de/sub-layer: network
         platform.devoba.de/component: chrony
     spec:
