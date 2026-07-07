@@ -48,6 +48,25 @@
         "additionalProperties": { "type": "string" }
       }
     },
+    "exposed_selectors": {
+      "type": "object",
+      "description": "The INVERSE of provided_selectors: stable label sets a rendered workload object carries so a consumer's OWN object can select it (e.g. a Cilium LB-IPAM CiliumLoadBalancerIPPool serviceSelector pinning a LoadBalancer VIP without patching the signed Service). Declaring the label here makes it a versioned binding surface — a future rename is a contract change, not a silent break. Optional (additive to ADR-0024 v2): absent/{} when nothing external binds to this workload by label. Schema self-consistency only today; a render-time check that the workload actually carries each declared label is a follow-up (like config-mount #1 / selector #3). Schema-contract-parity for this new binding surface: (1) closed field set (additionalProperties:false); (2) duplicate keys are file corruption — YAML last-wins, surface not silently accept; (3) no version field — additions are backward-additive/optional, consumers detect change via the schema $id + JSON-Schema tooling, not a version marker; (4) this schema is a repo-SOT trusted-data file, so no untrusted-data sentinel applies; (5) declarative/mutable-in-place — a rename is a reviewed contract change.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "labels"],
+        "description": "One exposed binding surface: the workload object kind and the stable label set a consumer selects on.",
+        "properties": {
+          "kind": { "type": "string", "description": "Rendered workload object kind carrying the labels (e.g. Service)." },
+          "labels": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": { "type": "string" },
+            "description": "Stable label set the consumer's selecting object matches on. Consumer-supplied objects (the selecting pool/CR) are never in the signed artifact; only these labels are the contract."
+          }
+        }
+      }
+    },
     "required": {
       "type": "object",
       "additionalProperties": false,
