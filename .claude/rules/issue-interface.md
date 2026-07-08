@@ -78,7 +78,9 @@ at `status: needs-clarification` with the gap named in a comment:
 *where it implements one* (an id in `catalog/capability-index.yaml`; a `-crds` strict-B
 half or an api-surface-only component legitimately declares none), whether it ships CRDs
 (the strict-B `-crds` split, ADR-0028), and its **`customization.yaml` freeze-line
-contract** (ADR-0024) — which declares both the frozen workload the consumer never patches
+contract** (ADR-0024) — which declares both the signed workload baseline (image digest
+hard-anchored at consumer admission; other fields consumer-overlayable per-cluster, bar
+platform-set ones like sync_wave that stay catalog-owned)
 **and** the config the consumer **must supply** (the `required` env / secret keys, config
 files, and selector CRs), not merely what it *may* override.
 

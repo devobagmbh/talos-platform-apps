@@ -200,11 +200,14 @@ is a finding):
      above, is a finding.
 7. **Freeze-line coherence (and non-vacuity).** The `freeze_line_sketch` is
    internally consistent: declared `required.*` keys correspond to the
-   consumer-config shapes the workload will actually expose (ADR-0024 v2: workload
-   catalog-owned, config consumer-owned). A sketch that promises a secret_key the
+   consumer-config shapes the workload will actually expose (ADR-0024: workload =
+   catalog-authored signed baseline, image digest hard-anchored, rest consumer-overlayable
+   per-cluster (platform-set fields like sync_wave stay catalog-owned); config consumer-owned). A sketch that promises a secret_key the
    chart cannot read is a finding. An **all-empty sketch** (`shapes: []`, every
    `required.*` empty) is approvable ONLY when the component is genuinely
-   cluster-agnostic — an empty sketch used to dodge the freeze-line is a hollow
+   cluster-agnostic (consumer overlay-freedom under ADR-0024 does NOT license an empty
+   sketch — config the workload actually consumes must still be modeled as shapes a-d) —
+   an empty sketch used to dodge the freeze-line is a hollow
    pass and a finding (the same non-vacuity trap the build-phase evaluator
    guards; catch it here, not two phases later).
 8. **Hard-Constraints clean.** Nothing in the plan violates `AGENTS.md §Hard

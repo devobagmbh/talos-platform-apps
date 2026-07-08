@@ -11,11 +11,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["workload"],
-      "description": "The workload/config boundary (ADR-0024). The workload is pre-rendered, signed, and never consumer-patched; config is 100% consumer-owned.",
+      "description": "The workload/config boundary (ADR-0024, calibrated-friction). The workload is the pre-rendered, signed, hardened baseline: the image digest is the hard consumer-admission anchor (cosign verifyImages); its other fields a consumer may overlay per-cluster without a catalog PR (a catalog PR changes the shared baseline for all consumers) — except platform-set fields like sync_wave that stay catalog-owned, and dangerous classes (hostPath, cluster-admin bindings) that the consumer-side ADR-0018 Kyverno safe-defaults discourage. config shapes (a-d) are the ergonomic consumer-input surface this contract models.",
       "properties": {
         "workload": {
           "type": "string",
-          "description": "Path to the pre-rendered, signed workload manifest the consumer never patches (conventionally rendered/manifest.yaml)."
+          "description": "Path to the pre-rendered, signed workload baseline (conventionally rendered/manifest.yaml); the image digest is hard-anchored at consumer admission, most other fields are consumer-overlayable per-cluster (platform-set fields like sync_wave stay catalog-owned) — ADR-0024."
         }
       }
     },
