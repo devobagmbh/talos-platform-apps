@@ -179,9 +179,15 @@ consumer enforces network policy (native `NetworkPolicy` or a Cilium
   serve from its own clock as a last-resort island source). With neither,
   chronyd runs (the pod is Healthy) but never reaches a synchronized state and
   therefore serves no valid time to clients.
-- **Assign the LoadBalancer IP.** Add the Cilium LB-IPAM annotation
-  (`io.cilium/lb-ipam-pool` or a fixed `io.cilium/ip-address`) to the Service via
-  the overlay — the catalog ships no IP.
+- **Assign the LoadBalancer IP additively — never patch the signed Service.**
+  The Service is part of the signed workload (ADR-0024 freeze-line), so it MUST
+  NOT be annotated or otherwise patched. Instead the consumer creates its own
+  `CiliumLoadBalancerIPPool` whose `serviceSelector` matches the Service by the
+  stable label the catalog ships — `platform.devoba.de/component: chrony`
+  (declared as a binding surface in `customization.yaml` `exposed_selectors`) —
+  and pins the address purely via pool config. A pool block with a single `/32`
+  pins one specific VIP deterministically; nothing is written to the signed
+  Service. The catalog ships no IP and no pool (both are cluster-specific).
 - **High availability is a consumer concern.** The catalog ships a single-replica
   Deployment. A consumer that relies on NTP for VM workloads SHOULD run 2+
   replicas with a PodDisruptionBudget via its overlay; otherwise eviction of the

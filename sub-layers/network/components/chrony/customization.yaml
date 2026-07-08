@@ -4,14 +4,25 @@
 # consumer supplies a chrony.conf carrying cluster-specific client-subnet access
 # grants (and optionally a preferred upstream source) via the `config` shape
 # below; the catalog ships no ConfigMap — the consumer provides it in full (so
-# there is no catalog-shipped open reflector). The LoadBalancer IP is a Service
-# annotation applied by the consumer overlay — a manifest annotation, not a
-# referenced config object, so it is not a freeze-line config_files entry.
+# there is no catalog-shipped open reflector). The LoadBalancer IP is assigned by
+# the consumer WITHOUT patching the signed Service: a consumer-owned
+# CiliumLoadBalancerIPPool selects this Service by its shipped component label
+# (see exposed_selectors below) and pins the address via pool config — no
+# io.cilium/lb-ipam-ips annotation on the signed workload (ADR-0024-conform).
 freeze_line:
   workload: rendered/manifest.yaml  # Deployment/Service/SA/Namespace — never consumer-patched
 provided_refs:
   config: chrony-config  # ConfigMap the workload mounts at /etc/chrony.conf; consumer provides its content
 provided_selectors: {}  # no operator-assembled CRs
+exposed_selectors:
+  # The Service carries this stable label so a consumer's OWN CiliumLoadBalancerIPPool
+  # (or any label-selecting object) can pin the LoadBalancer VIP without patching the
+  # signed Service. Declared here so a future rename is a contract change, not a silent
+  # break of the consumer's VIP allocation.
+  lb_ipam:
+    kind: Service
+    labels:
+      platform.devoba.de/component: chrony
 required:
   env_keys: []
   config_files:
