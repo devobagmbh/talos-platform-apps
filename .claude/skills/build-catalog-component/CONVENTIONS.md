@@ -31,7 +31,7 @@ Closed schema (`additionalProperties: false`) — all six top-level keys require
 
 ```yaml
 freeze_line:
-  workload: rendered/manifest.yaml      # signed, pre-rendered, never consumer-patched
+  workload: rendered/manifest.yaml      # signed, pre-rendered baseline; image digest hard-anchored, rest consumer-overlayable (sync_wave catalog-owned; ADR-0024)
 provided_refs:                          # names the workload expects; {} if cluster-agnostic
   env: <component>-runtime-config        # Shape (a) ConfigMap via envFrom        (optional)
   config: <component>-config             # Shape (b) whole config file, mounted   (optional)
@@ -46,9 +46,12 @@ sync_wave: "0"                          # string, regex ^-?[0-9]+$
 external_dependencies: []               # ["<sub-layer>/<component>", ...], regex ^[a-z0-9-]+/[a-z0-9-]+$
 ```
 
-The freeze-line splits ownership: **workload = catalog-owned** (pre-rendered +
-signed, never patched); **config = 100% consumer-owned** via the four shapes
-above. Every `required.*` entry MUST correspond to a real reference in the
+The freeze-line splits ownership: **workload = catalog-authored signed, hardened baseline**
+(pre-rendered; the image digest is the hard consumer-admission anchor, most other fields a
+consumer may overlay per-cluster without a catalog PR — except platform-set fields like
+sync_wave, and dangerous classes like hostPath/cluster-admin that the consumer-side ADR-0018
+safe-defaults discourage; ADR-0024 calibrated-friction); **config = 100% consumer-owned** via
+the four shapes above. Every `required.*` entry MUST correspond to a real reference in the
 rendered workload (a `secretKeyRef`/`envFrom`/`volumeMount`/selector) — declaring
 a secret_key the manifest never reads, or omitting one it does, is a freeze-line
 defect the evaluator catches.
