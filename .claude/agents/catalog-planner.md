@@ -85,8 +85,11 @@ at.
    capability ids + swap_class. For each component you propose, check whether its
    `external_dependencies` already exist (`ls sub-layers/<sl>/components/<c>/`) or
    must be built first (then they belong in the plan with an earlier build_order).
-   Read one existing component of the same kind (helm vs manifests) as a shape
-   reference.
+   For the helm-vs-manifests file LAYOUT only, you may skim a sibling of the same
+   kind as a structural example — but the authoritative content spec is
+   `schemas/customization.schema.json` + `AGENTS.md`; never copy a sibling's content
+   (values, comments, freeze-line, compatibility, or README text), whose drift would
+   propagate.
 4. **Derive the dependency graph + build order.** Build a topological order from
    `external_dependencies` + sync_wave; foundational (depended-upon, low
    sync_wave) first. If the graph has a cycle, that is a blocking problem — record

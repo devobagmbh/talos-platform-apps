@@ -90,9 +90,13 @@ pushed); this skill trusts the block and sanity-checks only its own worktree.
    so two operators on two clones would otherwise build the same component in
    parallel until the first push. A no-issue direct build claims nothing; the
    worktree branch-claim is then its only backstop.
-4. Read `catalog/capability-index.yaml` for the component's capability, and one
-   existing component of the same kind (helm vs manifests) as a template. Branch on
-   the plan's `capability.id` (the three states in plan-CONVENTIONS §6):
+4. Read `catalog/capability-index.yaml` for the component's capability. For the
+   helm-vs-manifests file LAYOUT only, you may skim a sibling of the same kind as a
+   structural example — but the authoritative content spec is `AGENTS.md` +
+   `CONVENTIONS.md` + `schemas/customization.schema.json`; never copy a sibling's
+   content (values, comments, freeze-line, compatibility, or README text), whose
+   drift would propagate. Branch on the plan's
+   `capability.id` (the three states in plan-CONVENTIONS §6):
    - **`capability.id` is set (non-null)** — confirm that id exists in the index
      before building; if it does not, **stop and surface** (the index entry — a
      pre-existing one, or a pending-index pre-build PR named in the plan's
