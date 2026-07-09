@@ -60,3 +60,21 @@ values:
         memory: 128Mi
       limits:
         memory: 256Mi
+    # CapsuleConfiguration policy (chart renders it, createConfiguration: true default).
+    # These are cluster-agnostic tenancy DEFAULTS shipped by the catalog — earlier the
+    # component left the CapsuleConfiguration "consumer-owned", but in 0.13.x the CR
+    # embeds a ~2000-line chart-generated spec.admission (dynamic-webhook) block a
+    # consumer cannot author, and a consumer-supplied CR overwrites it → operator
+    # nil-panic. Ship it here; per-consumer overrides land once the override mechanism
+    # (apps#503, Kustomize-base + overridable) is merged. Then `users` becomes overridable.
+    options:
+      # Every authenticated user is tenant-scoped — the self-service tenancy default.
+      # cluster-admins (system:masters) bypass all webhooks, so admins are unaffected.
+      users:
+        - kind: Group
+          name: system:authenticated
+      # Namespaces must be prefixed `<tenant>-` (collision-free, visibly tenant-scoped).
+      forceTenantPrefix: true
+      # Platform + system namespaces a tenant owner may never claim/create. All names
+      # are catalog-component / k8s-standard namespaces (cluster-agnostic).
+      protectedNamespaceRegex: "^(kube-.*|capsule-system|argocd|dex|backstage|monitoring|cert-manager|external-secrets|crossplane-system|kubevirt|cdi|piraeus-.*|harbor|alloy|loki|mimir|tempo|arc-.*)$"
