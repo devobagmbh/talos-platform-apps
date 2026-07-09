@@ -18,11 +18,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/lifecycle
-    chart: crossplane
+    repoURL: oci://${REGISTRY}/lifecycle/crossplane
     targetRevision: ${TAG}
-    helm:
-      releaseName: crossplane
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: crossplane-system

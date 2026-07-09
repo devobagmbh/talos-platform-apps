@@ -14,11 +14,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/lifecycle
-    chart: ipxe
+    repoURL: oci://${REGISTRY}/lifecycle/ipxe
     targetRevision: ${TAG}
-    helm:
-      releaseName: ipxe
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: ipxe

@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/databases
-    chart: cnpg
+    repoURL: oci://${REGISTRY}/databases/cnpg
     targetRevision: ${TAG}
-    helm:
-      releaseName: cnpg
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: cnpg-system
