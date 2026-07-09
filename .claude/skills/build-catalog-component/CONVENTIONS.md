@@ -3,8 +3,9 @@
 The single source of truth for what a finished catalog component looks like and
 how it is verified. Read by the builder (a brief points here) and by anyone
 running `/build-catalog-component`. Grounded in the live repo — verify against
-`schemas/customization.schema.json`, `Taskfile.yml`, and an existing component
-(`sub-layers/lifecycle/components/crossview/`) if anything here looks stale.
+`AGENTS.md`, `schemas/customization.schema.json`, and `Taskfile.yml` (the upstream
+contracts this spec composes) if anything here looks stale. A sibling component is
+a derived artifact and never arbitrates correctness (its own drift would propagate).
 
 ## Directory anatomy
 

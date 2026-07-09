@@ -3,9 +3,10 @@
 The single source of truth for what a finished **catalog-app plan** looks like
 and how the converging plan-review loop terminates. Read by the orchestrator
 running `/plan-catalog-app` and by the planner (a brief points here). Grounded in
-the live repo — verify against `AGENTS.md`, `catalog/capability-index.yaml`,
-`schemas/customization.schema.json`, and an existing component
-(`sub-layers/lifecycle/components/crossview/`) if anything here looks stale.
+the live repo — verify against `AGENTS.md`, `catalog/capability-index.yaml`, and
+`schemas/customization.schema.json` (the upstream contracts this spec composes) if
+anything here looks stale. A sibling component is a derived artifact and never
+arbitrates correctness (its own drift would propagate).
 
 A "catalog app" is one or more catalog **components** that together deliver a
 capability (a single component, or a small set with a dependency graph). The plan
