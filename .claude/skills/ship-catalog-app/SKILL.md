@@ -377,9 +377,9 @@ Report:
   the stop-reason summarizes how the run ended, it is not "where it stopped". An
   operator decline at the Phase 2 gate is `stopped-at-plan`; a declined PR mid-build
   contributes `build-incomplete`.
-- **NOT-locally-verifiable** items carried up from the builds (cosign sign, OCI
-  push, ArgoCD deployability) — deferred to GHA + consumer repos, never claimed
-  pass.
+- **NOT-locally-verifiable** items carried up from the builds: cosign sign + OCI
+  push → GHA; ArgoCD deployability → the consumer cluster (GHA runs no ArgoCD).
+  Never claimed pass.
 - **Issue status (ship owns the claim — invariant 4; `.claude/rules/issue-claim.md`).**
   Transition the app issue by the precedence-selected stop reason (a no-issue run
   transitions nothing): `plan-not-approved` → `needs-clarification` (release,

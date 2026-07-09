@@ -66,6 +66,10 @@
     "sub-layers/lifecycle/components/providers": {
       "component": "lifecycle/providers"
     },
+    "sub-layers/network/components/chrony": {
+      "component": "network/chrony",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/network/components/multus-cni": {
       "component": "network/multus-cni"
     },
@@ -143,12 +147,20 @@
       "component": "secrets/vault-config-operator-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/secrets/components/vault-operator-crds": {
+      "component": "secrets/vault-operator-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/security/components/tetragon": {
       "component": "security/tetragon",
       "initial-version": "0.1.0"
     },
     "sub-layers/security/components/capsule-crds": {
       "component": "security/capsule-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/security/components/capsule": {
+      "component": "security/capsule",
       "initial-version": "0.1.0"
     },
     "sub-layers/storage-block/components/democratic-csi": {

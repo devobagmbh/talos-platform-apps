@@ -263,6 +263,20 @@ capabilities:
     requires_hardware_features: [ebpf-capable-kernel]   # Layer C (base)
     implementations:
       - {name: multus-cni, status: active, swap_class: rewrite-required}
+  - id: ntp-service
+    name: In-Cluster NTP Time Service
+    domain: network
+    # NTP wire protocol (RFC 5905, 123/UDP) is the stable interface; chrony/ntpd/
+    # openntpd are swappable implementations of it (a real capability, not a
+    # sole-provider surface like node-exporter). NOT single_impl — genuine
+    # alternatives exist. swap_class consumer-change: the freeze-line exposes a
+    # tool-specific chrony.conf, so swapping the daemon forces the consumer to
+    # rewrite that config (contrast s3-object's standard-API reference → drop-in).
+    # First implementation: network/chrony (apps#485).
+    implementations:
+      - {name: chrony, status: active, swap_class: consumer-change}
+      - {name: ntpd, status: considered, swap_class: consumer-change}
+      - {name: openntpd, status: considered, swap_class: consumer-change}
 
   # — Daten-Services (instanced) ——————————————————————————————
   - id: redis-managed

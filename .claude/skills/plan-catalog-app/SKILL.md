@@ -49,8 +49,11 @@ Argument: `<app>` (a kebab-case slug) and optionally the issue number.
    issue label is the only signal a second operator on another clone can see — the
    plan loop (parallel adversarial personas, up to 3 rounds) is exactly the expense
    the claim protects. No issue number → no claim.
-3. Read `catalog/capability-index.yaml` and one existing component of each kind
-   you expect (helm vs manifests) as shape references.
+3. Read `catalog/capability-index.yaml`. For the helm-vs-manifests file LAYOUT
+   only, you may skim a sibling of each kind you expect as a structural example —
+   but the authoritative content spec is `AGENTS.md` + `CONVENTIONS.md` +
+   `schemas/customization.schema.json`; never copy a sibling's content (values,
+   comments, freeze-line, compatibility, or README text), whose drift would propagate.
 4. Create `.work/plan/<app>/` and an empty `ledger.md`.
 
 ## Phase 2 — Plan (dispatch `catalog-planner`, isolated)
