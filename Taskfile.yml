@@ -2350,13 +2350,15 @@ tasks:
   # --- Publish-Targets ---
 
   package:
-    desc: 'packt gerendertes Manifest als OCI-Layer-Tarball: task package -- <sub-layer>/<component> <tag>'
+    desc: 'pack the rendered manifest as a Kustomize-base OCI-layer tarball: task package -- <sub-layer>/<component> <tag>'
     summary: |
-      Packt sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
-      in einen Single-Layer-Tarball für die ArgoCD-native-OCI-Distribution
-      (ADR-0009 §OCI-Artefakt-Form). KEIN Helm-Chart-Wrapper mehr — das
-      gerenderte Manifest IST der Artefakt-Inhalt (Konsument: source.path '.').
-      Die OCI-Manifest-Annotationen setzt `task push` via `oras push --annotation`.
+      Packs sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml into a
+      single-layer tarball for ArgoCD native-OCI distribution (ADR-0009 §OCI-Artefakt-Form).
+      No Helm-chart wrapper. The tarball is a trivial Kustomize base — kustomization.yaml
+      (resources: [manifest.yaml]) + manifest.yaml — so the artifact resolves as
+      sourceType=Kustomize and a consumer can overlay per-cluster fields via
+      source.kustomize.patches (consumer source.path '.', identical render, no patches by
+      default). The OCI-manifest annotations are set by `task push` via `oras push --annotation`.
 
       Output: sub-layers/<sub-layer>/components/<component>/rendered/<component>-<tag>.tar.gz
     cmd: |
@@ -2378,13 +2380,22 @@ tasks:
       # argo-cd.readthedocs.io/en/stable/user-guide/oci/
       out="${root}/rendered/${component}-${chart_version}.tar.gz"
       rm -f "$out"
-      # Portabler tar (GNU + bsdtar): nur die Manifest-Datei im Tarball-Root.
-      # Invariante: `task render:one` konkateniert ALLE Helm-Charts + Raw-Manifeste
-      # der Komponente in diese eine manifest.yaml — sie IST der vollständige
-      # Artefakt-Inhalt. Bräuchte eine Komponente je eine zweite Datei im
-      # Artefakt-Root (source.path '.'), müssten render:one UND dieser tar-Aufruf
-      # mitgezogen werden — heute trägt jedes Artefakt genau eine Datei.
-      tar -czf "$out" -C "${root}/rendered" manifest.yaml
+      # Kustomize base: alongside manifest.yaml the tarball carries a trivial
+      # kustomization.yaml (resources: [manifest.yaml]) so the artifact resolves as
+      # sourceType=Kustomize. This lets a consumer overlay per-cluster fields via
+      # source.kustomize.patches without a catalog PR (ADR-0024 calibrated-friction).
+      # The base imposes no restriction of its own — a patch could technically touch
+      # any field, including the image; the boundaries (image-digest pinning, no
+      # hostPath / cluster-admin bindings) are enforced downstream by consumer-side
+      # controls (cosign verifyImages, ADR-0018 Kyverno safe-defaults), not by this
+      # format. A plain-manifest tarball would be sourceType=Directory with no patch
+      # surface. `task render:one` still concatenates ALL Helm charts + raw manifests
+      # into the one manifest.yaml — kustomization.yaml only references it (identical render).
+      kust="${root}/rendered/kustomization.yaml"
+      printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - manifest.yaml\n' > "$kust"
+      # Portable tar (GNU + bsdtar): kustomization.yaml + manifest.yaml at the tarball root.
+      tar -czf "$out" -C "${root}/rendered" kustomization.yaml manifest.yaml
+      rm -f "$kust"
       echo "✓ Packaged: ${out}"
 
   push:
