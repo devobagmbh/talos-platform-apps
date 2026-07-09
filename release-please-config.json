@@ -163,6 +163,10 @@
       "component": "security/capsule-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/security/components/capsule": {
+      "component": "security/capsule",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/storage-block/components/democratic-csi": {
       "component": "storage-block/democratic-csi"
     },

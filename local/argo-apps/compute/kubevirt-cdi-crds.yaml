@@ -19,11 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/compute
-    chart: kubevirt-cdi-crds
+    repoURL: oci://${REGISTRY}/compute/kubevirt-cdi-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: kubevirt-cdi-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # cdis.cdi.kubevirt.io is cluster-scoped; the destination namespace is nominal.

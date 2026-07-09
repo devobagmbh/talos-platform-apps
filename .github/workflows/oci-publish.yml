@@ -124,7 +124,7 @@ jobs:
           # 2) version: a strict vMAJOR.MINOR.PATCH[-prerelease] SemVer. The accepted
           #    set is a SUBSET of the OCI tag grammar — build metadata ("+...") is
           #    rejected because "+" is illegal in an OCI tag, so a version that passes
-          #    here cannot fail mid-publish at helm push / cosign sign. This also
+          #    here cannot fail mid-publish at oras push / cosign sign. This also
           #    rejects an empty/garbage version (e.g. a trailing-"-v" tag → "v") and
           #    any shell metacharacter.
           if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -140,12 +140,12 @@ jobs:
         # sign; the catalog-wide release-coverage gates run at the PR gate, not per-publish (#318).
         run: devbox run -- task ci:artifact
 
-      - name: helm + cosign gegen GHCR authentifizieren
+      - name: oras + cosign gegen GHCR authentifizieren
         run: |
-          # helm schreibt in ~/.config/helm/registry, cosign liest
-          # ~/.docker/config.json — beide Logins nötig, sonst scheitert
-          # cosign sign mit "UNAUTHORIZED" beim Pull-Scope des Artefakts.
-          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- helm registry login ghcr.io \
+          # oras (push) und cosign (sign) lesen/schreiben ~/.docker/config.json —
+          # beide Logins nötig, sonst scheitert der oras-push bzw. cosign sign mit
+          # "UNAUTHORIZED" beim Pull-Scope des Artefakts.
+          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- oras login ghcr.io \
             --username "${{ github.actor }}" \
             --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- cosign login ghcr.io \

@@ -241,8 +241,8 @@ tasks:
         id="$sl/$comp"
         rd="$comp_dir/rendered"
         # CRD count over the rendered MANIFEST ONLY (rendered/manifest.yaml), never the whole
-        # rendered/ tree: `task package` also writes rendered/chart/templates/manifest.yaml, so a
-        # recursive count would double-count a packaged component (lint:rendered restricts to
+        # rendered/ tree: `task package` also writes rendered/<component>-<tag>.tar.gz (a binary
+        # tarball a recursive yq/kubeconform walk would choke on; lint:rendered restricts to
         # manifest.yaml for the same reason). awk always exits 0 -> safe under `set -e`; a missing
         # manifest yields 0, but the per-arm `[ -f "$manifest" ]` guard is the authoritative
         # "was it rendered?" check.
@@ -2350,13 +2350,15 @@ tasks:
   # --- Publish-Targets ---
 
   package:
-    desc: 'baut Helm-Chart-Wrapper: task package -- <sub-layer>/<component> <tag>'
+    desc: 'packt gerendertes Manifest als OCI-Layer-Tarball: task package -- <sub-layer>/<component> <tag>'
     summary: |
-      Verpackt sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
-      in einen Helm-Chart-Wrapper (Chart.yaml + templates/manifest.yaml).
-      Chart-Name = Komponente. Tag wird zur Chart-Version.
+      Packt sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
+      in einen Single-Layer-Tarball für die ArgoCD-native-OCI-Distribution
+      (ADR-0009 §OCI-Artefakt-Form). KEIN Helm-Chart-Wrapper mehr — das
+      gerenderte Manifest IST der Artefakt-Inhalt (Konsument: source.path '.').
+      Die OCI-Manifest-Annotationen setzt `task push` via `oras push --annotation`.
 
-      Output: sub-layers/<sub-layer>/components/<component>/rendered/<component>-<tag>.tgz
+      Output: sub-layers/<sub-layer>/components/<component>/rendered/<component>-<tag>.tar.gz
     cmd: |
       set -- {{.CLI_ARGS}}
       component_id="${1:?usage: task package -- <sub-layer>/<component> <tag>}"
@@ -2369,73 +2371,35 @@ tasks:
       manifest="${root}/rendered/manifest.yaml"
       test -s "$manifest" || { echo "ERROR: $manifest fehlt — vorher task render:one -- ${component_id}"; exit 1; }
 
-      wrapper="${root}/rendered/chart"
-      rm -rf "$wrapper"
-      mkdir -p "$wrapper/templates"
-
-      # OCI-Annotationen (ArgoCD UI + Supply-Chain-Provenance).
-      # ArgoCD liest die org.opencontainers.image.*-Keys vom OCI-Manifest und
-      # zeigt sie in der UI; `helm push` propagiert Chart.yaml-annotations als
-      # OCI-Manifest-annotations. Doku: argo-cd.readthedocs.io/en/stable/user-guide/oci/
-      # revision + created sind dynamisch (Build-Zeit), der Rest ist deterministisch.
-      repo_url="https://github.com/devobagmbh/talos-platform-apps"
-      revision=$(git rev-parse HEAD 2>/dev/null || echo unknown)
-      created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-      source_url="${repo_url}"
-      component_url="${repo_url}/tree/main/sub-layers/${sub_layer}/components/${component}"
-
-      # appVersion = the real running-app version (A4/A5, apps#226): prefer the declared
-      # version.app (sot=app) from compatibility.yaml; fall back to the packaging tag for
-      # components not yet migrated to the typed `version` block (backward-compatible).
-      compat="${root}/compatibility.yaml"
-      app_version=""
-      if [ -f "$compat" ]; then
-        app_version=$(yq -r '[.provides[].version | select(.sot == "app") | .app] | .[0] // ""' "$compat" 2>/dev/null)
-      fi
-      app_version="${app_version:-$chart_version}"
-
-      cat > "$wrapper/Chart.yaml" <<EOF
-      apiVersion: v2
-      name: ${component}
-      description: Pre-rendered Devoba-Platform-Komponente ${component_id}
-      type: application
-      version: ${chart_version}
-      appVersion: "${app_version}"
-      home: ${component_url}
-      sources:
-        - ${source_url}
-      annotations:
-        # OCI-Standard (ArgoCD-UI-Metadaten — argo-cd.readthedocs.io/en/stable/user-guide/oci/)
-        org.opencontainers.image.title: "${component_id}"
-        org.opencontainers.image.description: "Pre-rendered Devoba-Platform-Komponente ${component_id}"
-        org.opencontainers.image.version: "${chart_version}"
-        org.opencontainers.image.revision: "${revision}"
-        org.opencontainers.image.source: "${source_url}"
-        org.opencontainers.image.url: "${component_url}"
-        org.opencontainers.image.created: "${created}"
-        org.opencontainers.image.authors: "Devoba Platform Maintainers"
-        # Devoba-Plattform-spezifisch (Katalog-Navigation, Pre-Render-Marker)
-        platform.devoba.de/sub-layer: ${sub_layer}
-        platform.devoba.de/component: ${component}
-        platform.devoba.de/pre-rendered: "true"
-      EOF
-
-      cp "$manifest" "$wrapper/templates/manifest.yaml"
-
-      helm package "$wrapper" --destination "${root}/rendered/"
-      echo "✓ Packaged: ${root}/rendered/${component}-${chart_version}.tgz (rev ${revision:0:8}, ${created})"
+      # ArgoCD-native-OCI erwartet EIN OCI-Artefakt mit genau einem Layer, dessen
+      # Inhalt (tar.gz) die Manifeste im Root trägt — der Konsument referenziert es
+      # mit source.path: '.'. Der Layer-Media-Type + die org.opencontainers.image.*-
+      # Annotationen werden beim `task push` gesetzt (oras). Doku:
+      # argo-cd.readthedocs.io/en/stable/user-guide/oci/
+      out="${root}/rendered/${component}-${chart_version}.tar.gz"
+      rm -f "$out"
+      # Portabler tar (GNU + bsdtar): nur die Manifest-Datei im Tarball-Root.
+      # Invariante: `task render:one` konkateniert ALLE Helm-Charts + Raw-Manifeste
+      # der Komponente in diese eine manifest.yaml — sie IST der vollständige
+      # Artefakt-Inhalt. Bräuchte eine Komponente je eine zweite Datei im
+      # Artefakt-Root (source.path '.'), müssten render:one UND dieser tar-Aufruf
+      # mitgezogen werden — heute trägt jedes Artefakt genau eine Datei.
+      tar -czf "$out" -C "${root}/rendered" manifest.yaml
+      echo "✓ Packaged: ${out}"
 
   push:
-    desc: 'helm push einer Komponente: task push -- <sub-layer>/<component> <tag>'
+    desc: 'oras push einer Komponente: task push -- <sub-layer>/<component> <tag>'
     summary: |
-      Pusht das via "task package" gebaute Helm-Chart als OCI-Artefakt nach
-      OCI_REGISTRY/<sub-layer>/<component>:<tag>.
+      Pusht den via "task package" gebauten Manifest-Tarball als generisches
+      OCI-Artefakt (ArgoCD-native-OCI, ADR-0009 §OCI-Artefakt-Form) nach
+      OCI_REGISTRY/<sub-layer>/<component>:<tag> — Single-Layer, Media-Type
+      application/vnd.oci.image.layer.v1.tar+gzip. KEIN Helm-Chart mehr.
 
       Default OCI_REGISTRY: ghcr.io/devobagmbh/talos-platform-apps
 
       Voraussetzungen:
         - rendered + packaged
-        - helm registry login OCI_REGISTRY
+        - oras login OCI_REGISTRY
 
       Beispiel: task push -- lifecycle/crossplane v0.1.0
     vars:
@@ -2448,18 +2412,54 @@ tasks:
       component="${component_id#*/}"
       chart_version="${tag#v}"
 
-      pkg="sub-layers/${sub_layer}/components/${component}/rendered/${component}-${chart_version}.tgz"
+      root="sub-layers/${sub_layer}/components/${component}"
+      pkg="${root}/rendered/${component}-${chart_version}.tar.gz"
       test -s "$pkg" || { echo "ERROR: $pkg fehlt — vorher task package -- ${component_id} $tag"; exit 1; }
 
-      target="oci://{{.OCI_REGISTRY}}/${sub_layer}"
-      echo "Pushing $pkg → ${target}/${component}"
-      helm push "$pkg" "$target"
-      echo "✓ Pushed: ${target}/${component}:${chart_version}"
+      # OCI-Manifest-Annotationen (ArgoCD-UI + Supply-Chain-Provenance). ArgoCD liest
+      # die org.opencontainers.image.*-Keys vom OCI-Manifest; oras setzt sie via
+      # --annotation. revision + created sind Build-Zeit-dynamisch, der Rest deterministisch.
+      repo_url="https://github.com/devobagmbh/talos-platform-apps"
+      revision=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+      created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      component_url="${repo_url}/tree/main/sub-layers/${sub_layer}/components/${component}"
+
+      # app_version = reale Workload-Version (sot=app) aus compatibility.yaml, sonst Tag.
+      compat="${root}/compatibility.yaml"
+      app_version=""
+      if [ -f "$compat" ]; then
+        app_version=$(yq -r '[.provides[].version | select(.sot == "app") | .app] | .[0] // ""' "$compat" 2>/dev/null)
+      fi
+      app_version="${app_version:-$chart_version}"
+
+      ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${chart_version}"
+      pkg_file="${component}-${chart_version}.tar.gz"
+      echo "Pushing ${pkg} → oci://${ref}"
+      # Aus rendered/ pushen (relativer Dateiname): oras lehnt absolute Pfade ab und
+      # setzt den übergebenen Pfad als Layer-Title — so bleibt es der reine Dateiname.
+      # --plain-http=false erzwingt HTTPS: oras nutzt für localhost-Refs sonst per
+      # Default plain-HTTP und trifft die lokale mkcert-TLS-Registry (HTTPS) mit einem
+      # HTTP-Request → 400. Für ghcr.io (kein localhost) ist der Flag ein No-op.
+      ( cd "${root}/rendered" && oras push --plain-http=false "$ref" \
+        --annotation "org.opencontainers.image.title=${component_id}" \
+        --annotation "org.opencontainers.image.description=Pre-rendered Devoba-Platform-Komponente ${component_id}" \
+        --annotation "org.opencontainers.image.version=${chart_version}" \
+        --annotation "org.opencontainers.image.revision=${revision}" \
+        --annotation "org.opencontainers.image.source=${repo_url}" \
+        --annotation "org.opencontainers.image.url=${component_url}" \
+        --annotation "org.opencontainers.image.created=${created}" \
+        --annotation "org.opencontainers.image.authors=Devoba Platform Maintainers" \
+        --annotation "platform.devoba.de/sub-layer=${sub_layer}" \
+        --annotation "platform.devoba.de/component=${component}" \
+        --annotation "platform.devoba.de/pre-rendered=true" \
+        --annotation "platform.devoba.de/app-version=${app_version}" \
+        "${pkg_file}:application/vnd.oci.image.layer.v1.tar+gzip" )
+      echo "✓ Pushed: oci://${ref}"
 
   sign:
     desc: 'cosign sign keyless: task sign -- <sub-layer>/<component> <tag>'
     summary: |
-      Signiert das Helm-OCI-Artefakt via cosign keyless.
+      Signiert das native OCI-Artefakt via cosign keyless.
       Lokal-Setup (localhost/kind-registry) überspringt cosign.
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
@@ -3091,7 +3091,7 @@ tasks:
     #   1. cert-manager-NS als TLS-Secret → ClusterIssuer für *.localhost.direct
     #   2. argocd-NS als ConfigMap → initContainer mountet die CA und appended sie
     #      an /etc/ssl/certs/ca-certificates.crt im argocd-repo-server-Pod,
-    #      damit Helm-OCI-Pulls gegen kind-registry-TLS validieren.
+    #      damit die nativen OCI-Pulls gegen kind-registry-TLS validieren.
     # Material kommt direkt aus $(mkcert -CAROOT) (kein lokales Zwischen-File,
     # vermeidet Permission-Issues beim zweiten Lauf — mkcert speichert mit 0600).
     cmd: |

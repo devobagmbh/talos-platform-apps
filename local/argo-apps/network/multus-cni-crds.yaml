@@ -19,11 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/network
-    chart: multus-cni-crds
+    repoURL: oci://${REGISTRY}/network/multus-cni-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: multus-cni-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # The NetworkAttachmentDefinition CRD is cluster-scoped; the destination

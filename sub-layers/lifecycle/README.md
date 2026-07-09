@@ -2,7 +2,7 @@
 
 Crossplane + providers + iPXE server for stage-1 child-cluster provisioning.
 
-The sub-layer is an organizational grouping; **OCI distribution is per component** (ADR-0009). Each component has its own Helm-chart-wrapper OCI artifact, its own Argo Application, and its own lifecycle.
+The sub-layer is an organizational grouping; **OCI distribution is per component** (ADR-0009). Each component has its own native OCI artifact (pre-rendered manifests, single-layer), its own Argo Application, and its own lifecycle.
 
 ## Components
 
