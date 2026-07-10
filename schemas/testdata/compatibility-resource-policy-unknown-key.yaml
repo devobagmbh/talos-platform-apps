@@ -1,0 +1,13 @@
+---
+# Negative fixture: an unknown key under resource_policy should fail
+# additionalProperties:false on the resource_policy object.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: test
+      containers: [test]
+  bogus: true   # unknown key — fails additionalProperties:false
