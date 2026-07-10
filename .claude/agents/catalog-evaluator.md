@@ -118,7 +118,9 @@ Only after Tier 1 is green (or with the green/red state recorded), judge:
   `Namespace` / inline stub passed off as the component. An all-empty contract
   (`required.*: []`, `provided_*: {}`) makes the freeze-line check *vacuously*
   true and renders+lints clean — verify the emptiness genuinely reflects a
-  cluster-agnostic component, not a hollow pass.
+  cluster-agnostic component, not a hollow pass (consumer overlay-freedom under ADR-0024
+  does NOT license an empty contract — config the workload consumes must still be modeled
+  as shapes).
 - **Namespace ownership & PSA posture** — every `Namespace` object the component
   declares (`manifests/*.yaml`) carries a valid `pod-security.kubernetes.io/enforce`
   label. **Do NOT certify level-vs-workload admissibility by walking a controls

@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/databases
-    chart: valkey-operator
+    repoURL: oci://${REGISTRY}/databases/valkey-operator
     targetRevision: ${TAG}
-    helm:
-      releaseName: valkey-operator
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: valkey-operator-system

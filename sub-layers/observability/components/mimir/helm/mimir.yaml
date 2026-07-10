@@ -1,7 +1,7 @@
 # mimir — Grafana Mimir, the platform metrics store + PromQL query endpoint.
 # Layer-2 default values for talos-platform-apps. Deployed in the classic
 # microservices architecture (mimir-distributed chart 5.x), every core component
-# at replicas 1, backed by S3 (Garage) for blocks + ruler.
+# at replicas 1, backed by an S3-compatible object store for blocks + ruler.
 # Orchestrator decision: consumers are small single-node clusters, so 1 replica per
 # microservice is the right footprint — these microservices are inherent to
 # mimir-distributed (do NOT force a non-chart-native monolith).
@@ -62,7 +62,7 @@ values:
   # Mimir runtime configuration. structuredConfig merges into the chart's mimir.config
   # and renders into the mimir config ConfigMap (templates/mimir-config.yaml). The S3
   # connection values are ${VAR} placeholders, NOT real endpoints/keys: the freeze-line
-  # keeps the S3 connection 100% consumer-owned. Garage specifics: path-style addressing
+  # keeps the S3 connection 100% consumer-owned. Self-hosted / path-style S3 specifics: path-style addressing
   # forced via bucket_lookup_type: path (baked), TLS mode consumer-owned via
   # ${S3_INSECURE} (default TLS-on), region as ${VAR}.
   mimir:
@@ -75,12 +75,12 @@ values:
             region: ${S3_REGION}
             access_key_id: ${S3_ACCESS_KEY_ID}
             secret_access_key: ${S3_SECRET_ACCESS_KEY}
-            # Garage requires path-style addressing. bucket_lookup_type defaults to
+            # Path-style addressing (the self-hosted S3 standard). bucket_lookup_type defaults to
             # `auto` (already path-style for a non-AWS endpoint), but force `path`
             # explicitly so it cannot silently flip to virtual-hosted.
             bucket_lookup_type: path
             # S3 endpoint TLS mode, consumer-owned: "false"=TLS/HTTPS (default),
-            # "true"=plain HTTP (TLS-less Garage). Resolved at runtime by -config.expand-env=true.
+            # "true"=plain HTTP (a TLS-less S3 endpoint). Resolved at runtime by -config.expand-env=true.
             insecure: ${S3_INSECURE}
       blocks_storage:
         s3:
@@ -205,7 +205,7 @@ values:
         memory: 256Mi
 
   # Disabled — not needed for the small single-node footprint:
-  # the bundled minio (we use external Garage S3),
+  # the bundled minio (we use an external S3-compatible store),
   minio:
     enabled: false
   # the nginx/gateway front-end (a consumer fronts Mimir via its own gateway),

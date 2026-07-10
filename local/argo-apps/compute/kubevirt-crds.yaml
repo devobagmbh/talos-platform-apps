@@ -19,11 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/compute
-    chart: kubevirt-crds
+    repoURL: oci://${REGISTRY}/compute/kubevirt-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: kubevirt-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # kubevirts.kubevirt.io is cluster-scoped; the destination namespace is

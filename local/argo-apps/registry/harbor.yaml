@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/registry
-    chart: harbor
+    repoURL: oci://${REGISTRY}/registry/harbor
     targetRevision: ${TAG}
-    helm:
-      releaseName: harbor
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: harbor

@@ -20,11 +20,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/compute
-    chart: node-feature-discovery
+    repoURL: oci://${REGISTRY}/compute/node-feature-discovery
     targetRevision: ${TAG}
-    helm:
-      releaseName: node-feature-discovery
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # The workload artifact ships its own node-feature-discovery Namespace object

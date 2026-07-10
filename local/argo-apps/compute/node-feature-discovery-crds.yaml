@@ -20,11 +20,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/compute
-    chart: node-feature-discovery-crds
+    repoURL: oci://${REGISTRY}/compute/node-feature-discovery-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: node-feature-discovery-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # CRD objects are cluster-scoped; the destination namespace is nominal. The
