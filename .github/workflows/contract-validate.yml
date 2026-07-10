@@ -21,6 +21,8 @@ name: contract-validate
 on:
   pull_request:
     branches: [main]
+  # merge_group: required check — must report on the queue's projected merge tree.
+  merge_group:
 
 permissions:
   contents: read
