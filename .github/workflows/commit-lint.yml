@@ -21,6 +21,12 @@ on:
     branches: [main]
     # edited → re-validate when the PR title changes; synchronize → when commits change scope.
     types: [opened, synchronize, reopened, edited]
+  # merge_group: this job becomes a required check via #463, so it MUST report on the
+  # queue's merge_group head or the PR deadlocks. A merge_group event carries no PR object
+  # (hence no PR title), and GitHub's merge queue cannot re-validate PR metadata — so the
+  # title/scope check (enforced at PR time) is a deliberate pass-through (same job name).
+  # Accepted residual: a title edit made WHILE a PR sits in the queue is not re-checked.
+  merge_group:
 
 permissions:
   contents: read
@@ -31,7 +37,10 @@ permissions:
 # squash subject, squash_merge_commit_title=PR_TITLE) is non-Conventional. cancel-in-progress
 # makes the newest title/scope the authoritative check.
 concurrency:
-  group: commit-lint-${{ github.event.pull_request.number }}
+  # Fall back to run_id on merge_group (no PR number) so a queue run gets its own group
+  # instead of collapsing into a constant `commit-lint-` group that cancel-in-progress
+  # would thrash (matching pr-needs-review.yml).
+  group: commit-lint-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -39,18 +48,25 @@ jobs:
     name: commit-lint
     runs-on: ubuntu-latest
     steps:
+      - name: merge_group short-circuit (PR title/scope enforced at PR time)
+        if: github.event_name == 'merge_group'
+        run: 'echo "merge_group: PR title/scope is immutable post-approval — enforced at PR time."'
+
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        if: github.event_name == 'pull_request'
         with:
           # fetch-depth: 0 so the three-dot (merge-base) scope diff can reach both the PR
           # base and head commits; a shallow clone would not have the merge-base.
           fetch-depth: 0
 
       - name: Devbox setup
+        if: github.event_name == 'pull_request'
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
         with:
           enable-cache: true
 
       - name: Conventional PR title + single-component scope
+        if: github.event_name == 'pull_request'
         # Both inputs via env: (value assignment, never a run-script splice) so the untrusted
         # PR title cannot inject. base.sha/head.sha are GitHub-controlled hex SHAs; lint:pr
         # validates them with `git rev-parse --verify` and fails closed if unresolvable.

@@ -16,6 +16,10 @@ name: oci-publish
 on:
   pull_request:
     branches: [main]
+  # merge_group: the merge queue runs the required `ci` check against the projected
+  # merge result (a `refs/heads/gh-readonly-queue/…` ref). The `publish` job below
+  # stays tag-gated, so a merge_group event runs `ci` only — never publish/sign.
+  merge_group:
   push:
     tags:
       # One pattern per sub-layer (AGENTS.md taxonomy). The capability-driven
@@ -43,7 +47,8 @@ jobs:
   # PR-Trigger: nur Lint + Render + Conftest. Kein Push, kein Sign.
   # --------------------------------------------------------------------
   ci:
-    if: github.event_name == 'pull_request'
+    # Runs on PRs AND on merge_group (the queue re-validates the projected merge tree).
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     # PR CI may cancel a superseded run on the same PR ref (resource hygiene).
     concurrency:
