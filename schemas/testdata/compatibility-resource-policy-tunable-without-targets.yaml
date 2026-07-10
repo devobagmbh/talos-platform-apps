@@ -1,0 +1,10 @@
+---
+# Negative fixture: class:tunable with no tunable_targets advertises tunability
+# but exposes nothing (the silent-no-op class). Should fail the tunable-requires-
+# targets branch.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable

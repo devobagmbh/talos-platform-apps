@@ -1,0 +1,13 @@
+---
+# Negative fixture: an unknown key INSIDE a tunable_targets item should fail
+# additionalProperties:false on the item level (AC2, nested level).
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: test
+      containers: [test]
+      policy: strict   # unknown key — fails additionalProperties:false on the item

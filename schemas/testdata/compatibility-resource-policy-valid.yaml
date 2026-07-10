@@ -1,0 +1,13 @@
+---
+# Positive fixture: a valid resource_policy (class:tunable + a non-empty strict
+# allowlist). MUST pass validation — asserted by task validate:compatibility.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: test-distributor
+      containers: [distributor]
+      reason: stateless, load-driven — consumer right-sizes per ingest volume
