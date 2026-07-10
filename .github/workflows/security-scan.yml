@@ -19,6 +19,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # merge_group: only the required `gitleaks (secret-scan)` job runs here (it reports on
+  # the queue's projected merge tree). The non-required `trivy`/`conftest` jobs are guarded
+  # off merge_group — they already ran on the PR and re-rendering the whole catalog per
+  # queue entry is wasted work.
+  merge_group:
   schedule:
     - cron: "0 4 * * 1"  # Montags 04:00 UTC
 
@@ -53,11 +58,14 @@ jobs:
         # before..after, schedule → unset → full all-refs sweep. `task scan:secrets`
         # validates the range and falls back to a full scan if it does not resolve.
         env:
-          GITLEAKS_SCAN_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || github.event_name == 'push' && format('{0}..{1}', github.event.before, github.sha) || '' }}
+          GITLEAKS_SCAN_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || github.event_name == 'push' && format('{0}..{1}', github.event.before, github.sha) || github.event_name == 'merge_group' && format('{0}..{1}', github.event.merge_group.base_sha, github.event.merge_group.head_sha) || '' }}
         run: devbox run -- task scan:secrets
 
   trivy:
     name: trivy
+    # Not a required check — skip on merge_group (already ran on the PR; avoids re-rendering
+    # the whole catalog per queue entry).
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,6 +98,9 @@ jobs:
 
   conftest:
     name: conftest (Rego-Policies)
+    # Not a required check — skip on merge_group (already ran on the PR; conftest is also
+    # part of `task ci`, which the required `ci` job re-runs in the queue).
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
