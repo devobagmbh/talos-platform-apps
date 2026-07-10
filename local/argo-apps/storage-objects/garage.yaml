@@ -22,11 +22,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/storage-objects
-    chart: garage
+    repoURL: oci://${REGISTRY}/storage-objects/garage
     targetRevision: ${TAG}
-    helm:
-      releaseName: garage
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: garage

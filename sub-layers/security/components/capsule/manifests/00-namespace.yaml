@@ -1,0 +1,29 @@
+# The capsule-system namespace. The capsule operator workload is the sole catalog
+# occupant of this namespace (dedicated namespace), so this workload artifact ships
+# the Namespace object — a shipped manifest takes precedence over Argo
+# `managedNamespaceMetadata`, making the PSA posture authoritative and self-contained
+# (build skill CONVENTIONS § Namespace & PSA). The strict-B CRD half
+# (security/capsule-crds) ships NO Namespace; this workload is the sole claimant.
+#
+# enforce: restricted — the Capsule controller-manager pod is fully hardened:
+# runAsNonRoot: true, seccompProfile: RuntimeDefault, allowPrivilegeEscalation: false,
+# capabilities.drop: [ALL]. No hostNetwork, no privileged containers, no hostPath
+# volumes. The rendered securityContext satisfies every `restricted` PSS control
+# (derived from chart 0.13.7 values podSecurityContext.enabled: true +
+# securityContext.enabled: true — the chart defaults, pinned explicitly in
+# helm/capsule.yaml to prevent a silent future flip). `restricted` is the strictest
+# level the workload provably satisfies and must not be relaxed without re-deriving
+# from the rendered securityContext.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capsule-system
+  labels:
+    app.kubernetes.io/name: capsule
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

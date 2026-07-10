@@ -1,5 +1,7 @@
-# Sub-Layer-Aggregate (Komponenten haben eigene compatibility.yaml).
+# Sub-layer aggregate (each component carries its own compatibility.yaml).
 components:
   - velero-crds  # sync-wave -1 (strict-B CRDs, ADR-0028)
-  - velero       # sync-wave 0
+  - actions-runner-controller-crds  # sync-wave -1 (strict-B CRDs, ADR-0028)
+  - velero  # sync-wave 0
+  - actions-runner-controller  # sync-wave 0 (ARC workload; CRDs half at sync-wave -1)
 # renovate removed (2026-06-10): dependency automation = GitHub Dependabot (native), not a catalog component.

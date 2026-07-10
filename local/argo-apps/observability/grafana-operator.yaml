@@ -20,11 +20,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/observability
-    chart: grafana-operator
+    repoURL: oci://${REGISTRY}/observability/grafana-operator
     targetRevision: ${TAG}
-    helm:
-      releaseName: grafana-operator
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

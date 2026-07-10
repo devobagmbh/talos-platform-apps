@@ -2,8 +2,9 @@
 
 Cluster identity: the OIDC broker that every app with a login authenticates
 against. The sub-layer is an organizational bracket; **OCI distribution is per
-component** (ADR-0009). Each component has its own Helm-wrapper OCI artifact, its
-own Argo `Application`, and an independent lifecycle.
+component** (ADR-0009). Each component has its own native OCI artifact
+(pre-rendered manifests, single-layer), its own Argo `Application`, and an
+independent lifecycle.
 
 ## Components
 

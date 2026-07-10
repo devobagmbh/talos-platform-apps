@@ -20,11 +20,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/compute
-    chart: kubevirt-cdi
+    repoURL: oci://${REGISTRY}/compute/kubevirt-cdi
     targetRevision: ${TAG}
-    helm:
-      releaseName: kubevirt-cdi
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # The workload artifact ships its own cdi Namespace object (PSA enforce:

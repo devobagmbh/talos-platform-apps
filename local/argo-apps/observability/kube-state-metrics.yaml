@@ -21,11 +21,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/observability
-    chart: kube-state-metrics
+    repoURL: oci://${REGISTRY}/observability/kube-state-metrics
     targetRevision: ${TAG}
-    helm:
-      releaseName: kube-state-metrics
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-state-metrics

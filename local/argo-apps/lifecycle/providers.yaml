@@ -14,11 +14,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/lifecycle
-    chart: providers
+    repoURL: oci://${REGISTRY}/lifecycle/providers
     targetRevision: ${TAG}
-    helm:
-      releaseName: providers
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: crossplane-system

@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/storage-block
-    chart: synology-csi
+    repoURL: oci://${REGISTRY}/storage-block/synology-csi
     targetRevision: ${TAG}
-    helm:
-      releaseName: synology-csi
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: synology-csi

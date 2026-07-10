@@ -20,11 +20,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/compute
-    chart: kubevirt
+    repoURL: oci://${REGISTRY}/compute/kubevirt
     targetRevision: ${TAG}
-    helm:
-      releaseName: kubevirt
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # The workload artifact ships its own kubevirt Namespace object (PSA

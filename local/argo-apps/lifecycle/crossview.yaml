@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/lifecycle
-    chart: crossview
+    repoURL: oci://${REGISTRY}/lifecycle/crossview
     targetRevision: ${TAG}
-    helm:
-      releaseName: crossview
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: crossview

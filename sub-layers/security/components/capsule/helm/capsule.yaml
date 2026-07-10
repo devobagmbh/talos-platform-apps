@@ -1,0 +1,62 @@
+# Capsule operator workload — strict-B WORKLOAD artifact (ADR-0028).
+# Ships the Capsule controller-manager Deployment, operator RBAC (ServiceAccount,
+# ClusterRole/ClusterRoleBinding), Service, admission webhook configurations
+# (ValidatingWebhookConfiguration, MutatingWebhookConfiguration), and the dedicated
+# capsule-system namespace. Carries ZERO CRDs — the 11 capsule.clastix.io CRDs ship
+# in the separate strict-B CRD half `security/capsule-crds` (sync-wave -1).
+#
+# crds.install: false — suppresses all CRD rendering so the workload renders 0
+# kind: CustomResourceDefinition resources. The strict-B gate asserts this count == 0.
+# podSecurityContext.enabled: true + securityContext.enabled: true — chart 0.13.7
+# defaults, pinned explicitly to prevent a silent future flip. Together they produce
+# the restricted-grade securityContext: runAsNonRoot, seccompProfile RuntimeDefault,
+# allowPrivilegeEscalation: false, capabilities.drop: [ALL].
+#
+# metadata.namespace: capsule-system is load-bearing — render:one passes it as
+# --namespace; without it the workload renders into `default`, a PSA mismatch.
+
+metadata:
+  chart: capsule
+  repo: https://projectcapsule.github.io/charts
+  version: 0.13.7
+  namespace: capsule-system
+
+values:
+  crds:
+    # Suppress all CRD rendering — the 11 capsule.clastix.io CRDs ship in the
+    # strict-B CRD half security/capsule-crds (sync-wave -1). The strict-B gate
+    # asserts kind: CustomResourceDefinition count == 0 in this artifact.
+    install: false
+
+  # Harden the controller-manager pod. Pinned explicitly (chart 0.13.7 defaults)
+  # so a chart upgrade cannot silently disable these controls.
+  podSecurityContext:
+    enabled: true
+
+  securityContext:
+    enabled: true
+
+  # Resource budget for the Helm pre-delete Job (kubectl wrapper). Tiny one-shot
+  # job; matches the cnpg hook job precedent.
+  global:
+    jobs:
+      kubectl:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+  # Resource budget for the controller-manager Deployment (manager.resources in
+  # chart values). The controller is a pure-Go operator with modest steady-state
+  # resource usage. Sized to match the external-secrets / cnpg operator precedent
+  # (50m CPU request, no CPU limit to avoid throttle-induced reconcile latency
+  # spikes under admission burst).
+  manager:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 256Mi

@@ -1,0 +1,28 @@
+# LoadBalancer front for the NTP server. Exactly one port: 123/UDP, bound
+# directly (targetPort 123 — Strategy A direct bind, no high-port remap). The
+# LoadBalancer IP is NOT assigned here and this Service is NEVER patched/annotated
+# (ADR-0024 freeze-line): the consumer pins the address ADDITIVELY via its own
+# CiliumLoadBalancerIPPool, whose serviceSelector matches this Service by the
+# stable `platform.devoba.de/component: chrony` label below (declared in
+# customization.yaml `exposed_selectors`). Shipping the Service type and port
+# binding is catalog-owned; the address is consumer-owned (Cilium LB-IPAM is a
+# substrate concern, not a catalog value).
+apiVersion: v1
+kind: Service
+metadata:
+  name: chrony
+  namespace: chrony
+  labels:
+    app.kubernetes.io/name: chrony
+    app.kubernetes.io/component: ntp-server
+    platform.devoba.de/sub-layer: network
+    platform.devoba.de/component: chrony
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: chrony
+  ports:
+    - name: ntp
+      port: 123
+      targetPort: 123
+      protocol: UDP

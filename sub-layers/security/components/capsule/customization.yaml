@@ -1,0 +1,33 @@
+# Customization Contract v2 (ADR-0024). Strict-B WORKLOAD half (ADR-0028) for
+# Capsule. The workload (the capsule-system Namespace, the controller-manager
+# Deployment, operator RBAC, Service, and admission webhook configurations) is the
+# signed, pre-rendered artifact — catalog-owned, never consumer-patched.
+#
+# The freeze line is genuinely all-empty (NOT a hollow pass): the Capsule
+# controller-manager carries no cluster-specific URLs, credentials, node addresses,
+# or consumer config references — the rendered manifest is cluster-agnostic. The
+# operator reconciles Tenant CRs and applies admission guardrails purely from those
+# CRs; no ConfigMap or Secret is mounted by the controller-manager pod. The concrete
+# Tenant CRs and CapsuleConfiguration CRs are consumer-owned and live in the consumer
+# cluster repos — they are NOT freeze-line shapes (no secretKeyRef, envFrom, or
+# volumeMount referencing consumer data in the rendered workload). The operator does
+# not use a label selector against consumer CRs (it watches via its reconcile loop),
+# so provided_selectors: {} (same pattern as compute/kubevirt — an operator-loop
+# watcher, no label-selector shape). A controller-manager image-version override would
+# require a new component version, not a freeze-line shape.
+#
+# external_dependencies: the strict-B CRD half security/capsule-crds (sync-wave -1)
+# must be established before this workload (wave 0), as Tenant and the other
+# capsule.clastix.io CRDs must exist before the controller starts reconciling.
+freeze_line:
+  workload: rendered/manifest.yaml  # controller-manager workload + RBAC + webhooks — never consumer-patched
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0"
+external_dependencies:
+  - security/capsule-crds
