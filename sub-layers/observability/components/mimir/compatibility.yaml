@@ -1,6 +1,5 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 endpoint/API (StatefulSet, wave 0)
-  storage-objects/garage-buckets: ">=v0.1.0" # provisions the blocks + ruler buckets (wave 10)
+  s3-object: "*" # S3-compatible object store (capability; catalog/capability-index.yaml). Garage = active platform impl (ADR-0007)
 provides:
   - name: mimir
     version:

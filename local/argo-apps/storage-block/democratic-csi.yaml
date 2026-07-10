@@ -16,11 +16,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/storage-block
-    chart: democratic-csi
+    repoURL: oci://${REGISTRY}/storage-block/democratic-csi
     targetRevision: ${TAG}
-    helm:
-      releaseName: democratic-csi
+    path: .
   destination:
     server: https://kubernetes.default.svc
     namespace: democratic-csi

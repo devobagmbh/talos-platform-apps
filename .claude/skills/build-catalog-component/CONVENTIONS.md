@@ -3,8 +3,9 @@
 The single source of truth for what a finished catalog component looks like and
 how it is verified. Read by the builder (a brief points here) and by anyone
 running `/build-catalog-component`. Grounded in the live repo — verify against
-`schemas/customization.schema.json`, `Taskfile.yml`, and an existing component
-(`sub-layers/lifecycle/components/crossview/`) if anything here looks stale.
+`AGENTS.md`, `schemas/customization.schema.json`, and `Taskfile.yml` (the upstream
+contracts this spec composes) if anything here looks stale. A sibling component is
+a derived artifact and never arbitrates correctness (its own drift would propagate).
 
 ## Directory anatomy
 
@@ -31,7 +32,7 @@ Closed schema (`additionalProperties: false`) — all six top-level keys require
 
 ```yaml
 freeze_line:
-  workload: rendered/manifest.yaml      # signed, pre-rendered, never consumer-patched
+  workload: rendered/manifest.yaml      # signed, pre-rendered baseline; image digest hard-anchored, rest consumer-overlayable (sync_wave catalog-owned; ADR-0024)
 provided_refs:                          # names the workload expects; {} if cluster-agnostic
   env: <component>-runtime-config        # Shape (a) ConfigMap via envFrom        (optional)
   config: <component>-config             # Shape (b) whole config file, mounted   (optional)
@@ -46,9 +47,12 @@ sync_wave: "0"                          # string, regex ^-?[0-9]+$
 external_dependencies: []               # ["<sub-layer>/<component>", ...], regex ^[a-z0-9-]+/[a-z0-9-]+$
 ```
 
-The freeze-line splits ownership: **workload = catalog-owned** (pre-rendered +
-signed, never patched); **config = 100% consumer-owned** via the four shapes
-above. Every `required.*` entry MUST correspond to a real reference in the
+The freeze-line splits ownership: **workload = catalog-authored signed, hardened baseline**
+(pre-rendered; the image digest is the hard consumer-admission anchor, most other fields a
+consumer may overlay per-cluster without a catalog PR — except platform-set fields like
+sync_wave, and dangerous classes like hostPath/cluster-admin that the consumer-side ADR-0018
+safe-defaults discourage; ADR-0024 calibrated-friction); **config = 100% consumer-owned** via
+the four shapes above. Every `required.*` entry MUST correspond to a real reference in the
 rendered workload (a `secretKeyRef`/`envFrom`/`volumeMount`/selector) — declaring
 a secret_key the manifest never reads, or omitting one it does, is a freeze-line
 defect the evaluator catches.
@@ -256,12 +260,13 @@ check is gated on reachability, not skipped by default:
   `local/argo-apps/<sub-layer>/<component>.yaml` Argo Application template first
   (the #171 observability precedent), authored as part of the step.
 - **Unreachable** (no container runtime / cluster): record ArgoCD deployability
-  NOT-LOCALLY-VERIFIABLE and defer to GHA + the consumer repos. A skip is recorded
-  as NOT-LOCALLY-VERIFIABLE, never silently presented as a pass.
+  NOT-LOCALLY-VERIFIABLE and defer to the consumer cluster (GHA runs no ArgoCD).
+  A skip is recorded as NOT-LOCALLY-VERIFIABLE, never silently presented as a pass.
 
-These belong to the GHA pipeline and the consumer cluster repos. The verify step
-records them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is
-GHA + human PR review under branch protection — the local gate is triage.
+ArgoCD deployability is verified only on the consumer cluster; `task sign` / `task
+push` and offline chart-ref resolution are verified in GHA. The verify step records
+them as NOT-LOCALLY-VERIFIABLE, not as pass. Authoritative acceptance is GHA + human
+PR review under branch protection — the local gate is triage.
 
 ## Worktree-per-component & parallel sessions
 

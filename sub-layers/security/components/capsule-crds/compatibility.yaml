@@ -1,0 +1,40 @@
+# Strict-B CRDs artifact (ADR-0028) for Capsule. Ships ONLY the 11
+# capsule.clastix.io CustomResourceDefinitions rendered from the Capsule Helm
+# chart v0.13.7 with crds.inline=true + crds.exclusive=true. The CRD objects
+# depend on nothing in the catalog -> requires is empty. The workload counterpart
+# of this strict-B pair is `security/capsule` (sync-wave 0), which carries 0 CRDs.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair. The
+# build gate uses this marker to assert kind: CustomResourceDefinition count > 0
+# here (and == 0 in the workload artifact).
+crd-bearing: true
+
+requires: {}
+
+# api-surface-only, NO capability. The Capsule CRDs are the API surface
+# (schema/types), not a swappable operational capability. The multitenancy
+# capability is provided by the workload artifact `security/capsule` (the
+# capsule-controller-manager that reconciles Tenant CRs), not by the CRD
+# schemas. Carrying capabilities: [] here is the deliberate design (precedent:
+# compute/kubevirt-crds and observability/prometheus-operator-crds,
+# both api-surface-only with no capability), NOT a deferral -- so no `# TODO:` here.
+provides:
+  - name: capsule-crds
+    version:
+      sot: crd-schema
+      crd_schema: v0.13.7          # Capsule chart version the CRD schemas are rendered from
+    api_surface:
+      # All 11 CRDs shipped — group capsule.clastix.io, served version v1beta2
+      # (tenants.capsule.clastix.io additionally serves v1beta1 for migration)
+      - capsule.clastix.io/CapsuleConfiguration@v1beta2
+      - capsule.clastix.io/CustomQuota@v1beta2
+      - capsule.clastix.io/GlobalCustomQuota@v1beta2
+      - capsule.clastix.io/GlobalTenantResource@v1beta2
+      - capsule.clastix.io/QuantityLedger@v1beta2
+      - capsule.clastix.io/ResourcePoolClaim@v1beta2
+      - capsule.clastix.io/ResourcePool@v1beta2
+      - capsule.clastix.io/RuleStatus@v1beta2
+      - capsule.clastix.io/TenantOwner@v1beta2
+      - capsule.clastix.io/TenantResource@v1beta2
+      - capsule.clastix.io/Tenant@v1beta2      # also serves v1beta1 (migration)
+    capabilities: []

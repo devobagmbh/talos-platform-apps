@@ -1,0 +1,28 @@
+# Strict-B WORKLOAD artifact (ADR-0028) for Capsule. Ships the capsule
+# controller-manager workload (Deployment + RBAC + Service + admission webhook
+# configurations + the dedicated capsule-system namespace) and carries 0 CRDs
+# (the 11 capsule.clastix.io CRDs ship in the SEPARATE strict-B CRD artifact
+# `security/capsule-crds`, sync-wave -1). NO crd-bearing marker here
+# (that marks the -crds half only).
+#
+# requires the -crds artifact: the controller reconciles Tenant CRs, and Tenant is
+# an instance of the tenants.capsule.clastix.io CRD, so the CRD schemas must be
+# established first (strict-B ordering). Same pattern as
+# compute/kubevirt -> compute/kubevirt-crds.
+requires:
+  security/capsule-crds: ">=v0.1.0"
+
+# Provides the swappable capability `namespace-tenancy` — present in
+# catalog/capability-index.yaml with capsule as the active implementation at
+# swap_class rewrite-required (replacing the multi-tenancy operator means
+# rewriting every consumer Tenant CR against a different tool's schema, not a
+# drop-in). The CRD half is api-surface-only (no capability); the operational
+# capability lives HERE in the controller that reconciles Tenant CRs.
+provides:
+  - name: capsule
+    version:
+      sot: app       # capsule controller app-version — the running workload
+      app: v0.13.7   # Capsule release (chart capsule 0.13.7 appVersion 0.13.7)
+    api_surface: []  # the 11 CRDs ship in security/capsule-crds, not here
+    capabilities:
+      - {id: namespace-tenancy, swap_class: rewrite-required}

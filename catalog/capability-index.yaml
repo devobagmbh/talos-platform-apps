@@ -176,6 +176,19 @@ capabilities:
     # Satisfied by GitHub Dependabot (native, .github/dependabot.yml) — NOT a
     # self-hosted catalog component. renovate was removed (Robert, 2026-06-10).
     implementations: []
+  - id: ci-runner
+    name: Self-Hosted CI Runner (GitHub Actions)
+    domain: automation
+    status: proposed
+    instanced: true  # consumer deploys scale-sets (multiple runner sets per cluster), like s3-object/cnpg-postgres
+    # Network-isolated, ephemeral GitHub Actions self-hosted runners (issue #397).
+    # Contract (interface, provider/consumer semantics, swap_class) still to be
+    # defined — proposed, not guessed. Implemented by actions-runner-controller
+    # (ARC, gha-runner-scale-set model); the catalog ships the controller + CRDs
+    # (network isolation TBD by the component plan, #397 — mechanism unresolved); the
+    # consumer deploys scale-sets.
+    implementations:
+      - {name: gha-runner-scale-set-controller, status: active, swap_class: rewrite-required}  # ARC; contract open
   - id: bare-metal-boot
     name: Bare-Metal-Boot / PXE
     domain: lifecycle
@@ -250,6 +263,20 @@ capabilities:
     requires_hardware_features: [ebpf-capable-kernel]   # Layer C (base)
     implementations:
       - {name: multus-cni, status: active, swap_class: rewrite-required}
+  - id: ntp-service
+    name: In-Cluster NTP Time Service
+    domain: network
+    # NTP wire protocol (RFC 5905, 123/UDP) is the stable interface; chrony/ntpd/
+    # openntpd are swappable implementations of it (a real capability, not a
+    # sole-provider surface like node-exporter). NOT single_impl — genuine
+    # alternatives exist. swap_class consumer-change: the freeze-line exposes a
+    # tool-specific chrony.conf, so swapping the daemon forces the consumer to
+    # rewrite that config (contrast s3-object's standard-API reference → drop-in).
+    # First implementation: network/chrony (apps#485).
+    implementations:
+      - {name: chrony, status: active, swap_class: consumer-change}
+      - {name: ntpd, status: considered, swap_class: consumer-change}
+      - {name: openntpd, status: considered, swap_class: consumer-change}
 
   # — Daten-Services (instanced) ——————————————————————————————
   - id: redis-managed
@@ -316,3 +343,16 @@ capabilities:
     implementations:
       - {name: tetragon, status: active, swap_class: rewrite-required}
       - {name: falco, status: considered, swap_class: rewrite-required}
+  - id: namespace-tenancy
+    name: Namespace-Multi-Tenancy / Tenant-Isolation
+    domain: security
+    # Stable interface: a Tenant object bundling multiple namespaces of one owner
+    # under an aggregated ResourceQuota + owner-RBAC + admission guardrails. The
+    # active implementation (capsule) reconciles capsule.clastix.io/Tenant CRs;
+    # alternatives expose their own tenant CR surface, so a swap is rewrite-required
+    # (consumer Tenant CRs must be re-authored against the new tool's schema).
+    implementations:
+      - {name: capsule, status: active, swap_class: rewrite-required}
+      - {name: kiosk, status: considered, swap_class: rewrite-required}
+      - {name: vcluster, status: considered, swap_class: rewrite-required}
+      - {name: hierarchical-namespace-controller, status: considered, swap_class: rewrite-required}

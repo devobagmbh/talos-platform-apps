@@ -19,11 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/databases
-    chart: cnpg-crds
+    repoURL: oci://${REGISTRY}/databases/cnpg-crds
     targetRevision: ${TAG}
-    helm:
-      releaseName: cnpg-crds
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # The postgresql.cnpg.io CRDs are cluster-scoped; the destination namespace is
