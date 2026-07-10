@@ -19,7 +19,7 @@ required:
 sync_wave: "0"
 external_dependencies: []
 # NOTE config.yaml content (consumer-owned, ADR-0010 + identity-design): the
-# consumer supplies `dex-config` via SOPS (seeder) / Vault+ESO (office-lab) with a
+# consumer supplies `dex-config` via SOPS (seed cluster) / Vault+ESO (a consumer cluster) with a
 # `config.yaml` containing at minimum:
 #   - issuer:        https://<dex-host>           (cluster-specific public URL)
 #   - storage:       type kubernetes (CRDs) OR postgres — NOT memory for replicaCount>1

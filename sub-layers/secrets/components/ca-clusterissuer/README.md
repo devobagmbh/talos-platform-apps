@@ -1,6 +1,6 @@
 # Komponente `secrets/ca-clusterissuer`
 
-cert-manager-`ClusterIssuer` vom Typ **CA**, der die Devoba-eigene CA hält und Leaf-Zertifikate für `*.office-lab.devoba.de` (bzw. die jeweilige Cluster-Domain) signiert.
+cert-manager-`ClusterIssuer` vom Typ **CA**, der eine interne CA hält und Leaf-Zertifikate für die jeweilige Cluster-Wildcard-Domain (`*.<cluster-domain>`) signiert.
 
 **Skelett** — Implementation im TLS-Issue.
 
@@ -8,9 +8,9 @@ cert-manager-`ClusterIssuer` vom Typ **CA**, der die Devoba-eigene CA hält und 
 
 TLS läuft **nicht** mehr über Let's-Encrypt / DNS01-ACME, sondern über eine **eigene CA**:
 
-- Die CA-**Root** wird via **Jamf** in den System-Trust der Devoba-Clients (Macs) ausgerollt — Browser/CLI vertrauen damit allen `*.office-lab.devoba.de`-Zertifikaten.
-- Im Cluster signiert dieser `ClusterIssuer` die Leaf-Certs aus dem CA-Key. Strukturell identisch zum lokalen mkcert-Setup (`local/mkcert-cluster-issuer.yaml`), nur mit der echten Devoba-CA.
-- DNS kommt von Unifi (Wildcard → Cluster-Ingress-VIP) — kein In-Cluster-DNS-Server, kein External-DNS, kein DNS01-Solver. Der frühere `dns`-Sub-Layer entfällt komplett.
+- Die CA-**Root** wird via das Organisations-**MDM** in den System-Trust der verwalteten Clients ausgerollt — Browser/CLI vertrauen damit allen `*.<cluster-domain>`-Zertifikaten.
+- Im Cluster signiert dieser `ClusterIssuer` die Leaf-Certs aus dem CA-Key. Strukturell identisch zum lokalen mkcert-Setup (`local/mkcert-cluster-issuer.yaml`), nur mit der echten internen CA.
+- DNS kommt vom Netzwerk-DNS (Wildcard → Cluster-Ingress-VIP) — kein In-Cluster-DNS-Server, kein External-DNS, kein DNS01-Solver. Der frühere `dns`-Sub-Layer entfällt komplett.
 
 ## CA-Key-Herkunft
 

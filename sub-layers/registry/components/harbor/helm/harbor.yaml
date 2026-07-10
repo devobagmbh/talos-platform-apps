@@ -16,7 +16,7 @@
 #     existingSecrets `harbor-db` (key password) + `harbor-redis` (key
 #     REDIS_PASSWORD) liefert der Konsument (Klasse B). Siehe compatibility.yaml.
 #   - interne Service-Secrets (core/xsrf/jobservice/registry-http) lässt Harbor
-#     generieren. Der office-lab-Harbor stabilisiert sie via SOPS/Vault-existingSecret.
+#     generieren. Der Harbor des Consumer-Clusters stabilisiert sie via SOPS/Vault-existingSecret.
 
 metadata:
   chart: harbor
@@ -38,11 +38,11 @@ values:
         httpPort: 80
 
   # externalURL — PLATZHALTER. Konsument patcht ihn via Kustomize auf die echte
-  # Cluster-URL (z. B. https://harbor.seeder.devoba.de). Strukturell, kein env.
+  # Cluster-URL (z. B. https://harbor.<cluster-domain>). Strukturell, kein env.
   externalURL: https://REPLACE-ME.harbor.invalid
 
   # --- Storage: persistent (ADR-0026), so Harbor state survives a node rebuild.
-  # storageClass unset → the seeder default = synology-iscsi-storage. Only the
+  # storageClass unset → the seed-cluster default = synology-iscsi-storage. Only the
   # registry blobs + jobLog + trivy cache are Harbor's own PVCs now — Postgres
   # and Redis state live in CNPG / Valkey (external, below), NOT in Harbor PVCs. ---
   persistence:

@@ -17,9 +17,9 @@ is the component; this directory is the organisational bracket (ADR-0009).
 
 ## Notes
 
-- **Talos requires democratic-csi, not synology-csi**: the official driver's node-plugin chroots into the host to run iscsiadm, which Talos has no userland for. democratic-csi nsenters into the `iscsi-tools` extension's iscsid namespace instead. Both target the same DS720+ over iSCSI.
+- **Talos requires democratic-csi, not synology-csi**: the official driver's node-plugin chroots into the host to run iscsiadm, which Talos has no userland for. democratic-csi nsenters into the `iscsi-tools` extension's iscsid namespace instead. Both target the same Synology NAS over iSCSI.
 - Block vs object: the iSCSI CSI (PVCs) is distinct from `storage-objects/garage`
-  (S3). On the DS720+ NAS both coexist — different access paths, same durable tier
+  (S3). On the Synology NAS both coexist — different access paths, same durable tier
   (ADR-0026 § Object vs Block).
 - **Replicated DRBD/LINSTOR** (`block-storage-replicated`) is provided by the
   piraeus-operator strict-B pair: the CRD half (`piraeus-operator-crds`,
