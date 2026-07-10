@@ -1,0 +1,12 @@
+---
+# Negative fixture: class:fixed carrying tunable_targets is incoherent — a fixed
+# policy exposes no override targets. Should fail the fixed-forbids-targets branch.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: fixed
+  tunable_targets:
+    - workload: test
+      containers: [test]

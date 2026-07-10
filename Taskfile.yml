@@ -2672,16 +2672,34 @@ tasks:
       echo "→ ${found} component(s) validated against ${schema}."
       # Negative-fixture regression guard (full-corpus runs only). The schema MUST
       # reject each known-bad fixture; a fixture that PASSES means the reject-side
-      # (additionalProperties:false / required sot / sot enum) silently regressed.
+      # (additionalProperties:false / required sot / sot enum / resource_policy
+      # coherence) silently regressed.
       if [ -z "$scope" ]; then
         for nf in schemas/testdata/compatibility-apis-legacy.yaml \
                   schemas/testdata/compatibility-missing-sot.yaml \
-                  schemas/testdata/compatibility-bad-sot-enum.yaml; do
+                  schemas/testdata/compatibility-bad-sot-enum.yaml \
+                  schemas/testdata/compatibility-resource-policy-fixed-with-targets.yaml \
+                  schemas/testdata/compatibility-resource-policy-tunable-without-targets.yaml \
+                  schemas/testdata/compatibility-resource-policy-tunable-empty-targets.yaml \
+                  schemas/testdata/compatibility-resource-policy-unknown-key.yaml \
+                  schemas/testdata/compatibility-resource-policy-target-unknown-key.yaml \
+                  schemas/testdata/compatibility-resource-policy-star-not-sole.yaml; do
           if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
             echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
             fail=1
           else
             echo "✓ negative fixture correctly rejected: $(basename "$nf")"
+          fi
+        done
+        # Positive-fixture guard: the schema MUST accept a valid resource_policy
+        # block; a fixture that FAILS means the accept-side (ADR-0024 Resource-Sizing)
+        # regressed. Together with the negatives this binds red-green on schema revert.
+        for pf in schemas/testdata/compatibility-resource-policy-valid.yaml; do
+          if check-jsonschema --schemafile "$schema" "$pf" >/dev/null 2>&1; then
+            echo "✓ positive fixture correctly accepted: $(basename "$pf")"
+          else
+            echo "✗ POSITIVE FIXTURE REJECTED (schema accept-side regressed): $pf" >&2
+            fail=1
           fi
         done
       fi

@@ -1,0 +1,12 @@
+---
+# Negative fixture: '*' must be the SOLE containers entry (means ALL). Mixing '*'
+# with a named container is ambiguous. Should fail the star-is-sole constraint.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: test
+      containers: ["*", extra]
