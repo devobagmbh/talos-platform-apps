@@ -89,6 +89,11 @@ values:
       # GitOps note: an Argo-created tenant namespace is thus IGNORED, not placed — placing
       # a GitOps-created namespace in a tenant needs the `administrators` field instead;
       # that is deferred to the live owner-check (office-lab#229 postmortem).
+      # Membership rationale (#507 finding 2, deliberate — NOT an oversight): argocd /
+      # crossplane-system / capsule-system / kube-system actually CREATE namespaces; cert-
+      # manager / external-secrets / vault-operator are exempted too because they reconcile
+      # resources (Certificates/Secrets) INSIDE tenant namespaces — exempting keeps those
+      # cross-namespace reconciles unimpeded.
       ignoreUserWithGroups:
         - system:serviceaccounts:argocd
         - system:serviceaccounts:crossplane-system
@@ -99,12 +104,14 @@ values:
         - system:serviceaccounts:kube-system
       # Namespaces must be prefixed `<tenant>-` (collision-free, visibly tenant-scoped).
       forceTenantPrefix: true
-      # Namespaces a tenant owner may never claim/create. Two classes:
-      #   (a) catalog-shipped namespaces — generated from the committed `00-namespace.yaml`
-      #       set across all sub-layers (kube-state-metrics is covered by `kube-.*`);
+      # Namespaces a tenant owner may never claim/create (reliable defense — forceTenantPrefix
+      # alone is bypassable via a per-tenant `forceTenantPrefix: false` override). Two classes:
+      #   (a) catalog-shipped namespaces — from BOTH the committed `manifests/00-namespace.yaml`
+      #       set AND `helm/*.yaml` `namespace:` declarations (e.g. lifecycle/crossview →
+      #       `crossview`, which is set via Helm values, not a raw 00-namespace.yaml).
+      #       (kube-state-metrics is covered by `kube-.*`.)
       #   (b) platform namespaces owned by base/consumer, NOT catalog components — argocd,
       #       crossplane-system, harbor, monitoring, backstage — protected forward-looking
       #       so a tenant cannot squat them regardless of forceTenantPrefix.
-      # TODO(apps): generate (a) from `00-namespace.yaml` via the Taskfile so it stays in
-      # sync as the catalog grows (Nosmoht #507 finding 2).
-      protectedNamespaceRegex: "^(kube-.*|capsule-system|argocd|crossplane-system|harbor|monitoring|backstage|alloy|arc-.*|blackbox-exporter|booter|cdi|cert-manager|chrony|cnpg-system|democratic-csi|dex|external-secrets|garage|ipxe|kubevirt|loki|metrics-server|mimir|node-exporter|node-feature-discovery|piraeus-.*|snapshot-controller|synology-csi|tempo|tetragon|valkey-operator-system|vault-operator)$"
+      # A Taskfile generator to keep (a) in sync (sweeping both declaration styles): see #516.
+      protectedNamespaceRegex: "^(kube-.*|capsule-system|argocd|crossplane-system|harbor|monitoring|backstage|alloy|arc-.*|blackbox-exporter|booter|cdi|cert-manager|chrony|cnpg-system|crossview|democratic-csi|dex|external-secrets|garage|ipxe|kubevirt|loki|metrics-server|mimir|node-exporter|node-feature-discovery|piraeus-.*|snapshot-controller|synology-csi|tempo|tetragon|valkey-operator-system|vault-operator)$"

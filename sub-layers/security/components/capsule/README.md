@@ -64,9 +64,11 @@ shipped defaults are cluster-agnostic and fully operational as-is.
   CRD — `ignoreUserWithGroups` is the supported exemption knob.)
 - **`forceTenantPrefix: true`** — tenant namespaces must be named `<tenant>-…`.
 - **`protectedNamespaceRegex`** — reserves the catalog-shipped namespaces (from the
-  committed `00-namespace.yaml` set) plus base/consumer platform namespaces (`argocd`,
-  `crossplane-system`, `harbor`, `monitoring`, `backstage`, `kube-.*`) against tenant
-  squatting.
+  committed `00-namespace.yaml` set **and** `helm/*.yaml` `namespace:` declarations, e.g.
+  `crossview`) plus base/consumer platform namespaces (`argocd`, `crossplane-system`,
+  `harbor`, `monitoring`, `backstage`, `kube-.*`) against tenant squatting — the reliable
+  defense, since a tenant can override `forceTenantPrefix` per-tenant. A Taskfile generator
+  to keep this in sync (sweeping both declaration styles) tracks as #516.
 
 > ⚠️ **Do NOT ship a second `CapsuleConfiguration` from a consumer repo.** In 0.13.x the
 > chart-rendered CR embeds a ~2000-line `spec.admission` (dynamic-webhook) block a consumer
@@ -74,6 +76,12 @@ shipped defaults are cluster-agnostic and fully operational as-is.
 > controller nil-panics (office-lab#229). Divergence (e.g. a different `users` group) must
 > go through the per-consumer override mechanism (apps#503, Kustomize-base + `overridable`),
 > **not** a raw CR patch.
+
+> **GitOps caveat — tenant governance gap.** An Argo-created namespace is *ignored* by
+> Capsule (the ArgoCD SA is in `ignoreUserWithGroups`), so a GitOps-managed namespace is
+> NOT placed in a tenant — it sits outside tenant-level ResourceQuota / NetworkPolicy until
+> the `administrators`-based placement lands (deferred follow-up; office-lab#229). A
+> tenant-owner-created namespace (kubectl / a tenant-scoped token) IS governed.
 
 ## Namespace & Pod Security Admission
 
