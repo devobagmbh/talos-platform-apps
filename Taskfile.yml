@@ -214,6 +214,39 @@ tasks:
       find sub-layers -path '*/components/*/rendered/manifest.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
+  lint:kustomize-base:
+    desc: 'kustomize build gate (apps#508): every non-empty rendered/manifest.yaml must build as the trivial consumer base (resources: [manifest.yaml]) that `task package` ships.'
+    summary: |
+      kubeconform (lint:rendered) validates the raw manifest YAML; `kustomize build` is
+      stricter. Since `task package` ships every component as a Kustomize base
+      (kustomization.yaml + manifest.yaml, sourceType=Kustomize) so consumers can apply
+      source.kustomize.patches, the artifact must actually kustomize-build. Duplicate
+      resource IDs (same GVK+namespace+name across the concatenated Helm/raw docs) or an
+      empty document pass kubeconform but ABORT kustomize build — such a component would
+      pass PR + publish and fail ONLY at consumer Argo reconcile, catalog-wide and
+      post-publish. Builds the SAME base package emits, in an isolated temp dir
+      (hermetic, no network), for every rendered manifest. Assumes `task render` ran.
+    cmd: |
+      set -eu
+      fail=0
+      for manifest in sub-layers/*/components/*/rendered/manifest.yaml; do
+        [ -e "$manifest" ] || continue      # glob had no match
+        [ -s "$manifest" ] || continue      # skip empty (no raw manifest rendered)
+        id="$(echo "$manifest" | sed -E 's#sub-layers/([^/]+)/components/([^/]+)/.*#\1/\2#')"
+        tmp="$(mktemp -d)"
+        cp "$manifest" "$tmp/manifest.yaml"
+        printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - manifest.yaml\n' > "$tmp/kustomization.yaml"
+        if kustomize build "$tmp" >/dev/null 2>"$tmp/err"; then
+          echo "✓ kustomize base builds: $id"
+        else
+          echo "✗ KUSTOMIZE BUILD FAILED: $id" >&2
+          sed 's/^/    /' "$tmp/err" >&2
+          fail=1
+        fi
+        rm -rf "$tmp"
+      done
+      exit $fail
+
   validate:crd-split:
     desc: 'Strict-B CRD-count oracle (ADR-0028): -crds artifact renders >0 CRDs + carries crd-bearing:true; its workload half renders 0 CRDs. Assumes `task render` ran.'
     summary: |
@@ -2393,6 +2426,16 @@ tasks:
       # into the one manifest.yaml — kustomization.yaml only references it (identical render).
       kust="${root}/rendered/kustomization.yaml"
       printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - manifest.yaml\n' > "$kust"
+      # Gate before emitting the tarball (apps#508): the base MUST `kustomize build`.
+      # kubeconform (lint:rendered) validates the raw manifest, but kustomize is stricter
+      # — duplicate resource IDs (same GVK+namespace+name across the concatenated docs) or
+      # an empty document pass kubeconform yet ABORT kustomize build, failing only at
+      # consumer Argo reconcile. Validate the EXACT base being shipped, here, up front.
+      if ! kustomize build "${root}/rendered" >/dev/null; then
+        rm -f "$kust"
+        echo "ERROR: 'kustomize build' failed for ${component_id} — the published base would fail at consumer Argo reconcile (duplicate resource IDs / empty doc?)" >&2
+        exit 1
+      fi
       # Portable tar (GNU + bsdtar): kustomization.yaml + manifest.yaml at the tarball root.
       tar -czf "$out" -C "${root}/rendered" kustomization.yaml manifest.yaml
       rm -f "$kust"
@@ -2606,6 +2649,7 @@ tasks:
       - task: validate:compatibility
       - task: render
       - task: lint:rendered
+      - task: lint:kustomize-base
       - task: validate:crd-split
       - task: lint:version
       - task: scan:conftest-verify
