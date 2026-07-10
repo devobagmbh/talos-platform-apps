@@ -7,10 +7,13 @@
 # controller-manager carries no cluster-specific URLs, credentials, node addresses,
 # or consumer config references — the rendered manifest is cluster-agnostic. The
 # operator reconciles Tenant CRs and applies admission guardrails purely from those
-# CRs; no ConfigMap or Secret is mounted by the controller-manager pod. The concrete
-# Tenant CRs and CapsuleConfiguration CRs are consumer-owned and live in the consumer
-# cluster repos — they are NOT freeze-line shapes (no secretKeyRef, envFrom, or
-# volumeMount referencing consumer data in the rendered workload). The operator does
+# CRs; no ConfigMap or Secret is mounted by the controller-manager pod. The
+# CapsuleConfiguration CR is CATALOG-owned (shipped in the rendered workload as a
+# tenancy default — a consumer-supplied one would overwrite the chart-generated
+# spec.admission block → operator nil-panic; office-lab#229). Only the concrete Tenant
+# CRs are consumer-owned and live in the consumer cluster repos — neither is a
+# freeze-line shape (no secretKeyRef, envFrom, or volumeMount referencing consumer data
+# in the rendered workload). The operator does
 # not use a label selector against consumer CRs (it watches via its reconcile loop),
 # so provided_selectors: {} (same pattern as compute/kubevirt — an operator-loop
 # watcher, no label-selector shape). A controller-manager image-version override would

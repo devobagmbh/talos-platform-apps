@@ -48,9 +48,32 @@ The rendered workload (`rendered/manifest.yaml`) includes:
 The `CapsuleConfiguration` CR named `default` ships as a catalog default (equivalent to
 the kubevirt `KubeVirt` CR precedent). The controller reads it to determine the webhook
 service name, TLS secret references, RBAC role names, and admission user groups. The
-shipped defaults are cluster-agnostic and fully operational as-is. A consumer who needs
-to diverge (e.g. add custom `users`/`administrators` groups, or tune RBAC role names)
-patches the CR via their own Argo overlay — that is not a freeze-line shape.
+shipped defaults are cluster-agnostic and fully operational as-is.
+
+**Shipped tenancy defaults** (`helm/capsule.yaml` → `manager.options`):
+
+- **`createConfiguration: true`** — pinned explicitly (chart 0.13.7 default) so a chart
+  bump cannot silently drop the CR render.
+- **`users: [{kind: Group, name: system:authenticated}]`** — every authenticated
+  principal is a Capsule-managed tenant user (must own a `Tenant` to create namespaces).
+- **`ignoreUserWithGroups`** — exempts the platform operator ServiceAccounts (`argocd`,
+  `crossplane-system`, `cert-manager`, `external-secrets`, `vault-operator`,
+  `capsule-system`, `kube-system`) via their `system:serviceaccounts:<ns>` groups, so the
+  steady-state cluster-wide `namespaces.validating` hook does not reject their namespace /
+  resource management. (There is **no** `ignoredServiceAccountRegexp` field in the chart or
+  CRD — `ignoreUserWithGroups` is the supported exemption knob.)
+- **`forceTenantPrefix: true`** — tenant namespaces must be named `<tenant>-…`.
+- **`protectedNamespaceRegex`** — reserves the catalog-shipped namespaces (from the
+  committed `00-namespace.yaml` set) plus base/consumer platform namespaces (`argocd`,
+  `crossplane-system`, `harbor`, `monitoring`, `backstage`, `kube-.*`) against tenant
+  squatting.
+
+> ⚠️ **Do NOT ship a second `CapsuleConfiguration` from a consumer repo.** In 0.13.x the
+> chart-rendered CR embeds a ~2000-line `spec.admission` (dynamic-webhook) block a consumer
+> cannot reproduce; a consumer-supplied `CapsuleConfiguration default` overwrites it and the
+> controller nil-panics (office-lab#229). Divergence (e.g. a different `users` group) must
+> go through the per-consumer override mechanism (apps#503, Kustomize-base + `overridable`),
+> **not** a raw CR patch.
 
 ## Namespace & Pod Security Admission
 
@@ -144,8 +167,10 @@ this is NOT a hollow pass but the accurate state:
 - No `selector_crs` — the controller watches `Tenant` CRs via its reconcile loop, not
   via a label selector on consumer-labelled objects.
 
-Concrete `Tenant` and `CapsuleConfiguration` CRs are consumer-owned and live in the
-consumer cluster repos.
+The `CapsuleConfiguration` CR is **catalog-owned** (shipped here as a tenancy default,
+see above — a consumer-supplied one clobbers the chart-generated `spec.admission` →
+nil-panic). Only concrete `Tenant` CRs are consumer-owned and live in the consumer
+cluster repos.
 
 ## Strict-B consumer wiring (ADR-0028)
 

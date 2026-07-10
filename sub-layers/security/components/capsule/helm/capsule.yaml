@@ -60,21 +60,51 @@ values:
         memory: 128Mi
       limits:
         memory: 256Mi
-    # CapsuleConfiguration policy (chart renders it, createConfiguration: true default).
-    # These are cluster-agnostic tenancy DEFAULTS shipped by the catalog — earlier the
-    # component left the CapsuleConfiguration "consumer-owned", but in 0.13.x the CR
-    # embeds a ~2000-line chart-generated spec.admission (dynamic-webhook) block a
-    # consumer cannot author, and a consumer-supplied CR overwrites it → operator
+    # CapsuleConfiguration policy — cluster-agnostic tenancy DEFAULTS shipped by the
+    # catalog. Earlier the component left the CapsuleConfiguration "consumer-owned", but
+    # in 0.13.x the CR embeds a ~2000-line chart-generated spec.admission (dynamic-webhook)
+    # block a consumer cannot author, and a consumer-supplied CR overwrites it → operator
     # nil-panic. Ship it here; per-consumer overrides land once the override mechanism
     # (apps#503, Kustomize-base + overridable) is merged. Then `users` becomes overridable.
     options:
-      # Every authenticated user is tenant-scoped — the self-service tenancy default.
-      # cluster-admins (system:masters) bypass all webhooks, so admins are unaffected.
+      # Pinned explicitly (chart 0.13.7 default IS true) so a future chart bump cannot
+      # silently drop the CapsuleConfiguration render — same rationale as the pinned
+      # podSecurityContext.enabled / securityContext.enabled above.
+      createConfiguration: true
+      # Every authenticated principal is a Capsule-managed tenant user — the self-service
+      # tenancy default (a managed principal must own a Tenant to create namespaces).
+      # NOTE: this is broad — every human AND every ServiceAccount is `system:authenticated`.
+      # The steady-state cluster-wide `namespaces.validating` hook (failurePolicy: Fail, no
+      # namespaceSelector) would then reject namespace creation by any managed principal that
+      # owns no Tenant — including platform operator SAs (ArgoCD CreateNamespace, Crossplane
+      # compositions). `ignoreUserWithGroups` below carves those operator SAs back out.
       users:
         - kind: Group
           name: system:authenticated
+      # Exempt the platform operator ServiceAccounts from Capsule. A SA is a member of the
+      # group `system:serviceaccounts:<namespace>`, so listing the operator namespaces here
+      # makes Capsule ignore every SA in them → their cluster-wide namespace/resource
+      # management is not tenant-gated. (This is the REAL exemption field — the chart/CRD
+      # has NO `ignoredServiceAccountRegexp`; `ignoreUserWithGroups` is the supported knob.)
+      # GitOps note: an Argo-created tenant namespace is thus IGNORED, not placed — placing
+      # a GitOps-created namespace in a tenant needs the `administrators` field instead;
+      # that is deferred to the live owner-check (office-lab#229 postmortem).
+      ignoreUserWithGroups:
+        - system:serviceaccounts:argocd
+        - system:serviceaccounts:crossplane-system
+        - system:serviceaccounts:cert-manager
+        - system:serviceaccounts:external-secrets
+        - system:serviceaccounts:vault-operator
+        - system:serviceaccounts:capsule-system
+        - system:serviceaccounts:kube-system
       # Namespaces must be prefixed `<tenant>-` (collision-free, visibly tenant-scoped).
       forceTenantPrefix: true
-      # Platform + system namespaces a tenant owner may never claim/create. All names
-      # are catalog-component / k8s-standard namespaces (cluster-agnostic).
-      protectedNamespaceRegex: "^(kube-.*|capsule-system|argocd|dex|backstage|monitoring|cert-manager|external-secrets|crossplane-system|kubevirt|cdi|piraeus-.*|harbor|alloy|loki|mimir|tempo|arc-.*)$"
+      # Namespaces a tenant owner may never claim/create. Two classes:
+      #   (a) catalog-shipped namespaces — generated from the committed `00-namespace.yaml`
+      #       set across all sub-layers (kube-state-metrics is covered by `kube-.*`);
+      #   (b) platform namespaces owned by base/consumer, NOT catalog components — argocd,
+      #       crossplane-system, harbor, monitoring, backstage — protected forward-looking
+      #       so a tenant cannot squat them regardless of forceTenantPrefix.
+      # TODO(apps): generate (a) from `00-namespace.yaml` via the Taskfile so it stays in
+      # sync as the catalog grows (Nosmoht #507 finding 2).
+      protectedNamespaceRegex: "^(kube-.*|capsule-system|argocd|crossplane-system|harbor|monitoring|backstage|alloy|arc-.*|blackbox-exporter|booter|cdi|cert-manager|chrony|cnpg-system|democratic-csi|dex|external-secrets|garage|ipxe|kubevirt|loki|metrics-server|mimir|node-exporter|node-feature-discovery|piraeus-.*|snapshot-controller|synology-csi|tempo|tetragon|valkey-operator-system|vault-operator)$"
