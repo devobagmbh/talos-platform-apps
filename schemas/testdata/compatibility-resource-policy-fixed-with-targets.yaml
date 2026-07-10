@@ -9,4 +9,5 @@ resource_policy:
   class: fixed
   tunable_targets:
     - workload: test
+      kind: Deployment
       containers: [test]
