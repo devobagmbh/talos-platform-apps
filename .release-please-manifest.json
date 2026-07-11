@@ -25,6 +25,7 @@
   "sub-layers/secrets/components/cert-manager": "0.2.0",
   "sub-layers/secrets/components/external-secrets": "1.0.0",
   "sub-layers/storage-block/components/democratic-csi": "0.2.0",
+  "sub-layers/storage-block/components/local-path-provisioner": "0.1.0",
   "sub-layers/storage-block/components/piraeus-operator": "0.2.0",
   "sub-layers/storage-block/components/piraeus-operator-crds": "0.2.0",
   "sub-layers/storage-block/components/synology-csi": "0.2.0",
