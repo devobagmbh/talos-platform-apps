@@ -1,0 +1,46 @@
+# nvidia-device-plugin's own namespace. The device-plugin workload (the device-plugin
+# DaemonSet + the MPS control-daemon DaemonSet) is the sole catalog occupant
+# (dedicated namespace), so this workload artifact ships the Namespace object — a
+# shipped manifest takes precedence over Argo `managedNamespaceMetadata`, making the
+# PSA posture authoritative and self-contained (build skill CONVENTIONS.md
+# § Namespace & PSA). The chart renders ZERO Namespace objects (verified), so this
+# label set is authored here, not copied.
+#
+# enforce: privileged — FORCED by the device-plugin DaemonSet, and the ONLY admissible
+# PSA level for it. The device-plugin pod mounts hostPath volumes —
+# /var/lib/kubelet/device-plugins (the kubelet device-plugin socket directory),
+# /run/nvidia/mps + /run/nvidia/mps/shm (MPS root + shared memory), and /var/run/cdi
+# (the Container Device Interface dir) — all architecturally required to advertise GPUs
+# and cannot be removed. In the Pod Security Standards "HostPath Volumes" is a
+# *Baseline* control ("hostPath volumes must be forbidden"), so BOTH `enforce: baseline`
+# AND `enforce: restricted` reject a hostPath pod at admission — only `privileged`
+# permits hostPath. The MPS control-daemon DaemonSet additionally runs privileged
+# containers (required for MPS shared-memory management; it stays dormant unless a node
+# is labeled `nvidia.com/mps.capable: "true"`) — also Baseline-forbidden, also requiring
+# `privileged`. A single Namespace carries one enforce level for ALL its pods, so the
+# device-plugin's mandatory hostPath (and the MPS daemon's privileged containers) force
+# the whole namespace to `privileged`. This matches how every node-level hostPath/
+# privileged agent is deployed (node-exporter, CSI/CNI node DaemonSets,
+# compute/node-feature-discovery — all run in privileged-PSA namespaces).
+#
+# audit: restricted + warn: restricted — the enforce level is the loosest the workload
+# needs, but audit/warn stay at `restricted` so the namespace is NOT a silent privilege
+# hole: the device-plugin container is restricted-leaning (its securityContext pins
+# allowPrivilegeEscalation: false + capabilities.drop: [ALL]), so its hostPath usage
+# surfaces as a non-blocking audit-log entry + apiserver warning, and any NEW
+# non-conformance (e.g. a future privilege escalation slipping into the device-plugin
+# container) is surfaced even though enforce admits the pod.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: nvidia-device-plugin
+    app.kubernetes.io/part-of: nvidia-device-plugin
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+  name: nvidia-device-plugin

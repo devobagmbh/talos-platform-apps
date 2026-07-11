@@ -57,6 +57,32 @@ test_allowed_tetragon_suppressed if {
 	}
 }
 
+# NVIDIA MPS control daemon — init container (initContainers path) is allow-listed
+test_allowed_mps_control_daemon_mounts_suppressed if {
+	count(deny) == 0 with input as {
+		"kind": "DaemonSet",
+		"metadata": {"name": "nvidia-device-plugin-mps-control-daemon", "namespace": "nvidia-device-plugin"},
+		"spec": {"template": {"spec": {"initContainers": [{
+			"name": "mps-control-daemon-mounts",
+			"image": "nvcr.io/nvidia/k8s-device-plugin:v0.17.4",
+			"securityContext": {"privileged": true},
+		}]}}},
+	}
+}
+
+# NVIDIA MPS control daemon — main container is allow-listed
+test_allowed_mps_control_daemon_ctr_suppressed if {
+	count(deny) == 0 with input as {
+		"kind": "DaemonSet",
+		"metadata": {"name": "nvidia-device-plugin-mps-control-daemon", "namespace": "nvidia-device-plugin"},
+		"spec": {"template": {"spec": {"containers": [{
+			"name": "mps-control-daemon-ctr",
+			"image": "nvcr.io/nvidia/k8s-device-plugin:v0.17.4",
+			"securityContext": {"privileged": true},
+		}]}}},
+	}
+}
+
 # ---------------------------------------------------------------------------
 # Near-miss-still-denies — one case per key field
 # The allow-list is (namespace, kind, workload-name, container-name); each test

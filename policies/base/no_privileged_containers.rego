@@ -63,6 +63,16 @@ _privileged_allowed := {
 	# synology-csi node — CSI node plugin requires privileged access
 	["synology-csi", "DaemonSet", "synology-csi-node", "csi-driver-registrar"],
 	["synology-csi", "DaemonSet", "synology-csi-node", "csi-plugin"],
+	# NVIDIA MPS control daemon — two distinct privileged requirements:
+	# mps-control-daemon-mounts (init): mounts tmpfs into /mps with
+	# mountPropagation: Bidirectional, which Kubernetes permits only for
+	# privileged containers. mps-control-daemon-ctr (main): the CUDA MPS control
+	# daemon needs privileged for CUDA IPC / GPU shared-context management,
+	# independent of mount propagation. Rendered unconditionally by chart 0.17.4
+	# (no mps.enabled disable key); dormant without the nvidia.com/mps.capable
+	# node label. Rationale: issue #55 / PR #517.
+	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-mounts"],
+	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-ctr"],
 }
 
 _is_allowed(t, c) if {

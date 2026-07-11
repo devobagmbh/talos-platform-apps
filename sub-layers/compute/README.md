@@ -15,6 +15,7 @@ bracket (ADR-0009).
 | [`kubevirt-cdi`](components/kubevirt-cdi/) | 0 | Strict-B workload half — the CDI operator (Deployment, RBAC), the `cdi` Namespace (PSA `restricted`), and the `CDI` operator-config CR. Requires `kubevirt-cdi-crds`. |
 | [`node-feature-discovery-crds`](components/node-feature-discovery-crds/) | -1 | Strict-B CRD half (ADR-0028) — the 3 node-feature-discovery `CustomResourceDefinition`s (`nfd.k8s-sigs.io`: `NodeFeature`, `NodeFeatureRule`, `NodeFeatureGroup`). Lands before its workload counterpart. |
 | [`node-feature-discovery`](components/node-feature-discovery/) | 0 | Strict-B workload half — the NFD master Deployment + worker DaemonSet + gc Deployment, the `node-feature-discovery` Namespace (PSA `privileged` — the worker DaemonSet mounts hostPath, which both `baseline` and `restricted` forbid); api-surface-only, no capability (hardware-feature labeling enabler for `gpu-runtime`/`vm-runtime`). Requires `node-feature-discovery-crds`. |
+| [`nvidia-device-plugin`](components/nvidia-device-plugin/) | 1 | GPU device-plugin (the `nvidia-device-plugin` DaemonSet advertising GPUs to the kubelet) + a dormant MPS control-daemon DaemonSet, the `nvidia-device-plugin` Namespace (PSA `privileged` — the device-plugin mounts hostPath, which both `baseline` and `restricted` forbid); provides `gpu-runtime` (the scheduling half of `nvidia-stack`; the telemetry half `nvidia-dcgm-exporter` ships from `observability`, #61). Renders 0 CRDs (no strict-B split). Requires `node-feature-discovery` at runtime (node-affinity labels). |
 
 ## Notes
 
@@ -32,5 +33,11 @@ bracket (ADR-0009).
   sync-wave 0). NFD labels nodes (`feature.node.kubernetes.io/*`) so GPU/VM-runtime
   consumers can nodeSelect on hardware features; it is an enabler, not itself a
   swappable capability.
-- The sub-layer also brackets **nvidia-device-plugin** (GPU scheduling, per
-  epic #49); it lands as it is built.
+- **GPU scheduling** (`gpu-runtime`) is delivered by **nvidia-device-plugin**
+  (sync-wave 1, strictly after node-feature-discovery): the device-plugin DaemonSet advertises GPUs to the kubelet, plus a
+  dormant MPS control-daemon (scheduled only on nodes labelled
+  `nvidia.com/mps.capable`). It is the scheduling half of the `nvidia-stack`
+  implementation; the telemetry half (`nvidia-dcgm-exporter`) ships from the
+  `observability` sub-layer (#61). The device-plugin's node affinity targets
+  NFD-derived labels (`feature.node.kubernetes.io/pci-10de.present`), so the consumer
+  wires its Argo Application at a sync-wave strictly after node-feature-discovery.

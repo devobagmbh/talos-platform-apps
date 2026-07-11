@@ -105,7 +105,7 @@ The three newly enforcing policies carry transitional grandfather sets or a perm
 | Policy | Type | Size | Retirement tracker |
 |---|---|---|---|
 | `required_resource_limits` | grandfather `(namespace, kind, name)` | 25 workloads | [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349) |
-| `no_privileged_containers` | permanent allow-list `(namespace, kind, workload, container)` | 11 containers | per-entry reviewer/ADR sign-off |
+| `no_privileged_containers` | permanent allow-list `(namespace, kind, workload, container)` | 13 containers | per-entry reviewer/ADR sign-off |
 | `no_inline_secrets` | grandfather `(namespace, name)` | 6 secrets | [#350](https://github.com/devobagmbh/talos-platform-apps/issues/350) |
 
 The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** full build-out. The current on-disk state is shown by the `## Structure` tree above.
@@ -117,7 +117,7 @@ The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** 
 - [x] `no_latest_image_tag` (MUST) — Helm defaults must not render `:latest` image tags; recurses (depth-1) into `Object.spec.forProvider.manifest` (issue #236)
 - [ ] `reserved_labels` (MUST) — reserved keys (`platform.io/provide.*`, `capability-provider.*`) only on producer resources, namespace-anchored
 - [x] `required_resource_limits` (MUST) — every container needs `resources.{requests.{cpu,memory},limits.memory}`; **enforcing for new components — 25 existing workloads grandfathered pending [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349)**
-- [x] `no_privileged_containers` (MUST) — `securityContext.privileged: true` forbidden except a permanent container-level allow-list (11 containers); infrastructure-level necessity documented per entry
+- [x] `no_privileged_containers` (MUST) — `securityContext.privileged: true` forbidden except a permanent container-level allow-list (13 containers); infrastructure-level necessity documented per entry
 - [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` except for the Cilium/CSI allow-list
 - [ ] `endpointslices_only` (SHOULD) — no `kind: Endpoints` (deprecated since K8s 1.33)
 - [ ] `storage_class_explicit` (SHOULD) — every PVC sets `storageClassName` explicitly
