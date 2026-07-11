@@ -19,22 +19,33 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # merge_group: only the required `gitleaks (secret-scan)` job runs here (it reports on
+  # the queue's projected merge tree). The non-required `trivy`/`conftest` jobs are guarded
+  # off merge_group — they already ran on the PR and re-rendering the whole catalog per
+  # queue entry is wasted work.
+  merge_group:
   schedule:
     - cron: "0 4 * * 1"  # Montags 04:00 UTC
 
 permissions:
   contents: read
-  security-events: write
-  pull-requests: write
+  # security-events: write is granted per-job on `trivy` only (the sole SARIF
+  # uploader); gitleaks/conftest/trivy-cve need only contents: read, and
+  # trivy-cve-all raises its own job-level issues: write. pull-requests: write
+  # dropped — no job posts PR comments. Least privilege.
 
 jobs:
   gitleaks:
     name: gitleaks (secret-scan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
         with:
-          fetch-depth: 0  # full history: `gitleaks git` scans all commits, not just HEAD
+          # fetch-depth: 0 is load-bearing for BOTH gitleaks paths: the full all-refs
+          # sweep (schedule) AND resolving GITLEAKS_SCAN_RANGE's base/head endpoints
+          # (pull_request/push). Narrowing it would silently degrade the scoped scan to
+          # a full-scan fallback over a shallow clone — do not reduce. (apps#340)
+          fetch-depth: 0
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -42,13 +53,25 @@ jobs:
           enable-cache: true
 
       - name: gitleaks secret-scan (backstop to the lefthook pre-commit hook)
+        # Scope the scan to the event's commit range so an unrelated in-flight branch's
+        # finding cannot fail this run (apps#340). pull_request → base..head, push →
+        # before..after, schedule → unset → full all-refs sweep. `task scan:secrets`
+        # validates the range and falls back to a full scan if it does not resolve.
+        env:
+          GITLEAKS_SCAN_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || github.event_name == 'push' && format('{0}..{1}', github.event.before, github.sha) || github.event_name == 'merge_group' && format('{0}..{1}', github.event.merge_group.base_sha, github.event.merge_group.head_sha) || '' }}
         run: devbox run -- task scan:secrets
 
   trivy:
     name: trivy
+    # Not a required check — skip on merge_group (already ran on the PR; avoids re-rendering
+    # the whole catalog per queue entry).
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # SARIF upload (misconfig scan) — the only job that needs it
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -75,9 +98,12 @@ jobs:
 
   conftest:
     name: conftest (Rego-Policies)
+    # Not a required check — skip on merge_group (already ran on the PR; conftest is also
+    # part of `task ci`, which the required `ci` job re-runs in the queue).
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -92,3 +118,107 @@ jobs:
 
       - name: Conftest verify (Policy-Selbsttests)
         run: devbox run -- task scan:conftest-verify
+
+  # Advisory image-CVE early-warning on PRs (E2). NOT a required check — its diff-
+  # scope/extraction edge cases must never block a merge; the HARD block is the E5
+  # publish scan in oci-publish.yml. Goes red on findings as a visible early warning,
+  # but merge stays possible (branch protection gates only required checks). Workload
+  # images are public upstream (quay.io/ghcr.io/registry.k8s.io/docker.io) → pulled
+  # anonymously, so no registry auth is needed here.
+  trivy-cve:
+    name: trivy-cve (image CVEs, advisory)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        with:
+          # fetch-depth: 0 resolves TRIVY_SCAN_RANGE's base/head for the three-dot
+          # (merge-base) diff scope — a shallow clone would degrade it to a full scan.
+          fetch-depth: 0
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      - name: Advisory diff-scoped image-CVE scan
+        env:
+          TRIVY_SCAN_RANGE: ${{ format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) }}
+        run: devbox run -- task scan:trivy-cve
+
+  # Weekly full-catalog image-CVE sweep (advisory). Renders and scans as SEPARATE
+  # steps so a render flake (external Helm chart fetch — a known flake class) is not
+  # mislabelled as a CVE finding; opens/updates a risk-tagged issue only on a real
+  # finding (scanner exit 1), never on a scan/infra error (exit 2). github-script
+  # issue automation is the AGENTS.md API-orchestration carve-out, exempt from CI-rule-3.
+  trivy-cve-all:
+    name: trivy-cve-all (weekly image CVEs, advisory)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      # Render (external chart pulls — the flake surface) is a plain step: a render
+      # flake FAILS the job (visibly red — an operator signal), and skips the scan +
+      # issue steps, so a flake is neither silent-green nor a false CVE issue.
+      - name: Render all sub-layers
+        run: devbox run -- task render
+
+      - name: Full-catalog image-CVE scan
+        id: scan
+        # go-task collapses the scanner's exit code, so the CVE-vs-infra distinction is
+        # read from the scanner's stable, WHOLE-LINE RESULT contract (`grep -qxF`, so a
+        # manifest/image string containing 'RESULT=cve' cannot forge it). A CVE finding
+        # → cve=true, step green (issue opens). A clean scan → cve=false, step green.
+        # A scan/infra error or crash (no RESULT=clean line) → the final grep exits
+        # non-zero → this step FAILS → the weekly run is visibly red, WITHOUT a false
+        # CVE issue. tee keeps the scan log in the job output.
+        run: |
+          set +e
+          devbox run -- task scan:trivy-images-of 2>&1 | tee "$RUNNER_TEMP/scan.log"
+          if grep -qxF 'scan:trivy-images-of: RESULT=cve' "$RUNNER_TEMP/scan.log"; then
+            echo "cve=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "cve=false" >> "$GITHUB_OUTPUT"
+          grep -qxF 'scan:trivy-images-of: RESULT=clean' "$RUNNER_TEMP/scan.log"
+
+      # Only a real CVE finding opens the issue; a clean scan does not, and an
+      # error/flake surfaced as a red job (above) does not reach here.
+      - name: Open or update a security issue on CVE findings
+        if: steps.scan.outputs.cve == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        with:
+          script: |
+            const marker = '<!-- trivy-cve-all-weekly -->';
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              'The weekly full-catalog image-CVE scan (`task scan:trivy-cve-all`) found HIGH/CRITICAL vulnerabilities.',
+              '',
+              `Run log: ${runUrl}`,
+              '',
+              'Remediate by bumping the affected image, or accept the risk in `.trivyignore.yaml` (`expired_at:` + `statement:`, CODEOWNERS-reviewed).',
+            ].join('\n');
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const existing = open.find((i) => !i.pull_request && (i.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({
+                owner, repo,
+                title: 'chore(security): weekly image-CVE scan found HIGH/CRITICAL',
+                labels: ['risk: high'],
+                body,
+              });
+            }

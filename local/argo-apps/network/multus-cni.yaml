@@ -19,11 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: ${REGISTRY}/network
-    chart: multus-cni
+    repoURL: oci://${REGISTRY}/network/multus-cni
     targetRevision: ${TAG}
-    helm:
-      releaseName: multus-cni
+    path: .
   destination:
     server: https://kubernetes.default.svc
     # kube-system is substrate-managed (base layer); this Application deploys the

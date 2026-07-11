@@ -43,19 +43,22 @@ configs:
   params:
     server.insecure: true
 
-  # OCI-Helm-Repo registrieren. Argos interne helm-Aufruf-Logik schaltet
-  # nur dann auf den OCI-Code-Pfad (statt 'helm pull --repo oci://...'),
-  # wenn ein Repository mit enableOCI=true existiert. Wird beim
-  # helm install automatisch als argocd.argoproj.io/secret-type=repository
-  # Secret erzeugt — kein manueller Apply-Step.
+  # Native-OCI-Repo registrieren (ADR-0009 §OCI-Artefakt-Form). ArgoCD v3.1+ zieht
+  # bei type=oci + url=oci://... den nativen OCI-Code-Pfad — der Katalog wird als
+  # generisches OCI-Artefakt publiziert (task push → oras), die Application-Source
+  # ist repoURL: oci://.../<component> + path: . und löst als sourceType=Directory
+  # auf (kein Helm mehr). Die lokale Registry erlaubt anonymen Pull, daher keine
+  # Credentials; TLS-Trust läuft über das gemergte mkcert-CA-Bundle (repoServer
+  # initContainer unten), nicht über dieses Secret. Wird beim helm install
+  # automatisch als argocd.argoproj.io/secret-type=repository Secret erzeugt —
+  # kein manueller Apply-Step.
   repositories:
     kind-registry-local:
-      url: kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
-      type: helm
-      enableOCI: "true"
+      url: oci://kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+      type: oci
       name: kind-registry-local
 
-# argocd-repo-server muss die mkcert-CA trusten, damit Helm-OCI-Pulls gegen
+# argocd-repo-server muss die mkcert-CA trusten, damit die nativen OCI-Pulls gegen
 # https://kind-registry.registry.svc.cluster.local:5000 validieren. Wir mergen
 # die mkcert-CA an das System-CA-Bundle und overmounten /etc/ssl/certs/ca-certificates.crt.
 # Der InitContainer nutzt das Argo-Image selbst, damit das System-Bundle identisch
@@ -69,7 +72,9 @@ repoServer:
       emptyDir: {}
   initContainers:
     - name: append-mkcert-ca
-      image: quay.io/argoproj/argocd:v2.13.0
+      # = chart appVersion (argo-cd 9.4.5 → v3.3.2); halte diesen Tag bei einem
+      # Chart-Bump synchron zur --version in Taskfile local:argo:install.
+      image: quay.io/argoproj/argocd:v3.3.2
       command:
         - sh
         - -c

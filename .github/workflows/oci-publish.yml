@@ -16,6 +16,10 @@ name: oci-publish
 on:
   pull_request:
     branches: [main]
+  # merge_group: the merge queue runs the required `ci` check against the projected
+  # merge result (a `refs/heads/gh-readonly-queue/…` ref). The `publish` job below
+  # stays tag-gated, so a merge_group event runs `ci` only — never publish/sign.
+  merge_group:
   push:
     tags:
       # One pattern per sub-layer (AGENTS.md taxonomy). The capability-driven
@@ -43,14 +47,15 @@ jobs:
   # PR-Trigger: nur Lint + Render + Conftest. Kein Push, kein Sign.
   # --------------------------------------------------------------------
   ci:
-    if: github.event_name == 'pull_request'
+    # Runs on PRs AND on merge_group (the queue re-validates the projected merge tree).
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     # PR CI may cancel a superseded run on the same PR ref (resource hygiene).
     concurrency:
       group: oci-publish-ci-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
         with:
           # fetch-depth: 0 so all git tags are present: `task ci` → validate:release-config
           # guard E asserts every released (tagged) component is in the manifest, and a
@@ -85,7 +90,7 @@ jobs:
       # include the release-coverage guard (validate:release-config / guard E), so it does
       # not need the full tag set. Tags would only matter for guard E, which is a PR-gate
       # concern, not a per-publish one (#318 review).
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
 
       - name: Devbox setup
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
@@ -124,7 +129,7 @@ jobs:
           # 2) version: a strict vMAJOR.MINOR.PATCH[-prerelease] SemVer. The accepted
           #    set is a SUBSET of the OCI tag grammar — build metadata ("+...") is
           #    rejected because "+" is illegal in an OCI tag, so a version that passes
-          #    here cannot fail mid-publish at helm push / cosign sign. This also
+          #    here cannot fail mid-publish at oras push / cosign sign. This also
           #    rejects an empty/garbage version (e.g. a trailing-"-v" tag → "v") and
           #    any shell metacharacter.
           if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -140,17 +145,41 @@ jobs:
         # sign; the catalog-wide release-coverage gates run at the PR gate, not per-publish (#318).
         run: devbox run -- task ci:artifact
 
-      - name: helm + cosign gegen GHCR authentifizieren
+      - name: oras + cosign gegen GHCR authentifizieren
         run: |
-          # helm schreibt in ~/.config/helm/registry, cosign liest
-          # ~/.docker/config.json — beide Logins nötig, sonst scheitert
-          # cosign sign mit "UNAUTHORIZED" beim Pull-Scope des Artefakts.
-          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- helm registry login ghcr.io \
+          # oras (push) und cosign (sign) lesen/schreiben ~/.docker/config.json —
+          # beide Logins nötig, sonst scheitert der oras-push bzw. cosign sign mit
+          # "UNAUTHORIZED" beim Pull-Scope des Artefakts.
+          echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- oras login ghcr.io \
             --username "${{ github.actor }}" \
             --password-stdin
           echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- cosign login ghcr.io \
             --username "${{ github.actor }}" \
             --password-stdin
+
+      - name: "E5 image-CVE scan (advisory during catalog remediation)"
+        # E5 CVE scan of THIS published component's rendered images. Currently
+        # ADVISORY (continue-on-error): the baseline shows ~90% of catalog images
+        # carry FIXABLE HIGH/CRITICAL CVEs, so a hard block would strand nearly every
+        # publish. It runs here as the per-publish measurement while the catalog is
+        # remediated component-by-component (tracking epic). FLIP TO HARD by deleting
+        # `continue-on-error` once the catalog is green — the scan already fails-closed
+        # on HIGH/CRITICAL (and on a scan/infra error), so the flip is a one-line
+        # change. As a workflow STEP it is not a required status check, so once hard it
+        # avoids the `gh pr merge --admin` bypass a required-check skip allows (a direct
+        # GHCR push remains an out-of-band path). Runs AFTER GHCR auth so trivy inherits
+        # the docker config for any ghcr.io image; upstream public images pull
+        # anonymously. A CRDs-only / config-only component (0 images) publishes clean.
+        # Bounded per AC11.
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          TRIVY_COMPONENT: ${{ steps.parse.outputs.component_id }}
+          # Strict E1 (block ALL HIGH/CRITICAL) pinned explicitly. Relaxing to
+          # block-fixable-only is a CODEOWNERS-reviewed change to '1' HERE — never a
+          # silent GHA repository Settings variable.
+          TRIVY_IGNORE_UNFIXED: ''
+        run: devbox run -- task scan:trivy-images-of
 
       - name: task publish (render + push + sign keyless)
         run: |

@@ -1,8 +1,12 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 backend for blocks
+  s3-object: "*" # S3-compatible object store (capability; catalog/capability-index.yaml). Garage = active platform impl (ADR-0007)
 provides:
   - name: tempo
-    api_surface: [] # filled in with issue #17
+    version:
+      sot: app
+      app: 2.10.7 # Tempo appVersion (image tag grafana/tempo:2.10.7)
+      chart: 2.2.3 # grafana-community/tempo chart version
+    api_surface: [] # monolithic single binary ships no CRDs / exposed API groups
     capabilities:
       - {id: traces-storage, swap_class: data-migration}
       - {id: traces-query, swap_class: drop-in}

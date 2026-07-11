@@ -1,16 +1,19 @@
 components:
   - prometheus-operator-crds  # sync-wave -1 — strict-B CRDs artifact (ADR-0028): the monitoring.coreos.com CRDs, before the operator workload
+  - grafana-operator-crds     # sync-wave -1 — strict-B CRDs artifact (ADR-0028): the grafana.integreatly.org CRDs (vendored manifests), before the grafana-operator workload
   - prometheus-operator       # sync-wave 0  — strict-B workload artifact (ADR-0028): the operator controller (the kube-prometheus-stack chart, operator-only); CRDs in prometheus-operator-crds
+  - grafana-operator          # sync-wave 0  — strict-B workload artifact (ADR-0028): the Grafana Operator controller (the grafana/grafana-operator chart, operator-only); CRDs in grafana-operator-crds
   # NB: kube-prometheus-stack is a STACK (composition), not a component — it has NO
   # components/ directory and is never built or published. The operator half lives as
   # prometheus-operator(+-crds) above; see README.md "The kube-prometheus-stack
   # composition" for the full map (#38).
-  - loki                    # sync-wave 10 — needs a Garage bucket
-  - mimir                   # sync-wave 10 — needs a Garage bucket
-  - tempo                   # sync-wave 10 — needs a Garage bucket
+  - loki                    # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
+  - mimir                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
+  - tempo                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - alloy                   # sync-wave 20 — needs the Loki/Mimir/Tempo endpoints
   - grafana                 # sync-wave 20 — datasources point to Loki/Mimir/Tempo
   - hubble                  # sync-wave 0  — Cilium network-flow visibility (relay/ui); independent of LGTM, needs the Cilium-agent Hubble server
   - metrics-server          # sync-wave 0  — Resource Metrics API (HPA + kubectl top); independent, needs only the K8s control-plane API
   - kube-state-metrics      # sync-wave 0  — Kubernetes object-state metrics (kube_* series); independent, scraped by Alloy, needs only the K8s control-plane API
+  - node-exporter           # sync-wave 0  — host/node metrics (node_* series); independent per-node DaemonSet with host access (privileged ns), scraped by Alloy
   - blackbox-exporter       # sync-wave 0  — synthetic HTTP/TCP/DNS probing; Alloy scrape target + bidirectional cross-cluster watchdog (ADR-0015); probe targets are consumer Probe CRs

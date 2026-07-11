@@ -1,6 +1,6 @@
 # Sub-layer `observability`
 
-LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + the Prometheus operator (`prometheus-operator` + `prometheus-operator-crds`) + Hubble (Cilium network-flow visibility).
+LGTM-A stack (Loki + Grafana + Tempo + Mimir + Alloy) + the Prometheus operator (`prometheus-operator` + `prometheus-operator-crds`) + the Grafana operator (`grafana-operator` + `grafana-operator-crds`) + Hubble (Cilium network-flow visibility).
 
 OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a forwarder-only consumer = operator + Alloy forwarder, a full-stack consumer = full stack).
 
@@ -9,15 +9,18 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | Component | sync-wave | Source | OCI |
 |---|---|---|---|
 | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Helm `prometheus-community/prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
+| [`grafana-operator-crds`](components/grafana-operator-crds/) | -1 | Vendored manifests from Helm `grafana/grafana-operator` (strict-B CRDs artifact, ADR-0028 — the `grafana.integreatly.org` CRDs) | `oci://.../observability/grafana-operator-crds:vX.Y.Z` |
 | [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
-| [`loki`](components/loki/) | 10 | Helm `grafana/loki` (distributed) | `oci://.../observability/loki:vX.Y.Z` |
-| [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` | `oci://.../observability/mimir:vX.Y.Z` |
-| [`tempo`](components/tempo/) | 10 | Helm `grafana/tempo-distributed` | `oci://.../observability/tempo:vX.Y.Z` |
+| [`grafana-operator`](components/grafana-operator/) | 0 | Helm `grafana/grafana-operator` (operator controller, strict-B workload artifact, ADR-0028) | `oci://.../observability/grafana-operator:vX.Y.Z` |
+| [`loki`](components/loki/) | 10 | Helm `grafana/loki` (SingleBinary) | `oci://.../observability/loki:vX.Y.Z` |
+| [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` (microservices) | `oci://.../observability/mimir:vX.Y.Z` |
+| [`tempo`](components/tempo/) | 10 | Helm `grafana-community/tempo` (monolithic single binary) | `oci://.../observability/tempo:vX.Y.Z` |
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
+| [`node-exporter`](components/node-exporter/) | 0 | Helm `prometheus-community/prometheus-node-exporter` (host/node metrics — `node_*` series, per-node DaemonSet with host access, scraped by Alloy) | `oci://.../observability/node-exporter:vX.Y.Z` |
 | [`blackbox-exporter`](components/blackbox-exporter/) | 0 | Helm `prometheus-community/prometheus-blackbox-exporter` (synthetic HTTP/TCP/DNS probing — Alloy scrape target + bidirectional cross-cluster watchdog) | `oci://.../observability/blackbox-exporter:vX.Y.Z` |
 
 > **`kube-prometheus-stack` is a stack, not a component** — there is **no**
@@ -30,7 +33,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 > `validate:crd-split`). The stack itself is the *composition* of the components
 > above, documented in the dedicated section below.
 
-Wave -1: `prometheus-operator-crds` (strict-B CRDs artifact, ADR-0028 — `monitoring.coreos.com` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics. Wave 10: three storage endpoints (all against Garage). Wave 20: collector + UI (need the endpoints from wave 10).
+Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter. Wave 10: three storage endpoints (each requiring the `s3-object` capability; the platform's Garage impl provides it). Wave 20: collector + UI (need the endpoints from wave 10).
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
@@ -46,7 +49,7 @@ The upstream `prometheus-community/kube-prometheus-stack` chart bundles operator
 | Operator CRDs (strict-B) | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | api-surface only | [#46](https://github.com/devobagmbh/talos-platform-apps/issues/46) | yes |
 | Prometheus instance | `prometheus` (consumer-instantiated via the operator `Prometheus` CR) | scrape / store / query — served by `alloy` + `mimir` in this catalog | [#20](https://github.com/devobagmbh/talos-platform-apps/issues/20) | no |
 | Alertmanager | `alertmanager` (consumer-instantiated via the operator `Alertmanager` CR) | `alert-routing` | [#43](https://github.com/devobagmbh/talos-platform-apps/issues/43) | no |
-| node-exporter | `node-exporter` | — (scrape target) | [#44](https://github.com/devobagmbh/talos-platform-apps/issues/44) | no |
+| node-exporter | [`node-exporter`](components/node-exporter/) | — (scrape target) | [#44](https://github.com/devobagmbh/talos-platform-apps/issues/44) | yes |
 | kube-state-metrics | [`kube-state-metrics`](components/kube-state-metrics/) | — (scrape target) | [#45](https://github.com/devobagmbh/talos-platform-apps/issues/45) | yes |
 | Grafana | [`grafana`](components/grafana/) | `dashboards` | [#24](https://github.com/devobagmbh/talos-platform-apps/issues/24) | no |
 

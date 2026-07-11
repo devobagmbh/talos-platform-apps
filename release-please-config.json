@@ -8,6 +8,14 @@
       "component": "automation/velero",
       "initial-version": "0.1.0"
     },
+    "sub-layers/automation/components/velero-crds": {
+      "component": "automation/velero-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/automation/components/actions-runner-controller-crds": {
+      "component": "automation/actions-runner-controller-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/compute/components/kubevirt": {
       "component": "compute/kubevirt"
     },
@@ -62,6 +70,10 @@
     "sub-layers/lifecycle/components/providers": {
       "component": "lifecycle/providers"
     },
+    "sub-layers/network/components/chrony": {
+      "component": "network/chrony",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/network/components/multus-cni": {
       "component": "network/multus-cni"
     },
@@ -73,6 +85,14 @@
     },
     "sub-layers/observability/components/grafana": {
       "component": "observability/grafana",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/grafana-operator": {
+      "component": "observability/grafana-operator",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/grafana-operator-crds": {
+      "component": "observability/grafana-operator-crds",
       "initial-version": "0.1.0"
     },
     "sub-layers/observability/components/hubble": {
@@ -90,6 +110,10 @@
     },
     "sub-layers/observability/components/mimir": {
       "component": "observability/mimir",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/observability/components/node-exporter": {
+      "component": "observability/node-exporter",
       "initial-version": "0.1.0"
     },
     "sub-layers/observability/components/prometheus-operator": {
@@ -123,8 +147,28 @@
       "component": "secrets/external-secrets-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/secrets/components/vault-config-operator-crds": {
+      "component": "secrets/vault-config-operator-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/secrets/components/vault-operator-crds": {
+      "component": "secrets/vault-operator-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/secrets/components/vault-operator": {
+      "component": "secrets/vault-operator",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/security/components/tetragon": {
       "component": "security/tetragon",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/security/components/capsule-crds": {
+      "component": "security/capsule-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/security/components/capsule": {
+      "component": "security/capsule",
       "initial-version": "0.1.0"
     },
     "sub-layers/storage-block/components/democratic-csi": {
@@ -135,6 +179,14 @@
     },
     "sub-layers/storage-block/components/piraeus-operator-crds": {
       "component": "storage-block/piraeus-operator-crds"
+    },
+    "sub-layers/storage-block/components/snapshot-controller-crds": {
+      "component": "storage-block/snapshot-controller-crds",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/storage-block/components/snapshot-controller": {
+      "component": "storage-block/snapshot-controller",
+      "initial-version": "0.1.0"
     },
     "sub-layers/storage-block/components/synology-csi": {
       "component": "storage-block/synology-csi"
@@ -151,6 +203,10 @@
     },
     "sub-layers/observability/components/blackbox-exporter": {
       "component": "observability/blackbox-exporter",
+      "initial-version": "0.1.0"
+    },
+    "sub-layers/automation/components/actions-runner-controller": {
+      "component": "automation/actions-runner-controller",
       "initial-version": "0.1.0"
     }
   }

@@ -1,0 +1,10 @@
+---
+# Negative fixture: class:tunable with an EMPTY tunable_targets is the silent-no-op
+# class (AC5, empty-array variant). Should fail minItems:1 in the tunable branch.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets: []

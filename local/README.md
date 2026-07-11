@@ -4,7 +4,7 @@
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.36.0-326ce5?style=flat-square&logo=kubernetes)](https://kubernetes.io/)
 [![Cilium](https://img.shields.io/badge/Cilium-1.19.3-F8C517?style=flat-square&logo=cilium)](https://cilium.io/)
 [![Gateway API](https://img.shields.io/badge/Gateway%20API-v1.2-326CE5?style=flat-square&logo=kubernetes)](https://gateway-api.sigs.k8s.io/)
-[![ArgoCD](https://img.shields.io/badge/ArgoCD-7.7-EF7B4D?style=flat-square&logo=argo)](https://argo-cd.readthedocs.io/)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-9.4-EF7B4D?style=flat-square&logo=argo)](https://argo-cd.readthedocs.io/)
 [![cert-manager](https://img.shields.io/badge/cert--manager-1.17-0A6E32?style=flat-square)](https://cert-manager.io/)
 [![mkcert](https://img.shields.io/badge/mkcert-Local%20TLS-1F305F?style=flat-square)](https://github.com/FiloSottile/mkcert)
 [![Helm](https://img.shields.io/badge/Helm-v3-0F1689?style=flat-square&logo=helm)](https://helm.sh/)
@@ -16,7 +16,7 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 
 - **Identical to prod where it matters.** This is **Talos**, not kind: real Talos nodes (`ghcr.io/siderolabs/talos:v1.13.3`), `cni: none` + Cilium, kube-proxy disabled, KubePrism on `127.0.0.1:7445`, ArgoCD as the pull-based apply mechanism. What works here works on a consumer cluster, because it *is* the consumer's substrate — not a Kubernetes look-alike.
 - **API-driven, immutable config.** Talos has no node shell. The registry mirror, CNI/proxy toggles, and KubePrism all live in the machine config ([`talos-patch.yaml`](talos-patch.yaml)) applied at `talosctl cluster create`, exactly as on a real node — no `docker exec node` containerd hot-patching.
-- **No `localhost` hostnames.** Everything runs over `*.localhost.direct` (public DNS wildcard pointing at `127.0.0.1`) with an mkcert wildcard cert, so Argo, the Helm OCI client and the browser behave exactly as they would against a real cluster.
+- **No `localhost` hostnames.** Everything runs over `*.localhost.direct` (public DNS wildcard pointing at `127.0.0.1`) with an mkcert wildcard cert, so Argo, the OCI client and the browser behave exactly as they would against a real cluster.
 - **Bootstrap without chicken-and-egg.** The OCI backing store is its own Docker container (`kind-registry`), not a pod in the cluster, so the registry exists *before* the cluster lives and Argo can pull artifacts on the first sync. (The `kind-registry` name is historical — it is a plain `registry:2` container, unrelated to the kind binary; the name is kept so cert SANs and the in-cluster Service DNS stay stable.)
 - **TLS end-to-end, container to Argo.** The `kind-registry` container terminates TLS itself with an mkcert cert carrying **both** SANs — `localhost` for the workstation and `kind-registry.registry.svc.cluster.local` for intra-cluster pulls. No HTTP bypasses on the Argo/browser path. Argo trusts the mkcert CA via an initContainer in `argocd-repo-server` that appends the CA to the system CA bundle.
 
@@ -28,7 +28,7 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 │  Browser ───────► https://argocd.localhost.direct                    │
 │                   (Cilium Gateway, mkcert wildcard)                  │
 │                                                                      │
-│  helm push  ────► https://localhost:5001/talos-platform-apps         │
+│  oras push  ────► https://localhost:5001/talos-platform-apps         │
 │                   (straight at the container, mkcert SAN: localhost) │
 │                                                                      │
 └──────────────────────────────│───────────────────────────│───────────┘
@@ -54,8 +54,8 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
                 │   • initContainer appends    │
                 │     mkcert CA to the system  │
                 │     CA bundle                │
-                │   • Helm OCI pull validates  │
-                │     the cert chain           │
+                │   • native OCI pull          │
+                │     validates the cert chain │
                 └──────────────────────────────┘
 ```
 
@@ -69,10 +69,10 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 | [`cilium-values.yaml`](cilium-values.yaml) | Helm values: `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, Hubble + Relay, `l2announcements.enabled` for future LB-IPAM. `k8sServiceHost=localhost`/`:7445` is added in the Taskfile as a `--set`. |
 | [`mkcert-cluster-issuer.yaml`](mkcert-cluster-issuer.yaml) | `ClusterIssuer mkcert-ca` for cert-manager (CA from `$(mkcert -CAROOT)`). |
 | [`gateway.yaml`](gateway.yaml) | Gateway `localhost-direct` with HTTP and HTTPS listeners for `*.localhost.direct` + a wildcard `Certificate` (terminates TLS for the **ArgoCD UI** — the registry push bypasses the Gateway). |
-| [`argocd-values.yaml`](argocd-values.yaml) | Headless ArgoCD: `ClusterIP` Service, no Ingress, `--insecure` (the Gateway terminates), Dex/Notifications/ApplicationSet off. **initContainer** appends `mkcert-ca` to the repo-server system CA bundle. **`configs.repositories.kind-registry-local`** registers the OCI Helm repo so Argo takes the OCI code path. |
+| [`argocd-values.yaml`](argocd-values.yaml) | Headless ArgoCD: `ClusterIP` Service, no Ingress, `--insecure` (the Gateway terminates), Dex/Notifications/ApplicationSet off. **initContainer** appends `mkcert-ca` to the repo-server system CA bundle. **`configs.repositories.kind-registry-local`** registers the native OCI repo (`type: oci`, `oci://` URL) so Argo takes the native-OCI source path (`sourceType=Directory`). |
 | [`argocd-route.yaml`](argocd-route.yaml) | `HTTPRoute argocd` → `argocd-server:443` on `argocd.localhost.direct`. |
 | [`registry-bridge.yaml`](registry-bridge.yaml) | Namespace `registry` + Service `kind-registry` + a manual `EndpointSlice` with `${KIND_REGISTRY_IP}` (via `envsubst` from `docker container inspect`) — the container speaks TLS directly, no HTTPRoute. |
-| [`argo-apps/<sub-layer>/<component>.yaml`](argo-apps/) | Per-component Argo `Application` manifests with `${TAG}` / `${REGISTRY}` placeholders, applied via `task local:apply`. `repoURL` carries no `oci://` scheme so Argo matches the registered Helm OCI repo. |
+| [`argo-apps/<sub-layer>/<component>.yaml`](argo-apps/) | Per-component Argo `Application` manifests with `${TAG}` / `${REGISTRY}` placeholders, applied via `task local:apply`. `repoURL` is `oci://${REGISTRY}/<sub-layer>/<component>` + `path: .`, so Argo takes the native OCI source (`sourceType=Directory`) and matches the registered `type: oci` repo. |
 
 ## Prerequisites
 
@@ -86,11 +86,13 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on **Podman**, but the Talos docker provisioner runs the node as a privileged container with nested services, so it **requires a rootful Podman machine** — rootless cannot write `oom_score_adj` / `/proc/sys` kernel params and the node never finishes bootstrapping. Starting from a default (rootless) Podman machine on macOS, four deltas apply:
 
 - **Rootful machine** (the decisive prerequisite): `podman machine set --rootful`, then restart the machine. This is what makes the Talos node bootstrap at all.
-- **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error.
+- **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error. **The devbox shell sets this for you** (see *Automatic devbox fallback* below) — the manual export is only needed outside the devbox shell.
 - **VM size ≥ 6–8 GiB**: `podman machine set --memory 8192`. The default 2 GiB OOMs once Cilium + ArgoCD + a few components are up (same reason as the VM-headroom note above).
 - **Host ports**: the validated run mapped the NodePorts to high host ports (`8080:30080`, `8443:30443`) instead of `80`/`443`, so the Argo/registry endpoints carry the high port. (Binding the privileged `80`/`443` ports was not exercised in this run.)
 
 Docker Desktop, Colima, and Orbstack provision a rootful daemon by default and need none of these. Validated end-to-end on 2026-06-14 (issue #168).
+
+**Automatic devbox fallback.** The devbox `init_hook` removes the two CLI-level deltas: when the shell activates and finds `podman` but **no** working `docker` daemon, it (1) exports `DOCKER_HOST` from `podman machine inspect`, and (2) drops an `exec podman "$@"` shim into the gitignored `.direnv/bin/` and prepends it to `PATH`. This is what makes `task local:*` work even when `docker` is missing or aliased to a wrapper that drops arguments (the classic `Error: missing command 'podman COMMAND'`). It is a strict no-op for anyone with a real `docker` daemon (Docker Desktop / Colima / Orbstack). The shim lives under `.direnv/`, so nothing is committed. **Still manual** (devbox cannot provision the VM): `podman machine set --rootful --memory 8192` plus the machine restart, and the host-port mapping if `80`/`443` are unavailable.
 
 ## Quickstart
 
@@ -109,7 +111,7 @@ Step order:
 5. `local:storage:install` — local-path-provisioner as the **default StorageClass** (catalog CSIs need the real NAS; local-path is the local stand-in, hostPath under `/var`, namespace PSA-privileged for Talos). Needed for stateful local tests (CNPG, …).
 6. `local:cert-manager:install` — cert-manager `v1.17` (Helm, CRDs inline)
 7. `local:certs` — `mkcert -install` + `rootCA.pem` as a cert-manager secret + the argocd-NS CA ConfigMap + `ClusterIssuer mkcert-ca`
-8. `local:argo:install` — ArgoCD 7.7.0 (headless, no Ingress)
+8. `local:argo:install` — ArgoCD chart 9.4.5 / v3.3.2 (base parity, headless, no Ingress)
 9. `local:gateway:apply` — Gateway + wildcard Certificate + ArgoCD HTTPRoute + NodePort patch `30080/30443`
 10. `local:registry:bridge` — Service + EndpointSlice with the docker IP of `kind-registry`
 
@@ -118,19 +120,19 @@ Endpoints at the end:
 | Endpoint | Address | Use |
 |---|---|---|
 | Argo UI | `https://argocd.localhost.direct` | Browser login (password: `task local:argo:password`) — TLS via Cilium Gateway + mkcert wildcard |
-| Registry push (workstation) | `oci://localhost:5001/talos-platform-apps` | `helm push` from the workstation — TLS straight at the container, mkcert SAN `localhost` |
-| Registry pull (cluster) | `kind-registry.registry.svc.cluster.local:5000/talos-platform-apps` | Argo `Application.source.repoURL` (no `oci://` scheme) — TLS at the container, mkcert SAN: Service DNS |
+| Registry push (workstation) | `oci://localhost:5001/talos-platform-apps` | `oras push` from the workstation — TLS straight at the container, mkcert SAN `localhost` |
+| Registry pull (cluster) | `kind-registry.registry.svc.cluster.local:5000/talos-platform-apps` | Argo `Application.source.repoURL` (with `oci://` scheme) — TLS at the container, mkcert SAN: Service DNS |
 
 ## Push/apply workflow for sub-layers
 
 ```bash
 # Render, package and push a component to the local registry.
-# registry:2 runs anonymous — no helm registry login. TLS validates against the
+# registry:2 runs anonymous — no oras login required locally. TLS validates against the
 # mkcert CA in the system trust (via 'mkcert -install').
 task local:publish -- lifecycle/crossplane 0.0.0-dev
 
 # Create the Argo Application(s) of a sub-layer (Argo pulls intra-cluster via the
-# Service DNS, matched to the registered kind-registry-local OCI Helm repo).
+# Service DNS, matched to the registered kind-registry-local native OCI repo).
 task local:apply -- lifecycle 0.0.0-dev
 
 # Sync status
@@ -147,7 +149,7 @@ task local:argo:ui
 - `${TAG}` = `0.0.0-dev` (chart version, no `v` prefix)
 - `${REGISTRY}` = `kind-registry.registry.svc.cluster.local:5000/talos-platform-apps`
 
-Argo pulls the Helm-chart-wrapper OCI over the Service DNS (no Gateway round-trip), renders it and applies it to the target namespace.
+Argo pulls the native OCI artifact over the Service DNS (no Gateway round-trip) and applies the pre-rendered `manifest.yaml` directly (`sourceType=Directory`, `path: .`) — no Helm rendering step at reconcile time.
 
 ## Live dev loop (`task local:dev`) — Skaffold-style
 
@@ -162,7 +164,7 @@ It does an initial build and then **watches** `sub-layers/<sub-layer>/components
 - **Brings up fixtures.** Consumer-owned things the catalog doesn't ship (the actual DB/cache instance + runtime secrets, ADR-0023/0024) come from `local/fixtures/<sub-layer>/<component>/` — CR manifests (e.g. a CNPG `Cluster`) + a `secrets.yaml` whose secrets are **generated at apply time** (no values in the repo; a DB password is copied from CNPG's auto-secret). So `task local:dev -- lifecycle/crossview` first ensures the cnpg operator (dep), then a `crossview-pg` CNPG `Cluster` + the `crossview-db`/`crossview-runtime-secret` secrets, then crossview reaches Healthy. Disable with `LOCAL_DEV_SKIP_FIXTURES=1`. `task local:fixtures -- <comp>` runs it standalone. **Local-only** — in prod these are consumer-owned (the consumer repo). Needs a working StorageClass → `local:up` installs local-path-provisioner (see Quickstart step).
 - **`Ctrl-C` tears down.** Skaffold-style: stopping the watcher removes what this component *is* — its Argo `Application`, HTTPRoute, and fixtures (CR instances + generated secrets). Dependency operators (cnpg, crossplane) stay (expensive to redeploy). `LOCAL_DEV_KEEP=1` keeps everything; `task local:down` removes the whole cluster.
 
-- **Fresh tag per iteration.** ArgoCD caches OCI charts by digest, so re-pushing the *same* tag would not be re-pulled. Each save gets a new `0.0.0-dev.<epoch>` tag, which guarantees a clean re-pull — no manual `--hard-refresh`, no tag bookkeeping.
+- **Fresh tag per iteration.** ArgoCD's repo-server caches the resolved artifact, so re-pushing the *same* mutable tag is not reliably re-pulled. Each save gets a new `0.0.0-dev.<epoch>` tag, which guarantees a clean re-pull — no manual `--hard-refresh`, no tag bookkeeping.
 - **No self-trigger.** `rendered/` is gitignored, and `watchexec` honors `.gitignore`, so the render output never re-triggers the watcher.
 - **Survives typos.** A broken render mid-edit fails only that one iteration (printed to the console); the watcher keeps running and the next save retries.
 - **Requires an Argo-app template** `local/argo-apps/<sub-layer>/<component>.yaml` (template: [`lifecycle/crossplane.yaml`](argo-apps/lifecycle/crossplane.yaml)). `local:dev` errors with a hint if it is missing.
@@ -247,6 +249,13 @@ task local:argo:uninstall && task local:argo:install
 task local:down
 ```
 
+> **ArgoCD major-version bump (chart 7.x → 9.x, ArgoCD v2 → v3):** on an *existing* local
+> cluster prefer `task local:argo:uninstall && task local:argo:install` (shown above) over a
+> bare re-run of `local:argo:install` — a two-major in-place `helm upgrade` updates the
+> Application/AppProject CRD schemas under live Applications and can leave a brief
+> reconciliation gap. `task local:down && task local:up` is likewise clean; a first-time
+> `local:up` is unaffected.
+
 | Task | What happens | State |
 |---|---|---|
 | `local:stop` | `docker stop` of both containers | kept — on start all workloads return |
@@ -277,11 +286,11 @@ Cilium creates the Service only after the Gateway is applied. The task polls up 
 **Browser shows "not trusted" despite mkcert.**
 `mkcert -install` puts the CA in the system trust during `task local:certs`. If it misses the browser store (Firefox on Linux has its own): import `~/.local/share/mkcert/rootCA.pem` manually.
 
-**`helm push localhost:5001` fails with a TLS error.**
-`mkcert -install` did not carry the trust to the helm binary — happens on Linux when devbox `helm` does not use the system CA bundle. Workaround: `SSL_CERT_FILE=$(mkcert -CAROOT)/rootCA.pem helm push …`.
+**`oras push localhost:5001` fails with a TLS error.**
+`task push` sets `--plain-http=false` so oras uses HTTPS against the mkcert-TLS registry (oras would otherwise default a `localhost` ref to plain HTTP → 400). If `mkcert -install` did not carry the trust to the oras binary — happens on Linux when devbox `oras` does not use the system CA bundle — point oras at the mkcert root: `SSL_CERT_FILE=$(mkcert -CAROOT)/rootCA.pem oras push …`.
 
-**Argo `SyncFailed: object required` or `not a valid chart repository`.**
-The `kind-registry-local` repository is not registered or not recognised. Check: `kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=repository`. If missing: re-run `helm upgrade argocd … --values local/argocd-values.yaml` (the repo comes from `configs.repositories`). If present but unmatched: the Argo `Application` `repoURL` must carry **no `oci://` scheme** — otherwise Argo takes the deprecated `--repo oci://…` path.
+**Argo `SyncFailed` or `not a valid OCI repository`.**
+The `kind-registry-local` repository is not registered or not recognised. Check: `kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=repository`. If missing: re-run `helm upgrade argocd … --values local/argocd-values.yaml` (the repo comes from `configs.repositories`). If present but unmatched: confirm the repo registration is `type: oci` with an `oci://` URL, and that the Argo `Application` `repoURL` carries the **`oci://`** scheme with `path: .` (native OCI source, resolves as `sourceType=Directory`).
 
 **Argo Application shows `Unknown`.**
 Argo cannot pull the artifact. Check the Service DNS: `kubectl -n registry get endpointslice kind-registry -o yaml` must show an `addresses:` list with the docker IP. If empty: re-run `task local:registry:bridge` (`envsubst` did not resolve `${KIND_REGISTRY_IP}` — `envsubst` from `gettext` must be on PATH, and the registry must be attached to the `talos-platform-apps` docker network).
@@ -309,5 +318,5 @@ Argo cannot pull the artifact. Check the Service DNS: `kubectl -n registry get e
 
 - [Top `README.md`](../README.md) — repo overview + sub-layers
 - [`AGENTS.md`](../AGENTS.md) — conventions (Taskfile rules, Hard Constraints)
-- [ADR-0009 — Platform layer model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — why Helm-chart-wrapper OCI as the distribution format
+- [ADR-0009 — Platform layer model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — native OCI artifact distribution (§OCI-Artefakt-Form, revised 2026)
 - [ADR-0014 — Gateway-API + Cilium for the consumer clusters](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0014-gateway-api.md) — the prod equivalent of this setup

@@ -1,7 +1,12 @@
 requires:
-  storage-objects/garage: ">=v0.1.0" # S3 backend for blocks
+  s3-object: "*" # S3-compatible object store (capability; catalog/capability-index.yaml). Garage = active platform impl (ADR-0007)
 provides:
   - name: mimir
-    api_surface: [] # filled in with issue #17
+    version:
+      sot: app
+      app: 2.17.0 # Mimir appVersion (image tag grafana/mimir:2.17.0)
+      chart: 5.8.0 # grafana/mimir-distributed chart version (classic, non-Kafka)
+    api_surface: [] # classic microservices architecture ships no CRDs / exposed API groups
     capabilities:
       - {id: metrics-storage, swap_class: data-migration}
+      - {id: metrics-query, swap_class: drop-in}

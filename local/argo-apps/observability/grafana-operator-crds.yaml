@@ -1,0 +1,45 @@
+# Argo Application for observability/grafana-operator-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the grafana.integreatly.org CRDs ship as their own
+# OCI artifact, synced at sync-wave -1 ahead of the grafana-operator workload (wave 0).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-grafana-operator-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: grafana-operator-crds
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/grafana-operator-crds
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: CRDs are never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # Grafana/GrafanaDashboard/GrafanaDatasource CRs in consumer clusters.
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: unlike
+      # automated.prune:false above (which only suppresses automated cycles), this
+      # syncOption blocks pruning on BOTH automated and manual sync-with-prune, so a
+      # UI "Sync + Prune" cannot garbage-collect live Grafana/GrafanaDashboard/CR objects.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit on the
+      # large grafana-operator CRDs.
+      - ServerSideApply=true
+      - ServerSideDiff=true

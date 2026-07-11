@@ -1,0 +1,24 @@
+# Capsule Helm chart values for the strict-B CRDs artifact (ADR-0028).
+# Renders ONLY the 11 Capsule CustomResourceDefinitions — no operator workload.
+#
+# crds.inline=true: renders CRDs as ordinary templates (not in the chart-managed
+# crds/ dir), which makes `helm template` (without --include-crds) emit them.
+# crds.exclusive=true: suppresses all non-CRD primitives (Deployment, RBAC, etc.)
+# Together these two flags produce exactly 0 non-CRD objects and 11 CRDs.
+# The workload counterpart `security/capsule` (wave 0) carries 0 CRDs.
+
+metadata:
+  chart: capsule
+  repo: https://projectcapsule.github.io/charts
+  version: 0.13.7
+  namespace: capsule-system
+
+values:
+  crds:
+    # Render CRDs inline as templates so helm template (no --include-crds)
+    # includes them in the output. Required for task render:one compatibility.
+    inline: true
+    # Only install CRDs — suppress all non-CRD chart primitives.
+    exclusive: true
+    # Explicit: CRD installation is the sole purpose of this artifact.
+    install: true

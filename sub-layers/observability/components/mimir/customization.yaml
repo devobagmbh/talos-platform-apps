@@ -1,0 +1,41 @@
+# Customization Contract v2 (ADR-0024). The Grafana Mimir workload (the classic
+# microservices Deployments/StatefulSets + Services + RBAC + the chart-generated mimir
+# config ConfigMap + the dedicated Namespace) is the signed, pre-rendered artifact.
+# Mimir is NOT cluster-agnostic: its S3 connection (endpoint, region, bucket names,
+# credentials) is per-cluster and 100% consumer-owned. The freeze-line keeps that
+# connection OUT of the frozen workload: the rendered Mimir config references ${VAR}
+# placeholders, and Mimir resolves them at runtime from consumer-supplied env via the
+# `-config.expand-env=true` flag (verified rendered into every component container's
+# args — chart 5.8.0, present in the default args, NOT added via extraArgs).
+#
+# Shapes (a) + (c): the non-secret connection scalars come from a ConfigMap via envFrom
+# (Shape a), the credentials from a Secret via envFrom (Shape c). Both are wired onto
+# EVERY component pod's envFrom via the chart's top-level `global.extraEnvFrom` knob
+# (templates/lib/containerEnv.tpl emits envFrom on all 8 microservices: distributor/
+# ingester/querier/query-frontend/query-scheduler/store-gateway/compactor/ruler —
+# verified rendered: envFrom referencing mimir-runtime-config + mimir-runtime-secret on
+# each). Every required.* key below maps to a real ${VAR} reference in the rendered
+# mimir config ConfigMap (templates/mimir-config.yaml):
+#   common.storage.s3 uses ${S3_ENDPOINT}, ${S3_REGION}, ${S3_ACCESS_KEY_ID},
+#   ${S3_SECRET_ACCESS_KEY}, ${S3_INSECURE}; blocks_storage.s3.bucket_name uses
+#   ${S3_BUCKET_BLOCKS}; ruler_storage.s3.bucket_name uses ${S3_BUCKET_RULER}.
+freeze_line:
+  workload: rendered/manifest.yaml # Deployments/StatefulSets + Services + RBAC + config ConfigMap + Namespace — never consumer-patched
+provided_refs:
+  env: mimir-runtime-config # Shape (a): non-secret S3 connection scalars via envFrom
+  secret: mimir-runtime-secret # Shape (c): S3 credentials via envFrom
+provided_selectors: {} # no operator-assembled config / consumer-labeled CRs
+required:
+  env_keys: # Shape (a) — set in the mimir-runtime-config ConfigMap; expanded into the mimir config at runtime
+    - S3_ENDPOINT # explicit S3 endpoint URL (e.g. https://garage.<cluster>:3900)
+    - S3_REGION # S3 region (the platform's Garage impl uses `garage`)
+    - S3_BUCKET_BLOCKS # bucket for Mimir TSDB blocks
+    - S3_BUCKET_RULER # bucket for the Mimir ruler
+    - S3_INSECURE # S3 endpoint TLS mode: "false"=TLS/HTTPS (default, secure), "true"=plain HTTP (a TLS-less S3 endpoint)
+  config_files: [] # no Shape (b) whole-file config — the mimir config is catalog-rendered, only ${VAR}s are consumer-fed
+  secret_keys: # Shape (c) — set in the mimir-runtime-secret Secret
+    - S3_ACCESS_KEY_ID # S3 access key id
+    - S3_SECRET_ACCESS_KEY # S3 secret access key
+  selector_crs: []
+sync_wave: "10" # needs the cluster's S3 endpoint + buckets to exist first (s3-object capability)
+external_dependencies: [] # the S3 object store is a deploy-time dep (compatibility.yaml `requires: s3-object`), not a build dep
