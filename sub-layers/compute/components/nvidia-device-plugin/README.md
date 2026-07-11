@@ -69,7 +69,7 @@ misread them as catalog defects:
   labels. Kubernetes controller ownership stays unambiguous (ownerReferences), but
   label-based targeting (`kubectl -l`, monitors, NetworkPolicies) matches pods of
   **both** DaemonSets — select on the pod-name prefix or container name instead.
-- **Dead affinity term** — the third `nodeSelectorTerms` entry
+- **Dead affinity term** — one of the three OR-joined `nodeSelectorTerms`
   (`feature.node.kubernetes.io/cpu-model.vendor_id: NVIDIA`) never matches real
   hardware (NFD reports Intel/AMD/ARM CPU vendors); GPU-node matching works via the
   `pci-10de.present` and `nvidia.com/gpu.present` terms. Harmless, but do not debug
