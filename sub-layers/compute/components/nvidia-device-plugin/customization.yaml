@@ -27,7 +27,10 @@
 # external_dependencies: compute/node-feature-discovery (the runtime coupling — its
 # worker sets the feature.node.kubernetes.io/pci-10de.present labels the device-plugin's
 # default affinity matches on; without NFD only the manual nvidia.com/gpu.present label
-# fires). This is a runtime dependency, not a CRD-ordering one, so sync_wave stays 0.
+# fires). This is a runtime dependency, not a CRD-ordering one; sync_wave 1 orders the
+# Application strictly after NFD's wave 0 so the labels exist before the affinity
+# evaluates (at the same wave the DaemonSet self-heals but sits unobserved at 0 pods
+# until NFD catches up — see README § Sync-wave).
 freeze_line:
   workload: rendered/manifest.yaml  # device-plugin DaemonSet + MPS control-daemon DaemonSet + Namespace — never consumer-patched
 provided_refs: {}
@@ -37,6 +40,6 @@ required:
   config_files: []
   secret_keys: []
   selector_crs: []
-sync_wave: "0"
+sync_wave: "1"
 external_dependencies:
   - compute/node-feature-discovery

@@ -49,6 +49,38 @@ independently as [`compute/node-feature-discovery`](../node-feature-discovery/),
 using the bundled subchart would deploy a second, conflicting NFD instance at a stale
 chart version into the wrong namespace.
 
+## Chart version
+
+Pinned to **0.17.4** deliberately. Chart **0.19.3** introduces
+`mps.enableHostPID: true` as a default, which renders `hostPID: true` on the MPS
+control-daemon pod — a host-namespace regression this pin avoids (verified by
+rendering both versions; 0.17.4 has no `mps.enableHostPID` key and renders no
+`hostPID` field). A future chart bump MUST re-evaluate that key (set it to `false`
+explicitly, or accept and document the host-PID surface) before moving past 0.17.4.
+
+## Known upstream chart artifacts (0.17.4)
+
+Shipped as-rendered from the upstream chart; documented here so an operator does not
+misread them as catalog defects:
+
+- **Identical selectors on both DaemonSets** — the device-plugin and MPS
+  control-daemon DaemonSets share the same `matchLabels`
+  (`app.kubernetes.io/name` + `instance: nvidia-device-plugin`) and pod-template
+  labels. Kubernetes controller ownership stays unambiguous (ownerReferences), but
+  label-based targeting (`kubectl -l`, monitors, NetworkPolicies) matches pods of
+  **both** DaemonSets — select on the pod-name prefix or container name instead.
+- **Dead affinity term** — the third `nodeSelectorTerms` entry
+  (`feature.node.kubernetes.io/cpu-model.vendor_id: NVIDIA`) never matches real
+  hardware (NFD reports Intel/AMD/ARM CPU vendors); GPU-node matching works via the
+  `pci-10de.present` and `nvidia.com/gpu.present` terms. Harmless, but do not debug
+  scheduling against the vendor_id term.
+- **`mps-shm` hostPath without `type:`** — the device-plugin DaemonSet mounts
+  `/run/nvidia/mps/shm` with no `type:` field (unlike `mps-root`, which is
+  `DirectoryOrCreate`). The path is expected to exist on GPU nodes (created by the
+  NVIDIA runtime/driver stack or by the MPS init container on MPS-labelled nodes);
+  if a GPU node lacks it, the device-plugin pod can fail with
+  `CreateContainerConfigError` until it exists.
+
 ## Freeze-line (ADR-0024)
 
 The **workload** (the two DaemonSets and Namespace) is the signed, pre-rendered
@@ -92,19 +124,27 @@ schedules against GPUs the base layer has already made available.
   `/var/lib/kubelet/device-plugins` during node join is **expected** (the device-plugin
   hostPath requires the directory, which the kubelet creates) and self-heals once the
   kubelet initialises — not a config defect.
+- **OOM recovery** — if the device-plugin pod is OOM-killed (`OOMKilled` in the pod
+  status; the catalog pins a `128Mi` memory limit), the kubelet loses the
+  device-plugin socket and removes `nvidia.com/gpu` from the node's **allocatable**
+  resources until the DaemonSet pod restarts. Running GPU pods keep their
+  allocations; **new** GPU pods fail to schedule (`insufficient nvidia.com/gpu`)
+  during that window. Monitor `OOMKilled` events on GPU nodes; the pod restarts
+  automatically.
 
 ## Sync-wave
 
-`0` — the device plugin tolerates NFD being present first but does not strictly
-require CRD registration (unlike a strict-B component). The consumer Argo
-`Application` **MUST** carry a `sync-wave` **strictly higher** than
-[`compute/node-feature-discovery`](../node-feature-discovery/)'s (e.g. wave `1`) so
-NFD's worker has labelled the GPU nodes before the device-plugin's affinity evaluates.
-At the **same** sync-wave the device-plugin can evaluate its affinity against the
+`1` — **strictly after** [`compute/node-feature-discovery`](../node-feature-discovery/)'s
+wave `0`, so NFD's worker has labelled the GPU nodes before the device-plugin's
+affinity evaluates. The consumer Argo `Application` **MUST** preserve this ordering
+(any wave strictly higher than NFD's). The device plugin tolerates NFD being present
+first and needs no CRD registration (unlike a strict-B component). At the **same**
+sync-wave as NFD the device-plugin can evaluate its affinity against the
 `feature.node.kubernetes.io/pci-10de.present` labels before NFD has applied them: the
 DaemonSet then schedules **zero** pods until NFD catches up — self-healing, but
-**unobserved** (no alert distinguishes it from "no GPU nodes present"). The manual
-`nvidia.com/gpu.present` node label remains the fallback for a consumer not running NFD
+**unobserved** (no alert distinguishes it from "no GPU nodes present"); wave `1`
+avoids that window. The manual `nvidia.com/gpu.present` node label remains the
+fallback for a consumer not running NFD
 (see [Consumer obligations](#consumer-obligations)).
 
 ## Namespace & Pod Security
