@@ -39,6 +39,14 @@ All images are pinned (driver `synology/synology-csi:v1.3.0` + `registry.k8s.io/
   sig-storage sidecars (provisioner v3.0.0 …). Verify against the target Kubernetes at
   deploy; bump the sidecar tags in a follow-on if a newer cluster needs it.
 
+## Sync-wave
+
+`sync-wave: "0"` (from `customization.yaml`). This is storage substrate — the
+CSIDriver, StorageClass, and node/controller plugins MUST be Ready before any
+stateful consumer that provisions PVCs against `synology-iscsi-storage` (e.g. a
+consumer's Harbor at a later wave). The consumer's Argo `Application` carries the
+wave via its `argocd.argoproj.io/sync-wave` annotation.
+
 ## OCI
 
 ```
