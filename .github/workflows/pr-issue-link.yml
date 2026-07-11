@@ -19,6 +19,12 @@ name: pr-issue-link
 on:
   pull_request:
     types: [opened, edited, reopened, labeled, unlabeled, synchronize]
+  # merge_group: this is a required check, so it MUST report a status on the queue's
+  # merge_group head or the PR deadlocks. A merge_group event carries no PR object, and
+  # GitHub's merge queue cannot re-validate PR metadata — so the issue-link (enforced at
+  # PR time) is a deliberate pass-through here (same job name → same check context).
+  # Accepted residual: a metadata edit made WHILE a PR sits in the queue is not re-checked.
+  merge_group:
 
 permissions:
   contents: read
@@ -28,7 +34,11 @@ jobs:
   require-issue-link:
     runs-on: ubuntu-latest
     steps:
+      - name: merge_group short-circuit (issue-link enforced at PR time)
+        if: github.event_name == 'merge_group'
+        run: 'echo "merge_group: issue-link is immutable post-approval — enforced at PR time."'
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v7
+        if: github.event_name == 'pull_request'
         with:
           script: |
             const { repository } = await github.graphql(

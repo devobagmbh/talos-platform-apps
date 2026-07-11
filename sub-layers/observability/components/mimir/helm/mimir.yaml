@@ -114,15 +114,21 @@ values:
       # cAdvisor + apiserver + CNI across all nodes makes the distributor drop samples
       # with reason="rate_limited", so series like up / kube_pod_info / node_cpu never
       # land → "No data" panels in Grafana. Raised to the platform footprint.
-      # max_global_series_per_user (the cardinality CEILING) is deliberately left at the
-      # chart default here: a single replicas-1 / RF-1 ingester capped at 512Mi (see the
-      # ingester resources block below) holds far fewer than the chart default's series,
-      # so raising the ceiling would not add reachable headroom — it would only replace a
-      # clean per-user-series-limit rejection with an OOMKill of the one stateful
-      # component. Raise it only in lockstep with the ingester memory limit.
+      # max_global_series_per_user (the cardinality CEILING) is raised in LOCKSTEP with the
+      # ingester memory limit (4Gi, see the ingester resources block below). A real
+      # multi-node cluster (kube-state-metrics + node-exporter + cAdvisor + apiserver
+      # histograms + CNI across all nodes) exceeds the chart default of 150000 active
+      # series and hits err-mimir-max-series-per-user — a clean rejection, but the series
+      # (up / kube_pod_info / node_cpu …) then never land. The ceiling and the single
+      # replicas-1 / RF-1 ingester's RAM MUST move together: raising the ceiling alone
+      # OOMKills the one stateful ingester; raising RAM alone wastes the headroom. Sizing:
+      # ~600k series ≈ 1.5–1.8Gi steady (Mimir ~2.5–3 KB/series); the binding driver is WAL
+      # replay on restart (replays the on-disk WAL while holding the series → a spike well
+      # above steady), so the limit is 4Gi. Re-bump BOTH together if it OOMs at higher cardinality.
       limits:
         ingestion_rate: 150000
         ingestion_burst_size: 1500000
+        max_global_series_per_user: 600000
 
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
   # small single-workload cluster; no zone awareness). Each carries an explicit
@@ -135,21 +141,32 @@ values:
     resources:
       requests:
         cpu: 100m
-        memory: 128Mi
+        memory: 256Mi   # raised with the ingester ceiling: at 600k series the distributor
       limits:
-        memory: 256Mi
+        memory: 512Mi   # validates/forwards more in-flight; 256Mi OOMed under the push volume
   ingester:
     replicas: 1
     # Single ingester: no cross-pod replication, so zone-aware replication is off and
     # the replication factor is 1 (chart default 3 is a multi-replica/zone value).
     zoneAwareReplication:
       enabled: false
+    # Memory is the binding constraint for the single WAL-holding ingester. The OOM path is
+    # WAL REPLAY on restart: it replays the on-disk WAL while holding the in-memory series — a
+    # spike well above steady state; at 512Mi that OOMKilled mid-replay → CrashLoop death
+    # spiral (never Ready → WAL never flushes → grows → OOM). Steady ~600k series ≈ 1.5–1.8Gi
+    # (~2.5–3 KB/series); 4Gi gives replay headroom at that ceiling. In lockstep with
+    # max_global_series_per_user (600k) above — bump both together.
+    # QoS: requests.memory == limits.memory (4Gi) reserves the full envelope so the kubelet
+    # never evicts the pod below its limit during WAL replay (the peak-memory moment). This
+    # does NOT make the pod Guaranteed — that also requires a CPU limit, which the no-throttle
+    # convention forbids — so it stays Burstable, but reserving the whole 4Gi closes the
+    # eviction-below-limit window that would otherwise kill a mid-replay ingester.
     resources:
       requests:
         cpu: 100m
-        memory: 256Mi
+        memory: 4Gi
       limits:
-        memory: 512Mi
+        memory: 4Gi
   querier:
     replicas: 1
     resources:
