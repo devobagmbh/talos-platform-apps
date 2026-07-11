@@ -14,6 +14,7 @@ is the component; this directory is the organisational bracket (ADR-0009).
 | [`snapshot-controller`](components/snapshot-controller/) | 0 | Strict-B workload half — the cluster-singleton external-snapshotter `snapshot-controller` Deployment (leader-election) that reconciles `VolumeSnapshot` → `VolumeSnapshotContent`. Requires `snapshot-controller-crds`. |
 | [`democratic-csi`](components/democratic-csi/) | 0 | NAS-backed iSCSI block storage (Synology DSM) via democratic-csi — **Talos-native (nsenter)**; a consumer's durable tier for stateful workloads (ADR-0026) |
 | [`synology-csi`](components/synology-csi/) | 0 | **DEPRECATED** — the official Synology CSI; does **not** work on Talos (iscsiadm via `chroot /host` fails — no host userland). Superseded by `democratic-csi`; kept for reference. |
+| [`local-path-provisioner`](components/local-path-provisioner/) | 0 | Node-local block storage (Rancher local-path-provisioner) — `block-storage-local`; a non-replicated, fast scratch tier backed by a Talos `UserVolumeConfig` mount at `/var/mnt/local-path-provisioner`. Helper pod mounts hostPath → namespace PSA `privileged`. |
 
 ## Notes
 

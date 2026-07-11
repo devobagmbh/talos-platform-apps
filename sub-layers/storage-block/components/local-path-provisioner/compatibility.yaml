@@ -1,0 +1,9 @@
+requires: {} # no catalog-internal dependencies (substrate is a capability-form Talos UserVolumeConfig, not a version pin — #71)
+provides:
+  - name: local-path-provisioner
+    version:
+      sot: app
+      app: v0.0.36
+    api_surface: []
+    capabilities:
+      - {id: block-storage-local, swap_class: data-migration}

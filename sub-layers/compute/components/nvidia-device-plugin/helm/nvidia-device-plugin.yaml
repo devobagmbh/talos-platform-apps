@@ -1,0 +1,91 @@
+# NVIDIA Device Plugin — the GPU-scheduling half of the Devoba platform's
+# nvidia-stack. Layer-2 default values for talos-platform-apps. The device plugin
+# advertises the node's NVIDIA GPUs to the kubelet as the `nvidia.com/gpu`
+# extended resource, so GPU-requesting pods can be scheduled onto those nodes.
+# The telemetry half (DCGM exporter) ships separately as
+# observability/nvidia-dcgm-exporter (#61); both halves implement the same
+# `gpu-runtime` capability (see compatibility.yaml + README).
+#
+# This component is **mixed** — a Helm wrapper plus a manifests/00-namespace.yaml
+# (the chart renders no Namespace object).
+#
+# CRDs: chart 0.17.4 renders ZERO CustomResourceDefinitions (verified —
+# `helm template` over the default values produces 2 DaemonSets and no CRD), so
+# ADR-0028 strict-B does NOT apply: there is no -crds sibling artifact.
+#
+# Cluster-specific bits (replica/node placement, tolerations, the optional
+# external plugin-config ConfigMap, MIG strategy) are consumer-owned (Layer 3) —
+# see customization.yaml + README. This component is cluster-agnostic at the
+# freeze line: it needs nothing from the consumer to render a valid, signed
+# workload.
+
+metadata:
+  chart: nvidia-device-plugin
+  repo: https://nvidia.github.io/k8s-device-plugin
+  version: 0.17.4  # appVersion 0.17.4 (helm show chart, 2026-06-23)
+  # >>> VERIFY the current chart at push (`helm show chart nvidia-device-plugin
+  #     --repo https://nvidia.github.io/k8s-device-plugin --version <v>`).
+  #     Pinned to 0.17.4 deliberately: chart 0.19.3 adds `mps.enableHostPID: true`
+  #     as a default, which renders `hostPID: true` on the MPS control-daemon pod —
+  #     a host-namespace regression this pin avoids (see README § Chart version).
+  namespace: nvidia-device-plugin
+
+values:
+  # -- Disable the bundled node-feature-discovery subchart. The chart 0.17.4 bundles
+  # NFD (subchart version 0.15.3) under the dependency condition
+  # `nfd.enabled,gfd.enabled`; using it would deploy a SECOND, conflicting NFD
+  # instance at a stale chart version into the wrong namespace. NFD ships
+  # independently in this catalog as compute/node-feature-discovery (chart 0.18.3,
+  # declared in compatibility.yaml requires + external_dependencies). `nfd.enabled:
+  # false` is set explicitly belt-and-suspenders (the chart default carries no
+  # `nfd.enabled` key, which Helm treats as falsy for the dependency condition).
+  nfd:
+    enabled: false
+
+  # -- Disable the bundled GPU Feature Discovery (GFD) subchart. `gfd.enabled: false`
+  # is already the chart default; pinned here so a chart-default drift cannot
+  # silently enable GFD (and, via the `nfd.enabled,gfd.enabled` condition, pull in
+  # the bundled NFD). GFD, if ever needed, is a separate catalog component, not a
+  # subchart of this one.
+  gfd:
+    enabled: false
+
+  # -- device-plugin container securityContext (branch 1 of the chart's
+  # `nvidia-device-plugin.securityContext` helper — verbatim replacement). Setting a
+  # non-empty `securityContext` makes the helper use this block verbatim instead of
+  # falling through to its else-branch default, making the catalog's security intent
+  # explicit and immune to a values-default drift that could switch the helper to a
+  # privileged branch (e.g. a consumer overlay setting compatWithCPUManager). The
+  # rendered fields — allowPrivilegeEscalation: false + capabilities.drop: [ALL] —
+  # are produced by this pin.
+  #
+  # `runAsNonRoot` and `readOnlyRootFilesystem` are intentionally NOT pinned: the
+  # device-plugin process writes a Unix socket under /var/lib/kubelet/device-plugins
+  # (a hostPath mount), accesses the NVIDIA device nodes, and is expected to run as
+  # root. The chart sets no runAsNonRoot/runAsUser default and exposes no values key
+  # to set them independently of the full securityContext block; adding them would
+  # require pulling the container image to confirm the effective UID. This is a
+  # documented design limitation for a node-level device-driver agent, not a
+  # deferral. The hostPath mounts force the namespace to PSA enforce: privileged
+  # (see manifests/00-namespace.yaml) — these container fields are defense-in-depth,
+  # not the PSA backstop.
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+  # -- Resource requests/limits (base.required_resource_limits gate). The chart
+  # applies this single `resources` block to all three rendered containers — the
+  # device-plugin container plus the MPS control daemon's init and main containers
+  # (`{{- with .Values.resources }}` in both DaemonSet templates). Both are light
+  # node agents (small RSS; gRPC socket + MPS pipe management), so these are
+  # conservative Burstable-QoS requests with headroom limits — the same sizing
+  # rationale as observability/node-exporter. Without requests the DaemonSets run
+  # BestEffort QoS and are first to be OOM-killed under node memory pressure.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

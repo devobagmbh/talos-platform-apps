@@ -1,0 +1,57 @@
+# Argo Application for compute/nvidia-device-plugin (local test environment).
+# GPU device-plugin (the nvidia-device-plugin DaemonSet) + a dormant MPS
+# control-daemon DaemonSet + the nvidia-device-plugin Namespace (PSA enforce:
+# privileged — the device-plugin mounts hostPath, which both baseline and
+# restricted forbid), synced at sync-wave 1 — strictly after
+# compute/node-feature-discovery (wave 0), so NFD's worker has labelled GPU nodes
+# before the device-plugin's affinity evaluates (component README § Sync-wave);
+# on a non-GPU test node the DaemonSets schedule 0 pods (no matching affinity) and
+# are Healthy at 0 desired — the E2E asserts the artifact SYNCS cleanly, not that
+# pods run.
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.1.0)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compute-nvidia-device-plugin
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: compute
+    platform.devoba.de/component: nvidia-device-plugin
+spec:
+  project: default
+  source:
+    # Native OCI source (sourceType=Directory): Argo pulls the pre-rendered
+    # single-layer manifest artifact and applies it directly — no Helm rendering
+    # at reconcile time (local/README.md; matches the registered type: oci repo).
+    repoURL: oci://${REGISTRY}/compute/nvidia-device-plugin
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    # The workload artifact ships its own nvidia-device-plugin Namespace object
+    # (PSA enforce: privileged), so this app deploys into it but never auto-creates
+    # it (CreateNamespace=false — the shipped Namespace manifest is authoritative,
+    # carrying the PSA labels Argo's CreateNamespace path would miss).
+    namespace: nvidia-device-plugin
+
+  syncPolicy:
+    # The workload IS prunable: removing the artifact garbage-collects the two
+    # DaemonSets + the Namespace. No CRDs ship here (no strict-B half), so there is
+    # no CR-cascade concern.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The nvidia-device-plugin Namespace is shipped as a manifest in this
+      # artifact — never create it from Argo's CreateNamespace path (it would miss
+      # the PSA labels).
+      - CreateNamespace=false
+      # NB: ServerSideApply is deliberately NOT set (mirrors the NFD workload half).
+      # The two DaemonSets are small manifests needing no SSA; a cluster-wide
+      # Argo↔K8s OpenAPI schema skew may still surface sync as Unknown (the
+      # discriminator is in-cluster resource health, per the E2E assertion).
