@@ -94,7 +94,10 @@ the bare `X.Y.Z`).
   orphans the **cluster-scoped** webhook configurations, which then reject
   every `redhatcop.redhat.io` CR operation cluster-wide (`failurePolicy: Fail`
   with no backing service). Recovery from that state: delete the orphaned
-  `MutatingWebhookConfiguration` + `ValidatingWebhookConfiguration` by name.
+  webhook configurations by name —
+  `kubectl delete mutatingwebhookconfiguration vault-config-operator-mutating-webhook-configuration`
+  and
+  `kubectl delete validatingwebhookconfiguration vault-config-operator-validating-webhook-configuration`.
   The `-crds` Application is removed separately — its CRDs are `Prune=false`
   by design (ADR-0028).
 
