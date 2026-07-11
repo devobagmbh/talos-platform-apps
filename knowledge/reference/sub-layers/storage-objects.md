@@ -27,4 +27,4 @@ LGTM-A backends, Velero, and application buckets. OCI prefix:
 
 - `s3-object` is the capability the `observability` LGTM backends (`loki`/`mimir`/`tempo`) require.
 - `garage` carries a populated freeze-line (`config_files: /mnt/garage.toml` via `garage-config`; `secret_keys: rpcSecret`).
-- Gaps ([gap analysis](../../gap-analysis.md)): `garage-buckets` lacks a `customization.yaml` and carries German README content; `garage-crds` carries a `FLAG: confirm` provenance marker.
+- Gaps (tracked in issue #523): `garage-buckets` lacks a `customization.yaml` and carries German README content; `garage-crds` carries a `FLAG: confirm` provenance marker.

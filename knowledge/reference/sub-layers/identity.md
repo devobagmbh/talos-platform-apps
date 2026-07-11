@@ -23,4 +23,4 @@ OCI prefix: `ghcr.io/devobagmbh/talos-platform-apps/identity/`.
 ## Notes
 
 - `dex` carries a freeze-line with consumer input: `secret_keys: [config.yaml]` via `provided_refs.secret = dex-config`.
-- Gap ([gap analysis](../../gap-analysis.md)): the `identity-oidc` capability is declared without a `swap_class` (older contract shape).
+- Gap (tracked in issue #523): the `identity-oidc` capability is declared without a `swap_class` (older contract shape).

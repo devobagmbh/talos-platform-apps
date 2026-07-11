@@ -45,4 +45,4 @@ these components), documented in the sub-layer README, not a component of its ow
 
 - strict-B `-crds` halves: `prometheus-operator-crds`, `grafana-operator-crds`.
 - `loki`/`mimir`/`tempo` carry populated freeze-lines (env + secret keys for their object-store backend).
-- Gap ([gap analysis](../../gap-analysis.md)): `grafana` lacks a `customization.yaml`; `hubble` README omits OCI path / sync-wave / ADR references.
+- Gap (tracked in issue #523): `grafana` lacks a `customization.yaml`; `hubble` README omits OCI path / sync-wave / ADR references.

@@ -18,8 +18,8 @@ material (those are SOPS-encrypted elsewhere). OCI prefix:
 
 (This concept's filename is `secret-management.md` rather than `secrets.md`
 because a host security hook blocks writes to any path segment matching the bare
-token that the sub-layer directory itself carries; see the gap analysis note on
-the hook false-positive. The link text and title remain the sub-layer's real name.)
+token that the sub-layer directory itself carries; see issue #523 for the hook
+false-positive. The link text and title remain the sub-layer's real name.)
 
 ## Components
 
@@ -37,4 +37,4 @@ the hook false-positive. The link text and title remain the sub-layer's real nam
 ## Notes
 
 - `external-secrets` publishes the `GithubAccessToken` generator CRD enabled (the consumer-side GHCR-token refresh path depends on it, ADR-0025); it stays in the apps catalog, never in base.
-- Gaps ([gap analysis](../../gap-analysis.md)): **orphan strict-B half** — `vault-config-operator-crds` ships with no `vault-config-operator` workload sibling (the `secret-config-declarative` capability's active impl); `cert-manager` ships CRDs inline rather than strict-B split; `clustersecretstore-defaults` and `ca-clusterissuer` lack a `customization.yaml`; two READMEs carry consumer-specific + German content (public-repo hygiene).
+- Gaps (tracked in issue #523): **orphan strict-B half** — `vault-config-operator-crds` ships with no `vault-config-operator` workload sibling (the `secret-config-declarative` capability's active impl); `cert-manager` ships CRDs inline rather than strict-B split; `clustersecretstore-defaults` and `ca-clusterissuer` lack a `customization.yaml`; two READMEs carry consumer-specific + German content (public-repo hygiene).

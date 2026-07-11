@@ -30,4 +30,4 @@ Block-storage CSI drivers exposing block PersistentVolumes. OCI prefix:
 
 - strict-B `-crds` halves: `piraeus-operator-crds`, `snapshot-controller-crds`.
 - `democratic-csi` and `synology-csi` carry populated freeze-lines (driver-config secrets).
-- Gaps ([gap analysis](../../gap-analysis.md)): `democratic-csi` and `synology-csi` both TODO an undefined block-storage/`csi-iscsi` capability (the index defines only `block-storage-replicated`/`block-storage-local`); `synology-csi` is documented as deprecated / non-functional on Talos yet still ships.
+- Gaps (tracked in issue #523): `democratic-csi` and `synology-csi` both TODO an undefined block-storage/`csi-iscsi` capability (the index defines only `block-storage-replicated`/`block-storage-local`); `synology-csi` is documented as deprecated / non-functional on Talos yet still ships.

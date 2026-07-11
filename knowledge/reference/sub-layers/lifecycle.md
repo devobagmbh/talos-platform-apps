@@ -32,5 +32,5 @@ depends on the operators/packages the previous one installs.
 
 ## Notes
 
-- Gaps ([gap analysis](../../gap-analysis.md)): `bare-metal-boot` is wired inconsistently across `booter` (declares it, no `swap_class`) and `ipxe` (`capabilities: []` + TODO); `booter` and `ipxe` lack a `customization.yaml`/have a `sot: none` respectively; relocation of `ipxe` out of the catalog is tracked upstream.
+- Gaps (tracked in issue #523): `bare-metal-boot` is wired inconsistently across `booter` (declares it, no `swap_class`) and `ipxe` (`capabilities: []` + TODO); `booter` and `ipxe` lack a `customization.yaml`/have a `sot: none` respectively; relocation of `ipxe` out of the catalog is tracked upstream.
 - `crossview` and `ipxe` carry populated freeze-lines (consumer secrets / boot-script config).

@@ -26,4 +26,4 @@ Cluster backup (Velero) plus GitHub Actions self-hosted runners. OCI prefix:
 ## Notes
 
 - strict-B `-crds` halves: `actions-runner-controller-crds`, `velero-crds` (sync-wave -1, `Prune=false`).
-- Gaps ([gap analysis](../../gap-analysis.md)): `velero` lacks `customization.yaml` and declares `capabilities: []` with a `backup`-capability TODO; `ci-runner` is a contract-open capability.
+- Gaps (tracked in issue #523): `velero` lacks `customization.yaml` and declares `capabilities: []` with a `backup`-capability TODO; `ci-runner` is a contract-open capability.

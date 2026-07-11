@@ -24,4 +24,4 @@ Harbor as the container/OCI registry with a pull-through cache. OCI prefix:
 
 - `harbor` composes the `databases` sub-layer's capabilities: it requires `cnpg-postgres` (PostgreSQL) and `redis-managed` (Valkey) rather than shipping its own.
 - It carries a freeze-line (`secret_keys: HARBOR_ADMIN_PASSWORD, secretKey`).
-- Gap ([gap analysis](../../gap-analysis.md)): ships with `capabilities: []` and an `oci-registry` capability TODO (contract open).
+- Gap (tracked in issue #523): ships with `capabilities: []` and an `oci-registry` capability TODO (contract open).

@@ -7,8 +7,8 @@ okf_version: "0.1"
 An [Open Knowledge Format](SPEC.md) v0.1 bundle: the **primary documentation
 home** for this repository ([DR-0002](decisions/DR-0002-knowledge-bundle-as-primary-doc-home.md)).
 It consolidates the catalog's architecture, contracts, gates, workflows,
-per-sub-layer reference, decision records, and a living [gap analysis](gap-analysis.md)
-into one navigable, self-describing home for humans and agents. Concepts are
+per-sub-layer reference, and decision records into one navigable, self-describing
+home for humans and agents. A catalog gap analysis is tracked separately in issue #523. Concepts are
 authoritative and self-contained for their topic; each cites its `sources` for
 provenance and carries a verification `timestamp`.
 
@@ -45,7 +45,6 @@ permanent second source of truth).
 
 ## Reference material
 
-- [Gap analysis](gap-analysis.md) - living inventory of documentation, architecture/capability, and gate/coverage gaps.
 - [Glossary](glossary.md) - component, sub-layer, capability, swap-class, freeze-line, strict-B, and the layer terms.
 - [OKF specification](SPEC.md) - pinned upstream copy of the Open Knowledge Format v0.1 draft.
 - [Log](log.md) - bundle changelog.

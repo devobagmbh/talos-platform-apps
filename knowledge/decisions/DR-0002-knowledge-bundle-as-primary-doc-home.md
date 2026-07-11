@@ -42,8 +42,9 @@ duplication by **consolidation into the bundle**, not by pointer indirection.
   when a listed source changes.
 - Coverage: deep topic concepts (architecture, contracts, gates, workflows), one
   **reference concept per sub-layer** (the full catalog mapped), the migrated
-  decision records, a glossary, and a **living [gap analysis](../gap-analysis.md)**
-  spanning documentation, architecture/capability, and gate/coverage gaps.
+  decision records, and a glossary. A catalog **gap analysis** (documentation,
+  architecture/capability, gate/coverage) is tracked in issue #523, not committed
+  as a bundle concept.
 - `AGENTS.md` remains the machine-readable **conventions** source of truth and
   `DOCUMENTATION.md` the doc-authoring standard; the bundle documents and orients
   to them and does not restate their normative rules verbatim.
@@ -53,8 +54,8 @@ duplication by **consolidation into the bundle**, not by pointer indirection.
 ### Positive
 
 - One navigable home for humans and agents, self-describing and diffable.
-- The gap analysis makes documentation, capability, and gate coverage a first-class,
-  tracked artifact rather than tacit knowledge.
+- The gap analysis (issue #523) makes documentation, capability, and gate coverage
+  a first-class, tracked artifact rather than tacit knowledge.
 - The `sources` + `timestamp` convention gives every claim a provenance and a
   staleness signal.
 
@@ -66,10 +67,9 @@ duplication by **consolidation into the bundle**, not by pointer indirection.
   their content migrates **perspectively** (incrementally), and the sub-layer
   reference concepts are the first consolidation. Until a component README is
   consolidated, it and the bundle both describe the component — a bounded,
-  tracked duplication (itself a documentation gap in the gap analysis), not a
-  permanent second source of truth.
-- Ongoing maintenance: concepts must be re-verified against `sources` on change;
-  the gap analysis must be kept live.
+  tracked duplication (itself a documented gap in issue #523), not a permanent
+  second source of truth.
+- Ongoing maintenance: concepts must be re-verified against `sources` on change.
 
 ### Relationship to DR-0001
 
