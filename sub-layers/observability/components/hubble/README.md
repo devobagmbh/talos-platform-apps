@@ -107,3 +107,26 @@ kubectl exec -n kube-system deploy/hubble-relay -- hubble status
 
 Then confirm `cilium hubble` / the UI shows flows once a workload generates traffic.
 Live verification belongs in the local cluster, not CI.
+
+## Sync-wave
+
+`sync-wave: "0"` (from `customization.yaml`). Hubble's relay/UI are Day-2
+observability workloads with no catalog-component dependency — the only ordering
+requirement is the **substrate precondition** above (the Cilium-agent Hubble
+server on `:4244`), which is not a catalog sync-wave relationship. The consumer's
+Argo `Application` carries this wave via its `argocd.argoproj.io/sync-wave`
+annotation.
+
+## OCI
+
+```text
+oci://ghcr.io/devobagmbh/talos-platform-apps/observability/hubble:<tag>
+```
+
+## Related ADRs
+
+- [ADR-0009 — Platform-layer model / OCI distribution](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — the component as the independently versioned OCI unit.
+- [ADR-0024 — Customization Contract v2 (freeze-line)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-customization-contract-v2.md) — this component is cluster-agnostic (`provided_refs: {}`); the Hubble server toggle is a substrate setting, not a consumer-supplied ref.
+
+Substrate coupling is documented against `talos-platform-base#121`/`#122` (the
+deterministic Cilium seed that disables Hubble), referenced inline above.
