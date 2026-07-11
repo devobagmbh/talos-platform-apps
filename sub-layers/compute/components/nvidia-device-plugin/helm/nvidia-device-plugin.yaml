@@ -73,3 +73,19 @@ values:
     allowPrivilegeEscalation: false
     capabilities:
       drop: ["ALL"]
+
+  # -- Resource requests/limits (base.required_resource_limits gate). The chart
+  # applies this single `resources` block to all three rendered containers — the
+  # device-plugin container plus the MPS control daemon's init and main containers
+  # (`{{- with .Values.resources }}` in both DaemonSet templates). Both are light
+  # node agents (small RSS; gRPC socket + MPS pipe management), so these are
+  # conservative Burstable-QoS requests with headroom limits — the same sizing
+  # rationale as observability/node-exporter. Without requests the DaemonSets run
+  # BestEffort QoS and are first to be OOM-killed under node memory pressure.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
