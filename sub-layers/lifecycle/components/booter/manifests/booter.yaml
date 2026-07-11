@@ -8,10 +8,10 @@
 # lifecycle/ipxe HTTP service (offline-capable, see that component's README).
 #
 # SKELETON: apps ships the workload shell + a consumer-overridable config
-# placeholder. The consumer cluster repo (talos-seeder-cluster) supplies the real
-# proxyDHCP config (which iPXE binary to serve, the ipxe next-URL, the boot VLAN /
-# interface, allowed client MACs) and pins booter onto the node that sits on the
-# boot VLAN via nodeSelector. See README.md "Consumer-supplied config".
+# placeholder. The consumer cluster repo supplies the real proxyDHCP config
+# (which iPXE binary to serve, the ipxe next-URL, the boot VLAN / interface,
+# allowed client MACs) and pins booter onto the node that sits on the boot VLAN
+# via nodeSelector. See README.md "Consumer-supplied config".
 #
 # proxyDHCP needs hostNetwork (raw L2 broadcast on the boot segment) and binds
 # UDP < 1024 (67 DHCP, 69 TFTP, 4011 proxyDHCP) — hence the namespace is PSA
