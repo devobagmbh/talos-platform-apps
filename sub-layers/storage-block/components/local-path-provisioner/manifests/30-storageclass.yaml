@@ -1,0 +1,10 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path
+  # Intentionally NOT default: no storageclass.kubernetes.io/is-default-class
+  # annotation. Making this the cluster-default StorageClass is a consumer choice
+  # (set the annotation in the consumer overlay) — see README.
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
