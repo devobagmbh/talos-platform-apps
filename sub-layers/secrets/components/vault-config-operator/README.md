@@ -42,6 +42,15 @@ consumer CR against that tool's schema).
 - The controller-manager metrics Service renders as a dead endpoint
   (`targetPort: https` with no matching container port) — harmless, upstream
   behavior.
+- The `vault-config-operator-metrics-reader` ClusterRole (`nonResourceURLs:
+  /metrics`, `get`) renders **unbound** — no ClusterRoleBinding references it;
+  it is provided for an external Prometheus to bind.
+- The `vault-config-operator-prometheus-k8s` namespace-scoped Role +
+  RoleBinding grant the `prometheus-k8s` ServiceAccount in
+  `openshift-monitoring` read access — OpenShift monitoring RBAC, dead on
+  vanilla Kubernetes (neither the namespace nor the ServiceAccount exists).
+- Both Services carry the `service.alpha.openshift.io/serving-cert-secret-name`
+  annotation — OpenShift-only, ignored on vanilla Kubernetes.
 
 ## OCI path
 
