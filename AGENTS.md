@@ -149,6 +149,8 @@ Three rules, project-wide:
 2. **Locally reproducible** — every task runs on the workstation exactly as in CI. Before `git push`, `task ci` runs locally. No GHA-specific code in tasks (`$GITHUB_ACTIONS` checks or similar are forbidden).
 3. **Pipeline = task caller** — workflow steps only call `task <name>`. No inline `helm template`/`oras push`/`cosign sign` commands in the YAML. You change behavior in the task, not in the workflow.
 
+**Tooling carve-out (rule 1 only; closed set — one entry).** `openknowledge` (the OKF-bundle validator for `knowledge/`, gated via `task okf:validate` in `task ci`) is **not** packaged in Nixpkgs, so it is the single tool NOT sourced from `devbox.json`. `task okf:install` installs it from a **version-pinned GitHub release asset** whose per-platform sha256 is pinned in the Taskfile; it is idempotent, checksum-verifies before extraction (no curl-pipe-to-shell, retry + timeout on the download), and runs identically locally and in the GHA `ci` job (called by `task ci`), so rule 2 (locally reproducible) still holds. The `ci` job caches `.okf/` (keyed on the Taskfile hash) so a normal PR restores the CLI rather than re-downloading. A version bump re-pins every platform checksum in the Taskfile together. This is a closed one-entry list — a second non-devbox tool joins it only by amending this note. **Accepted supply-chain residual**: upstream ships only `checksums.txt` — no cosign signature, no SLSA provenance — so the sha256 pin detects post-adoption asset tampering but not a pin-time upstream compromise; this is asymmetric with the repo's own cosign-keyless OCI signing and accepted for a build-time doc validator.
+
 **API-orchestration carve-out (rule 3 only; closed set).** Two workflow classes are GitHub-API orchestration — *not* build-pipeline steps — and are therefore exempt from rule 3 (they cannot be locally reproduced):
 
 - **Label / board automation** (inline `actions/github-script`, no devbox/`task`): `issue-triage.yml`, `project-sync.yml`, `pr-needs-review.yml`, `status-strip.yml`, and `pr-issue-link.yml` (a PR→issue-link gate keeping the Projects v2 board self-maintaining — a linked PR auto-closes its issue on merge, so Status=Done needs no manual upkeep; a PR closing no issue must carry the `no-issue` label).
@@ -249,6 +251,7 @@ Before PR open:
 
 ## References
 
+- [`knowledge/`](knowledge/index.md) — the OKF knowledge bundle: a thin orientation + synthesis layer over this repo's architecture, contracts, gates, and workflows (pointers to the SOT files here, not a second source of truth); validated via `task okf:validate`
 - [`README.md`](README.md) — top overview + install
 - [`talos-platform-docs/adr/0009-platform-layer-model.md`](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md) — multi-layer OCI distribution
 - [`talos-platform-docs/operations/day-zero-backlog.md`](https://github.com/devobagmbh/talos-platform-docs/blob/main/operations/day-zero-backlog.md) — phase plan

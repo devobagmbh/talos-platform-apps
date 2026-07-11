@@ -204,7 +204,10 @@ tasks:
       # whose format we do not control (it emits two blank lines after the version
       # header → markdownlint MD012). Linting it would make every `chore(main):
       # release …` PR red. Treated like rendered/ — a tool artifact, not authored docs.
-      - git ls-files -z '*.md' ':!:*CHANGELOG.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
+      # knowledge/SPEC.md is excluded for the same reason: it is a verbatim pinned
+      # upstream copy of the OKF spec (Apache-2.0), vendored not authored, whose
+      # emphasis-as-heading style trips MD036. Do not edit vendored upstream to our rules.
+      - git ls-files -z '*.md' ':!:*CHANGELOG.md' ':!:knowledge/SPEC.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
   lint:rendered:
     desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
@@ -2536,6 +2539,121 @@ tasks:
 
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
+  okf:install:
+    desc: 'Install the pinned openknowledge CLI (not a Nix/devbox pkg) into .okf/bin'
+    summary: |
+      openknowledge is not packaged in Nixpkgs, so — as the one documented carve-out
+      to CI convention 1 (tools come from devbox) — its CLI is installed from a
+      version-pinned GitHub release asset whose per-platform sha256 is pinned in-repo
+      below. Runs identically locally and in the GHA `ci` job (called by `task ci`);
+      `.okf/` is GHA-cached (keyed on OKF_VERSION) so a normal PR never re-downloads.
+      No curl-pipe-to-shell — the tarball is checksum-verified BEFORE extraction and the
+      binary is located by search inside the archive, fail-closed on any mismatch, with
+      retry + timeout so a transient CDN blip does not hard-fail the required `ci` gate.
+
+      Idempotent: skips the download when the pinned version is already in .okf/bin.
+      The local skip trusts the persisted binary's `version` string — replacing that
+      binary needs write access to .okf/bin, which is out of the threat model (equivalent
+      to editing any repo file). CI is unaffected: a fresh checkout has no .okf/ and
+      always installs from the checksum-verified download (or the restored cache, itself
+      keyed on the pinned version).
+
+      Supply-chain trust model (ACCEPTED RESIDUAL): openknowledge-sh/openknowledge ships
+      only checksums.txt for its releases — NO cosign signature, NO SLSA provenance
+      (verified 2026-07-11). The inline sha256 therefore detects post-adoption asset
+      tampering (a retagged release with different bytes fails closed) but does NOT defend
+      against a pin-time upstream compromise; this is asymmetric with the repo's own
+      cosign-keyless OCI signing and is accepted for a build-time doc validator. A version
+      bump MUST re-pin ALL four platform checksums together — a wrong/missing one fails
+      closed on that platform with an explicit expected-vs-actual message (there is no
+      mechanical OKF_VERSION<->checksum parity gate; accepted, the failure is loud).
+    vars:
+      OKF_VERSION: v0.4.0
+    cmd: |
+      set -u
+      dest=".okf/bin"
+      bin="${dest}/openknowledge"
+      want="{{.OKF_VERSION}}"
+      if [ -x "$bin" ] && [ "$("$bin" version 2>/dev/null)" = "${want#v}" ]; then
+        echo "✓ openknowledge ${want} already present at ${bin}"
+        exit 0
+      fi
+      os=$(uname -s | tr '[:upper:]' '[:lower:]')
+      case "$(uname -m)" in
+        x86_64|amd64)  arch=amd64 ;;
+        arm64|aarch64) arch=arm64 ;;
+        *) echo "✗ unsupported arch: $(uname -m)"; exit 2 ;;
+      esac
+      # Per-platform sha256 of the v0.4.0 release tarballs (openknowledge-sh/openknowledge
+      # releases/download/v0.4.0/checksums.txt). A version bump re-pins ALL of these.
+      case "${os}_${arch}" in
+        linux_amd64)  sha="a8317bc648ba3deb2a595a9af84810bc84e04a6b7359522b10155377736e0cdb" ;;
+        linux_arm64)  sha="d0a3d3191b3d8e197bcd1d0f4e3ee80be0d02e455169555bcf57a958abe85dce" ;;
+        darwin_amd64) sha="6102906d779e8bde800740c714ee26f87b829b7745f79818160c686603c8c255" ;;
+        darwin_arm64) sha="3432aad41160a8b4a39a29d2f3db4227f5baff2e063bdbfa0e2521bd60d1b2a1" ;;
+        *) echo "✗ no pinned checksum for ${os}_${arch}"; exit 2 ;;
+      esac
+      asset="openknowledge_${os}_${arch}.tar.gz"
+      url="https://github.com/openknowledge-sh/openknowledge/releases/download/${want}/${asset}"
+      tmp=$(mktemp -d "${TMPDIR:-/tmp}/okf-install.XXXXXX") || { echo "✗ mktemp failed"; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      echo "↓ downloading ${asset} (${want})"
+      # --retry + timeouts: this runs in the required `ci` gate, so a transient CDN 5xx/429
+      # or slow connect must fail fast + retry, never hang to the job limit.
+      curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 20 --max-time 180 \
+        -o "${tmp}/${asset}" "$url" || { echo "✗ download failed: $url"; exit 2; }
+      if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "${tmp}/${asset}" | cut -d' ' -f1)
+      else
+        actual=$(shasum -a 256 "${tmp}/${asset}" | cut -d' ' -f1)
+      fi
+      if [ "$actual" != "$sha" ]; then
+        echo "✗ checksum mismatch for ${asset}"; echo "  expected ${sha}"; echo "  actual   ${actual}"; exit 2
+      fi
+      tar -xzf "${tmp}/${asset}" -C "$tmp" || { echo "✗ extract failed"; exit 2; }
+      found=$(find "$tmp" -type f -name openknowledge | head -1)
+      [ -n "$found" ] || { echo "✗ openknowledge binary not found in archive"; exit 2; }
+      # Guard mkdir + install: there is no `set -e`, so an unguarded failure here would
+      # fall through to the success echo and exit 0 with .okf/bin absent/stale.
+      mkdir -p "$dest" || { echo "✗ mkdir ${dest} failed"; exit 2; }
+      install -m 0755 "$found" "$bin" || { echo "✗ install to ${bin} failed"; exit 2; }
+      echo "✓ installed openknowledge ${want} → ${bin}"
+
+  okf:validate:
+    desc: 'Validate the knowledge/ OKF bundle (structure + link resolution)'
+    summary: |
+      Two gates over the knowledge/ Open Knowledge Format bundle:
+        1. `openknowledge validate` — structural OKF conformance (frontmatter/type,
+           reserved-file rules, log dates, UTF-8, markdown syntax); exits 1 on errors.
+        2. issue gate — `openknowledge validate` reports broken and bundle-ESCAPING links
+           as WARNINGS only (exit 0), so this enforces them: `list --json` surfaces each
+           as an issues[] entry, and this fails on ANY issue (predominantly link-target).
+           `(.issues // [])` is robust to whether a clean concept omits the key (v0.4.0)
+           or emits `[]` (a possible future serialization).
+      Prefers .okf/bin/openknowledge (task okf:install); the PATH fallback runs an
+      UNVERIFIED binary and says so.
+    cmd: |
+      set -u
+      if [ -x .okf/bin/openknowledge ]; then okf=".okf/bin/openknowledge"
+      elif command -v openknowledge >/dev/null 2>&1; then
+        okf="openknowledge"
+        echo "⚠ using unverified openknowledge from PATH — run 'task okf:install' for a checksum-verified binary"
+      else echo "✗ openknowledge not found — run: task okf:install"; exit 2; fi
+      "$okf" validate ./knowledge || exit 1
+      tmp=$(mktemp "${TMPDIR:-/tmp}/okf-list.XXXXXX") || { echo "✗ mktemp failed"; exit 2; }
+      trap 'rm -f "$tmp"' EXIT
+      "$okf" list --json ./knowledge > "$tmp" || { echo "✗ openknowledge list failed"; exit 2; }
+      # Fail on ANY reported issue (broken/escaping links + any other OKF warning class).
+      # Robust to clean concepts omitting `issues` OR emitting an empty array.
+      if jq -e '[.[] | select((.issues // []) | length > 0)] | length == 0' "$tmp" >/dev/null; then
+        echo "✓ OKF issue gate: no bundle issues (all links resolve inside the bundle)"
+      else
+        echo "✗ OKF issue gate: bundle issues (unresolved/escaping links or other OKF warnings):"
+        jq -c '.[] | select((.issues // []) | length > 0) | {path, issues}' "$tmp"
+        exit 1
+      fi
+      echo "✓ knowledge/ OKF bundle valid"
+
   ci:
     desc: Lokale Reproduktion der GHA-PR-Pipeline (release-coverage gates + ci:artifact)
     cmds:
@@ -2571,6 +2689,13 @@ tasks:
       # Hermetic red-green guard for the .trivyignore.yaml entry-shape validator
       # (#478) — mirrors test:trivy-extract's placement (in `ci` AND `ci:artifact`).
       - task: test:validate-trivyignore
+      # OKF knowledge/ bundle gate (PR-scoped, repo-wide doc gate — like
+      # validate:release-config, NOT artifact validation, so here and NOT in
+      # ci:artifact). okf:install is the documented carve-out to CI convention 1
+      # (openknowledge is not a Nix/devbox pkg); it is idempotent + checksum-pinned,
+      # so `task ci` stays locally reproducible on a fresh clone.
+      - task: okf:install
+      - task: okf:validate
       - task: ci:artifact
 
   ci:artifact:

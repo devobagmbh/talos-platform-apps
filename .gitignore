@@ -55,3 +55,8 @@ snyk-results.sarif
 !.claude/reviews/.gitkeep
 .mkcert-registry/
 .ansible/
+
+# Pinned openknowledge CLI, installed by `task okf:install` (not a Nix/devbox
+# package — the one carve-out to CI convention 1). Version + checksum are pinned
+# in the Taskfile; the binary itself is never committed.
+.okf/
