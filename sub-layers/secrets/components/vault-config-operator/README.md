@@ -19,15 +19,29 @@ consumer CR against that tool's schema).
   (dedicated namespace — this component is its sole catalog occupant).
 - Helm chart `vault-config-operator` `v0.8.49` from
   `https://redhat-cop.github.io/vault-config-operator/` (the chart's dedicated
-  index): manager Deployment (with kube-rbac-proxy sidecar), ServiceAccount,
-  RBAC, Services, `MutatingWebhookConfiguration` / `ValidatingWebhookConfiguration`.
+  index): manager Deployment, ServiceAccount, RBAC, Services,
+  `MutatingWebhookConfiguration` / `ValidatingWebhookConfiguration`, and
+  cert-manager `Certificate` (×2) + `Issuer`.
 - Webhook TLS is catalog-managed: `enableCertManager: true` renders two
   cert-manager `Certificate` resources and one `Issuer`, so the webhook serving
   certificate and CA injection need no consumer-supplied secret. With the chart
   default (`false`), both webhooks carry `failurePolicy: Fail` with no CA bundle
   — admission would reject every request.
-- Hardened baseline: PSA-restricted security contexts pinned for both containers;
-  explicit resource requests/limits (conftest `base.required_resource_limits`).
+- Hardened baseline: PSA-restricted security contexts pinned for the manager
+  container; explicit resource requests/limits (conftest
+  `base.required_resource_limits`). The `kube_rbac_proxy.*` values are inactive
+  with `enableMonitoring: false` — the chart renders no sidecar container.
+
+### Accepted upstream-chart residuals
+
+- The chart unconditionally renders the kube-rbac-proxy `ClusterRole` /
+  `ClusterRoleBinding` (`authentication.k8s.io` tokenreviews +
+  `authorization.k8s.io` subjectaccessreviews `create`) bound to the
+  controller-manager ServiceAccount even though the sidecar is disabled —
+  accepted risk; upstream chart behavior with no values knob.
+- The controller-manager metrics Service renders as a dead endpoint
+  (`targetPort: https` with no matching container port) — harmless, upstream
+  behavior.
 
 ## OCI path
 
@@ -52,6 +66,15 @@ the bare `X.Y.Z`).
 - Expected cascade: if cert-manager is degraded at wave 0, this component fails
   to reach Healthy at wave 1 (no serving certificate → webhook TLS missing).
   That is correct behavior, not a defect.
+- First-sync window: during the initial sync, `redhatcop.redhat.io` CR
+  operations fail transiently (~30–60 s) while cert-manager issues the webhook
+  serving certificate and cainjector injects the CA bundle. This is
+  self-healing, not a cert-manager degradation.
+- Recovery/diagnostics: if the `vault-config-operator-webhook-service-cert`
+  Secret is lost, cert-manager (wave 0) MUST be healthy — it re-issues the
+  certificate automatically. Verify webhook readiness via
+  `kubectl get mutatingwebhookconfiguration vault-config-operator-mutating-webhook-configuration -o jsonpath='{.webhooks[0].clientConfig.caBundle}'`
+  (non-empty once injected).
 
 ## Consumer obligations
 
@@ -66,6 +89,14 @@ the bare `X.Y.Z`).
   dependency of this component.
 - Monitoring is off in the catalog artifact (`enableMonitoring: false`); a
   consumer with a Prometheus stack enables it per-cluster.
+- Teardown: remove the component by deleting its Argo `Application` with
+  pruning enabled. `kubectl delete namespace vault-config-operator` alone
+  orphans the **cluster-scoped** webhook configurations, which then reject
+  every `redhatcop.redhat.io` CR operation cluster-wide (`failurePolicy: Fail`
+  with no backing service). Recovery from that state: delete the orphaned
+  `MutatingWebhookConfiguration` + `ValidatingWebhookConfiguration` by name.
+  The `-crds` Application is removed separately — its CRDs are `Prune=false`
+  by design (ADR-0028).
 
 The component is cluster-agnostic: `customization.yaml` declares no required
 consumer config (all `required.*` lists empty) — the consumer interaction
