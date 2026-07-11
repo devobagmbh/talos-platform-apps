@@ -143,7 +143,7 @@ Helm chart + values
  rendered/manifest.yaml
         │
         ▼
- task package → <component>-<tag>.tar.gz   (single OCI layer, tar of manifest.yaml)
+ task package → <component>-<tag>.tar.gz   (single OCI layer, tar of the Kustomize base: kustomization.yaml + manifest.yaml)
         │
         ▼
 oras push ghcr.io/devobagmbh/talos-platform-apps/<sub-layer>/<component>:<tag>

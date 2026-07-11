@@ -46,8 +46,9 @@ configs:
   # Native-OCI-Repo registrieren (ADR-0009 §OCI-Artefakt-Form). ArgoCD v3.1+ zieht
   # bei type=oci + url=oci://... den nativen OCI-Code-Pfad — der Katalog wird als
   # generisches OCI-Artefakt publiziert (task push → oras), die Application-Source
-  # ist repoURL: oci://.../<component> + path: . und löst als sourceType=Directory
-  # auf (kein Helm mehr). Die lokale Registry erlaubt anonymen Pull, daher keine
+  # ist repoURL: oci://.../<component> + path: . und löst als sourceType=Kustomize
+  # auf (der Tarball trägt eine triviale kustomization.yaml neben manifest.yaml;
+  # kein Helm mehr). Die lokale Registry erlaubt anonymen Pull, daher keine
   # Credentials; TLS-Trust läuft über das gemergte mkcert-CA-Bundle (repoServer
   # initContainer unten), nicht über dieses Secret. Wird beim helm install
   # automatisch als argocd.argoproj.io/secret-type=repository Secret erzeugt —

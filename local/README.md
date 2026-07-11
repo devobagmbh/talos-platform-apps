@@ -69,10 +69,10 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 | [`cilium-values.yaml`](cilium-values.yaml) | Helm values: `kubeProxyReplacement: true`, `gatewayAPI.enabled: true`, Hubble + Relay, `l2announcements.enabled` for future LB-IPAM. `k8sServiceHost=localhost`/`:7445` is added in the Taskfile as a `--set`. |
 | [`mkcert-cluster-issuer.yaml`](mkcert-cluster-issuer.yaml) | `ClusterIssuer mkcert-ca` for cert-manager (CA from `$(mkcert -CAROOT)`). |
 | [`gateway.yaml`](gateway.yaml) | Gateway `localhost-direct` with HTTP and HTTPS listeners for `*.localhost.direct` + a wildcard `Certificate` (terminates TLS for the **ArgoCD UI** — the registry push bypasses the Gateway). |
-| [`argocd-values.yaml`](argocd-values.yaml) | Headless ArgoCD: `ClusterIP` Service, no Ingress, `--insecure` (the Gateway terminates), Dex/Notifications/ApplicationSet off. **initContainer** appends `mkcert-ca` to the repo-server system CA bundle. **`configs.repositories.kind-registry-local`** registers the native OCI repo (`type: oci`, `oci://` URL) so Argo takes the native-OCI source path (`sourceType=Directory`). |
+| [`argocd-values.yaml`](argocd-values.yaml) | Headless ArgoCD: `ClusterIP` Service, no Ingress, `--insecure` (the Gateway terminates), Dex/Notifications/ApplicationSet off. **initContainer** appends `mkcert-ca` to the repo-server system CA bundle. **`configs.repositories.kind-registry-local`** registers the native OCI repo (`type: oci`, `oci://` URL) so Argo takes the native-OCI source path (`sourceType=Kustomize`). |
 | [`argocd-route.yaml`](argocd-route.yaml) | `HTTPRoute argocd` → `argocd-server:443` on `argocd.localhost.direct`. |
 | [`registry-bridge.yaml`](registry-bridge.yaml) | Namespace `registry` + Service `kind-registry` + a manual `EndpointSlice` with `${KIND_REGISTRY_IP}` (via `envsubst` from `docker container inspect`) — the container speaks TLS directly, no HTTPRoute. |
-| [`argo-apps/<sub-layer>/<component>.yaml`](argo-apps/) | Per-component Argo `Application` manifests with `${TAG}` / `${REGISTRY}` placeholders, applied via `task local:apply`. `repoURL` is `oci://${REGISTRY}/<sub-layer>/<component>` + `path: .`, so Argo takes the native OCI source (`sourceType=Directory`) and matches the registered `type: oci` repo. |
+| [`argo-apps/<sub-layer>/<component>.yaml`](argo-apps/) | Per-component Argo `Application` manifests with `${TAG}` / `${REGISTRY}` placeholders, applied via `task local:apply`. `repoURL` is `oci://${REGISTRY}/<sub-layer>/<component>` + `path: .`, so Argo takes the native OCI source (`sourceType=Kustomize`) and matches the registered `type: oci` repo. |
 
 ## Prerequisites
 
@@ -149,7 +149,7 @@ task local:argo:ui
 - `${TAG}` = `0.0.0-dev` (chart version, no `v` prefix)
 - `${REGISTRY}` = `kind-registry.registry.svc.cluster.local:5000/talos-platform-apps`
 
-Argo pulls the native OCI artifact over the Service DNS (no Gateway round-trip) and applies the pre-rendered `manifest.yaml` directly (`sourceType=Directory`, `path: .`) — no Helm rendering step at reconcile time.
+Argo pulls the native OCI artifact over the Service DNS (no Gateway round-trip) and applies the pre-rendered `manifest.yaml` through the artifact's trivial Kustomize base (`sourceType=Kustomize`, `path: .`, `resources: [manifest.yaml]` — no patches by default, identical output) — no Helm rendering step at reconcile time. The Kustomize base is what lets a consumer overlay per-cluster fields via `source.kustomize.patches` (ADR-0024 calibrated-friction).
 
 ## Live dev loop (`task local:dev`) — Skaffold-style
 
@@ -290,7 +290,7 @@ Cilium creates the Service only after the Gateway is applied. The task polls up 
 `task push` sets `--plain-http=false` so oras uses HTTPS against the mkcert-TLS registry (oras would otherwise default a `localhost` ref to plain HTTP → 400). If `mkcert -install` did not carry the trust to the oras binary — happens on Linux when devbox `oras` does not use the system CA bundle — point oras at the mkcert root: `SSL_CERT_FILE=$(mkcert -CAROOT)/rootCA.pem oras push …`.
 
 **Argo `SyncFailed` or `not a valid OCI repository`.**
-The `kind-registry-local` repository is not registered or not recognised. Check: `kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=repository`. If missing: re-run `helm upgrade argocd … --values local/argocd-values.yaml` (the repo comes from `configs.repositories`). If present but unmatched: confirm the repo registration is `type: oci` with an `oci://` URL, and that the Argo `Application` `repoURL` carries the **`oci://`** scheme with `path: .` (native OCI source, resolves as `sourceType=Directory`).
+The `kind-registry-local` repository is not registered or not recognised. Check: `kubectl -n argocd get secrets -l argocd.argoproj.io/secret-type=repository`. If missing: re-run `helm upgrade argocd … --values local/argocd-values.yaml` (the repo comes from `configs.repositories`). If present but unmatched: confirm the repo registration is `type: oci` with an `oci://` URL, and that the Argo `Application` `repoURL` carries the **`oci://`** scheme with `path: .` (native OCI source, resolves as `sourceType=Kustomize`).
 
 **Argo Application shows `Unknown`.**
 Argo cannot pull the artifact. Check the Service DNS: `kubectl -n registry get endpointslice kind-registry -o yaml` must show an `addresses:` list with the docker IP. If empty: re-run `task local:registry:bridge` (`envsubst` did not resolve `${KIND_REGISTRY_IP}` — `envsubst` from `gettext` must be on PATH, and the registry must be attached to the `talos-platform-apps` docker network).
