@@ -116,6 +116,10 @@
       "component": "observability/node-exporter",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/nvidia-dcgm-exporter": {
+      "component": "observability/nvidia-dcgm-exporter",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/prometheus-operator": {
       "component": "observability/prometheus-operator"
     },

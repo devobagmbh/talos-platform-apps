@@ -1,0 +1,21 @@
+# nvidia-dcgm-exporter is cluster-agnostic at the catalog layer: a per-GPU-node
+# DaemonSet that emits the DCGM_FI_* GPU-metrics series. It needs host access +
+# an NVIDIA GPU/driver/DCGM backend (a substrate/hardware precondition — Layer C,
+# not a catalog component edge or capability dep, ADR-0009 / #71), and no other
+# catalog component. No base version-coupling line. `requires:` carries only
+# component-refs and capability-ids, so it is empty here.
+requires: {}
+provides:
+  - name: nvidia-dcgm-exporter
+    version:
+      sot: app
+      app: 4.8.2     # exporter appVersion (chart appVersion "4.8.2"; the 4.5.3 in
+      # the image tag is the bundled DCGM-library version, not the exporter appVersion)
+      chart: 4.8.2
+    api_surface: []
+    # Telemetry facet of the `nvidia-stack` `gpu-runtime` implementation (the
+    # scheduling facet is the sibling nvidia-device-plugin, compute sub-layer).
+    # id present in catalog/capability-index.yaml; swap_class matches the index's
+    # active implementation (nvidia-stack, rewrite-required).
+    capabilities:
+      - {id: gpu-runtime, swap_class: rewrite-required}
