@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.3.0...observability/mimir-v0.4.0) (2026-07-10)
+
+
+### Features
+
+* **observability/mimir:** scale ingester to 4Gi + raise series ceiling to 600k (supersedes [#436](https://github.com/devobagmbh/talos-platform-apps/issues/436)) ([#443](https://github.com/devobagmbh/talos-platform-apps/issues/443)) ([7886e53](https://github.com/devobagmbh/talos-platform-apps/commit/7886e53d1836f3de90103a9f5c82b0d3b91dc5e2))
+
 ## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.2.1...observability/mimir-v0.3.0) (2026-06-27)
 
 
