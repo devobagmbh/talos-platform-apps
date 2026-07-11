@@ -22,6 +22,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
 | [`node-exporter`](components/node-exporter/) | 0 | Helm `prometheus-community/prometheus-node-exporter` (host/node metrics — `node_*` series, per-node DaemonSet with host access, scraped by Alloy) | `oci://.../observability/node-exporter:vX.Y.Z` |
 | [`blackbox-exporter`](components/blackbox-exporter/) | 0 | Helm `prometheus-community/prometheus-blackbox-exporter` (synthetic HTTP/TCP/DNS probing — Alloy scrape target + bidirectional cross-cluster watchdog) | `oci://.../observability/blackbox-exporter:vX.Y.Z` |
+| [`nvidia-dcgm-exporter`](components/nvidia-dcgm-exporter/) | 0 | Helm `nvidia.github.io/dcgm-exporter` 4.8.2 (per-GPU-node DaemonSet, `DCGM_FI_*` GPU metrics; privileged ns — SYS_ADMIN + hostPath; GPU-node nodeSelector + scrape wiring are consumer obligations) | `oci://.../observability/nvidia-dcgm-exporter:vX.Y.Z` |
 
 > **`kube-prometheus-stack` is a stack, not a component** — there is **no**
 > `components/kube-prometheus-stack/` directory and **no**

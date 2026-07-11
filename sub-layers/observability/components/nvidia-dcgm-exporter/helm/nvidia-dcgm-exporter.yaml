@@ -1,0 +1,55 @@
+# nvidia-dcgm-exporter — NVIDIA DCGM GPU-metrics exporter (DCGM_FI_* series).
+# Layer-2 default values for talos-platform-apps. This component is the telemetry
+# facet of the `nvidia-stack` `gpu-runtime` capability implementation; the
+# scheduling facet is the sibling `nvidia-device-plugin` (compute sub-layer).
+# It is a per-GPU-node DaemonSet that reads the kubelet pod-resources socket and
+# the NVIDIA DCGM backend to emit the `DCGM_FI_*` Prometheus series.
+#
+# HOST ACCESS is essential and intentional: the exporter MUST add the SYS_ADMIN
+# capability and mount the kubelet pod-resources socket (a hostPath volume,
+# /var/lib/kubelet/pod-resources) to correlate GPU metrics with the pods/containers
+# consuming them. The chart defaults runAsNonRoot:false / runAsUser:0 +
+# capabilities.add:[SYS_ADMIN]. These are Baseline-forbidden fields, which is why
+# the namespace enforces `pod-security.kubernetes.io/enforce: privileged`
+# (manifests/00-namespace.yaml, derivation cited there).
+#
+# NOTE on chart specifics (chart 4.8.2, verified against the upstream chart at tag
+# 4.5.3-4.8.2):
+#   - the ServiceMonitor toggle is `serviceMonitor.enabled` (chart default TRUE).
+#   - image repo nvcr.io/nvidia/k8s/dcgm-exporter, tag default
+#     4.5.3-4.8.2-distroless (4.5.3 = bundled DCGM-library version,
+#     4.8.2 = exporter appVersion); appVersion pin, NEVER :latest.
+
+metadata:
+  chart: dcgm-exporter
+  repo: https://nvidia.github.io/dcgm-exporter/helm-charts
+  version: "4.8.2" # bare SemVer — NO leading 'v'. VERIFY at push (`helm show chart dcgm-exporter --repo <repo> --version 4.8.2`).
+  namespace: nvidia-dcgm-exporter
+
+values:
+  # fullnameOverride so the rendered DaemonSet/Service/ServiceAccount are named
+  # exactly `dcgm-exporter`, matching the README — the chart default
+  # fullnameOverride is "" (so without this pin the names take the release-name
+  # prefix). The README directs the consumer to scrape the Service /metrics
+  # endpoint, so the names must agree.
+  fullnameOverride: dcgm-exporter
+
+  # ServiceMonitor — pinned DISABLED. The chart default is TRUE, which would make
+  # this artifact ship a `ServiceMonitor` CRD-typed object and create a render-time
+  # dependency on the prometheus-operator ServiceMonitor CRD. The ServiceMonitor
+  # (and any scrape wiring) is a consumer-overlay concern per ADR-0024 / #183:
+  # Grafana Alloy / Prometheus scrapes the rendered Service /metrics endpoint via
+  # its own config. Pinned false so the rendered workload contains zero
+  # CustomResourceDefinition / ServiceMonitor (node-exporter precedent).
+  serviceMonitor:
+    enabled: false
+
+  # Tolerations — pinned EMPTY to override the chart default, which tolerates the
+  # control-plane taint (`node-role.kubernetes.io/control-plane:NoSchedule`). This
+  # is a privileged (SYS_ADMIN, runAsUser:0, hostPath) GPU exporter; it belongs
+  # ONLY on GPU worker nodes, which carry the NVIDIA GPU / DCGM backend it reads.
+  # Control-plane nodes have no GPU/DCGM backend, so the chart default would
+  # schedule a privileged pod onto them with nothing to export. A consumer who
+  # actually runs GPUs on control-plane nodes re-adds the appropriate toleration
+  # via their overlay (alongside the GPU-node nodeSelector — see README).
+  tolerations: []

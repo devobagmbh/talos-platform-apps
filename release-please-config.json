@@ -36,6 +36,10 @@
       "component": "compute/node-feature-discovery",
       "initial-version": "0.1.0"
     },
+    "sub-layers/compute/components/nvidia-device-plugin": {
+      "component": "compute/nvidia-device-plugin",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/databases/components/cnpg": {
       "component": "databases/cnpg"
     },
@@ -112,6 +116,10 @@
       "component": "observability/node-exporter",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/nvidia-dcgm-exporter": {
+      "component": "observability/nvidia-dcgm-exporter",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/prometheus-operator": {
       "component": "observability/prometheus-operator"
     },
@@ -169,6 +177,10 @@
     },
     "sub-layers/storage-block/components/democratic-csi": {
       "component": "storage-block/democratic-csi"
+    },
+    "sub-layers/storage-block/components/local-path-provisioner": {
+      "component": "storage-block/local-path-provisioner",
+      "initial-version": "0.1.0"
     },
     "sub-layers/storage-block/components/piraeus-operator": {
       "component": "storage-block/piraeus-operator"
