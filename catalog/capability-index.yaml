@@ -254,6 +254,21 @@ capabilities:
       - {name: local-path-provisioner, status: active, swap_class: data-migration}
       - {name: openebs-localpv, status: considered, swap_class: drop-in}
       - {name: topolvm, status: considered, swap_class: rewrite-required}
+  - id: block-storage-network
+    name: Network-attached block storage (external NAS/SAN via iSCSI)
+    domain: storage-block
+    # Durable block volumes provisioned as iSCSI LUNs on an EXTERNAL NAS/SAN, so the
+    # data tier lives off-node and survives a node rebuild. A distinct axis from
+    # block-storage-replicated (in-cluster, DRBD/distributed) and block-storage-local
+    # (node-local disk). CNCF storage taxonomy: CSI block storage; the distinguishing
+    # property here is the network-attached / external-array topology (landscape.cncf.io
+    # cloud-native-storage — Ceph/Longhorn/Piraeus occupy the replicated axis).
+    requires_hardware_features: [iscsi-initiator]   # Layer C: Talos iscsi-tools node extension (ADR-0026)
+    implementations:
+      # Swapping the backend array re-provisions LUNs and migrates data — PVs do not
+      # transparently move between a TrueNAS and a Synology (hence data-migration).
+      - {name: democratic-csi, status: active, swap_class: data-migration}   # ZFS/TrueNAS (+ Synology) over iSCSI
+      - {name: synology-csi, status: active, swap_class: data-migration}      # Synology DSM iSCSI LUNs (ADR-0026)
 
   # — Netzwerk —————————————————————————————————————————————————
   - id: secondary-network-attachment
