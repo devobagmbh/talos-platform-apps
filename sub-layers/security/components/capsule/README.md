@@ -76,7 +76,7 @@ shipped defaults are cluster-agnostic and fully operational as-is.
 > controller nil-panics (office-lab#229). Divergence (e.g. a different `users` group) must
 > go through the per-consumer override mechanism (apps#503, Kustomize-base + `overridable`),
 > **not** a raw CR patch.
-
+>
 > **GitOps caveat — tenant governance gap.** An Argo-created namespace is *ignored* by
 > Capsule (the ArgoCD SA is in `ignoreUserWithGroups`), so a GitOps-managed namespace is
 > NOT placed in a tenant — it sits outside tenant-level ResourceQuota / NetworkPolicy until
