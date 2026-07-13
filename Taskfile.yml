@@ -2665,7 +2665,7 @@ tasks:
       closed on that platform with an explicit expected-vs-actual message (there is no
       mechanical OKF_VERSION<->checksum parity gate; accepted, the failure is loud).
     vars:
-      OKF_VERSION: v0.4.0
+      OKF_VERSION: v0.5.0
     cmd: |
       set -u
       dest=".okf/bin"
@@ -2681,13 +2681,13 @@ tasks:
         arm64|aarch64) arch=arm64 ;;
         *) echo "✗ unsupported arch: $(uname -m)"; exit 2 ;;
       esac
-      # Per-platform sha256 of the v0.4.0 release tarballs (openknowledge-sh/openknowledge
-      # releases/download/v0.4.0/checksums.txt). A version bump re-pins ALL of these.
+      # Per-platform sha256 of the v0.5.0 release tarballs (openknowledge-sh/openknowledge
+      # releases/download/v0.5.0/checksums.txt). A version bump re-pins ALL of these.
       case "${os}_${arch}" in
-        linux_amd64)  sha="a8317bc648ba3deb2a595a9af84810bc84e04a6b7359522b10155377736e0cdb" ;;
-        linux_arm64)  sha="d0a3d3191b3d8e197bcd1d0f4e3ee80be0d02e455169555bcf57a958abe85dce" ;;
-        darwin_amd64) sha="6102906d779e8bde800740c714ee26f87b829b7745f79818160c686603c8c255" ;;
-        darwin_arm64) sha="3432aad41160a8b4a39a29d2f3db4227f5baff2e063bdbfa0e2521bd60d1b2a1" ;;
+        linux_amd64)  sha="0f58de81e52f064fbf52aac5289e0b1b6dc0e58de2f47c4e043263e9e927cb27" ;;
+        linux_arm64)  sha="227479edc8965a2a70b5380a23f3e5f8f4fc4685e70bc878bda227f7548cf6d1" ;;
+        darwin_amd64) sha="29801d38436903b043812d04e0a5e364f167c54ab54760cc6cc87a933292f834" ;;
+        darwin_arm64) sha="8316f6206943e42973f6645b9deebba46299038f223cc1b1fe42d5cb2fac2150" ;;
         *) echo "✗ no pinned checksum for ${os}_${arch}"; exit 2 ;;
       esac
       asset="openknowledge_${os}_${arch}.tar.gz"
