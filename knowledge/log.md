@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-07-13
+
+- **Self-maintenance**: added the knowledge-bundle maintenance directive to `AGENTS.md` (§ Knowledge-bundle maintenance) and its mechanical backstop `task okf:freshness` (advisory; a `sources:` change in a PR without a concept `timestamp:` bump is flagged), run by `okf-freshness.yml`. Adopted hand-written from the upstream `openknowledge` `docs` rule; blocking flip tracked in #541.
+- **Freshness re-verification**: bumped `reference/sub-layers/secret-management.md` for #524 — added the `vault-config-operator` workload row and resolved the former `vault-config-operator-crds` orphan-half gap note.
+
 ## 2026-07-11
 
 - **Initialization**: created the `knowledge/` Open Knowledge Format v0.1 bundle as a curated orientation layer over the catalog's architecture, contracts, gates, and workflows.

@@ -3,7 +3,7 @@ type: reference
 title: secrets sub-layer
 description: Secret-management TOOLING - External Secrets, cert-manager, Vault operator (not secret material).
 tags: [reference, sub-layer, secrets]
-timestamp: 2026-07-11
+timestamp: 2026-07-13
 sources:
   - sub-layers/secrets/README.md
   - sub-layers/secrets/compatibility.yaml
@@ -31,10 +31,11 @@ false-positive. The link text and title remain the sub-layer's real name.)
 | cert-manager | 0 | inline CRDs (not split) | `tls-issuance` (label-move) | - |
 | external-secrets | 0 | - | `secret-sync` (rewrite-required) | secrets/external-secrets-crds |
 | vault-operator | 0 | - | `vault-secrets` (data-migration) | secrets/vault-operator-crds |
+| vault-config-operator | 0 | - | `secret-config-declarative` (rewrite-required) | secrets/vault-config-operator-crds, secrets/cert-manager |
 | clustersecretstore-defaults | 10 | - | - | secrets/external-secrets |
 | ca-clusterissuer | 20 | - | `tls-issuance` (label-move) | secrets/external-secrets |
 
 ## Notes
 
 - `external-secrets` publishes the `GithubAccessToken` generator CRD enabled (the consumer-side GHCR-token refresh path depends on it, ADR-0025); it stays in the apps catalog, never in base.
-- Gaps (tracked in issue #523): **orphan strict-B half** — `vault-config-operator-crds` ships with no `vault-config-operator` workload sibling (the `secret-config-declarative` capability's active impl); `cert-manager` ships CRDs inline rather than strict-B split; `clustersecretstore-defaults` and `ca-clusterissuer` lack a `customization.yaml`; two READMEs carry consumer-specific + German content (public-repo hygiene).
+- Gaps (tracked in issue #523): `cert-manager` ships CRDs inline rather than strict-B split; `clustersecretstore-defaults` and `ca-clusterissuer` lack a `customization.yaml`; two READMEs carry consumer-specific + German content (public-repo hygiene). (The former `vault-config-operator-crds` orphan-half gap is resolved — #524 shipped the `vault-config-operator` workload, the `secret-config-declarative` active impl.)

@@ -267,6 +267,10 @@ Before PR open:
 - [ ] Conventional-commits style with sub-layer scope
 - [ ] At least one reviewer subagent run; for pipeline/signing topics, record the provenance risks in the `notes` field — `provenance-reviewer` is M2-deferred (no backing agent today), is reactivated at M2 onboarding and becomes mandatory here then
 
+## Knowledge-bundle maintenance
+
+`knowledge/` is the OKF bundle and **durable project memory** (DR-0002). Keep it in sync with the implementation: when a change touches a file listed in a `knowledge/**` concept's `sources:` frontmatter, re-verify that concept's present-tense claims against the new state and **bump its `timestamp:` in the same PR** (append a dated entry to `knowledge/log.md` for substantive changes). This is the human contract; `task okf:freshness` is its mechanical backstop — **advisory today** (it prints stale concepts and exits 0, run by `okf-freshness.yml`), flipped to a blocking required check as a follow-up (issue #541). Adopted hand-written from the upstream `openknowledge` `docs` rule ("keep docs in sync with implementation") rather than as a tool-managed block (repo policy: no tool-owned regions in hand-curated files).
+
 ## References
 
 - [`knowledge/`](knowledge/index.md) — the OKF knowledge bundle: a thin orientation + synthesis layer over this repo's architecture, contracts, gates, and workflows (pointers to the SOT files here, not a second source of truth); validated via `task okf:validate`

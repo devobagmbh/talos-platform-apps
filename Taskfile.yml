@@ -2751,6 +2751,200 @@ tasks:
       fi
       echo "✓ knowledge/ OKF bundle valid"
 
+  okf:freshness:
+    desc: 'OKF freshness (advisory): flag knowledge/ concepts whose sources: changed in the PR range without a timestamp bump'
+    summary: |
+      PR-scoped staleness gate for the knowledge/ OKF bundle (AGENTS.md § Knowledge-bundle
+      maintenance). For every concept whose `sources:` frontmatter lists a file changed in the
+      PR range, that concept's own `timestamp:` MUST be bumped in the SAME range (the
+      re-verification signal). A newly-ADDED concept is fresh by definition (its whole body,
+      incl. timestamp, is one +hunk).
+
+      Range seam mirrors lint:pr: OKF_FRESHNESS_RANGE="<base>..<head>" — okf-freshness.yml sets
+      it from the PR base/head SHAs; test:okf-freshness drives it over throwaway-repo fixtures.
+      THREE-dot (merge-base) diff so main's concurrent changes are excluded. FAILS CLOSED on an
+      empty/malformed range, an unresolvable SHA, or no shared merge base — same guard as lint:pr.
+
+      Posture: ADVISORY by default — a stale FINDING prints and exits 0. OKF_FRESHNESS_STRICT=1 makes
+      a finding exit 1 (the #541 blocking flip: set it in okf-freshness.yml + add the job to
+      branch-protection required checks). The fail-closed guard above (unevaluable range) always exits
+      1, in either posture — an un-runnable gate is visibly red, not silently green; today it is a
+      non-required check so even a red run never blocks a merge. test:okf-freshness runs STRICT to
+      assert exit codes. Pure git/awk (no openknowledge binary).
+      Local: OKF_FRESHNESS_RANGE="origin/main..HEAD" task okf:freshness
+
+      Known limitations (accepted for the advisory stage; hardened before the #541 strict flip):
+        - Enforces "someone re-verified" (a timestamp VALUE change), NOT that the content is correct —
+          catches the dominant "forgot the concept entirely" case; content correctness stays review's job.
+        - `sources:` parsing handles a block sequence of bare/quoted-then-unquoted scalars only; a
+          flow-style/inline `sources:` is surfaced as a warning (unchecked), not parsed.
+        - A source listed as a DIRECTORY never matches (diff emits file paths); a renamed concept resets
+          its freshness obligation. Broad sources (AGENTS.md/Taskfile.yml) fire often — audit source
+          specificity before the strict flip (#541).
+    cmd: |
+      set -eu
+      range="${OKF_FRESHNESS_RANGE:-}"
+      base="${range%%..*}"
+      head="${range##*..}"
+      # Fail closed: empty/malformed range, unresolvable SHA, or unrelated histories (no merge base) —
+      # else `git diff A...B` errors and a swallowed exit would pass vacuously (cf. lint:pr).
+      if [ -z "$range" ] || [ "$base" = "$range" ] \
+         || ! git rev-parse -q --verify "${base}^{commit}" >/dev/null 2>&1 \
+         || ! git rev-parse -q --verify "${head}^{commit}" >/dev/null 2>&1 \
+         || ! git merge-base "${base}" "${head}" >/dev/null 2>&1; then
+        echo "OKF-FRESHNESS BLOCKED — OKF_FRESHNESS_RANGE '${range}' is empty, unresolvable, or the two commits share no merge base (fail closed)" >&2
+        exit 1
+      fi
+      if ! changed="$(git -c core.quotePath=false diff --name-only "${base}...${head}" 2>/dev/null)"; then
+        echo "OKF-FRESHNESS BLOCKED — 'git diff ${base}...${head}' failed (fail closed)" >&2
+        exit 1
+      fi
+      tmpsrc="$(mktemp)" || { echo "OKF-FRESHNESS BLOCKED — mktemp failed (fail closed)" >&2; exit 1; }
+      trap 'rm -f "$tmpsrc"' EXIT
+      stale=0
+      # Timestamp VALUE from a concept's FRONTMATTER (bounded to the first ---...--- block; the whole
+      # value incl. any internal colons — never split on ':' — so an ISO 8601 datetime compares whole).
+      ts_of() { awk 'NR==1&&/^---[[:space:]]*$/{infm=1;next} infm&&/^---[[:space:]]*$/{exit} infm&&/^timestamp:/{sub(/^timestamp:[[:space:]]*/,"");print;exit}'; }
+      # Iterate concepts from the PR-HEAD tree. NO git pathspec anywhere (ls-tree post-filtered by
+      # grep, timestamps read via the repo-root-relative `<rev>:<path>` form) so the check is
+      # cwd-independent — it works from another checkout (the test seam) as well as a normal CI clone.
+      # Sources-less files (index/log) are skipped.
+      for concept in $(git ls-tree -r --name-only "$head" | grep -E '^knowledge/.*\.md$' || true); do
+        body="$(git show "${head}:${concept}" 2>/dev/null)" || continue
+        # Extract the `sources:` block-sequence items — bounded to the frontmatter (first `---`
+        # .. next `---`) so a `- ` bullet in the body is never mistaken for a source.
+        srcs="$(printf '%s\n' "$body" | awk '
+          NR==1 && /^---[[:space:]]*$/ {infm=1; next}
+          infm && /^---[[:space:]]*$/ {exit}
+          infm && /^sources:/ {f=1; next}
+          infm && f && /^[[:space:]]*-[[:space:]]/ {sub(/^[[:space:]]*-[[:space:]]*/,""); sub(/[[:space:]]+$/,""); print; next}
+          infm && f && /^[^[:space:]-]/ {f=0}
+        ')"
+        if [ -z "$srcs" ]; then
+          # A frontmatter `sources:` key with a non-empty inline value (flow-style `[a, b]` or a
+          # quoted-inline scalar) yields no block-sequence items — surface it rather than silently
+          # skip (block-sequence is the only supported shape; full YAML parsing is a #541 item).
+          if printf '%s\n' "$body" | awk 'NR==1&&/^---[[:space:]]*$/{infm=1;next} infm&&/^---[[:space:]]*$/{exit} infm&&/^sources:[[:space:]]*[^[:space:]]/{f=1} END{exit !f}'; then
+            echo "⚠ okf:freshness: ${concept} — sources: is inline/flow-style; only block-sequence items are parsed (treated as unchecked)" >&2
+          fi
+          continue
+        fi
+        # Did any declared source change in-range? Exact whole-line match of a source path
+        # against the changed set (grep -Fxf: fixed strings, whole line, patterns from file).
+        printf '%s\n' "$srcs" > "$tmpsrc"
+        hit="$(printf '%s\n' "$changed" | grep -Fxf "$tmpsrc" | head -1 || true)"
+        [ -z "$hit" ] && continue
+        # Fresh iff the concept is NEW at base (no ts_base) OR its timestamp VALUE changed
+        # base→head (the re-verification bump). Both reads use `<rev>:<path>` (root-relative).
+        ts_head="$(printf '%s\n' "$body" | ts_of)"
+        ts_base="$(git show "${base}:${concept}" 2>/dev/null | ts_of || true)"
+        # Fresh iff NEW at base (no ts_base) OR the timestamp changed to a NON-EMPTY value. Removing
+        # or blanking the timestamp at head (ts_head empty) is NOT a re-verification → falls through
+        # to STALE rather than being read as "changed".
+        if [ -z "$ts_base" ] || { [ -n "$ts_head" ] && [ "$ts_base" != "$ts_head" ]; }; then
+          continue
+        fi
+        echo "STALE: ${concept} — source '${hit}' changed without a timestamp bump" >&2
+        stale=$((stale + 1))
+      done
+      if [ "$stale" -gt 0 ]; then
+        if [ "${OKF_FRESHNESS_STRICT:-}" = 1 ]; then
+          echo "✗ okf:freshness: ${stale} stale concept(s) — bump timestamp + re-verify (STRICT)" >&2; exit 1
+        fi
+        echo "⚠ okf:freshness (advisory): ${stale} stale concept(s) — bump timestamp + re-verify; see AGENTS.md § Knowledge-bundle maintenance" >&2
+        exit 0
+      fi
+      echo "✓ okf:freshness: no stale concepts in range"
+
+  test:okf-freshness:
+    desc: 'Test of okf:freshness: stale/fresh/no-source/new-concept detection + fail-closed + advisory-vs-strict; red-green bound to the sources↔timestamp rule'
+    summary: |
+      Hermetic red-green test (wired into `task ci`, no network; the REAL repo is never mutated).
+      Builds a throwaway git repo with concept fixtures as SIBLING commits off a common base, then
+      drives okf:freshness through its OKF_FRESHNESS_RANGE + OKF_FRESHNESS_STRICT seams (GIT_DIR /
+      GIT_WORK_TREE point git at the temp repo; `task -d <root>` keeps go-task on the real Taskfile).
+      Scenarios (STRICT unless noted):
+        1  source changed, timestamp NOT bumped          → non-zero AND names the concept (STALE)
+        2  source changed, timestamp bumped              → 0 (the re-verification signal)
+        3  non-source file changed                       → 0 (concept's sources untouched)
+        4  NEW concept whose source also changed         → 0 (fresh by definition)
+        5  empty range                                   → non-zero (fail closed)
+        6  scenario-1 tree, advisory (STRICT unset)      → 0 AND prints the advisory warning
+        7  source changed, body edited, SAME timestamp   → non-zero (pins "timestamp VALUE changed")
+        8  ISO datetime source changed, sub-hour bump    → 0 (pins full-value timestamp extraction)
+        9  source changed, timestamp field REMOVED       → non-zero (empty ts_head ≠ a re-verification)
+    cmd: |
+      set -eu
+      root="$(git rev-parse --show-toplevel)"
+      tmp="$(mktemp -d)" || { echo "test:okf-freshness: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      gitc() { git -C "$tmp" "$@"; }
+      mkf() { mkdir -p "$tmp/$(dirname "$1")"; printf '%s\n' "${2:-x}" > "$tmp/$1"; }
+      mkconcept() {  # $1 path  $2 timestamp  $3 source-path  [$4 body]. `printf '%s\n' <lines...>` —
+        # the task interpreter (mvdan/sh) does NOT support `printf --`, and a format starting with `-`
+        # is misparsed; passing each line as an ARG (format '%s\n', reused per arg) sidesteps both.
+        mkdir -p "$tmp/$(dirname "$1")"
+        printf '%s\n' '---' 'type: reference' 'title: t' "timestamp: $2" 'sources:' "  - $3" '---' '' "${4:-Body prose.}" > "$tmp/$1"
+      }
+      gitc init -q
+      gitc config user.email t@example.invalid
+      gitc config user.name test
+      gitc config commit.gpgsign false
+      # base: concept x (date ts) sourcing src.txt; concept z (ISO datetime ts) sourcing zsrc.txt;
+      # plus the sources + an unrelated other.txt
+      mkconcept knowledge/reference/x.md 2026-01-01 src.txt
+      mkconcept knowledge/reference/z.md 2026-01-01T14:30:00Z zsrc.txt
+      mkf src.txt s0; mkf zsrc.txt z0; mkf other.txt o0
+      gitc add -A; gitc commit -q -m base; base="$(gitc rev-parse HEAD)"
+      # 1 stale: change the source only
+      gitc checkout -q "$base"; mkf src.txt s1
+      gitc add -A; gitc commit -q -m stale; head_stale="$(gitc rev-parse HEAD)"
+      # 2 fresh: change the source AND bump x's timestamp
+      gitc checkout -q "$base"; mkf src.txt s1; mkconcept knowledge/reference/x.md 2026-02-02 src.txt
+      gitc add -A; gitc commit -q -m fresh; head_fresh="$(gitc rev-parse HEAD)"
+      # 3 no-source: change an unrelated file
+      gitc checkout -q "$base"; mkf other.txt o1
+      gitc add -A; gitc commit -q -m nosrc; head_nosrc="$(gitc rev-parse HEAD)"
+      # 4 new concept whose source also changes in the same commit
+      gitc checkout -q "$base"; mkf newsrc.txt n0; mkconcept knowledge/reference/y.md 2026-01-01 newsrc.txt
+      gitc add -A; gitc commit -q -m newconcept; head_new="$(gitc rev-parse HEAD)"
+      # 7 body edited but timestamp value UNCHANGED (pins the "timestamp VALUE changed" invariant —
+      # a weaker "concept file changed at all" check would wrongly pass this)
+      gitc checkout -q "$base"; mkf src.txt s1; mkconcept knowledge/reference/x.md 2026-01-01 src.txt 'Body EDITED.'
+      gitc add -A; gitc commit -q -m body-edit-same-ts; head_bodyedit="$(gitc rev-parse HEAD)"
+      # 8 ISO datetime, sub-hour bump (pins full-value timestamp extraction — a colon-splitting
+      # extractor would truncate both to ...T14 and wrongly flag STALE)
+      gitc checkout -q "$base"; mkf zsrc.txt z1; mkconcept knowledge/reference/z.md 2026-01-01T14:55:00Z zsrc.txt
+      gitc add -A; gitc commit -q -m iso-subhour; head_iso="$(gitc rev-parse HEAD)"
+      # 9 timestamp field REMOVED at head + source changed (an empty ts_head must NOT read as "changed")
+      gitc checkout -q "$base"; mkf src.txt s1
+      printf '%s\n' '---' 'type: reference' 'title: t' 'sources:' '  - src.txt' '---' '' 'Body.' > "$tmp/knowledge/reference/x.md"
+      gitc add -A; gitc commit -q -m ts-removed; head_tsgone="$(gitc rev-parse HEAD)"
+      fail=0
+      # OKF_FRESHNESS_STRICT defaults to 1 (strict) when arg2 is UNSET; an explicitly-empty arg2
+      # (`run "$r" ""`) stays empty → advisory. `${2-1}` (no colon) is UNSET-only, so "" is preserved.
+      run()  { export GIT_DIR="$tmp/.git" GIT_WORK_TREE="$tmp" OKF_FRESHNESS_RANGE="$1" OKF_FRESHNESS_STRICT="${2-1}"; task -d "$root" okf:freshness >/dev/null 2>&1; }
+      runo() { export GIT_DIR="$tmp/.git" GIT_WORK_TREE="$tmp" OKF_FRESHNESS_RANGE="$1" OKF_FRESHNESS_STRICT="${2-1}"; task -d "$root" okf:freshness 2>&1; }
+      ok() { echo "✓ $1"; }
+      no() { echo "✗ $1"; fail=1; }
+      # Exit assertions use `if run ...` (direct exit — reliable under the task interpreter, where a
+      # command-substitution capture does NOT propagate exit); message assertions capture separately
+      # via `runo | grep`.
+      if run "$base..$head_stale"; then no "1 stale (strict) should exit non-zero"; else ok "1 stale (strict) exits non-zero"; fi
+      if runo "$base..$head_stale" | grep -q 'STALE: knowledge/reference/x.md'; then ok "1 stale names the concept"; else no "1 stale did not name the concept"; fi
+      if run "$base..$head_fresh"; then ok "2 fresh (timestamp bumped) passes"; else no "2 fresh should pass"; fi
+      if run "$base..$head_nosrc"; then ok "3 non-source change passes"; else no "3 non-source change should pass"; fi
+      if run "$base..$head_new"; then ok "4 new concept fresh-by-definition passes"; else no "4 new concept should pass"; fi
+      if run ""; then no "5 empty range should fail closed"; else ok "5 empty range fails closed"; fi
+      if run "$base..$head_stale" ""; then ok "6 advisory (strict unset) exits 0"; else no "6 advisory should exit 0"; fi
+      if runo "$base..$head_stale" "" | grep -q 'advisory'; then ok "6 advisory warning printed"; else no "6 advisory warning missing"; fi
+      if run "$base..$head_bodyedit"; then no "7 body-edit + same timestamp should be STALE"; else ok "7 body-edit + same timestamp is STALE (value invariant pinned)"; fi
+      if run "$base..$head_iso"; then ok "8 ISO sub-hour bump passes (full-value timestamp)"; else no "8 ISO sub-hour bump should pass"; fi
+      if run "$base..$head_tsgone"; then no "9 timestamp-removed + source changed should be STALE"; else ok "9 timestamp-removed is STALE (empty ts_head not read as changed)"; fi
+      echo "---"
+      if [ "$fail" -eq 0 ]; then echo "✓ test:okf-freshness OK (11 assertions / 9 scenarios)"; else echo "✗ test:okf-freshness FAILED"; fi
+      exit "$fail"
+
   ci:
     desc: Lokale Reproduktion der GHA-PR-Pipeline (release-coverage gates + ci:artifact)
     cmds:
@@ -2797,6 +2991,11 @@ tasks:
       # so `task ci` stays locally reproducible on a fresh clone.
       - task: okf:install
       - task: okf:validate
+      # Hermetic red-green guard for the knowledge-bundle freshness gate (advisory today via
+      # okf-freshness.yml; #541 blocking flip). Fast, no network (throwaway git repo). The LIVE
+      # okf:freshness runs in okf-freshness.yml with the PR range — like lint:pr, only its TEST
+      # lives in `task ci`.
+      - task: test:okf-freshness
       - task: ci:artifact
 
   ci:artifact:

@@ -1,0 +1,51 @@
+name: okf-freshness
+
+# ADVISORY knowledge-bundle freshness gate (companion to issue #541, landed with #522). For
+# every knowledge/ concept whose `sources:` frontmatter lists a file changed in the PR, the
+# concept's `timestamp:` must be bumped in the SAME PR — the re-verification signal
+# (AGENTS.md § Knowledge-bundle maintenance). ADVISORY today: this is NOT a branch-protection
+# required check, so it never blocks a merge regardless of outcome; on a stale finding
+# `task okf:freshness` exits 0 (green), and only the fail-closed guard (an unevaluable range) exits 1.
+#
+# The #541 blocking flip is a two-step change: (1) set OKF_FRESHNESS_STRICT: '1' in the env
+# below (a stale concept then exits 1); (2) add this job to branch-protection
+# required_status_checks — which then also needs a merge_group pass-through (cf. commit-lint.yml),
+# since a required check must report on the merge-queue head.
+#
+# Convention (AGENTS.md § CI conventions): the step calls ONLY `task okf:freshness`; all logic
+# lives in the Taskfile. Locally reproducible: OKF_FRESHNESS_RANGE="origin/main..HEAD" task okf:freshness
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: okf-freshness-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  okf-freshness:
+    name: okf-freshness (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+        with:
+          # fetch-depth: 0 so the three-dot (merge-base) freshness diff can reach both the PR
+          # base and head commits; a shallow clone would not have the merge-base.
+          fetch-depth: 0
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      - name: Knowledge-bundle freshness (advisory)
+        # base.sha/head.sha are GitHub-controlled hex SHAs; okf:freshness validates them with
+        # `git rev-parse --verify` and fails closed if unresolvable. OKF_FRESHNESS_STRICT unset
+        # → advisory (prints findings, exits 0); set to '1' for the #541 blocking flip.
+        env:
+          OKF_FRESHNESS_RANGE: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+        run: devbox run -- task okf:freshness
