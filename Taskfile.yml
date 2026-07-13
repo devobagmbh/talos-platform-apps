@@ -204,7 +204,10 @@ tasks:
       # whose format we do not control (it emits two blank lines after the version
       # header → markdownlint MD012). Linting it would make every `chore(main):
       # release …` PR red. Treated like rendered/ — a tool artifact, not authored docs.
-      - git ls-files -z '*.md' ':!:*CHANGELOG.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
+      # knowledge/SPEC.md is excluded for the same reason: it is a verbatim pinned
+      # upstream copy of the OKF spec (Apache-2.0), vendored not authored, whose
+      # emphasis-as-heading style trips MD036. Do not edit vendored upstream to our rules.
+      - git ls-files -z '*.md' ':!:*CHANGELOG.md' ':!:knowledge/SPEC.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
   lint:rendered:
     desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
@@ -2633,6 +2636,498 @@ tasks:
 
   # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
 
+  okf:install:
+    desc: 'Install the pinned openknowledge CLI (not a Nix/devbox pkg) into .okf/bin'
+    summary: |
+      openknowledge is not packaged in Nixpkgs, so — as the one documented carve-out
+      to CI convention 1 (tools come from devbox) — its CLI is installed from a
+      version-pinned GitHub release asset whose per-platform sha256 is pinned in-repo
+      below. Runs identically locally and in the GHA `ci` job (called by `task ci`);
+      `.okf/` is GHA-cached (key = the Taskfile.yml hash) so a normal PR never re-downloads.
+      No curl-pipe-to-shell — the tarball is checksum-verified BEFORE extraction and the
+      binary is located by search inside the archive, fail-closed on any mismatch, with
+      retry + timeout so a transient CDN blip does not hard-fail the required `ci` gate.
+
+      Idempotent, checksum-gated: an existing .okf/bin (local OR GHA-cache-restored) is
+      trusted for the skip only when its bytes match the repo-pinned BINARY sha256 below —
+      integrity is the anchor, never the binary's self-reported `version` string alone (the
+      version is re-checked too, but ONLY after the byte match, so untrusted bytes are never
+      executed). This closes the #522-review vector: the GHA Actions cache is not CODEOWNERS/
+      signing-protected and oci-publish.yml restores it under a prefix `restore-keys`
+      fallback, so a poisoned okf-<os>-* entry could satisfy the old version-string-only skip
+      and run unverified in the required `ci` gate. A checksum miss, version skew, or absent
+      binary (e.g. a fresh checkout) falls through to the checksum-verified download below.
+
+      Supply-chain trust model (ACCEPTED RESIDUAL): openknowledge-sh/openknowledge ships
+      only checksums.txt for its releases — NO cosign signature, NO SLSA provenance
+      (verified 2026-07-11). The inline sha256 therefore detects post-adoption asset
+      tampering (a retagged release with different bytes fails closed) but does NOT defend
+      against a pin-time upstream compromise; this is asymmetric with the repo's own
+      cosign-keyless OCI signing and is accepted for a build-time doc validator. A version
+      bump MUST re-pin ALL four tarball checksums AND all four binary checksums together
+      (derive each binary sha by verifying the tarball sha, extracting, and hashing the
+      binary) — a wrong/missing one fails closed on that platform with an explicit
+      expected-vs-actual message (there is no mechanical OKF_VERSION<->checksum parity
+      gate; accepted, the failure is loud).
+    vars:
+      OKF_VERSION: v0.5.0
+    cmd: |
+      set -u
+      # OKF_BIN_DIR overrides the install/lookup dir; OKF_WANT_OVERRIDE overrides the wanted
+      # version — both are test seams for test:okf-install (prod = .okf/bin + the pinned
+      # OKF_VERSION), inert when unset. OKF_WANT_OVERRIDE lets the test construct a sha-matching
+      # binary with a MISMATCHED wanted version, red-greening the version-identity clause.
+      dest="${OKF_BIN_DIR:-.okf/bin}"
+      bin="${dest}/openknowledge"
+      want="${OKF_WANT_OVERRIDE:-{{.OKF_VERSION}}}"
+      # sha256 helper — Linux (sha256sum) / macOS (shasum); used for both the tarball and
+      # the on-disk binary integrity checks below.
+      sha256_of() {
+        if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+        else shasum -a 256 "$1" | cut -d' ' -f1; fi
+      }
+      # Fail fast + loud in the MAIN shell if no sha256 tool exists: sha256_of runs inside
+      # $(...) subshells where an `exit` would not terminate the task (it falls through to a
+      # misleading downstream "checksum mismatch (empty)"), so the availability guard lives here.
+      command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || {
+        echo "✗ no sha256 tool available (need sha256sum or shasum)"; exit 2; }
+      os=$(uname -s | tr '[:upper:]' '[:lower:]')
+      case "$(uname -m)" in
+        x86_64|amd64)  arch=amd64 ;;
+        arm64|aarch64) arch=arm64 ;;
+        *) echo "✗ unsupported arch: $(uname -m)"; exit 2 ;;
+      esac
+      # Per-platform sha256 of the v0.5.0 release TARBALLS (openknowledge-sh/openknowledge
+      # releases/download/v0.5.0/checksums.txt). A version bump re-pins ALL of these.
+      case "${os}_${arch}" in
+        linux_amd64)  sha="0f58de81e52f064fbf52aac5289e0b1b6dc0e58de2f47c4e043263e9e927cb27" ;;
+        linux_arm64)  sha="227479edc8965a2a70b5380a23f3e5f8f4fc4685e70bc878bda227f7548cf6d1" ;;
+        darwin_amd64) sha="29801d38436903b043812d04e0a5e364f167c54ab54760cc6cc87a933292f834" ;;
+        darwin_arm64) sha="8316f6206943e42973f6645b9deebba46299038f223cc1b1fe42d5cb2fac2150" ;;
+        *) echo "✗ no pinned checksum for ${os}_${arch}"; exit 2 ;;
+      esac
+      # Per-platform sha256 of the EXTRACTED openknowledge BINARY (v0.5.0) — the integrity
+      # anchor for the idempotent skip + GHA cache-hit path (#522 review). Derived via the
+      # tarball chain of trust: verify the tarball sha, extract, hash the binary.
+      case "${os}_${arch}" in
+        linux_amd64)  bin_sha="c1a6ffd314a4ac5c2c22aff2d8f922c7cebb3b3efe9f4b1b378074e63c699273" ;;
+        linux_arm64)  bin_sha="a689710aad02b6bdbd430eaa362369f3a57d0c06b7bce16542f24e4030ce255d" ;;
+        darwin_amd64) bin_sha="cda8e9360db1fd3ab2bffbc250b1cf493d6e68bd8e3e76048b7773054b80493c" ;;
+        darwin_arm64) bin_sha="f8d813e92b032830bfb1081e6d099e248b9a00d7eb8490626eb990b79b2885e5" ;;
+        *) echo "✗ no pinned binary checksum for ${os}_${arch}"; exit 2 ;;
+      esac
+      # Idempotent skip — checksum-gated (integrity) THEN version-checked (identity): an
+      # existing binary (local OR GHA-cache-restored) is trusted only when its bytes match
+      # the repo-pinned bin_sha. `&&` short-circuits, so `$bin version` runs ONLY after the
+      # byte match — it never executes attacker-controlled bytes, yet still binds the skip
+      # to OKF_VERSION so a version bump that forgets to re-pin bin_sha self-heals to a
+      # re-download instead of silently running the stale binary.
+      if [ -x "$bin" ] && [ "$(sha256_of "$bin")" = "$bin_sha" ] && [ "$("$bin" version 2>/dev/null)" = "${want#v}" ]; then
+        echo "✓ openknowledge ${want} present + checksum-verified at ${bin}"
+        exit 0
+      fi
+      # Test seam (test:okf-install): assert the gate DECISION without the network download.
+      # Reaching here means the on-disk binary is absent or failed the checksum/version gate;
+      # in verify-only mode report that (exit 3) instead of downloading. No-op in production.
+      if [ "${OKF_INSTALL_VERIFY_ONLY:-}" = 1 ]; then
+        echo "✗ okf:install verify-only: no checksum-verified ${want} binary at ${bin} (would download)" >&2; exit 3
+      fi
+      asset="openknowledge_${os}_${arch}.tar.gz"
+      url="https://github.com/openknowledge-sh/openknowledge/releases/download/${want}/${asset}"
+      tmp=$(mktemp -d "${TMPDIR:-/tmp}/okf-install.XXXXXX") || { echo "✗ mktemp failed"; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      echo "↓ downloading ${asset} (${want})"
+      # --retry + timeouts: this runs in the required `ci` gate, so a transient CDN 5xx/429
+      # or slow connect must fail fast + retry, never hang to the job limit.
+      curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 20 --max-time 180 \
+        -o "${tmp}/${asset}" "$url" || { echo "✗ download failed: $url"; exit 2; }
+      actual=$(sha256_of "${tmp}/${asset}")
+      if [ "$actual" != "$sha" ]; then
+        echo "✗ checksum mismatch for ${asset}"; echo "  expected ${sha}"; echo "  actual   ${actual}"; exit 2
+      fi
+      # Defense-in-depth (post-checksum): before extracting, refuse an archive that could write
+      # outside $tmp — absolute or ../-traversing member NAMES, OR a symlink/hardlink member (whose
+      # target a name-scan cannot see, so a `evil -> /abs/path` + `evil/x` pair could otherwise
+      # escape). Portable pre-scan (avoids GNU-only tar guard flags). Fires only behind the tarball-
+      # checksum gate, so it hardens the residual upstream/pin-time-compromise case; the pinned
+      # v0.5.0 asset is plain regular files (LICENSE/README/notices/binary), no links.
+      if tar -tzf "${tmp}/${asset}" | grep -qE '^/|(^|/)\.\.(/|$)'; then
+        echo "✗ archive contains absolute or path-traversing entries — refusing to extract"; exit 2
+      fi
+      if tar -tvzf "${tmp}/${asset}" | grep -qE '^[lh]'; then
+        echo "✗ archive contains a symlink/hardlink member — refusing to extract"; exit 2
+      fi
+      tar -xzf "${tmp}/${asset}" -C "$tmp" || { echo "✗ extract failed"; exit 2; }
+      found=$(find "$tmp" -type f -name openknowledge | head -1)
+      [ -n "$found" ] || { echo "✗ openknowledge binary not found in archive"; exit 2; }
+      # Defense-in-depth: the extracted binary must match the pinned binary sha before
+      # install (the tarball sha covers download integrity; this pins the exact bytes the
+      # skip / cache-hit path will later trust).
+      found_sha=$(sha256_of "$found")
+      if [ "$found_sha" != "$bin_sha" ]; then
+        echo "✗ extracted binary checksum mismatch"; echo "  expected ${bin_sha}"; echo "  actual   ${found_sha}"; exit 2
+      fi
+      # Guard mkdir + install: there is no `set -e`, so an unguarded failure here would
+      # fall through to the success echo and exit 0 with .okf/bin absent/stale.
+      mkdir -p "$dest" || { echo "✗ mkdir ${dest} failed"; exit 2; }
+      install -m 0755 "$found" "$bin" || { echo "✗ install to ${bin} failed"; exit 2; }
+      echo "✓ installed openknowledge ${want} → ${bin}"
+
+  okf:validate:
+    desc: 'Validate the knowledge/ OKF bundle (structure + link resolution)'
+    summary: |
+      Two gates over the knowledge/ Open Knowledge Format bundle:
+        1. `openknowledge validate` — structural OKF conformance (frontmatter/type,
+           reserved-file rules, log dates, UTF-8, markdown syntax); exits 1 on errors.
+        2. issue gate — `openknowledge validate` reports broken and bundle-ESCAPING links
+           as WARNINGS only (exit 0), so this enforces them: `list --json` surfaces each
+           as an issues[] entry, and this fails on ANY issue (predominantly link-target).
+           `(.issues // [])` is robust to whether a clean concept omits the key (v0.4.0)
+           or emits `[]` (a possible future serialization).
+      Link-closure enforcement lives in gate 2, NOT the core validator: `openknowledge
+      validate` (gate 1) reports broken/bundle-escaping links as WARNINGS and exits 0, so
+      gate 2 (`list --json` + the jq issue-check below) is the layer that actually fails the
+      build on them (and CI runs gate 2). Uses the checksum+version-verified
+      .okf/bin/openknowledge from the okf:install dependency — never an unverified
+      `openknowledge` from PATH (a binary of that name on PATH is not the pinned one).
+    deps: [okf:install]
+    cmd: |
+      set -u
+      # okf:install (dep) guarantees .okf/bin/openknowledge is present AND checksum+version
+      # verified before this runs, so validate trusts ONLY that binary — no PATH fallback,
+      # which would execute an unverified binary and void the pin's guarantee (#522 review).
+      okf=".okf/bin/openknowledge"
+      [ -x "$okf" ] || { echo "✗ verified openknowledge missing at ${okf} — run: task okf:install"; exit 2; }
+      "$okf" validate ./knowledge || exit 1
+      tmp=$(mktemp "${TMPDIR:-/tmp}/okf-list.XXXXXX") || { echo "✗ mktemp failed"; exit 2; }
+      trap 'rm -f "$tmp"' EXIT
+      "$okf" list --json ./knowledge > "$tmp" || { echo "✗ openknowledge list failed"; exit 2; }
+      # Fail on ANY reported issue (broken/escaping links + any other OKF warning class).
+      # Robust to clean concepts omitting `issues` OR emitting an empty array.
+      if jq -e '[.[] | select((.issues // []) | length > 0)] | length == 0' "$tmp" >/dev/null; then
+        echo "✓ OKF issue gate: no bundle issues (all links resolve inside the bundle)"
+      else
+        echo "✗ OKF issue gate: bundle issues (unresolved/escaping links or other OKF warnings):"
+        jq -c '.[] | select((.issues // []) | length > 0) | {path, issues}' "$tmp"
+        exit 1
+      fi
+      echo "✓ knowledge/ OKF bundle valid"
+
+  okf:freshness:
+    desc: 'OKF freshness (advisory): flag knowledge/ concepts whose sources: changed in the PR range without a timestamp bump'
+    summary: |
+      PR-scoped staleness gate for the knowledge/ OKF bundle (AGENTS.md § Knowledge-bundle
+      maintenance). For every concept whose `sources:` frontmatter lists a file changed in the
+      PR range, that concept's own `timestamp:` MUST be bumped in the SAME range (the
+      re-verification signal). A newly-ADDED concept is fresh by definition (its whole body,
+      incl. timestamp, is one +hunk).
+
+      Range seam mirrors lint:pr: OKF_FRESHNESS_RANGE="<base>..<head>" — okf-freshness.yml sets
+      it from the PR base/head SHAs; test:okf-freshness drives it over throwaway-repo fixtures.
+      THREE-dot (merge-base) diff so main's concurrent changes are excluded. FAILS CLOSED on an
+      empty/malformed range, an unresolvable SHA, or no shared merge base — same guard as lint:pr.
+
+      Posture: ADVISORY by default — a stale FINDING prints and exits 0. OKF_FRESHNESS_STRICT=1 makes
+      a finding exit 1 (the #541 blocking flip: set it in okf-freshness.yml + add the job to
+      branch-protection required checks). The fail-closed guard above (unevaluable range) always exits
+      1, in either posture — an un-runnable gate is visibly red, not silently green; today it is a
+      non-required check so even a red run never blocks a merge. test:okf-freshness runs STRICT to
+      assert exit codes. Pure git/awk (no openknowledge binary).
+      Local: OKF_FRESHNESS_RANGE="origin/main..HEAD" task okf:freshness
+
+      `sources:` parsing handles a block sequence AND single-line flow-style (`[a, b]`); a source
+      listed as a DIRECTORY (trailing `/` or a tree at head) matches any changed path beneath it.
+      Known limitations (accepted for the advisory stage; hardened before the #541 strict flip):
+        - Enforces "someone re-verified" (a timestamp VALUE change), NOT that the content is correct —
+          catches the dominant "forgot the concept entirely" case; content correctness stays review's job.
+        - A MULTI-LINE flow-style `sources:` (the `[` and `]` on different lines) is not parsed — the
+          single-line form is; a renamed concept resets its freshness obligation. Broad sources
+          (AGENTS.md/Taskfile.yml) fire often — audit source specificity before the strict flip (#541).
+    cmd: |
+      set -eu
+      range="${OKF_FRESHNESS_RANGE:-}"
+      base="${range%%..*}"
+      head="${range##*..}"
+      # Fail closed: empty/malformed range, unresolvable SHA, or unrelated histories (no merge base) —
+      # else `git diff A...B` errors and a swallowed exit would pass vacuously (cf. lint:pr).
+      if [ -z "$range" ] || [ "$base" = "$range" ] \
+         || ! git rev-parse -q --verify "${base}^{commit}" >/dev/null 2>&1 \
+         || ! git rev-parse -q --verify "${head}^{commit}" >/dev/null 2>&1 \
+         || ! git merge-base "${base}" "${head}" >/dev/null 2>&1; then
+        echo "OKF-FRESHNESS BLOCKED — OKF_FRESHNESS_RANGE '${range}' is empty, unresolvable, or the two commits share no merge base (fail closed)" >&2
+        exit 1
+      fi
+      if ! changed="$(git -c core.quotePath=false diff --name-only "${base}...${head}" 2>/dev/null)"; then
+        echo "OKF-FRESHNESS BLOCKED — 'git diff ${base}...${head}' failed (fail closed)" >&2
+        exit 1
+      fi
+      srctmp="$(mktemp)" || { echo "OKF-FRESHNESS BLOCKED — mktemp failed (fail closed)" >&2; exit 1; }
+      trap 'rm -f "$srctmp"' EXIT
+      stale=0
+      # Timestamp VALUE from a concept's FRONTMATTER (bounded to the first ---...--- block; the whole
+      # value incl. any internal colons — never split on ':' — so an ISO 8601 datetime compares whole).
+      ts_of() { awk 'NR==1&&/^---[[:space:]]*$/{infm=1;next} infm&&/^---[[:space:]]*$/{exit} infm&&/^timestamp:/{sub(/^timestamp:[[:space:]]*/,"");print;exit}'; }
+      # Iterate concepts from the PR-HEAD tree. NO git pathspec anywhere (ls-tree post-filtered by
+      # grep, timestamps read via the repo-root-relative `<rev>:<path>` form) so the check is
+      # cwd-independent — it works from another checkout (the test seam) as well as a normal CI clone.
+      # Sources-less files (index/log) are skipped.
+      for concept in $(git ls-tree -r --name-only "$head" | grep -E '^knowledge/.*\.md$' || true); do
+        body="$(git show "${head}:${concept}" 2>/dev/null)" || continue
+        # Extract `sources:` items — bounded to the frontmatter (first `---` .. next `---`) so a
+        # `- ` bullet in the body is never mistaken for a source. Handles BOTH a block sequence
+        # (`- path` lines) AND single-line flow-style (`sources: [a, b]`); the flow branch `next`s
+        # before the block branch, so the two shapes never double-count. Quote stripping uses
+        # \047 (octal single-quote) inside a STRING-regex to avoid a literal ' in the awk script.
+        srcs="$(printf '%s\n' "$body" | awk '
+          NR==1 && /^---[[:space:]]*$/ {infm=1; next}
+          infm && /^---[[:space:]]*$/ {exit}
+          infm && /^sources:[[:space:]]*\[/ {
+            s=$0; sub(/^sources:[[:space:]]*\[/,"",s); sub(/\].*$/,"",s);
+            n=split(s, a, ",");
+            for (i=1;i<=n;i++) { it=a[i];
+              gsub("^[[:space:]]+","",it); gsub("[[:space:]]+$","",it);
+              gsub("^[\"\047]","",it); gsub("[\"\047]$","",it);
+              if (it!="") print it; }
+            next
+          }
+          infm && /^sources:/ {f=1; next}
+          infm && f && /^[[:space:]]*-[[:space:]]/ {sub(/^[[:space:]]*-[[:space:]]*/,""); sub(/[[:space:]]+$/,""); print; next}
+          infm && f && /^[^[:space:]-]/ {f=0}
+        ')"
+        if [ -z "$srcs" ]; then
+          # sources: present but nothing parseable (single-line block AND single-line flow ARE
+          # handled) — a MULTI-LINE flow (`[` and `]` on separate lines) or other exotic shape is
+          # SURFACED, not silently skipped, so it cannot route around the gate invisibly (#522
+          # review). Full YAML parsing is a #541 item. A concept with no `sources:` key at all
+          # (index/log) simply produces no warning.
+          if printf '%s\n' "$body" | awk 'NR==1&&/^---[[:space:]]*$/{infm=1;next} infm&&/^---[[:space:]]*$/{exit} infm&&/^sources:/{f=1} END{exit !f}'; then
+            echo "⚠ okf:freshness: ${concept} — sources: present but no parseable items (multi-line flow / exotic shape treated as UNCHECKED)" >&2
+          fi
+          continue
+        fi
+        # Did any declared source change in-range? A FILE source matches a changed path exactly
+        # (grep -Fx); a DIRECTORY source (trailing `/`, or a tree object at head) matches any
+        # changed path beneath it — git diff emits file paths, never bare directory names, so a
+        # bare dir source would otherwise never fire. awk index($0,p)==1 is a literal prefix test
+        # (no regex escaping of the path). Loop is heredoc-fed (not piped) so `hit` survives.
+        printf '%s\n' "$srcs" > "$srctmp"
+        hit=""
+        while IFS= read -r src; do
+          [ -z "$src" ] && continue
+          isdir=0
+          case "$src" in
+            */) isdir=1; src="${src%/}" ;;
+            *) # tree at head OR base — the base check catches a source dir DELETED at head (no
+               # longer a tree there) whose removed children would otherwise miss the file-mode match.
+               if [ "$(git cat-file -t "${head}:${src}" 2>/dev/null || true)" = tree ] \
+                  || [ "$(git cat-file -t "${base}:${src}" 2>/dev/null || true)" = tree ]; then isdir=1; fi ;;
+          esac
+          if [ "$isdir" = 1 ]; then
+            h="$(printf '%s\n' "$changed" | awk -v p="${src}/" 'index($0,p)==1{print; exit}')"
+          else
+            h="$(printf '%s\n' "$changed" | grep -Fx "$src" | head -1 || true)"
+          fi
+          if [ -n "$h" ]; then hit="$h"; break; fi
+        done < "$srctmp"
+        [ -z "$hit" ] && continue
+        # Fresh iff the concept is NEW at base (no ts_base) OR its timestamp VALUE changed
+        # base→head (the re-verification bump). Both reads use `<rev>:<path>` (root-relative).
+        ts_head="$(printf '%s\n' "$body" | ts_of)"
+        ts_base="$(git show "${base}:${concept}" 2>/dev/null | ts_of || true)"
+        # Fresh iff NEW at base (no ts_base) OR the timestamp changed to a NON-EMPTY value. Removing
+        # or blanking the timestamp at head (ts_head empty) is NOT a re-verification → falls through
+        # to STALE rather than being read as "changed".
+        if [ -z "$ts_base" ] || { [ -n "$ts_head" ] && [ "$ts_base" != "$ts_head" ]; }; then
+          continue
+        fi
+        echo "STALE: ${concept} — source '${hit}' changed without a timestamp bump" >&2
+        stale=$((stale + 1))
+      done
+      if [ "$stale" -gt 0 ]; then
+        if [ "${OKF_FRESHNESS_STRICT:-}" = 1 ]; then
+          echo "✗ okf:freshness: ${stale} stale concept(s) — bump timestamp + re-verify (STRICT)" >&2; exit 1
+        fi
+        echo "⚠ okf:freshness (advisory): ${stale} stale concept(s) — bump timestamp + re-verify; see AGENTS.md § Knowledge-bundle maintenance" >&2
+        exit 0
+      fi
+      echo "✓ okf:freshness: no stale concepts in range"
+
+  test:okf-freshness:
+    desc: 'Test of okf:freshness: stale/fresh/no-source/new-concept detection + fail-closed + advisory-vs-strict; red-green bound to the sources↔timestamp rule'
+    summary: |
+      Hermetic red-green test (wired into `task ci`, no network; the REAL repo is never mutated).
+      Builds a throwaway git repo with concept fixtures as SIBLING commits off a common base, then
+      drives okf:freshness through its OKF_FRESHNESS_RANGE + OKF_FRESHNESS_STRICT seams (GIT_DIR /
+      GIT_WORK_TREE point git at the temp repo; `task -d <root>` keeps go-task on the real Taskfile).
+      Scenarios (STRICT unless noted):
+        1  source changed, timestamp NOT bumped          → non-zero AND names the concept (STALE)
+        2  source changed, timestamp bumped              → 0 (the re-verification signal)
+        3  non-source file changed                       → 0 (concept's sources untouched)
+        4  NEW concept whose source also changed         → 0 (fresh by definition)
+        5  empty range                                   → non-zero (fail closed)
+        6  scenario-1 tree, advisory (STRICT unset)      → 0 AND prints the advisory warning
+        7  source changed, body edited, SAME timestamp   → non-zero (pins "timestamp VALUE changed")
+        8  ISO datetime source changed, sub-hour bump    → 0 (pins full-value timestamp extraction)
+        9  source changed, timestamp field REMOVED       → non-zero (empty ts_head ≠ a re-verification)
+        10 flow-style `sources: [x]` source changed      → non-zero (flow-style is parsed, not skipped)
+        11 file under a DIRECTORY source changed         → non-zero (directory prefix match)
+        12 MULTI-LINE flow `sources:` (unparseable)      → prints a ⚠ warning (surfaced, not silently skipped)
+    cmd: |
+      set -eu
+      root="$(git rev-parse --show-toplevel)"
+      tmp="$(mktemp -d)" || { echo "test:okf-freshness: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      gitc() { git -C "$tmp" "$@"; }
+      mkf() { mkdir -p "$tmp/$(dirname "$1")"; printf '%s\n' "${2:-x}" > "$tmp/$1"; }
+      mkconcept() {  # $1 path  $2 timestamp  $3 source-path  [$4 body]. `printf '%s\n' <lines...>` —
+        # the task interpreter (mvdan/sh) does NOT support `printf --`, and a format starting with `-`
+        # is misparsed; passing each line as an ARG (format '%s\n', reused per arg) sidesteps both.
+        mkdir -p "$tmp/$(dirname "$1")"
+        printf '%s\n' '---' 'type: reference' 'title: t' "timestamp: $2" 'sources:' "  - $3" '---' '' "${4:-Body prose.}" > "$tmp/$1"
+      }
+      gitc init -q
+      gitc config user.email t@example.invalid
+      gitc config user.name test
+      gitc config commit.gpgsign false
+      # base: concept x (date ts) sourcing src.txt; concept z (ISO datetime ts) sourcing zsrc.txt;
+      # plus the sources + an unrelated other.txt
+      mkconcept knowledge/reference/x.md 2026-01-01 src.txt
+      mkconcept knowledge/reference/z.md 2026-01-01T14:30:00Z zsrc.txt
+      mkf src.txt s0; mkf zsrc.txt z0; mkf other.txt o0
+      # 10/11 fixtures: fx.md uses FLOW-STYLE `sources: [fsrc.txt]`; dx.md sources a DIRECTORY `dsrc`
+      mkf fsrc.txt f0
+      printf '%s\n' '---' 'type: reference' 'title: t' 'timestamp: 2026-01-01' 'sources: [fsrc.txt]' '---' '' 'Body.' > "$tmp/knowledge/reference/fx.md"
+      mkf dsrc/inner.txt d0
+      printf '%s\n' '---' 'type: reference' 'title: t' 'timestamp: 2026-01-01' 'sources:' '  - dsrc' '---' '' 'Body.' > "$tmp/knowledge/reference/dx.md"
+      # 12 fixture: mlfx.md uses MULTI-LINE flow (`[` and `]` on separate lines) — NOT parsed; must warn
+      mkf mlsrc.txt m0
+      printf '%s\n' '---' 'type: reference' 'title: t' 'timestamp: 2026-01-01' 'sources: [' '  mlsrc.txt,' ']' '---' '' 'Body.' > "$tmp/knowledge/reference/mlfx.md"
+      gitc add -A; gitc commit -q -m base; base="$(gitc rev-parse HEAD)"
+      # 1 stale: change the source only
+      gitc checkout -q "$base"; mkf src.txt s1
+      gitc add -A; gitc commit -q -m stale; head_stale="$(gitc rev-parse HEAD)"
+      # 2 fresh: change the source AND bump x's timestamp
+      gitc checkout -q "$base"; mkf src.txt s1; mkconcept knowledge/reference/x.md 2026-02-02 src.txt
+      gitc add -A; gitc commit -q -m fresh; head_fresh="$(gitc rev-parse HEAD)"
+      # 3 no-source: change an unrelated file
+      gitc checkout -q "$base"; mkf other.txt o1
+      gitc add -A; gitc commit -q -m nosrc; head_nosrc="$(gitc rev-parse HEAD)"
+      # 4 new concept whose source also changes in the same commit
+      gitc checkout -q "$base"; mkf newsrc.txt n0; mkconcept knowledge/reference/y.md 2026-01-01 newsrc.txt
+      gitc add -A; gitc commit -q -m newconcept; head_new="$(gitc rev-parse HEAD)"
+      # 7 body edited but timestamp value UNCHANGED (pins the "timestamp VALUE changed" invariant —
+      # a weaker "concept file changed at all" check would wrongly pass this)
+      gitc checkout -q "$base"; mkf src.txt s1; mkconcept knowledge/reference/x.md 2026-01-01 src.txt 'Body EDITED.'
+      gitc add -A; gitc commit -q -m body-edit-same-ts; head_bodyedit="$(gitc rev-parse HEAD)"
+      # 8 ISO datetime, sub-hour bump (pins full-value timestamp extraction — a colon-splitting
+      # extractor would truncate both to ...T14 and wrongly flag STALE)
+      gitc checkout -q "$base"; mkf zsrc.txt z1; mkconcept knowledge/reference/z.md 2026-01-01T14:55:00Z zsrc.txt
+      gitc add -A; gitc commit -q -m iso-subhour; head_iso="$(gitc rev-parse HEAD)"
+      # 9 timestamp field REMOVED at head + source changed (an empty ts_head must NOT read as "changed")
+      gitc checkout -q "$base"; mkf src.txt s1
+      printf '%s\n' '---' 'type: reference' 'title: t' 'sources:' '  - src.txt' '---' '' 'Body.' > "$tmp/knowledge/reference/x.md"
+      gitc add -A; gitc commit -q -m ts-removed; head_tsgone="$(gitc rev-parse HEAD)"
+      # 10 flow-style source changed, no ts bump (proves flow-style is PARSED, not silently unchecked)
+      gitc checkout -q "$base"; mkf fsrc.txt f1
+      gitc add -A; gitc commit -q -m flow-stale; head_flow="$(gitc rev-parse HEAD)"
+      # 11 file UNDER a directory source changed, no ts bump (proves DIRECTORY prefix matching)
+      gitc checkout -q "$base"; mkf dsrc/inner.txt d1
+      gitc add -A; gitc commit -q -m dir-stale; head_dir="$(gitc rev-parse HEAD)"
+      fail=0
+      # OKF_FRESHNESS_STRICT defaults to 1 (strict) when arg2 is UNSET; an explicitly-empty arg2
+      # (`run "$r" ""`) stays empty → advisory. `${2-1}` (no colon) is UNSET-only, so "" is preserved.
+      run()  { export GIT_DIR="$tmp/.git" GIT_WORK_TREE="$tmp" OKF_FRESHNESS_RANGE="$1" OKF_FRESHNESS_STRICT="${2-1}"; task -d "$root" okf:freshness >/dev/null 2>&1; }
+      runo() { export GIT_DIR="$tmp/.git" GIT_WORK_TREE="$tmp" OKF_FRESHNESS_RANGE="$1" OKF_FRESHNESS_STRICT="${2-1}"; task -d "$root" okf:freshness 2>&1; }
+      ok() { echo "✓ $1"; }
+      no() { echo "✗ $1"; fail=1; }
+      # Exit assertions use `if run ...` (direct exit — reliable under the task interpreter, where a
+      # command-substitution capture does NOT propagate exit); message assertions capture separately
+      # via `runo | grep`.
+      if run "$base..$head_stale"; then no "1 stale (strict) should exit non-zero"; else ok "1 stale (strict) exits non-zero"; fi
+      if runo "$base..$head_stale" | grep -q 'STALE: knowledge/reference/x.md'; then ok "1 stale names the concept"; else no "1 stale did not name the concept"; fi
+      if run "$base..$head_fresh"; then ok "2 fresh (timestamp bumped) passes"; else no "2 fresh should pass"; fi
+      if run "$base..$head_nosrc"; then ok "3 non-source change passes"; else no "3 non-source change should pass"; fi
+      if run "$base..$head_new"; then ok "4 new concept fresh-by-definition passes"; else no "4 new concept should pass"; fi
+      if run ""; then no "5 empty range should fail closed"; else ok "5 empty range fails closed"; fi
+      if run "$base..$head_stale" ""; then ok "6 advisory (strict unset) exits 0"; else no "6 advisory should exit 0"; fi
+      if runo "$base..$head_stale" "" | grep -q 'advisory'; then ok "6 advisory warning printed"; else no "6 advisory warning missing"; fi
+      if run "$base..$head_bodyedit"; then no "7 body-edit + same timestamp should be STALE"; else ok "7 body-edit + same timestamp is STALE (value invariant pinned)"; fi
+      if run "$base..$head_iso"; then ok "8 ISO sub-hour bump passes (full-value timestamp)"; else no "8 ISO sub-hour bump should pass"; fi
+      if run "$base..$head_tsgone"; then no "9 timestamp-removed + source changed should be STALE"; else ok "9 timestamp-removed is STALE (empty ts_head not read as changed)"; fi
+      if run "$base..$head_flow"; then no "10 flow-style source stale should exit non-zero"; else ok "10 flow-style source parsed → STALE"; fi
+      if runo "$base..$head_flow" | grep -q 'STALE: knowledge/reference/fx.md'; then ok "10 flow-style names the concept"; else no "10 flow-style did not name the concept"; fi
+      if run "$base..$head_dir"; then no "11 directory source stale should exit non-zero"; else ok "11 directory source (prefix) → STALE"; fi
+      if runo "$base..$head_dir" | grep -q 'STALE: knowledge/reference/dx.md'; then ok "11 directory names the concept"; else no "11 directory did not name the concept"; fi
+      if runo "$base..$head_stale" | grep -q '⚠ okf:freshness:.*no parseable items'; then ok "12 multi-line flow surfaces a warning (not silently skipped)"; else no "12 multi-line flow warning missing"; fi
+      echo "---"
+      if [ "$fail" -eq 0 ]; then echo "✓ test:okf-freshness OK (16 assertions / 12 scenarios)"; else echo "✗ test:okf-freshness FAILED"; fi
+      exit "$fail"
+
+  test:okf-install:
+    desc: 'Test of okf:install checksum gate: the skip/cache-hit path trusts a binary by sha256+version, never version-string alone; red-green bound to the #522 fix'
+    summary: |
+      Hermetic red-green test (wired into `task ci`, NO network — never downloads). Drives the REAL
+      okf:install gate in verify-only mode (OKF_INSTALL_VERIFY_ONLY=1 + OKF_BIN_DIR=<tmp>): the task
+      runs its presence + sha256(bin_sha) + version checks and exits 0 (trusts the on-disk binary) or
+      3 (rejects it — would download), WITHOUT the network step. Because it drives the production code
+      path, a future refactor that reverts the gate to version-string trust turns B/C/E red. ACCEPT is
+      asserted by task exit 0; REJECT by the gate's specific verify-only message on stderr — go-task
+      collapses any non-zero inner exit to its own code (201), so the message, not the code, is what
+      distinguishes a real reject from an env/setup error. Fixtures reuse the real checksum-verified
+      .okf/bin/openknowledge (from the okf:install dep) as the known-good binary. Scenarios:
+        A  byte-identical + right version                          → exit 0 (accept)
+        B  tampered bytes                                          → exit 3 (reject — checksum gate)
+        C  version-forging (prints the wanted version, wrong bytes) → exit 3 (sha wins over version string)
+        D  binary absent                                           → exit 3 (reject)
+        E  sha-match but MISMATCHED wanted version (OKF_WANT_OVERRIDE) → exit 3 (version-identity is bound,
+           not sha alone — red-greens the #522 version clause)
+      NOTE: verify-only exercises the skip/cache-hit DECISION (the #522 primary threat + version
+      binding). The download-path integrity checks (tarball-sha, extracted-binary sha, tar traversal/
+      link guards) run only on a real download — covered by the live `ci` cache-miss run, not here.
+    deps: [okf:install]
+    cmd: |
+      set -u
+      root="$(git rev-parse --show-toplevel)"
+      real="$root/.okf/bin/openknowledge"
+      [ -x "$real" ] || { echo "test:okf-install: prerequisite .okf/bin/openknowledge missing (run: task okf:install)" >&2; exit 2; }
+      ver="$("$real" version 2>/dev/null)"   # the wanted version, as reported by the verified binary
+      tmp="$(mktemp -d)" || { echo "test:okf-install: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      mkdir -p "$tmp/bin"
+      # Each run is a SEPARATE `task` process (no dedup with the parent), so okf:install re-evaluates
+      # the gate every time against the freshly-seeded $tmp/bin. NOTE: go-task collapses any non-zero
+      # inner exit to its own code (201), so a REJECT is asserted by the gate's specific verify-only
+      # message on stderr — NOT a bare non-zero, which cannot tell a real reject from an env error
+      # (exit 2). ACCEPT is asserted by task exit 0. Capture is set -e-safe (assignment in an if).
+      fail=0; ok() { echo "✓ $1"; }; no() { echo "✗ $1"; fail=1; }
+      # $2 = wanted-version override ("" = none); $3 = accept|reject.
+      check() {
+        if out="$(OKF_BIN_DIR="$tmp/bin" OKF_WANT_OVERRIDE="$2" OKF_INSTALL_VERIFY_ONLY=1 task -d "$root" okf:install 2>&1)"; then rc=0; else rc=1; fi
+        case "$3" in
+          accept) if [ "$rc" -eq 0 ]; then ok "$1"; else no "$1 — expected ACCEPT (exit 0), got failure: $out"; fi ;;
+          reject) if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'verify-only: no checksum-verified'; then ok "$1"; else no "$1 — expected gate REJECT, got rc=$rc: $out"; fi ;;
+        esac
+      }
+      # A accept: the real, checksum+version-matching binary
+      cp "$real" "$tmp/bin/openknowledge"; chmod +x "$tmp/bin/openknowledge"
+      check "A accepts the checksum+version-matching binary" "" accept
+      # B reject: tampered bytes
+      printf 'trojan\n' > "$tmp/bin/openknowledge"; chmod +x "$tmp/bin/openknowledge"
+      check "B rejects a tampered binary" "" reject
+      # C reject: a binary self-reporting the wanted version but with wrong bytes (the #522 attack shape)
+      printf '#!/bin/sh\necho %s\n' "$ver" > "$tmp/bin/openknowledge"; chmod +x "$tmp/bin/openknowledge"
+      check "C rejects a version-forging binary (sha wins over version string)" "" reject
+      # D reject: no binary present
+      rm -f "$tmp/bin/openknowledge"
+      check "D rejects when the binary is absent" "" reject
+      # E reject: the REAL (sha-matching) binary but a MISMATCHED wanted version. Proves the skip is
+      # bound to the version, not sha alone; deleting the version clause would make this ACCEPT.
+      cp "$real" "$tmp/bin/openknowledge"; chmod +x "$tmp/bin/openknowledge"
+      check "E rejects a sha-match with the wrong wanted version (version-identity bound)" "v99.99.99" reject
+      echo "---"
+      if [ "$fail" -eq 0 ]; then echo "✓ test:okf-install OK (5 assertions / 5 scenarios)"; else echo "✗ test:okf-install FAILED"; fi
+      exit "$fail"
+
   ci:
     desc: Lokale Reproduktion der GHA-PR-Pipeline (release-coverage gates + ci:artifact)
     cmds:
@@ -2672,6 +3167,22 @@ tasks:
       # lint:kustomize-base (path join, printf schema, exit propagation) is caught here,
       # not only when a real component render trips it post-publish.
       - task: test:kustomize-base
+      # OKF knowledge/ bundle gate (PR-scoped, repo-wide doc gate — like
+      # validate:release-config, NOT artifact validation, so here and NOT in
+      # ci:artifact). okf:install is the documented carve-out to CI convention 1
+      # (openknowledge is not a Nix/devbox pkg); it is idempotent + checksum-pinned,
+      # so `task ci` stays locally reproducible on a fresh clone.
+      - task: okf:install
+      - task: okf:validate
+      # Hermetic red-green guard for the knowledge-bundle freshness gate (advisory today via
+      # okf-freshness.yml; #541 blocking flip). Fast, no network (throwaway git repo). The LIVE
+      # okf:freshness runs in okf-freshness.yml with the PR range — like lint:pr, only its TEST
+      # lives in `task ci`.
+      - task: test:okf-freshness
+      # Hermetic red-green guard for the okf:install checksum gate (#522): a regression that
+      # reverts the skip/cache-hit path to version-string trust is caught here, not only when a
+      # poisoned GHA cache is exploited. Fast, no network (drives okf:install in verify-only mode).
+      - task: test:okf-install
       - task: ci:artifact
 
   ci:artifact:
