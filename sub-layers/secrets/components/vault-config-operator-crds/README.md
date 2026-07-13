@@ -5,7 +5,7 @@ The **strict-B CRDs artifact** (talos-platform-docs ADR-0028) for the
 ships **only** the 47 `redhatcop.redhat.io` CustomResourceDefinitions — the
 operator workload (Deployment, RBAC, webhooks) is a **separate** component,
 `secrets/vault-config-operator`. The two together form the strict-B pair: CRDs
-first (this artifact, sync-wave -1), operator after (sync-wave 5).
+first (this artifact, sync-wave -1), operator after (sync-wave 1).
 
 The CRDs are sourced verbatim from the upstream `vault-config-operator` Helm
 chart **v0.8.49** (appVersion `v0.8.49`). The chart delivers its CRDs from the
@@ -63,7 +63,7 @@ The consumer cluster repo wires **two** Argo `Application`s — this `-crds` app
      limit — several of these CRDs are large — and is the convention for the
      strict-B `-crds` apps.
 
-2. The workload Application **`secrets/vault-config-operator`** at sync-wave 5,
+2. The workload Application **`secrets/vault-config-operator`** at sync-wave 1,
    which then comes up against CRDs that already exist (the `redhatcop.redhat.io`
    API group is registered).
 
@@ -121,7 +121,7 @@ representative served surfaces `redhatcop.redhat.io/Policy@v1alpha1`,
 
 ## Sync-wave
 
-`-1` — the CRDs land before the operator workload at wave 5, so the
+`-1` — the CRDs land before the operator workload at wave 1, so the
 `redhatcop.redhat.io` API group is registered before the operator starts
 reconciling its CRs.
 

@@ -151,6 +151,10 @@
       "component": "secrets/external-secrets-crds",
       "initial-version": "0.1.0"
     },
+    "sub-layers/secrets/components/vault-config-operator": {
+      "component": "secrets/vault-config-operator",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/secrets/components/vault-config-operator-crds": {
       "component": "secrets/vault-config-operator-crds",
       "initial-version": "0.1.0"
