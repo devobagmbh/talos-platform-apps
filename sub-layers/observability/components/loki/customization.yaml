@@ -17,7 +17,14 @@
 #   ${S3_ACCESS_KEY_ID}, ${S3_SECRET_ACCESS_KEY}, ${S3_INSECURE}; bucketnames use
 #   ${S3_BUCKET_CHUNKS} (chunks) and ${S3_BUCKET_RULER} (ruler).
 freeze_line:
-  workload: rendered/manifest.yaml # StatefulSet + Services + RBAC + config ConfigMap + Namespace — never consumer-patched
+  # The signed pre-rendered manifest is the workload DEFAULT (StatefulSet + Services + RBAC + config ConfigMap + Namespace),
+  # published as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml,
+  # `task package` per apps#508) — consumers attach per-cluster overlays via
+  # `source.kustomize.patches`. Calibrated-friction (ADR-0024): the base itself
+  # restricts nothing; the image digest is pinned at admission (cosign) and
+  # dangerous classes are fenced by the consumer-side ADR-0018 Kyverno safe-defaults
+  # — never a catalog allowlist here.
+  workload: rendered/manifest.yaml
 provided_refs:
   env: loki-runtime-config # Shape (a): non-secret S3 connection scalars via envFrom
   secret: loki-runtime-secret # Shape (c): S3 credentials via envFrom
