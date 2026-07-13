@@ -39,12 +39,27 @@ consumer CR against that tool's schema).
   `authorization.k8s.io` subjectaccessreviews `create`) bound to the
   controller-manager ServiceAccount even though the sidecar is disabled —
   accepted risk; upstream chart behavior with no values knob.
-- The controller-manager metrics Service renders as a dead endpoint
-  (`targetPort: https` with no matching container port) — harmless, upstream
-  behavior.
+- The controller-manager metrics `Service` renders **unconditionally** (the
+  chart gates only the `ServiceMonitor` and the kube-rbac-proxy sidecar on
+  `enableMonitoring`, not this `Service`), but its `targetPort: https` matches no
+  container port in this build: with the sidecar disabled the manager binds
+  metrics to `127.0.0.1:8080` (loopback) and exposes no port. Metrics are
+  therefore **not remotely scrapable** in this catalog artifact — by design, not
+  an oversight. `enableMonitoring: false` keeps the component cluster-agnostic;
+  enabling it would also render a `ServiceMonitor` (`monitoring.coreos.com/v1` —
+  the chart's `servicemonitor` template is guarded `{{- if .Values.enableMonitoring }}`),
+  hard-coupling the workload to the Prometheus Operator (a consumer without that
+  CRD installed would fail the `ServiceMonitor` apply). A consumer MUST NOT author
+  a `ServiceMonitor` against this `Service` — it would resolve endpoints on the
+  manager pod but scrape nothing. Exposing metrics is a consumer-fork /
+  catalog-PR concern: the chart couples the sidecar and the `ServiceMonitor`
+  under one `enableMonitoring` flag, so decoupling them (reachable metrics
+  without the Prometheus-Operator dependency) needs a render-level change this
+  pipeline does not provide today.
 - The `vault-config-operator-metrics-reader` ClusterRole (`nonResourceURLs:
-  /metrics`, `get`) renders **unbound** — no ClusterRoleBinding references it;
-  it is provided for an external Prometheus to bind.
+  /metrics`, `get`) renders **unbound** — no ClusterRoleBinding references it.
+  Upstream provides it for an external Prometheus to bind; it grants nothing
+  reachable in this build (see the dead metrics `Service` above).
 - The `vault-config-operator-prometheus-k8s` namespace-scoped Role +
   RoleBinding grant the `prometheus-k8s` ServiceAccount in
   `openshift-monitoring` read access — OpenShift monitoring RBAC, dead on
@@ -92,12 +107,28 @@ the bare `X.Y.Z`).
 - Provide `secrets/cert-manager` (or an equivalent cert-manager installation
   providing `cert-manager.io/v1`) at an earlier wave.
 - Author the operator's CRs (`Policy`, `SecretEngineMount`, `VaultSecret`, …)
-  in the consumer repo — they are not part of the signed artifact. Each CR
-  names its own Vault connection, so a reachable Vault instance (in-cluster or
-  remote) is a runtime prerequisite for reconciliation, not a sync-order
-  dependency of this component.
-- Monitoring is off in the catalog artifact (`enableMonitoring: false`); a
-  consumer with a Prometheus stack enables it per-cluster.
+  in the consumer repo — they are not part of the signed artifact. A reachable
+  Vault instance (in-cluster or remote) is a runtime prerequisite for
+  reconciliation, not a sync-order dependency of this component.
+- **Wire the Vault connection.** Upstream, the operator connects to Vault via the
+  standard Vault environment variables on the manager pod (`VAULT_ADDR`,
+  `VAULT_CACERT`, …) as the **default**, and each CR MAY override that per-CR via
+  `spec.connection`. This catalog artifact intentionally wires **neither**: the
+  cluster-specific Vault endpoint and CA are consumer-owned (they never belong in
+  the shared signed baseline — AGENTS.md § Consumer separation), and the
+  pre-rendered manager runs with only `--leader-elect`, no env and no CA volume.
+  The consumer therefore MUST supply the connection per CR via `spec.connection`
+  (address + `tlsConfig`/CA) and `spec.authentication` — the explicit, auditable
+  model this component assumes. Consumers preferring the upstream env-default
+  (one connection shared by all CRs) would need a catalog change to add an env
+  seam (ADR-0024 shape (a) — not present today); until then, per-CR
+  `spec.connection` is the only wired path.
+- Monitoring is off in the catalog artifact (`enableMonitoring: false`) and is a
+  **build-time** value — a consumer CANNOT flip it per-cluster via an overlay, and
+  MUST NOT author a `ServiceMonitor` against the shipped (dead) metrics `Service`.
+  Remote metrics scraping is not available in this build (see § Accepted
+  upstream-chart residuals for the rationale — it would hard-couple the workload
+  to the Prometheus Operator).
 - Teardown: remove the component by deleting its Argo `Application` with
   pruning enabled. `kubectl delete namespace vault-config-operator` alone
   orphans the **cluster-scoped** webhook configurations, which then reject
@@ -112,7 +143,10 @@ the bare `X.Y.Z`).
 
 The component is cluster-agnostic: `customization.yaml` declares no required
 consumer config (all `required.*` lists empty) — the consumer interaction
-surface is entirely CR-based.
+surface is entirely CR-based. The Vault-connection obligation above is not a
+counter-example: it is supplied through the consumer's own operator CRs
+(`spec.connection`/`spec.authentication`), not injected into the workload, so
+the freeze-line `required.*` shapes stay empty by design.
 
 ## Related ADRs
 
