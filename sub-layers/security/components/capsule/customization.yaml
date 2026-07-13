@@ -23,7 +23,14 @@
 # must be established before this workload (wave 0), as Tenant and the other
 # capsule.clastix.io CRDs must exist before the controller starts reconciling.
 freeze_line:
-  workload: rendered/manifest.yaml  # controller-manager workload + RBAC + webhooks — never consumer-patched
+  # controller-manager workload + RBAC + admission webhooks + the catalog-owned
+  # CapsuleConfiguration, published as a native-OCI Kustomize base (kustomization.yaml +
+  # manifest.yaml, `task package` per apps#508) → the consumer wires the operator Argo
+  # Application as an oci:// source (sourceType=Kustomize), sync-wave 0. The freeze line
+  # stays all-empty (cluster-agnostic; see header) — the base is consumed as-is; this
+  # only reflects the artifact FORM (chart-OCI → native-OCI), matching mimir #548 and the
+  # capsule-crds half.
+  workload: rendered/manifest.yaml
 provided_refs: {}
 provided_selectors: {}
 required:
