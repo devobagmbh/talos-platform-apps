@@ -5,7 +5,13 @@
 # provided/required shape is empty. The CRDs land at sync-wave -1, before the
 # operator workload (databases/cnpg, wave 0).
 freeze_line:
-  workload: rendered/manifest.yaml  # the 10 postgresql.cnpg.io CRDs — never consumer-patched
+  # The 10 postgresql.cnpg.io CRDs, published as a native-OCI Kustomize base (kustomization.yaml +
+  # manifest.yaml, `task package` per apps#508) so the consumer wires the -crds Argo
+  # Application as an oci:// source (sourceType=Kustomize), sync-wave -1, Prune=false
+  # (ADR-0028 strict-B). A CRD schema has no consumer config surface, so there is nothing
+  # to overlay here — the base is consumed as-is; this migrates the artifact FORM
+  # (chart-OCI → native-OCI) to match the catalog-wide move (cf. observability/mimir #548).
+  workload: rendered/manifest.yaml
 provided_refs: {}
 provided_selectors: {}
 required:
