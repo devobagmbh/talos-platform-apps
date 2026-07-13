@@ -9,4 +9,5 @@ provides:
         - {image: ghcr.io/democratic-csi/democratic-csi, version: v1.9.5}
         - {image: ghcr.io/democratic-csi/csi-grpc-proxy, version: v0.5.7}
     api_surface: []
-    capabilities: [] # TODO: define a block-storage / csi-iscsi capability in capability-index (proposed, ADR-0021)
+    capabilities:
+      - {id: block-storage-network, swap_class: data-migration}  # iSCSI LUNs from an external NAS/SAN (ZFS/TrueNAS); defined in catalog/capability-index.yaml

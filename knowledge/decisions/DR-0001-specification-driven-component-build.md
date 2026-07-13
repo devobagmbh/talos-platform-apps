@@ -1,3 +1,19 @@
+---
+type: decision
+title: "DR-0001 — Specification-driven catalog component build"
+description: Repo-local decision record adopting a specification-driven, render-bound component build over copy-from-neighbor.
+tags: [decision, build-pipeline, psa, freeze-line, scaffold]
+timestamp: 2026-06-24
+sources:
+  - .claude/skills/build-catalog-component/CONVENTIONS.md
+  - .claude/agents/senior-implementer.md
+  - schemas/compatibility.schema.json
+  - schemas/customization.schema.json
+  - policies
+---
+
+> [2026-07-11 migration] Relocated verbatim from `docs/decisions/0001-specification-driven-component-build.md` into the `knowledge/` OKF bundle as concept `decisions/DR-0001`. The body below is preserved unchanged (OKF frontmatter was prepended, nothing in the record was rewritten). Its evidence section is an explicitly dated 2026-06-24 census snapshot — history, not a present-tense claim — so it was not re-verified in this migration; the "Record class" line's `docs/decisions/` path names the pre-migration home.
+
 <!-- Repo-local decision record for talos-platform-apps. Platform-wide ADRs live in
      talos-platform-docs/adr/; this record governs THIS repo's .claude/ build pipeline.
      Built from the committed schemas/gates/policies, a deterministic drift census of the

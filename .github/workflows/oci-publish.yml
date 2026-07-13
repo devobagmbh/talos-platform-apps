@@ -67,6 +67,24 @@ jobs:
         with:
           enable-cache: true
 
+      # Cache the openknowledge CLI (task okf:install, the one non-devbox tool — see
+      # AGENTS.md § CI conventions Tooling carve-out) so a normal PR restores it instead
+      # of re-downloading from the third-party GitHub release on every run. The download
+      # itself is checksum-verified + retried in the task; the cache removes the live-network
+      # dependency of the required `ci` gate on all but a version-bump / cache-miss run.
+      # The key is the Taskfile.yml hash, so any Taskfile edit rotates it; the prefix
+      # restore-keys then still restores the most-recent okf-<os>-* entry (fuzzy hit). That
+      # is safe because okf:install trusts a restored binary only when its sha256 matches
+      # the in-repo bin_sha pin AND its version matches OKF_VERSION (#522) — a poisoned or
+      # version-skewed entry fails that gate and re-downloads from the checksum-pinned asset.
+      - name: OKF CLI cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: .okf
+          key: okf-${{ runner.os }}-${{ hashFiles('Taskfile.yml') }}
+          restore-keys: |
+            okf-${{ runner.os }}-
+
       - name: Lokale CI-Pipeline reproduzieren
         run: devbox run -- task ci
 

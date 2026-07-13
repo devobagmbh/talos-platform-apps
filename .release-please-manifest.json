@@ -37,7 +37,7 @@
   "sub-layers/compute/components/node-feature-discovery": "0.1.0",
   "sub-layers/observability/components/blackbox-exporter": "0.1.0",
   "sub-layers/observability/components/loki": "0.1.1",
-  "sub-layers/observability/components/mimir": "0.4.0",
+  "sub-layers/observability/components/mimir": "0.4.1",
   "sub-layers/observability/components/tempo": "0.2.0",
   "sub-layers/observability/components/grafana-operator": "0.2.0",
   "sub-layers/observability/components/grafana-operator-crds": "0.2.0",
@@ -49,7 +49,7 @@
   "sub-layers/storage-objects/components/garage-buckets": "0.1.0",
   "sub-layers/secrets/components/ca-clusterissuer": "0.1.0",
   "sub-layers/observability/components/node-exporter": "0.1.0",
-  "sub-layers/secrets/components/vault-config-operator-crds": "0.1.0",
+  "sub-layers/secrets/components/vault-config-operator-crds": "0.2.0",
   "sub-layers/automation/components/velero-crds": "0.1.0",
   "sub-layers/automation/components/actions-runner-controller-crds": "0.1.0",
   "sub-layers/automation/components/actions-runner-controller": "0.1.0",
@@ -59,5 +59,6 @@
   "sub-layers/secrets/components/vault-operator": "0.1.0",
   "sub-layers/observability/components/nvidia-dcgm-exporter": "0.1.0",
   "sub-layers/secrets/components/vault-operator-crds": "0.1.0",
-  "sub-layers/compute/components/nvidia-device-plugin": "0.1.0"
+  "sub-layers/compute/components/nvidia-device-plugin": "0.1.0",
+  "sub-layers/secrets/components/vault-config-operator": "0.1.0"
 }
