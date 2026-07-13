@@ -113,16 +113,18 @@ the bare `X.Y.Z`).
 - **Wire the Vault connection.** Upstream, the operator connects to Vault via the
   standard Vault environment variables on the manager pod (`VAULT_ADDR`,
   `VAULT_CACERT`, …) as the **default**, and each CR MAY override that per-CR via
-  `spec.connection`. This catalog artifact intentionally wires **neither**: the
+  its `connection` block. This catalog artifact intentionally wires **neither**: the
   cluster-specific Vault endpoint and CA are consumer-owned (they never belong in
   the shared signed baseline — AGENTS.md § Consumer separation), and the
   pre-rendered manager runs with only `--leader-elect`, no env and no CA volume.
-  The consumer therefore MUST supply the connection per CR via `spec.connection`
-  (address + `tlsConfig`/CA) and `spec.authentication` — the explicit, auditable
-  model this component assumes. Consumers preferring the upstream env-default
+  The consumer therefore MUST supply the Vault `connection` (address + TLS/CA
+  under `connection.tLSConfig` — note the CRD's `tLSConfig` spelling) and
+  `authentication` in each CR — top-level `spec.connection`/`spec.authentication`
+  on most kinds, but nested under `spec.vaultSecretDefinitions[]` on `VaultSecret`
+  — the explicit, auditable model this component assumes. Consumers preferring the upstream env-default
   (one connection shared by all CRs) would need a catalog change to add an env
-  seam (ADR-0024 shape (a) — not present today); until then, per-CR
-  `spec.connection` is the only wired path.
+  seam (ADR-0024 shape (a) — not present today); until then, the per-CR
+  `connection` block is the only wired path.
 - Monitoring is off in the catalog artifact (`enableMonitoring: false`) and is a
   **build-time** value — a consumer CANNOT flip it per-cluster via an overlay, and
   MUST NOT author a `ServiceMonitor` against the shipped (dead) metrics `Service`.
@@ -144,9 +146,9 @@ the bare `X.Y.Z`).
 The component is cluster-agnostic: `customization.yaml` declares no required
 consumer config (all `required.*` lists empty) — the consumer interaction
 surface is entirely CR-based. The Vault-connection obligation above is not a
-counter-example: it is supplied through the consumer's own operator CRs
-(`spec.connection`/`spec.authentication`), not injected into the workload, so
-the freeze-line `required.*` shapes stay empty by design.
+counter-example: it is supplied through the `connection`/`authentication` block
+of the consumer's own operator CRs, not injected into the workload, so the
+freeze-line `required.*` shapes stay empty by design.
 
 ## Related ADRs
 
