@@ -80,6 +80,21 @@ spec:
                   # their values in the provider-opentofu pod logs. Consumers opt in
                   # per-cluster for debugging.
                   enableTofuCLILogging: false
+                  # Blast-radius guard (Nosmoht/talos-platform-base#167): serialize the
+                  # tofu apply/destroy so a worker machine-config change never reboots the
+                  # whole worker pool at once. The base module's per-node
+                  # talos_machine_configuration_apply is a `for_each` with no ordering, so
+                  # at the default parallelism (10) all workers reboot ~simultaneously — a
+                  # single containerd/kernel/sysctl change becomes a whole-data-plane outage
+                  # (2026-07-11 office-lab incident). Tradeoff: -parallelism=1 is graph-wide,
+                  # so it slows EVERY apply — accepted for the safety property. It is NOT a
+                  # true health-gated rolling update (the apply doesn't block until node
+                  # Ready); that lands via the talos-provider 0.12.0 `talos_machine` resource
+                  # (still alpha) — see base#167 tier 2 / #130.
+                  applyArgs:
+                    - -parallelism=1
+                  destroyArgs:
+                    - -parallelism=1
                   # Secrets only — NO cluster identity (that lives in the root's
                   # committed cluster.yaml). The per-cluster Secret
                   # (<clusterName>-tofu-secrets) is supplied by Layer 3 (consumer
