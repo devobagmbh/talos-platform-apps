@@ -31,7 +31,7 @@ false-positive. The link text and title remain the sub-layer's real name.)
 | cert-manager | 0 | inline CRDs (not split) | `tls-issuance` (label-move) | - |
 | external-secrets | 0 | - | `secret-sync` (rewrite-required) | secrets/external-secrets-crds |
 | vault-operator | 0 | - | `vault-secrets` (data-migration) | secrets/vault-operator-crds |
-| vault-config-operator | 0 | - | `secret-config-declarative` (rewrite-required) | secrets/vault-config-operator-crds, secrets/cert-manager |
+| vault-config-operator | 1 | - | `secret-config-declarative` (rewrite-required) | secrets/vault-config-operator-crds, secrets/cert-manager |
 | clustersecretstore-defaults | 10 | - | - | secrets/external-secrets |
 | ca-clusterissuer | 20 | - | `tls-issuance` (label-move) | secrets/external-secrets |
 

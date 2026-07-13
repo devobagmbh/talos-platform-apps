@@ -28,7 +28,7 @@ permanent second source of truth).
 
 ## Reference
 
-- [Sub-layer reference](reference/sub-layers/index.md) - the full catalog mapped, one concept per sub-layer (12 sub-layers, 61 components).
+- [Sub-layer reference](reference/sub-layers/index.md) - the full catalog mapped, one concept per sub-layer (12 sub-layers, 62 components).
 - [Component contract](reference/component-contract.md) - `compatibility.yaml` + `customization.yaml` (the freeze-line).
 - [Policy and CVE gates](reference/policy-and-cve-gates.md) - Conftest misconfig gate + Trivy vulnerability gate.
 - [CI and merge gates](reference/ci-and-merge-gates.md) - required status checks + branch protection.

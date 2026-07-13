@@ -2643,17 +2643,20 @@ tasks:
       to CI convention 1 (tools come from devbox) — its CLI is installed from a
       version-pinned GitHub release asset whose per-platform sha256 is pinned in-repo
       below. Runs identically locally and in the GHA `ci` job (called by `task ci`);
-      `.okf/` is GHA-cached (keyed on OKF_VERSION) so a normal PR never re-downloads.
+      `.okf/` is GHA-cached (key = the Taskfile.yml hash) so a normal PR never re-downloads.
       No curl-pipe-to-shell — the tarball is checksum-verified BEFORE extraction and the
       binary is located by search inside the archive, fail-closed on any mismatch, with
       retry + timeout so a transient CDN blip does not hard-fail the required `ci` gate.
 
-      Idempotent: skips the download when the pinned version is already in .okf/bin.
-      The local skip trusts the persisted binary's `version` string — replacing that
-      binary needs write access to .okf/bin, which is out of the threat model (equivalent
-      to editing any repo file). CI is unaffected: a fresh checkout has no .okf/ and
-      always installs from the checksum-verified download (or the restored cache, itself
-      keyed on the pinned version).
+      Idempotent, checksum-gated: an existing .okf/bin (local OR GHA-cache-restored) is
+      trusted for the skip only when its bytes match the repo-pinned BINARY sha256 below —
+      integrity is the anchor, never the binary's self-reported `version` string alone (the
+      version is re-checked too, but ONLY after the byte match, so untrusted bytes are never
+      executed). This closes the #522-review vector: the GHA Actions cache is not CODEOWNERS/
+      signing-protected and oci-publish.yml restores it under a prefix `restore-keys`
+      fallback, so a poisoned okf-<os>-* entry could satisfy the old version-string-only skip
+      and run unverified in the required `ci` gate. A checksum miss, version skew, or absent
+      binary (e.g. a fresh checkout) falls through to the checksum-verified download below.
 
       Supply-chain trust model (ACCEPTED RESIDUAL): openknowledge-sh/openknowledge ships
       only checksums.txt for its releases — NO cosign signature, NO SLSA provenance
@@ -2661,9 +2664,11 @@ tasks:
       tampering (a retagged release with different bytes fails closed) but does NOT defend
       against a pin-time upstream compromise; this is asymmetric with the repo's own
       cosign-keyless OCI signing and is accepted for a build-time doc validator. A version
-      bump MUST re-pin ALL four platform checksums together — a wrong/missing one fails
-      closed on that platform with an explicit expected-vs-actual message (there is no
-      mechanical OKF_VERSION<->checksum parity gate; accepted, the failure is loud).
+      bump MUST re-pin ALL four tarball checksums AND all four binary checksums together
+      (derive each binary sha by verifying the tarball sha, extracting, and hashing the
+      binary) — a wrong/missing one fails closed on that platform with an explicit
+      expected-vs-actual message (there is no mechanical OKF_VERSION<->checksum parity
+      gate; accepted, the failure is loud).
     vars:
       OKF_VERSION: v0.5.0
     cmd: |
@@ -2671,17 +2676,24 @@ tasks:
       dest=".okf/bin"
       bin="${dest}/openknowledge"
       want="{{.OKF_VERSION}}"
-      if [ -x "$bin" ] && [ "$("$bin" version 2>/dev/null)" = "${want#v}" ]; then
-        echo "✓ openknowledge ${want} already present at ${bin}"
-        exit 0
-      fi
+      # sha256 helper — Linux (sha256sum) / macOS (shasum); used for both the tarball and
+      # the on-disk binary integrity checks below.
+      sha256_of() {
+        if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+        else shasum -a 256 "$1" | cut -d' ' -f1; fi
+      }
+      # Fail fast + loud in the MAIN shell if no sha256 tool exists: sha256_of runs inside
+      # $(...) subshells where an `exit` would not terminate the task (it falls through to a
+      # misleading downstream "checksum mismatch (empty)"), so the availability guard lives here.
+      command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || {
+        echo "✗ no sha256 tool available (need sha256sum or shasum)"; exit 2; }
       os=$(uname -s | tr '[:upper:]' '[:lower:]')
       case "$(uname -m)" in
         x86_64|amd64)  arch=amd64 ;;
         arm64|aarch64) arch=arm64 ;;
         *) echo "✗ unsupported arch: $(uname -m)"; exit 2 ;;
       esac
-      # Per-platform sha256 of the v0.5.0 release tarballs (openknowledge-sh/openknowledge
+      # Per-platform sha256 of the v0.5.0 release TARBALLS (openknowledge-sh/openknowledge
       # releases/download/v0.5.0/checksums.txt). A version bump re-pins ALL of these.
       case "${os}_${arch}" in
         linux_amd64)  sha="0f58de81e52f064fbf52aac5289e0b1b6dc0e58de2f47c4e043263e9e927cb27" ;;
@@ -2690,6 +2702,26 @@ tasks:
         darwin_arm64) sha="8316f6206943e42973f6645b9deebba46299038f223cc1b1fe42d5cb2fac2150" ;;
         *) echo "✗ no pinned checksum for ${os}_${arch}"; exit 2 ;;
       esac
+      # Per-platform sha256 of the EXTRACTED openknowledge BINARY (v0.5.0) — the integrity
+      # anchor for the idempotent skip + GHA cache-hit path (#522 review). Derived via the
+      # tarball chain of trust: verify the tarball sha, extract, hash the binary.
+      case "${os}_${arch}" in
+        linux_amd64)  bin_sha="c1a6ffd314a4ac5c2c22aff2d8f922c7cebb3b3efe9f4b1b378074e63c699273" ;;
+        linux_arm64)  bin_sha="a689710aad02b6bdbd430eaa362369f3a57d0c06b7bce16542f24e4030ce255d" ;;
+        darwin_amd64) bin_sha="cda8e9360db1fd3ab2bffbc250b1cf493d6e68bd8e3e76048b7773054b80493c" ;;
+        darwin_arm64) bin_sha="f8d813e92b032830bfb1081e6d099e248b9a00d7eb8490626eb990b79b2885e5" ;;
+        *) echo "✗ no pinned binary checksum for ${os}_${arch}"; exit 2 ;;
+      esac
+      # Idempotent skip — checksum-gated (integrity) THEN version-checked (identity): an
+      # existing binary (local OR GHA-cache-restored) is trusted only when its bytes match
+      # the repo-pinned bin_sha. `&&` short-circuits, so `$bin version` runs ONLY after the
+      # byte match — it never executes attacker-controlled bytes, yet still binds the skip
+      # to OKF_VERSION so a version bump that forgets to re-pin bin_sha self-heals to a
+      # re-download instead of silently running the stale binary.
+      if [ -x "$bin" ] && [ "$(sha256_of "$bin")" = "$bin_sha" ] && [ "$("$bin" version 2>/dev/null)" = "${want#v}" ]; then
+        echo "✓ openknowledge ${want} present + checksum-verified at ${bin}"
+        exit 0
+      fi
       asset="openknowledge_${os}_${arch}.tar.gz"
       url="https://github.com/openknowledge-sh/openknowledge/releases/download/${want}/${asset}"
       tmp=$(mktemp -d "${TMPDIR:-/tmp}/okf-install.XXXXXX") || { echo "✗ mktemp failed"; exit 2; }
@@ -2699,17 +2731,20 @@ tasks:
       # or slow connect must fail fast + retry, never hang to the job limit.
       curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused --connect-timeout 20 --max-time 180 \
         -o "${tmp}/${asset}" "$url" || { echo "✗ download failed: $url"; exit 2; }
-      if command -v sha256sum >/dev/null 2>&1; then
-        actual=$(sha256sum "${tmp}/${asset}" | cut -d' ' -f1)
-      else
-        actual=$(shasum -a 256 "${tmp}/${asset}" | cut -d' ' -f1)
-      fi
+      actual=$(sha256_of "${tmp}/${asset}")
       if [ "$actual" != "$sha" ]; then
         echo "✗ checksum mismatch for ${asset}"; echo "  expected ${sha}"; echo "  actual   ${actual}"; exit 2
       fi
       tar -xzf "${tmp}/${asset}" -C "$tmp" || { echo "✗ extract failed"; exit 2; }
       found=$(find "$tmp" -type f -name openknowledge | head -1)
       [ -n "$found" ] || { echo "✗ openknowledge binary not found in archive"; exit 2; }
+      # Defense-in-depth: the extracted binary must match the pinned binary sha before
+      # install (the tarball sha covers download integrity; this pins the exact bytes the
+      # skip / cache-hit path will later trust).
+      found_sha=$(sha256_of "$found")
+      if [ "$found_sha" != "$bin_sha" ]; then
+        echo "✗ extracted binary checksum mismatch"; echo "  expected ${bin_sha}"; echo "  actual   ${found_sha}"; exit 2
+      fi
       # Guard mkdir + install: there is no `set -e`, so an unguarded failure here would
       # fall through to the success echo and exit 0 with .okf/bin absent/stale.
       mkdir -p "$dest" || { echo "✗ mkdir ${dest} failed"; exit 2; }

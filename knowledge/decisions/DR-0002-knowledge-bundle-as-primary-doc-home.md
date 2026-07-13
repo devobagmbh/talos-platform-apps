@@ -21,7 +21,7 @@ sources:
 
 Documentation was scattered across three shapes with no single navigable home:
 `AGENTS.md` / `DOCUMENTATION.md` (conventions), a `docs/` tree holding exactly one
-decision record, and 61 co-located component READMEs plus 12 sub-layer READMEs.
+decision record, and 62 co-located component READMEs plus 12 sub-layer READMEs.
 There was no consolidated architecture view, no cross-sub-layer dependency
 overview, no in-repo diagram, and no systematic account of what is *not* yet
 documented, implemented, or gated. A reader — human or agent — had to reconstruct

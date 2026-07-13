@@ -3,7 +3,7 @@
 One reference concept per catalog sub-layer (12 total): its purpose, its
 components with sync-wave, CRD-split, capabilities, and dependencies. Derived
 from each `sub-layers/<sl>/README.md` + the per-component `compatibility.yaml` /
-`customization.yaml`. Catalog scale: 12 sub-layers, 61 components.
+`customization.yaml`. Catalog scale: 12 sub-layers, 62 components.
 
 - [automation](automation.md) - cluster backup (Velero) + dependency automation.
 - [compute](compute.md) - VM runtime, GPU scheduling, hardware-feature detection.
