@@ -214,6 +214,79 @@ tasks:
       find sub-layers -path '*/components/*/rendered/manifest.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
+  lint:kustomize-base:
+    desc: 'kustomize build gate: every non-empty rendered/manifest.yaml must build as the trivial consumer base (resources: [manifest.yaml]) that `task package` ships.'
+    summary: |
+      kubeconform (lint:rendered) validates the raw manifest YAML; `kustomize build` is
+      stricter. Since `task package` ships every component as a Kustomize base
+      (kustomization.yaml + manifest.yaml, sourceType=Kustomize) so consumers can apply
+      source.kustomize.patches, the artifact must actually kustomize-build. Duplicate
+      resource IDs (same GVK+namespace+name across the concatenated Helm/raw docs) or an
+      empty document pass kubeconform but ABORT kustomize build — such a component would
+      pass PR + publish and fail ONLY at consumer Argo reconcile, catalog-wide and
+      post-publish. Builds the SAME base package emits, in an isolated temp dir
+      (hermetic, no network), for every rendered manifest. Assumes `task render` ran.
+    vars:
+      # Seam so test:kustomize-base can drive this gate over fixtures (default = the real
+      # rendered manifests). Keep the glob quoted-safe: shell-expanded in the `for`.
+      KLINT_GLOB: '{{.KLINT_GLOB | default "sub-layers/*/components/*/rendered/manifest.yaml"}}'
+    cmd: |
+      set -eu
+      work="$(mktemp -d)" || { echo "lint:kustomize-base: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$work"' EXIT
+      fail=0
+      for manifest in {{.KLINT_GLOB}}; do
+        [ -e "$manifest" ] || continue      # glob had no match
+        [ -s "$manifest" ] || continue      # skip empty (no raw manifest rendered)
+        id="$(echo "$manifest" | sed -E 's#.*components/([^/]+)/.*#\1#')"
+        d="$work/$(printf '%s' "$id" | tr -c 'A-Za-z0-9._-' _)"
+        mkdir -p "$d"
+        cp "$manifest" "$d/manifest.yaml"
+        printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - manifest.yaml\n' > "$d/kustomization.yaml"
+        if kustomize build "$d" >/dev/null 2>"$d/err"; then
+          echo "✓ kustomize base builds: $id"
+        else
+          echo "✗ KUSTOMIZE BUILD FAILED: $id" >&2
+          sed 's/^/    /' "$d/err" >&2
+          fail=1
+        fi
+      done
+      exit $fail
+
+  test:kustomize-base:
+    desc: 'Test of lint:kustomize-base: a valid base builds (green → 0); a duplicate-resource-ID manifest aborts kustomize build (red → non-zero). Red-green bound to the gate via the KLINT_GLOB seam.'
+    summary: |
+      Hermetic red-green test for the kustomize-build gate (wired into `task ci`). Writes
+      throwaway fixture manifests (no network; the real repo is never mutated) and drives
+      lint:kustomize-base through its KLINT_GLOB seam — so a future edit that breaks the gate
+      logic (path join, printf schema, exit propagation) turns this red. Scenarios:
+        green  one valid object                       → lint:kustomize-base exits 0
+        red    two objects, SAME GVK+ns+name (dup id) → kustomize build aborts → non-zero
+               (the exact class the gate guards: passes kubeconform, breaks kustomize build)
+    cmd: |
+      set -eu
+      root="$(git rev-parse --show-toplevel)"
+      tmp="$(mktemp -d)" || { echo "test:kustomize-base: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      mkdir -p "$tmp/green/components/greenc/rendered" "$tmp/red/components/redc/rendered"
+      # GREEN: one valid object → builds clean
+      printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n  namespace: x\ndata:\n  a: "b"\n' \
+        > "$tmp/green/components/greenc/rendered/manifest.yaml"
+      # RED: duplicate resource ID (same GVK+ns+name) — passes kubeconform, ABORTS kustomize build
+      printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: dup\n  namespace: x\ndata:\n  a: "b"\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: dup\n  namespace: x\ndata:\n  a: "c"\n' \
+        > "$tmp/red/components/redc/rendered/manifest.yaml"
+      if task -d "$root" lint:kustomize-base KLINT_GLOB="$tmp/green/components/*/rendered/manifest.yaml" >/dev/null 2>&1; then
+        echo "✓ green fixture builds (gate passes)"
+      else
+        echo "✗ test:kustomize-base: green fixture unexpectedly FAILED the gate" >&2; exit 1
+      fi
+      if task -d "$root" lint:kustomize-base KLINT_GLOB="$tmp/red/components/*/rendered/manifest.yaml" >/dev/null 2>&1; then
+        echo "✗ test:kustomize-base: red fixture (duplicate id) unexpectedly PASSED the gate" >&2; exit 1
+      else
+        echo "✓ red fixture (duplicate resource id) correctly rejected"
+      fi
+      echo "test:kustomize-base OK"
+
   validate:crd-split:
     desc: 'Strict-B CRD-count oracle (ADR-0028): -crds artifact renders >0 CRDs + carries crd-bearing:true; its workload half renders 0 CRDs. Assumes `task render` ran.'
     summary: |
@@ -2350,13 +2423,18 @@ tasks:
   # --- Publish-Targets ---
 
   package:
-    desc: 'packt gerendertes Manifest als OCI-Layer-Tarball: task package -- <sub-layer>/<component> <tag>'
+    desc: 'pack the rendered manifest as a Kustomize-base OCI-layer tarball: task package -- <sub-layer>/<component> <tag>'
     summary: |
-      Packt sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
-      in einen Single-Layer-Tarball für die ArgoCD-native-OCI-Distribution
-      (ADR-0009 §OCI-Artefakt-Form). KEIN Helm-Chart-Wrapper mehr — das
-      gerenderte Manifest IST der Artefakt-Inhalt (Konsument: source.path '.').
-      Die OCI-Manifest-Annotationen setzt `task push` via `oras push --annotation`.
+      Packs sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml into a
+      single-layer tarball for ArgoCD native-OCI distribution (ADR-0009 §OCI-Artefakt-Form).
+      No Helm-chart wrapper. The tarball is a trivial Kustomize base — kustomization.yaml
+      (resources: [manifest.yaml]) + manifest.yaml — so the artifact resolves as
+      sourceType=Kustomize and a consumer can overlay per-cluster fields via
+      source.kustomize.patches (consumer source.path '.', identical render, no patches by
+      default). This Kustomize-base shape evolves ADR-0009 §OCI-Artefakt-Form (single
+      manifest → base) on the ADR-0024 calibrated-friction decision; the companion
+      talos-platform-docs ADR-0009 amendment is a fast-follow. The OCI-manifest annotations
+      are set by `task push` via `oras push --annotation`.
 
       Output: sub-layers/<sub-layer>/components/<component>/rendered/<component>-<tag>.tar.gz
     cmd: |
@@ -2378,13 +2456,32 @@ tasks:
       # argo-cd.readthedocs.io/en/stable/user-guide/oci/
       out="${root}/rendered/${component}-${chart_version}.tar.gz"
       rm -f "$out"
-      # Portabler tar (GNU + bsdtar): nur die Manifest-Datei im Tarball-Root.
-      # Invariante: `task render:one` konkateniert ALLE Helm-Charts + Raw-Manifeste
-      # der Komponente in diese eine manifest.yaml — sie IST der vollständige
-      # Artefakt-Inhalt. Bräuchte eine Komponente je eine zweite Datei im
-      # Artefakt-Root (source.path '.'), müssten render:one UND dieser tar-Aufruf
-      # mitgezogen werden — heute trägt jedes Artefakt genau eine Datei.
-      tar -czf "$out" -C "${root}/rendered" manifest.yaml
+      # Kustomize base: alongside manifest.yaml the tarball carries a trivial
+      # kustomization.yaml (resources: [manifest.yaml]) so the artifact resolves as
+      # sourceType=Kustomize. This lets a consumer overlay per-cluster fields via
+      # source.kustomize.patches without a catalog PR (ADR-0024 calibrated-friction).
+      # The base imposes no restriction of its own — a patch could technically touch
+      # any field, including the image; the boundaries (image-digest pinning, no
+      # hostPath / cluster-admin bindings) are enforced downstream by consumer-side
+      # controls (cosign verifyImages, ADR-0018 Kyverno safe-defaults), not by this
+      # format. A plain-manifest tarball would be sourceType=Directory with no patch
+      # surface. `task render:one` still concatenates ALL Helm charts + raw manifests
+      # into the one manifest.yaml — kustomization.yaml only references it (identical render).
+      kust="${root}/rendered/kustomization.yaml"
+      printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - manifest.yaml\n' > "$kust"
+      # Gate before emitting the tarball (apps#508): the base MUST `kustomize build`.
+      # kubeconform (lint:rendered) validates the raw manifest, but kustomize is stricter
+      # — duplicate resource IDs (same GVK+namespace+name across the concatenated docs) or
+      # an empty document pass kubeconform yet ABORT kustomize build, failing only at
+      # consumer Argo reconcile. Validate the EXACT base being shipped, here, up front.
+      if ! kustomize build "${root}/rendered" >/dev/null; then
+        rm -f "$kust"
+        echo "ERROR: 'kustomize build' failed for ${component_id} — the published base would fail at consumer Argo reconcile (duplicate resource IDs / empty doc?)" >&2
+        exit 1
+      fi
+      # Portable tar (GNU + bsdtar): kustomization.yaml + manifest.yaml at the tarball root.
+      tar -czf "$out" -C "${root}/rendered" kustomization.yaml manifest.yaml
+      rm -f "$kust"
       echo "✓ Packaged: ${out}"
 
   push:
@@ -2571,6 +2668,10 @@ tasks:
       # Hermetic red-green guard for the .trivyignore.yaml entry-shape validator
       # (#478) — mirrors test:trivy-extract's placement (in `ci` AND `ci:artifact`).
       - task: test:validate-trivyignore
+      # Hermetic red-green guard for the kustomize-build gate: a regression in
+      # lint:kustomize-base (path join, printf schema, exit propagation) is caught here,
+      # not only when a real component render trips it post-publish.
+      - task: test:kustomize-base
       - task: ci:artifact
 
   ci:artifact:
@@ -2591,10 +2692,13 @@ tasks:
       # Also in ci:artifact so a direct/backfill tag push (which runs ci:artifact,
       # not the PR `ci`) still red-greens the .trivyignore.yaml guard (#478).
       - task: test:validate-trivyignore
+      # Also in ci:artifact so a direct/backfill tag push red-greens the kustomize-build gate.
+      - task: test:kustomize-base
       - task: lint
       - task: validate:compatibility
       - task: render
       - task: lint:rendered
+      - task: lint:kustomize-base
       - task: validate:crd-split
       - task: lint:version
       - task: scan:conftest-verify

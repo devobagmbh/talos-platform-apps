@@ -64,7 +64,7 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 | `task render:one -- <sub-layer>/<component>` | `helm template` for one component |
 | `task render:sublayer -- <sub-layer>` | renders all components of one sub-layer |
 | `task render` | render of all components of all sub-layers (matrix) |
-| `task push -- <sub-layer>/<component> <tag>` | `oras push` to `oci://.../<sub-layer>/<component>:<tag>` (native OCI, single-layer manifest tarball) |
+| `task push -- <sub-layer>/<component> <tag>` | `oras push` to `oci://.../<sub-layer>/<component>:<tag>` (native OCI, single-layer tarball = a Kustomize base: `kustomization.yaml` + `manifest.yaml`, so `sourceType=Kustomize` and consumers overlay via `source.kustomize.patches`) |
 | `task sign -- <sub-layer>/<component> <tag>` | `cosign sign --yes` (local registries → skip) |
 | `task attest -- <sub-layer>/<component> <tag>` | SBOM (syft → CycloneDX → cosign attest) + SLSA provenance — phase 2+ |
 | `task publish -- <sub-layer>/<component> <tag>` | render → package → push → sign in one go |
@@ -178,6 +178,24 @@ These **MUST NOT** be relaxed without explicit maintainer approval.
 - **Per sub-layer**: `README.md` (required, lists components + sync-wave order), `compatibility.yaml` (aggregate).
 - **Per component**: `README.md` (required: content + OCI path + sync-wave + ADR references), `compatibility.yaml` (required: requires/provides), `customization.yaml` (required: ADR-0024 v2 freeze-line contract, validated against `schemas/customization.schema.json`), `helm/` or `manifests/` (content).
 - **Consumer separation**: this repo holds defaults and shared values. Cluster-specific things (replica counts, VIPs, OIDC issuer URLs) belong in the consumer repos.
+  - **How a consumer overlays (calibrated-friction, ADR-0024).** Each component is published as a **Kustomize base** (`task package` puts a trivial `kustomization.yaml` referencing `manifest.yaml` into the OCI tarball → `sourceType=Kustomize`). The consumer's Argo `Application` overlays per-cluster fields **without a catalog PR** via `source.kustomize.patches`. The base itself restricts nothing — a patch can technically touch any field, including the image; the boundaries are enforced **downstream, not by the artifact format**: the image digest is pinned at consumer admission (cosign `verifyImages`), `sync_wave` and other platform-set fields stay catalog-owned, and dangerous classes (hostPath, cluster-admin bindings) are fenced by the consumer-side ADR-0018 Kyverno safe-defaults — never a catalog allowlist. Example: raise a workload's memory limit per-cluster.
+
+    ```yaml
+    # consumer Application source (consumer repo)
+    source:
+      repoURL: oci://<registry>/<sub-layer>/<component>
+      targetRevision: <tag>
+      path: "."
+      kustomize:
+        patches:
+          - target: { kind: Deployment, name: <name> }
+            patch: |
+              - op: replace
+                path: /spec/template/spec/containers/0/resources/limits/memory
+                value: 512Mi
+    ```
+
+    Migration note: publishing a component in this form flips its ArgoCD auto-detection from `sourceType=Directory` to `Kustomize`. A consumer `Application` relying on `spec.source.directory.{include,exclude,recurse}` on the OCI source must move that logic into the Kustomize layer — those options become ineffective once `kustomization.yaml` is present (Argo prefers Kustomize detection). Consumer-side wiring for a **private** OCI registry (the `type: oci` repository Secret, registry CA trust) is a consumer-repo concern, documented there — not here.
 - **Argo Application definitions live in the consumer-cluster repo**, not here. One `Application` CR per component with an `argocd.argoproj.io/sync-wave` annotation. For local end-to-end tests there are `local/argo-apps/<sub-layer>/<component>.yaml` templates in the apps repo.
 - **CRD management — strict B** (talos-platform-docs ADR-0028). Every component that ships chart-provided CustomResourceDefinitions publishes a **separate** `<sub-layer>/<component>-crds` OCI artifact next to its workload artifact; the consumer wires **two** Argo `Application`s — the `-crds` app at `sync-wave -1` with `Prune=false`, then the workload. No inline CRDs in the workload artifact, no per-component inline-vs-separate choice.
   - A `crd-bearing: true` marker (in `compatibility.yaml` — `customization.yaml` is schema-locked `additionalProperties: false` and cannot carry it) drives the split and is the build gate's oracle: `^kind: CustomResourceDefinition` count **> 0** in the `-crds` artifact **and** **== 0** in the workload artifact. Enforced by **`task validate:crd-split`** (part of `task ci`), keyed structurally on the `-crds` suffix + the workload sibling: a `-crds` component must carry the line-anchored marker and render >0 CRDs; its workload half must render 0 (and a non-`-crds` component carrying the marker is flagged as misplaced). The gate validates split **correctness** (a split pair is internally consistent), not split **completeness**: a single-name component that ships chart CRDs inline instead of splitting is not flagged — reviewer judgment still gates whether a new CRD-shipping component must split (the out-of-scope operator-installed-CRD case below is one such un-gated class).
