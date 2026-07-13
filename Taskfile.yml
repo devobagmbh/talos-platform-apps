@@ -826,11 +826,15 @@ tasks:
       {REVIEW_REQUIRED, CHANGES_REQUESTED}; all others are dropped as out-of-scope):
         <number>\t<class>\t<annotation>
       CLASS (first match wins — the precedence IS the contract):
-        incomplete  — FAIL-CLOSED: a record missing/empty files[], authorLogin,
-                      isCrossRepository (non-boolean), or mergeStateStatus. A real PR
-                      always changes ≥1 file, so empty files[] means the skill's gh
-                      gather degraded — withhold, never default a degraded record to
-                      candidate (the safe default for a security classifier is withhold)
+        incomplete  — FAIL-CLOSED: a record whose decision fields are missing/malformed
+                      — non-number number, missing/empty files[], empty authorLogin,
+                      non-boolean isCrossRepository, empty mergeStateStatus, or non-boolean
+                      alreadyReviewedAtHead. A real PR always changes ≥1 file, so empty
+                      files[] means the skill's gh gather degraded. Withhold every degraded
+                      record — never default one to candidate (the safe default for a
+                      security classifier is withhold); the fields NOT guarded here
+                      (isDraft, reviewDecision) are enforced by the select filter above,
+                      which drops a record missing them (out of scope, also not candidate)
         dirty       — mergeStateStatus == DIRTY (a real conflict; a human resolves it)
         fork        — isCrossRepository (public repo; never auto-approve an external head)
         self        — authorLogin == ME (GitHub 422s self-approval; withhold, no re-nag)
@@ -861,9 +865,10 @@ tasks:
         | select(.isDraft == false
                  and (.reviewDecision == "REVIEW_REQUIRED" or .reviewDecision == "CHANGES_REQUESTED"))
         | .number as $n
-        | (if ((.files | type) != "array") or ((.files | length) == 0)
+        | (if ((.number | type) != "number") or ((.files | type) != "array") or ((.files | length) == 0)
                 or ((.authorLogin // "") == "") or ((.isCrossRepository | type) != "boolean")
-                or ((.mergeStateStatus // "") == "") then "incomplete"
+                or ((.mergeStateStatus // "") == "") or ((.alreadyReviewedAtHead | type) != "boolean")
+                then "incomplete"
            elif .mergeStateStatus == "DIRTY" then "dirty"
            elif (.isCrossRepository == true) then "fork"
            elif ((.authorLogin // "") | ascii_downcase) == $ME then "self"
@@ -919,7 +924,9 @@ tasks:
         {"number":114,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["policies/base/no_privileged_containers.rego"],"addedActionPins":[],"alreadyReviewedAtHead":false},
         {"number":115,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["devbox.lock"],"addedActionPins":[],"alreadyReviewedAtHead":false},
         {"number":116,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[],"addedActionPins":[],"alreadyReviewedAtHead":false},
-        {"number":117,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
+        {"number":117,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":118,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[]},
+        {"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
       ]
       JSON
       export ME="Nosmoht"
@@ -963,10 +970,12 @@ tasks:
       assert_class 115 governance       # devbox.lock
       # Fail-closed: a degraded record is withheld, never defaulted to candidate:
       assert_class 116 incomplete       # empty files[] → gh gather degraded → withhold
-      assert_class 117 incomplete       # missing authorLogin → withhold
+      assert_class 117 incomplete       # empty authorLogin → withhold
+      assert_class 118 incomplete       # missing alreadyReviewedAtHead (non-boolean) → withhold, never candidate
+      assert_class null incomplete      # missing number (jq null→"null") → withhold, never candidate
       count="$(printf '%s\n' "$out" | grep -cE '[^[:space:]]' || true)"
-      if [ "${count:-0}" -ne 17 ]; then echo "FAIL: expected exactly 17 in-scope lines, got ${count:-0}"; fail=1; fi
-      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (17 in-scope / 2 dropped)"; fi
+      if [ "${count:-0}" -ne 19 ]; then echo "FAIL: expected exactly 19 in-scope lines, got ${count:-0}"; fail=1; fi
+      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (19 in-scope / 2 dropped)"; fi
       exit "$fail"
 
   lint:commit-scope:
