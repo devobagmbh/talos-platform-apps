@@ -142,7 +142,7 @@ capabilities:
     name: TLS-Zertifikats-Ausstellung
     domain: secrets
     implementations:
-      - {name: cert-manager, status: active, swap_class: label-move}  # via ca-clusterissuer
+      - {name: cert-manager, status: active, swap_class: label-move}  # issuer CR per ADR-0027 (ACME/LE), consumer-supplied
       - {name: vault-pki, status: considered, swap_class: rewrite-required}
 
   # — Lifecycle ———————————————————————————————————————————————
