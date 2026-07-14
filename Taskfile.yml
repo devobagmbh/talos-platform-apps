@@ -799,6 +799,185 @@ tasks:
       if [ "$fail" -eq 0 ]; then echo "✓ test:pr-lint OK (14 assertions / 12 scenarios)"; else echo "✗ test:pr-lint FAILED"; fi
       exit "$fail"
 
+  pr:triage:
+    desc: 'PURE PR classifier for babysit-prs: reads assembled PR records JSON, prints "<number>\t<class>\t<pin-annotation>" TSV. Network-free.'
+    summary: |
+      The SINGLE, deterministic source of the babysit-prs auto-review partition —
+      the security-critical decision of which open PR may enter the unattended
+      auto-approve path. Network-free and side-effect-free: it reads an already-
+      assembled JSON array of PR records (the babysit-prs skill does the `gh`
+      gathering and assembly, then pipes here), and is bound red-green by
+      `task test:pr-triage` (wired into `task ci`). Keeping the classification in
+      a tested task target — not in skill prose — is why a regression in the
+      withhold logic turns a fixture assertion red instead of silently
+      auto-approving a PR it should have withheld.
+
+      INPUT (stdin, or a file path in PR_TRIAGE_INPUT): a JSON array; each record:
+        {"number":N, "isDraft":bool, "reviewDecision":"REVIEW_REQUIRED|CHANGES_REQUESTED|...",
+         "isCrossRepository":bool, "authorLogin":"<login>", "mergeStateStatus":"CLEAN|BEHIND|DIRTY|...",
+         "files":["<changed path>", ...],                 # AUTHORITATIVE complete list
+         "addedActionPins":[{"repo":"owner/repo","ref":"<sha-or-ref>"}, ...],
+         "alreadyReviewedAtHead":bool}                     # a review by ME exists at the current head
+      ENV: ME (required — the operator login, for the self-authored test);
+           TRUSTED_ACTIONS (optional — newline-separated owner/repo set already
+           trusted in .github on origin/main).
+
+      OUTPUT: one TSV line per in-scope PR (isDraft==false AND reviewDecision ∈
+      {REVIEW_REQUIRED, CHANGES_REQUESTED}; all others are dropped as out-of-scope):
+        <number>\t<class>\t<annotation>
+      CLASS (first match wins — the precedence IS the contract):
+        incomplete  — FAIL-CLOSED: a record whose decision fields are missing/malformed
+                      — non-number number, missing/empty files[], empty authorLogin,
+                      non-boolean isCrossRepository, empty mergeStateStatus, or non-boolean
+                      alreadyReviewedAtHead. A real PR always changes ≥1 file, so empty
+                      files[] means the skill's gh gather degraded. Withhold every degraded
+                      record — never default one to candidate (the safe default for a
+                      security classifier is withhold); the fields NOT guarded here
+                      (isDraft, reviewDecision) are enforced by the select filter above,
+                      which drops a record missing them (out of scope, also not candidate)
+        dirty       — mergeStateStatus == DIRTY (a real conflict; a human resolves it)
+        fork        — isCrossRepository (public repo; never auto-approve an external head)
+        self        — authorLogin == ME (GitHub 422s self-approval; withhold, no re-nag)
+        governance  — a changed path in the repo's central-review tier (its own
+                      .github/CODEOWNERS "zentral, immer M1" set: AGENTS.md, CLAUDE.md,
+                      Taskfile.yml — which holds THIS classifier — devbox.json/.lock,
+                      .sops.yaml* = secret-decryption access) plus .github/ / .claude/
+                      and the policies/ + schemas/ admission-control gates. Always a
+                      human; this is what stops the loop approving a change that would
+                      loosen its own gate or the platform's controls. Keep this set in
+                      sync with CODEOWNERS' central tier.
+        reviewed    — alreadyReviewedAtHead (the loop already reviewed this exact head; skip)
+        candidate   — none of the above → eligible for the auto-approve path
+      ANNOTATION (report hint for a withheld .github PR; NOT a class): for each added
+      action pin, `new-action:<repo>` if its owner/repo is not in TRUSTED_ACTIONS, or
+      `non-sha:<repo>@<ref>` if the ref is not a 40-hex commit SHA; `-` when clean.
+      This annotation cannot detect an upstream tag-move of an already-trusted action
+      (the tag legitimately resolves to the new commit) — that residual is stated in
+      the skill, not defended here.
+    cmd: |
+      set -eu
+      : "${ME:?pr:triage: ME (operator login) is required}"
+      input="${PR_TRIAGE_INPUT:-/dev/stdin}"
+      jq -r --arg me "$ME" --arg trusted "${TRUSTED_ACTIONS:-}" '
+        ($trusted | split("\n") | map(select(length > 0))) as $T
+        | ($me | ascii_downcase) as $ME
+        | .[]
+        | select(.isDraft == false
+                 and (.reviewDecision == "REVIEW_REQUIRED" or .reviewDecision == "CHANGES_REQUESTED"))
+        | .number as $n
+        | (if ((.number | type) != "number") or ((.files | type) != "array") or ((.files | length) == 0)
+                or ((.authorLogin // "") == "") or ((.isCrossRepository | type) != "boolean")
+                or ((.mergeStateStatus // "") == "") or ((.alreadyReviewedAtHead | type) != "boolean")
+                then "incomplete"
+           elif .mergeStateStatus == "DIRTY" then "dirty"
+           elif (.isCrossRepository == true) then "fork"
+           elif ((.authorLogin // "") | ascii_downcase) == $ME then "self"
+           elif any((.files // [])[];
+                    test("^AGENTS\\.md$") or test("^CLAUDE\\.md$") or test("^Taskfile\\.yml$")
+                    or test("^devbox\\.(json|lock)$") or test("^\\.sops\\.yaml")
+                    or test("^\\.github/") or test("^\\.claude/")
+                    or test("^policies/") or test("^schemas/")) then "governance"
+           elif (.alreadyReviewedAtHead == true) then "reviewed"
+           else "candidate" end) as $class
+        | ([ (.addedActionPins // [])[]
+             | .repo as $r | .ref as $ref
+             | if ($T | index($r)) == null then "new-action:\($r)"
+               elif ($ref | test("^[0-9a-fA-F]{40}$")) then empty
+               else "non-sha:\($r)@\($ref)" end ]) as $flags
+        | [ ($n | tostring), $class, (if ($flags | length) > 0 then ($flags | join(",")) else "-" end) ]
+        | @tsv
+      ' "$input"
+
+  test:pr-triage:
+    desc: 'Hermetic red-green test for pr:triage (the babysit-prs auto-review partition; in task ci)'
+    summary: |
+      Binding acceptance test for the security-critical babysit-prs classifier.
+      Network-free: feeds a fixture PR-records JSON to `pr:triage` and asserts each
+      PR's class + pin annotation. Red-green — the class precedence, the
+      governance-path globs (AGENTS.md / .github/ / .claude/), the self/fork/dirty
+      tests, the draft/APPROVED drop, and the pin allowlist + 40-hex-SHA check are
+      the single source in pr:triage; reverting ANY turns an assertion red (a
+      should-be-withheld PR would classify `candidate` = auto-approvable, or a
+      dropped PR would reappear).
+    cmd: |
+      set -eu
+      work="$(mktemp -d)" || { echo "test:pr-triage: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$work"' EXIT
+      fixture="$work/records.json"
+      cat > "$fixture" <<'JSON'
+      [
+        {"number":644,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/x/components/y/helm/values.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":100,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":true,"authorLogin":"outsider","mergeStateStatus":"BEHIND","files":["README.md"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":101,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"Nosmoht","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":102,"isDraft":false,"reviewDecision":"CHANGES_REQUESTED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"DIRTY","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":103,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".github/workflows/ci.yml"],"addedActionPins":[{"repo":"actions/checkout","ref":"1111111111111111111111111111111111111111"}],"alreadyReviewedAtHead":false},
+        {"number":104,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".github/workflows/ci.yml"],"addedActionPins":[{"repo":"attacker/evil","ref":"2222222222222222222222222222222222222222"}],"alreadyReviewedAtHead":false},
+        {"number":105,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".github/workflows/ci.yml"],"addedActionPins":[{"repo":"actions/checkout","ref":"v4"}],"alreadyReviewedAtHead":false},
+        {"number":106,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["AGENTS.md"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":107,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".claude/skills/pr-gate/SKILL.md"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":108,"isDraft":false,"reviewDecision":"CHANGES_REQUESTED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":true},
+        {"number":109,"isDraft":true,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":110,"isDraft":false,"reviewDecision":"APPROVED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":111,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["Taskfile.yml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":112,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".sops.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":113,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["CLAUDE.md"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":114,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["policies/base/no_privileged_containers.rego"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":115,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["devbox.lock"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":116,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":117,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":118,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[]},
+        {"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
+      ]
+      JSON
+      export ME="Nosmoht"
+      export TRUSTED_ACTIONS="$(printf 'actions/checkout\nactions/cache')"
+      export PR_TRIAGE_INPUT="$fixture"
+      out="$(task pr:triage)"
+      echo "triage output:"; printf '%s\n' "$out" | sed 's/^/  /'
+      fail=0
+      cls() { printf '%s\n' "$out" | awk -F'\t' -v n="$1" '$1==n{print $2}'; }
+      ann() { printf '%s\n' "$out" | awk -F'\t' -v n="$1" '$1==n{print $3}'; }
+      assert_class() {
+        got="$(cls "$1")"
+        if [ "$got" != "$2" ]; then echo "FAIL: PR#$1 class expected '$2' got '${got:-<none>}'"; fail=1; fi
+      }
+      assert_annot() {
+        got="$(ann "$1")"
+        if [ "$got" != "$2" ]; then echo "FAIL: PR#$1 annotation expected '$2' got '${got:-<none>}'"; fail=1; fi
+      }
+      assert_absent() {
+        if printf '%s\n' "$out" | awk -F'\t' -v n="$1" '$1==n{f=1} END{exit !f}'; then
+          echo "FAIL: PR#$1 must be DROPPED (out of scope), but appeared"; fail=1
+        fi
+      }
+      assert_class 644 candidate; assert_annot 644 '-'
+      assert_class 100 fork
+      assert_class 101 self
+      assert_class 102 dirty            # DIRTY wins over the candidate it would otherwise be
+      assert_class 103 governance; assert_annot 103 '-'                       # trusted + sha-pinned
+      assert_class 104 governance; assert_annot 104 'new-action:attacker/evil'
+      assert_class 105 governance; assert_annot 105 'non-sha:actions/checkout@v4'
+      assert_class 106 governance       # AGENTS.md
+      assert_class 107 governance       # .claude/
+      assert_class 108 reviewed         # already reviewed at head → skip
+      assert_absent 109                 # draft dropped
+      assert_absent 110                 # APPROVED dropped
+      # Full CODEOWNERS central-review tier is governance-withheld (not a subset):
+      assert_class 111 governance       # Taskfile.yml (holds THIS classifier — self-modification guard)
+      assert_class 112 governance       # .sops.yaml (secret-decryption access control)
+      assert_class 113 governance       # CLAUDE.md
+      assert_class 114 governance       # policies/*.rego (admission-control gate)
+      assert_class 115 governance       # devbox.lock
+      # Fail-closed: a degraded record is withheld, never defaulted to candidate:
+      assert_class 116 incomplete       # empty files[] → gh gather degraded → withhold
+      assert_class 117 incomplete       # empty authorLogin → withhold
+      assert_class 118 incomplete       # missing alreadyReviewedAtHead (non-boolean) → withhold, never candidate
+      assert_class null incomplete      # missing number (jq null→"null") → withhold, never candidate
+      count="$(printf '%s\n' "$out" | grep -cE '[^[:space:]]' || true)"
+      if [ "${count:-0}" -ne 19 ]; then echo "FAIL: expected exactly 19 in-scope lines, got ${count:-0}"; fail=1; fi
+      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (19 in-scope / 2 dropped)"; fi
+      exit "$fail"
+
   lint:commit-scope:
     desc: 'Single-component check: staged changes must touch at most ONE component'
     summary: |
@@ -3154,6 +3333,11 @@ tasks:
       # shared lint:conventional-subject helper is caught here, not only in the commit-lint
       # workflow on a live PR. Fast, no network (throwaway git repo).
       - task: test:pr-lint
+      # Hermetic red-green guard for the babysit-prs auto-review partition (pr:triage).
+      # A regression in the withhold logic (fork/self/DIRTY/governance-path) or the
+      # action-pin allowlist is caught here, not only when the loop wrongly auto-approves
+      # a PR it should have withheld. Fast, no network (fixture records JSON).
+      - task: test:pr-triage
       # Hermetic red-green guard for the image-CVE extractor (G3b AC6-extraction,
       # fast, no network). Wired here so a regression in the scan:extract-images
       # regex/tag-filter — which would let a bare name fail-close a publish, or let
