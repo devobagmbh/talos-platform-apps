@@ -46,15 +46,27 @@ Six load-bearing invariants:
    periodic human sample-audit (runtime note) is the compensating control.
 3. **The withhold decision is a tested classifier, not prose.** `task pr:triage`
    partitions each in-scope PR into `incomplete` / `dirty` / `fork` / `self` /
-   `governance` / `reviewed` / `candidate` (precedence in that order), bound
-   red-green by `task test:pr-triage`. Only `candidate` PRs reach the auto-approve
-   path. `governance` withholds any PR touching the repo's **central-review tier as
+   `release-please` / `governance` / `reviewed` / `oversized` / `candidate` (precedence
+   in that order), bound red-green by `task test:pr-triage`. Only `candidate` PRs reach
+   the auto-approve path. `release-please` withholds any PR touching
+   `.release-please-manifest.json` / `release-please-config.json` — a release PR bumps
+   SemVer + CHANGELOG and once merged cuts the signed-OCI-publish tag, so a wrong bump is
+   permanent and never auto-approved (its paths are not in the governance set, so this
+   class is what stops it falling through to `candidate`). `oversized` withholds a diff
+   past the reliable-review window (> 400 changed lines OR > 50 files, or an
+   uncomputable/`null` size = fail-safe) — defect detection collapses past that window,
+   so a large diff goes to a human. `governance` withholds any PR touching the repo's
+   **central-review tier as
    declared in its own `.github/CODEOWNERS`** — `AGENTS.md`, `CLAUDE.md`,
    `Taskfile.yml` (which holds this very classifier — the self-modification guard),
    `devbox.json`/`devbox.lock`, `.sops.yaml*` (secret-decryption access), `.github/**`,
-   `.claude/**` — plus the `policies/`+`schemas/` admission-control gates, so the loop
-   can never approve a change that would loosen its own gate or the platform's
-   controls. Keep this set in sync with CODEOWNERS' central tier. `incomplete` is the
+   `.claude/**`, the `policies/`+`schemas/` admission-control gates, **plus the root
+   platform-control configs `.gitleaks.toml` (the required secret gate), `.trivyignore.yaml`
+   (CVE suppression) and `lefthook.yml` (the pre-commit gate)** — so the loop can never
+   approve a change that would loosen its own gate or the platform's controls. Sync rule:
+   this set = CODEOWNERS' central tier PLUS those three root configs (covered in CODEOWNERS
+   only by the `*` default owner, but security-critical — do not drop them when reconciling).
+   `incomplete` is the
    **fail-closed** class: a record with an empty/absent `files` list (a real PR always
    changes ≥1 file, so empty means the gh gather degraded) or a missing decision field
    is withheld, never defaulted to `candidate`. **Scope honesty:** the set does NOT
@@ -100,6 +112,13 @@ Six load-bearing invariants:
    **whole line** — a whole-line match, so a substring, a negated sentence
    ("do NOT enable: …"), or an indented/quoted mention cannot arm it:
 
+   The match is a plain **whole-line fixed-string** grep against the committed
+   `origin/main` blob — deliberately NOT a fence-aware parse. A fence-stripping
+   pre-filter was rejected: it couples the marker's armed state to the fence *parity*
+   of the whole file (an unbalanced or nested ``` / ~~~ anywhere above the marker would
+   silently flip armed↔disarmed, untested), which is a worse property on the single
+   most security-critical switch than the residual it removes.
+
    ```sh
    MARKER='babysit-prs auto-approve: accepted by both code owners'
    git fetch --quiet origin main || { echo 'cannot fetch origin/main — report mode' >&2; MODE=report; }
@@ -110,21 +129,37 @@ Six load-bearing invariants:
    fi
    ```
 
-   Honest caveat: a maintainer who commits the exact line to `origin/main` — even
-   inside a fenced code block — arms it. That is acceptable because arming requires
-   a CODEOWNERS-reviewed `AGENTS.md` merge (a deliberate act), and the loop itself
-   can never add it: any PR touching `AGENTS.md` is `governance`-withheld (invariant
-   3). Treat the marker as the deliberate switch it is.
+   The arming switch **is** exactly this: one bare, column-0, whole-line occurrence of
+   the marker in `origin/main:AGENTS.md`. Any such occurrence arms the loop — a fenced
+   example still matches (the check is a plain whole-line grep, not a fence parse), an
+   indented mention does not (leading whitespace fails the `-x` match). This is
+   acceptable because arming requires a CODEOWNERS-reviewed `AGENTS.md` merge (a
+   deliberate two-owner act) and the loop can never self-arm (any `AGENTS.md` PR is
+   `governance`-withheld, invariant 3). Author consequences: **(1)** commit the marker
+   only when you intend to arm — do **not** paste it a second time as a documentary
+   example; a redundant column-0 copy is harmless (same boolean), but a copy you did not
+   mean to arm with is the footgun. **(2) Disarm** by removing the marker line via a
+   CODEOWNERS-reviewed `AGENTS.md` PR. Treat the marker as the deliberate switch it is.
    - `MODE=report` (default) → this pass **dispatches nothing and posts nothing**;
      it runs Phases 1–2 and writes the report + audit log (Phase 4). The safe default
      until the governance decision is committed.
    - `MODE=approve` (marker present) → in an **interactive** session, present the
      eligible count and get **one explicit, blocking go-ahead** for the pass, then
-     dispatch (Phase 3). If the environment cannot present a blocking prompt
-     (headless / no-tty / unattended `/loop`), **fall back to report** — an
-     unattended pass casts no approval. Residual (accepted): an operator who starts
-     an interactive loop and walks away can leave auto-continuation answering the
-     go-ahead; the sample-audit is the compensating control. Log any fallback.
+     dispatch (Phase 3). **Re-check the tty immediately before the go-ahead, not only
+     at startup** — a `/loop` session starts interactive but a later pass can run
+     detached (auto-continue / redirected stdin); a per-pass check degrades exactly
+     that pass:
+
+     ```sh
+     [ -t 0 ] || { echo 'stdin not a tty at go-ahead — report for this pass' >&2; MODE=report; }
+     ```
+
+     If the environment cannot present a blocking prompt (headless / no-tty /
+     unattended `/loop`), **fall back to report** — an unattended pass casts no
+     approval. Residual (reduced, not eliminated): an operator physically at an
+     attended tty who walks away mid-prompt can still let auto-continuation answer;
+     the per-pass tty re-check narrows this, and the periodic human sample-audit against
+     the posted pr-gate reviews is the compensating control. Log any fallback.
 
 ## Phase 1 — Gather facts + classify via `task pr:triage`
 
@@ -140,8 +175,15 @@ trusted="$(git grep -hoE 'uses:[[:space:]]*[A-Za-z0-9._-]+/[A-Za-z0-9._-]+' refs
 # Base list (scalars only; these fields do not paginate).
 base="$(gh pr list --state open --limit 400 \
   --json number,author,isDraft,reviewDecision,mergeStateStatus,isCrossRepository,headRefOid)"
-# Truncation guard: if the array length hit 400, report it (a flooded queue could
-# push a target out of the window).
+# Truncation halt (not advisory): a full 400-item page means the queue may be
+# truncated — a flooded queue could push a target PR out of the window and suppress
+# its review. Force this pass to report and cast NO approval; a 400-open-PR queue is
+# anomalous for this repo class and needs human triage before autonomous approval
+# resumes.
+if [ "$(printf '%s' "$base" | jq 'length')" -ge 400 ]; then
+  echo 'open-PR list hit the 400 limit — possible truncation; report-only this pass' >&2
+  MODE=report
+fi
 ```
 
 For each PR in the in-scope candidate set (`isDraft == false` and `reviewDecision ∈
@@ -172,8 +214,16 @@ exclude it from the pass (never silently treat as empty):
   `alreadyReviewedAtHead = true` iff the latest review authored by `"$me"` has
   `commit.oid == headRefOid` (this closes the `needs-info`→COMMENT re-nag loop for
   every review type, not only `CHANGES_REQUESTED`).
+- **diff size** — `gh pr view <N> --json additions,deletions`; set
+  `changedLineCount = additions + deletions` **only when both are numbers**, else
+  `null` (GitHub returns null/0 for a diff too large to compute — the exact case that
+  must not read as "small"); set `changedFileCount` = the length of the authoritative
+  name-only list above. Both feed the classifier's `oversized` withhold (defect-
+  detection collapses past the reliable-review window; an oversized diff is withheld
+  to a human, and a `null`/uncomputable size is treated as oversized — fail-safe).
 
-Assemble one records array with these fields plus the base scalars, then classify:
+Assemble one records array with these fields (incl. `changedLineCount`,
+`changedFileCount`) plus the base scalars, then classify:
 
 ```sh
 printf '%s' "$records" | ME="$me" TRUSTED_ACTIONS="$trusted" task pr:triage
@@ -202,7 +252,15 @@ For each: **sanitize `N` to `^[0-9]+$`**, write the pre-dispatch audit line (Pha
 being acted on), then **invoke `/pr-gate <N>`** and let it run its full pipeline. Do
 **not** ask it to merge. After it returns, write the outcome audit line with the
 verdict the orchestrator observed pr-gate post (`approve` / `request-changes` /
-`comment`). The cap keeps the pass under the subagent tool-call soft-cap; successive
+`comment`). The durable, owner-visible record of an approval is **the pr-gate review
+itself** — it is posted on GitHub under the operator's identity with its evidence-cited
+body and persists there independent of the machine-local log. Do **not** add a separate
+"automated"/"auto-approve" provenance comment: on a public repo it advertises which PRs
+took the machine path (recon) and, as a plain comment, is spoofable/deletable (no
+tamper-evidence). The autonomy record lives in the local audit log (Phase 4); the periodic
+human sample-audit against the posted reviews is the compensating control.
+
+The cap keeps the pass under the subagent tool-call soft-cap; successive
 cycles drain the rest (an approved PR leaves the candidate set; the freshness dedup
 skips one already reviewed at its head).
 
@@ -227,9 +285,11 @@ Report (this pass):
   `report` mode.)
 - **Would review (report mode)** — the `candidate` rows not dispatched.
 - **Needs human** — every withheld row by class (`fork` / `self` / `dirty` /
-  `governance` / `incomplete`, plus `reviewed` = already handled), and each
-  `governance` CI PR's pin annotation (`new-action` / `non-sha` / clean). An
-  `incomplete` row signals a degraded `gh` gather — re-run once connectivity is sound.
+  `release-please` / `governance` / `oversized` / `incomplete`, plus `reviewed` =
+  already handled), and each `governance` CI PR's pin annotation (`new-action` /
+  `non-sha` / clean). An `incomplete` row signals a degraded `gh` gather — re-run once
+  connectivity is sound; an `oversized` row is a diff past the reliable-review window
+  (split it, or a human reviews the whole).
 - **Deferred** — `candidate` rows beyond the cap (count + numbers).
 - **Gather-failed / Truncation** — any PR excluded by a `gh` gather failure; note if
   the enumeration hit the 400 limit.
@@ -238,12 +298,27 @@ Report (this pass):
 
 - **Four-eyes hollow-out by default** — auto-approval is off unless the committed,
   whole-line, `origin/main`-read marker is present; the default posts nothing.
-- **Governance-marker spoof** — whole-line match against `origin/main:AGENTS.md`
-  rejects a substring, a negated sentence, a local dirty edit, and a local unpushed
-  commit; every PR touching `AGENTS.md` / `.github/**` / `.claude/**` is
-  `governance`-withheld, so the loop cannot approve a change that loosens its gate.
+- **Governance-marker spoof** — whole-line fixed-string match against
+  `origin/main:AGENTS.md` rejects a substring, a negated sentence, a local dirty edit, a
+  local unpushed commit, and any indented mention (leading whitespace fails the `-x`
+  whole-line match); every PR touching `AGENTS.md` / `.github/**` / `.claude/**` is
+  `governance`-withheld, so the loop cannot approve a change that loosens its gate — and
+  cannot self-arm. (A bare column-0 marker committed even inside a fence arms it — an
+  accepted residual gated by the CODEOWNERS-reviewed merge, not a fence parse.)
 - **Fork / self auto-approval** — the tested classifier withholds them before any
   dispatch (red-green bound by `task test:pr-triage`).
+- **Release-please auto-approve** — a PR touching `.release-please-manifest.json` /
+  `release-please-config.json` is `release-please`-withheld before dispatch (its paths
+  are not in the governance set), so an unattended pass cannot approve a SemVer/CHANGELOG
+  bump whose merge cuts a permanent signed-OCI-publish tag.
+- **Oversized rubber-stamp** — a diff past the reliable-review window (> 400 lines / > 50
+  files, or an uncomputable/`null` size) is `oversized`-withheld in the classifier before
+  dispatch, so it never consumes a cap slot nor gets an attention-diluted auto-approve.
+- **Walk-away auto-continuation approve** — the per-pass tty re-check (`[ -t 0 ]`
+  immediately before the go-ahead) degrades a detached pass to report even when the loop
+  started interactive; the durable record of each approval is the posted pr-gate review
+  itself (no separate provenance comment — that would advertise the machine path on a
+  public repo and is spoofable).
 - **`needs-info` COMMENT re-nag** — the freshness dedup skips any PR already reviewed
   by the operator at its current head, regardless of `reviewDecision`.
 - **files[] pagination blind spot** — the governance-path decision uses the

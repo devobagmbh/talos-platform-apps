@@ -817,7 +817,8 @@ tasks:
          "isCrossRepository":bool, "authorLogin":"<login>", "mergeStateStatus":"CLEAN|BEHIND|DIRTY|...",
          "files":["<changed path>", ...],                 # AUTHORITATIVE complete list
          "addedActionPins":[{"repo":"owner/repo","ref":"<sha-or-ref>"}, ...],
-         "alreadyReviewedAtHead":bool}                     # a review by ME exists at the current head
+         "alreadyReviewedAtHead":bool,                     # a review by ME exists at the current head
+         "changedLineCount":N|null, "changedFileCount":N}  # diff size; null = uncomputable (huge diff)
       ENV: ME (required — the operator login, for the self-authored test);
            TRUSTED_ACTIONS (optional — newline-separated owner/repo set already
            trusted in .github on origin/main).
@@ -838,15 +839,40 @@ tasks:
         dirty       — mergeStateStatus == DIRTY (a real conflict; a human resolves it)
         fork        — isCrossRepository (public repo; never auto-approve an external head)
         self        — authorLogin == ME (GitHub 422s self-approval; withhold, no re-nag)
+        release-please — a changed path is .release-please-manifest.json or
+                      release-please-config.json (release-please's version SoT; a human
+                      PR never edits it). A release PR bumps SemVer + CHANGELOG and, once
+                      merged, cuts the tag that triggers the signed OCI publish — a
+                      wrong bump is permanent, so it is never auto-approved. Withheld
+                      BEFORE governance because release paths are not in the governance
+                      set (sub-layers/CHANGELOG/manifest), so without this class a
+                      release PR would fall through to candidate.
         governance  — a changed path in the repo's central-review tier (its own
                       .github/CODEOWNERS "zentral, immer M1" set: AGENTS.md, CLAUDE.md,
                       Taskfile.yml — which holds THIS classifier — devbox.json/.lock,
-                      .sops.yaml* = secret-decryption access) plus .github/ / .claude/
-                      and the policies/ + schemas/ admission-control gates. Always a
-                      human; this is what stops the loop approving a change that would
-                      loosen its own gate or the platform's controls. Keep this set in
-                      sync with CODEOWNERS' central tier.
+                      .sops.yaml* = secret-decryption access) plus the root
+                      platform-control configs .gitleaks.toml (the REQUIRED secret gate),
+                      .trivyignore.yaml (CVE suppression — AGENTS.md requires a CODEOWNERS
+                      delta inspection) and lefthook.yml (the pre-commit gate orchestrator),
+                      plus .github/ / .claude/ and the policies/ + schemas/ admission-control
+                      gates. Always a human; this is what stops the loop approving a change
+                      that loosens its own gate or the platform's controls — e.g. a PR that
+                      broadens .gitleaks.toml's allowlist so a later secret slips the
+                      required scan. Sync rule: this set = CODEOWNERS' central-review tier
+                      PLUS the root platform-control configs (.gitleaks.toml /
+                      .trivyignore.yaml / lefthook.yml) — those three are covered in
+                      CODEOWNERS only by the `*` default owner, not the central tier, but
+                      are security-critical, so they are withheld here explicitly. Do not
+                      drop them when reconciling with the central tier.
         reviewed    — alreadyReviewedAtHead (the loop already reviewed this exact head; skip)
+        oversized   — changedLineCount > 400 OR changedFileCount > 50 OR either is a
+                      non-number OR either is < 1 (fail-safe). Defect detection collapses
+                      past the ~400-LOC / 60-min review window (Cisco/SmartBear). A diff
+                      too large to compute is reported by GitHub as null OR as 0/0 — since
+                      a record reaching here has a non-empty files[] (the incomplete guard),
+                      changedLineCount < 1 means uncomputable, not tiny, so it must NOT read
+                      as "small". Withheld to a human; an oversized diff is not autonomously
+                      approvable.
         candidate   — none of the above → eligible for the auto-approve path
       ANNOTATION (report hint for a withheld .github PR; NOT a class): for each added
       action pin, `new-action:<repo>` if its owner/repo is not in TRUSTED_ACTIONS, or
@@ -873,11 +899,19 @@ tasks:
            elif (.isCrossRepository == true) then "fork"
            elif ((.authorLogin // "") | ascii_downcase) == $ME then "self"
            elif any((.files // [])[];
+                    test("^\\.release-please-manifest\\.json$") or test("^release-please-config\\.json$"))
+                then "release-please"
+           elif any((.files // [])[];
                     test("^AGENTS\\.md$") or test("^CLAUDE\\.md$") or test("^Taskfile\\.yml$")
                     or test("^devbox\\.(json|lock)$") or test("^\\.sops\\.yaml")
+                    or test("^\\.gitleaks\\.toml$") or test("^\\.trivyignore\\.yaml$")
+                    or test("^lefthook\\.yml$")
                     or test("^\\.github/") or test("^\\.claude/")
                     or test("^policies/") or test("^schemas/")) then "governance"
            elif (.alreadyReviewedAtHead == true) then "reviewed"
+           elif ((.changedLineCount | type) != "number") or (.changedLineCount < 1) or (.changedLineCount > 400)
+                or ((.changedFileCount | type) != "number") or (.changedFileCount < 1) or (.changedFileCount > 50)
+                then "oversized"
            else "candidate" end) as $class
         | ([ (.addedActionPins // [])[]
              | .repo as $r | .ref as $ref
@@ -894,11 +928,13 @@ tasks:
       Binding acceptance test for the security-critical babysit-prs classifier.
       Network-free: feeds a fixture PR-records JSON to `pr:triage` and asserts each
       PR's class + pin annotation. Red-green — the class precedence, the
-      governance-path globs (AGENTS.md / .github/ / .claude/), the self/fork/dirty
-      tests, the draft/APPROVED drop, and the pin allowlist + 40-hex-SHA check are
-      the single source in pr:triage; reverting ANY turns an assertion red (a
-      should-be-withheld PR would classify `candidate` = auto-approvable, or a
-      dropped PR would reappear).
+      governance-path globs (AGENTS.md / .github/ / .claude/ + the root platform-control
+      configs .gitleaks.toml / .trivyignore.yaml / lefthook.yml, each with its own
+      fixture #123/#126/#127), the release-please manifest/config globs, the oversized
+      line/file thresholds + null/zero/absent-size fail-safe, the self/fork/dirty tests,
+      the draft/APPROVED drop, and the pin allowlist + 40-hex-SHA check are the single
+      source in pr:triage; reverting ANY turns an assertion red (a should-be-withheld PR
+      would classify `candidate` = auto-approvable, or a dropped PR would reappear).
     cmd: |
       set -eu
       work="$(mktemp -d)" || { echo "test:pr-triage: mktemp failed" >&2; exit 2; }
@@ -906,7 +942,7 @@ tasks:
       fixture="$work/records.json"
       cat > "$fixture" <<'JSON'
       [
-        {"number":644,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/x/components/y/helm/values.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":644,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/x/components/y/helm/values.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":10,"changedFileCount":1},
         {"number":100,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":true,"authorLogin":"outsider","mergeStateStatus":"BEHIND","files":["README.md"],"addedActionPins":[],"alreadyReviewedAtHead":false},
         {"number":101,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"Nosmoht","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
         {"number":102,"isDraft":false,"reviewDecision":"CHANGES_REQUESTED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"DIRTY","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
@@ -926,6 +962,15 @@ tasks:
         {"number":116,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[],"addedActionPins":[],"alreadyReviewedAtHead":false},
         {"number":117,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
         {"number":118,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[]},
+        {"number":119,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"release-please[bot]","mergeStateStatus":"BEHIND","files":[".release-please-manifest.json","sub-layers/x/components/y/CHANGELOG.md"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":8,"changedFileCount":2},
+        {"number":120,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":900,"changedFileCount":3},
+        {"number":121,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":null,"changedFileCount":2},
+        {"number":122,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":50,"changedFileCount":80},
+        {"number":123,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".gitleaks.toml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
+        {"number":124,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false},
+        {"number":125,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":0,"changedFileCount":1},
+        {"number":126,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".trivyignore.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":2,"changedFileCount":1},
+        {"number":127,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["lefthook.yml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":4,"changedFileCount":1},
         {"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
       ]
       JSON
@@ -973,9 +1018,19 @@ tasks:
       assert_class 117 incomplete       # empty authorLogin → withhold
       assert_class 118 incomplete       # missing alreadyReviewedAtHead (non-boolean) → withhold, never candidate
       assert_class null incomplete      # missing number (jq null→"null") → withhold, never candidate
+      # New withhold classes — red-green bind H3 (release-please) + M3 (oversized):
+      assert_class 119 release-please   # .release-please-manifest.json → never auto-approve a release PR (wrong SemVer/OCI-publish is permanent)
+      assert_class 120 oversized        # 900 changed lines > 400 reliable-review window
+      assert_class 121 oversized        # changedLineCount null (uncomputable huge diff) → fail-safe oversized
+      assert_class 122 oversized        # 80 changed files > 50 → oversized
+      assert_class 123 governance       # .gitleaks.toml (root platform-control config — the REQUIRED secret gate)
+      assert_class 124 oversized        # size keys ENTIRELY ABSENT (jq null) → fail-safe oversized, never candidate
+      assert_class 125 oversized        # changedLineCount 0 with non-empty files (GitHub 0/0 = uncomputable huge diff) → oversized, not "small"
+      assert_class 126 governance       # .trivyignore.yaml (root platform-control config — CVE suppression)
+      assert_class 127 governance       # lefthook.yml (root platform-control config — pre-commit gate orchestrator)
       count="$(printf '%s\n' "$out" | grep -cE '[^[:space:]]' || true)"
-      if [ "${count:-0}" -ne 19 ]; then echo "FAIL: expected exactly 19 in-scope lines, got ${count:-0}"; fail=1; fi
-      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (19 in-scope / 2 dropped)"; fi
+      if [ "${count:-0}" -ne 28 ]; then echo "FAIL: expected exactly 28 in-scope lines, got ${count:-0}"; fail=1; fi
+      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (28 in-scope / 2 dropped)"; fi
       exit "$fail"
 
   lint:commit-scope:

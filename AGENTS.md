@@ -255,6 +255,10 @@ These **MUST NOT** be relaxed without explicit maintainer approval.
 
 **Catalog build primitives**: for the component issues (#17–#61), the `build-catalog-component` skill (one component, **per-session unit**) and the `catalog-fleet` workflow (**optional single-operator fan-out**) orchestrate the above chain as builder→verifier→reviewer with builder ≠ verifier in separate contexts. **Parallelism runs through independent sessions**: each session builds ONE component in its own git worktree (`task worktree:create` — cross-session-safe `mkdir` lock, branch name = claim), so multiple sessions work in parallel on ONE clone; `catalog-fleet` is only for single-operator mass fan-out. Deterministic gate (`task ci` + `task validate:contract` + chart-ref / tamper check) first, LLM judge only for the semantics. Output is branches + report — never auto-merge (CODEOWNERS + branch protection). Spec: `.claude/skills/build-catalog-component/CONVENTIONS.md`.
 
+**PR auto-review (`babysit-prs`)**: the `babysit-prs` skill runs ONE hardened auto-review pass over the open PRs and dispatches `pr-gate` per eligible PR, delegating the security-critical withhold decision to the tested `task pr:triage` classifier (fork / self / dirty / `release-please` / governance / `oversized` PRs are withheld to a human). `pr-gate` casts no APPROVE it has not empirically reproduced against the PR head (Phase-4 pre-approval gate). Its default mode posts nothing; autonomous auto-approve is **armed** only by the committed whole-line governance marker below (a plain whole-line fixed-string match against `origin/main`), and even armed each pass needs interactive per-pass consent (headless → report). Arming is a deliberate CODEOWNERS-reviewed act — because any `AGENTS.md` PR is `governance`-withheld, the loop can never self-arm; with two code owners and `required_approving_review_count: 1`, the arming PR's author (one owner) cannot self-approve, so the other owner's required approval is what makes "accepted by both code owners" true. Spec: `.claude/skills/babysit-prs/SKILL.md`.
+
+babysit-prs auto-approve: accepted by both code owners
+
 ## Validation Checklist
 
 Before PR open:
