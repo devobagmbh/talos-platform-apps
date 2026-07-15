@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/storage-block/snapshot-controller-v0.1.0...storage-block/snapshot-controller-v0.1.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **storage-block/snapshot-controller:** migrate to native-OCI Kustomize base ([#594](https://github.com/devobagmbh/talos-platform-apps/issues/594)) ([a736a52](https://github.com/devobagmbh/talos-platform-apps/commit/a736a52e8ec9d7ce7a7836b9782305426b60aadc))
+
 ## 0.1.0 (2026-06-25)
 
 
