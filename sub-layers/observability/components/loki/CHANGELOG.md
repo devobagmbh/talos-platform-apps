@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/devobagmbh/talos-platform-apps/compare/observability/loki-v0.1.1...observability/loki-v0.1.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* **observability/loki:** migrate to native-OCI Kustomize base ([#568](https://github.com/devobagmbh/talos-platform-apps/issues/568)) ([e067ac4](https://github.com/devobagmbh/talos-platform-apps/commit/e067ac40de93c9a3796b86b192f8036eb47a838a))
+
 ## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/loki-v0.1.0...observability/loki-v0.1.1) (2026-06-25)
 
 
