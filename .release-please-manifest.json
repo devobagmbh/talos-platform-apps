@@ -54,7 +54,7 @@
   "sub-layers/automation/components/actions-runner-controller-crds": "0.1.0",
   "sub-layers/automation/components/actions-runner-controller": "0.1.0",
   "sub-layers/security/components/capsule-crds": "0.1.0",
-  "sub-layers/network/components/chrony": "0.1.1",
+  "sub-layers/network/components/chrony": "0.1.2",
   "sub-layers/security/components/capsule": "0.1.0",
   "sub-layers/secrets/components/vault-operator": "0.1.0",
   "sub-layers/observability/components/nvidia-dcgm-exporter": "0.1.1",
