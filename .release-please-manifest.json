@@ -12,7 +12,7 @@
   "sub-layers/lifecycle/components/crossplane": "0.2.1",
   "sub-layers/lifecycle/components/crossview": "0.2.0",
   "sub-layers/lifecycle/components/ipxe": "0.1.1",
-  "sub-layers/lifecycle/components/providers": "0.2.0",
+  "sub-layers/lifecycle/components/providers": "0.2.1",
   "sub-layers/network/components/multus-cni": "0.2.1",
   "sub-layers/network/components/multus-cni-crds": "0.2.1",
   "sub-layers/observability/components/alloy": "0.2.1",
