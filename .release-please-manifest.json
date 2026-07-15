@@ -41,7 +41,7 @@
   "sub-layers/observability/components/tempo": "0.2.1",
   "sub-layers/observability/components/grafana-operator": "0.2.1",
   "sub-layers/observability/components/grafana-operator-crds": "0.2.1",
-  "sub-layers/storage-block/components/snapshot-controller-crds": "0.1.0",
+  "sub-layers/storage-block/components/snapshot-controller-crds": "0.1.1",
   "sub-layers/storage-block/components/snapshot-controller": "0.1.1",
   "sub-layers/observability/components/grafana": "0.1.0",
   "sub-layers/secrets/components/clustersecretstore-defaults": "0.1.0",
