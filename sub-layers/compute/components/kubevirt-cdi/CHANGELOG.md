@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-cdi-v0.2.0...compute/kubevirt-cdi-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **compute/kubevirt-cdi:** migrate to native-OCI Kustomize base ([#608](https://github.com/devobagmbh/talos-platform-apps/issues/608)) ([41594de](https://github.com/devobagmbh/talos-platform-apps/commit/41594dee5a02b017c69ece6105732446eb39eaa9))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-cdi-v0.1.0...compute/kubevirt-cdi-v0.2.0) (2026-06-22)
 
 
