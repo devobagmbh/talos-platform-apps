@@ -32,7 +32,7 @@
   "sub-layers/storage-objects/components/garage": "0.2.1",
   "sub-layers/storage-objects/components/garage-crds": "0.2.0",
   "sub-layers/security/components/tetragon": "0.1.0",
-  "sub-layers/secrets/components/external-secrets-crds": "0.1.0",
+  "sub-layers/secrets/components/external-secrets-crds": "0.1.1",
   "sub-layers/compute/components/node-feature-discovery-crds": "0.1.0",
   "sub-layers/compute/components/node-feature-discovery": "0.1.0",
   "sub-layers/observability/components/blackbox-exporter": "0.1.0",
