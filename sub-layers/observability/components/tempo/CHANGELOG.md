@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/tempo-v0.2.0...observability/tempo-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **observability/tempo:** migrate to native-OCI Kustomize base ([#570](https://github.com/devobagmbh/talos-platform-apps/issues/570)) ([f65cfd0](https://github.com/devobagmbh/talos-platform-apps/commit/f65cfd070d70e7b98d29b82f234bd7409b259028))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/tempo-v0.1.0...observability/tempo-v0.2.0) (2026-06-25)
 
 
