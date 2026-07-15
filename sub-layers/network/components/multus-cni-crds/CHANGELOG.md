@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/network/multus-cni-crds-v0.2.0...network/multus-cni-crds-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **network/multus-cni-crds:** migrate to native-OCI Kustomize base ([#622](https://github.com/devobagmbh/talos-platform-apps/issues/622)) ([6ad21a2](https://github.com/devobagmbh/talos-platform-apps/commit/6ad21a22e43d3e7990a43f6c0e2dcb2843169147))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/network/multus-cni-crds-v0.1.0...network/multus-cni-crds-v0.2.0) (2026-06-22)
 
 
