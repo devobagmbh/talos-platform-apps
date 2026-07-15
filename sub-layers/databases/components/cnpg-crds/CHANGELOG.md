@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/databases/cnpg-crds-v0.2.0...databases/cnpg-crds-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **databases/cnpg-crds:** migrate to native-OCI Kustomize base ([#616](https://github.com/devobagmbh/talos-platform-apps/issues/616)) ([10bda35](https://github.com/devobagmbh/talos-platform-apps/commit/10bda357a6b9c89eb4200ae16293b92f29b636a0))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/databases/cnpg-crds-v0.1.0...databases/cnpg-crds-v0.2.0) (2026-06-22)
 
 
