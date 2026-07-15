@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-crds-v0.2.0...compute/kubevirt-crds-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **compute/kubevirt-crds:** migrate to native-OCI Kustomize base ([#602](https://github.com/devobagmbh/talos-platform-apps/issues/602)) ([3358ed0](https://github.com/devobagmbh/talos-platform-apps/commit/3358ed04dbbd428b5faf5f236ed368df0e669c6e))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-crds-v0.1.0...compute/kubevirt-crds-v0.2.0) (2026-06-22)
 
 
