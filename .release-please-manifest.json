@@ -3,7 +3,7 @@
   "sub-layers/compute/components/kubevirt-cdi": "0.2.0",
   "sub-layers/compute/components/kubevirt-cdi-crds": "0.2.0",
   "sub-layers/compute/components/kubevirt-crds": "0.2.1",
-  "sub-layers/databases/components/cnpg": "0.2.0",
+  "sub-layers/databases/components/cnpg": "0.2.1",
   "sub-layers/databases/components/cnpg-crds": "0.2.0",
   "sub-layers/databases/components/valkey-operator": "0.2.1",
   "sub-layers/identity/components/dex": "0.2.0",
