@@ -56,7 +56,7 @@
   "sub-layers/security/components/capsule-crds": "0.1.0",
   "sub-layers/network/components/chrony": "0.1.2",
   "sub-layers/security/components/capsule": "0.1.0",
-  "sub-layers/secrets/components/vault-operator": "0.1.0",
+  "sub-layers/secrets/components/vault-operator": "0.1.1",
   "sub-layers/observability/components/nvidia-dcgm-exporter": "0.1.1",
   "sub-layers/secrets/components/vault-operator-crds": "0.1.0",
   "sub-layers/compute/components/nvidia-device-plugin": "0.1.1",
