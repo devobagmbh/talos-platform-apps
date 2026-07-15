@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/prometheus-operator-v0.2.0...observability/prometheus-operator-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **observability/prometheus-operator:** pin all operator images by digest ([#553](https://github.com/devobagmbh/talos-platform-apps/issues/553)) ([07753be](https://github.com/devobagmbh/talos-platform-apps/commit/07753be2b2082ae0792ce3c177d34afba6676d4a))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/prometheus-operator-v0.1.0...observability/prometheus-operator-v0.2.0) (2026-06-22)
 
 
