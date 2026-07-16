@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/devobagmbh/talos-platform-apps/compare/network/chrony-v0.1.1...network/chrony-v0.1.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* **network/chrony:** migrate to native-OCI Kustomize base ([#626](https://github.com/devobagmbh/talos-platform-apps/issues/626)) ([aa55389](https://github.com/devobagmbh/talos-platform-apps/commit/aa55389d2ce770c57af0ba422ed4ca4679280c37))
+
 ## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/network/chrony-v0.1.0...network/chrony-v0.1.1) (2026-07-11)
 
 

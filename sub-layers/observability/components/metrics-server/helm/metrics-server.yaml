@@ -22,6 +22,23 @@ metadata:
   namespace: metrics-server
 
 values:
+  # -- (string) digest-pin the metrics-server image (issue #175 — supply-chain
+  # hardening). The metrics-server chart 3.13.1 image helper renders only
+  # `<repository>:<tag>` (it has no digest field), so the digest rides in the tag as a
+  # combined `<tag>@sha256:<digest>` reference — valid OCI syntax where the runtime
+  # pulls by the authoritative digest while the tag stays human-readable.
+  # CHART-BUMP CHECKLIST — this key overrides the chart's `default (v<appVersion>)`
+  # path, so on every chart bump you MUST update BOTH parts by hand: set the tag prefix
+  # to `v<new-appVersion>` AND re-resolve the digest. A stale tag leaves the runtime
+  # silently pulling the old pinned digest (Deployment runs the old binary with no
+  # error). Re-resolve with `crane digest
+  # registry.k8s.io/metrics-server/metrics-server:<tag>` — this returns the multi-arch
+  # index digest (use it; NOT a per-platform manifest digest from
+  # `docker pull --platform`, which would break non-amd64 nodes). Current digest for
+  # v0.8.1 is the multi-arch index (amd64/arm/arm64/ppc64le/s390x).
+  image:
+    tag: v0.8.1@sha256:b2d2efaf5ac3b366ed0f839d2412a2c4279d4fc2a2a733f12c52133faed36c41
+
   # Talos requires these explicitly (Kubelet does not serve on the default port):
   #   --kubelet-preferred-address-types — reach Kubelets by InternalIP/ExternalIP/Hostname
   #   --kubelet-use-node-status-port     — use the Kubelet's advertised status port

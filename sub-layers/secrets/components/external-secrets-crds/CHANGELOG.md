@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/secrets/external-secrets-crds-v0.1.0...secrets/external-secrets-crds-v0.1.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **secrets/external-secrets-crds:** migrate to native-OCI Kustomize base ([#584](https://github.com/devobagmbh/talos-platform-apps/issues/584)) ([a12c6e5](https://github.com/devobagmbh/talos-platform-apps/commit/a12c6e55c6eca673aa563789c74f2b85fa93b5fe))
+
 ## 0.1.0 (2026-06-23)
 
 

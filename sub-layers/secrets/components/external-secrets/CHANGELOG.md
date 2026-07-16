@@ -14,6 +14,13 @@
   `secrets/external-secrets-crds`, and the `GithubAccessToken` generator CRD
   (ADR-0025) lives in the `-crds` half. ([#201](https://github.com/devobagmbh/talos-platform-apps/issues/201))
 
+## [1.0.1](https://github.com/devobagmbh/talos-platform-apps/compare/secrets/external-secrets-v1.0.0...secrets/external-secrets-v1.0.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **secrets/external-secrets:** migrate to native-OCI Kustomize base ([#586](https://github.com/devobagmbh/talos-platform-apps/issues/586)) ([42873a8](https://github.com/devobagmbh/talos-platform-apps/commit/42873a831c4e150e6ce7bc4e1f66261b6428653a))
+
 ## [1.0.0](https://github.com/devobagmbh/talos-platform-apps/compare/secrets/external-secrets-v0.2.0...secrets/external-secrets-v1.0.0) (2026-06-23)
 
 
