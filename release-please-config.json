@@ -83,6 +83,10 @@
     "sub-layers/observability/components/alloy": {
       "component": "observability/alloy"
     },
+    "sub-layers/observability/components/alloy-metrics": {
+      "component": "observability/alloy-metrics",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/grafana": {
       "component": "observability/grafana",
       "initial-version": "0.1.0"
