@@ -262,6 +262,8 @@ Before PR open:
 - [ ] `task ci` green (full pipeline locally)
 - [ ] `compatibility.yaml` updated when the Helm chart version changed
 - [ ] README in the affected sub-layer updated when components or consumers changed
+- [ ] New/renamed component **namespace** added to the `security/capsule` `protectedNamespaceRegex` (`helm/capsule.yaml`) — manual until the #516 generator lands; a missed entry leaves the namespace tenant-squattable
+- [ ] New **operator** component checked against the `ignoreUserWithGroups` membership test (`security/capsule` `helm/capsule.yaml`): creates namespaces, or reconciles CR-driven resources into tenant namespaces → needs an entry
 - [ ] Conventional-commits style with sub-layer scope
 - [ ] At least one reviewer subagent run; for pipeline/signing topics, record the provenance risks in the `notes` field — `provenance-reviewer` is M2-deferred (no backing agent today), is reactivated at M2 onboarding and becomes mandatory here then
 

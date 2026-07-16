@@ -60,12 +60,9 @@ values:
         memory: 128Mi
       limits:
         memory: 256Mi
-    # CapsuleConfiguration policy — cluster-agnostic tenancy DEFAULTS shipped by the
-    # catalog. Earlier the component left the CapsuleConfiguration "consumer-owned", but
-    # in 0.13.x the CR embeds a ~2000-line chart-generated spec.admission (dynamic-webhook)
-    # block a consumer cannot author, and a consumer-supplied CR overwrites it → operator
-    # nil-panic. Ship it here; per-consumer overrides land once the override mechanism
-    # (apps#503, Kustomize-base + overridable) is merged. Then `users` becomes overridable.
+    # CapsuleConfiguration policy — cluster-agnostic tenancy DEFAULTS, shipped as part of
+    # the rendered workload (the CR is catalog-owned; rationale, consumer guidance, and
+    # the migration/override paths live in the README §CapsuleConfiguration).
     options:
       # Pinned explicitly (chart 0.13.7 default IS true) so a future chart bump cannot
       # silently drop the CapsuleConfiguration render — same rationale as the pinned
@@ -88,18 +85,30 @@ values:
       # has NO `ignoredServiceAccountRegexp`; `ignoreUserWithGroups` is the supported knob.)
       # GitOps note: an Argo-created tenant namespace is thus IGNORED, not placed — placing
       # a GitOps-created namespace in a tenant needs the `administrators` field instead;
-      # that is deferred to the live owner-check (office-lab#229 postmortem).
-      # Membership rationale (#507 finding 2, deliberate — NOT an oversight): argocd /
-      # crossplane-system / capsule-system / kube-system actually CREATE namespaces; cert-
-      # manager / external-secrets / vault-operator are exempted too because they reconcile
-      # resources (Certificates/Secrets) INSIDE tenant namespaces — exempting keeps those
-      # cross-namespace reconciles unimpeded.
+      # that is deferred to the live owner-check (apps#506).
+      # Membership test — an operator namespace is listed iff its SAs match one of:
+      #   (a) they CREATE/manage namespaces: argocd, crossplane-system, capsule-system,
+      #       kube-system.
+      #   (b) they reconcile CR-driven resources INTO (potentially tenant) namespaces, so
+      #       their writes must not be tenant-policy-gated: cert-manager (Certificate →
+      #       Secret), external-secrets / vault-operator / vault-config-operator (→ Secret),
+      #       cnpg-system / valkey-operator-system (DB CR → StatefulSet/Pod/Service/Secret
+      #       in the CR's namespace).
+      # NOT listed (fail both tests): operators whose write surface is cluster-scoped or
+      # own-namespace-only — piraeus-*, the CSI drivers, and snapshot-controller (PV/DRBD/
+      # VolumeSnapshotContent objects are cluster-scoped; PVCs are user-created), the
+      # observability stack, metrics-server. actions-runner-controller creates runner PODS
+      # only in pre-existing (Argo-created, already-exempt) namespaces — no namespace
+      # creation of its own, so it needs no entry either.
       ignoreUserWithGroups:
         - system:serviceaccounts:argocd
         - system:serviceaccounts:crossplane-system
         - system:serviceaccounts:cert-manager
         - system:serviceaccounts:external-secrets
         - system:serviceaccounts:vault-operator
+        - system:serviceaccounts:vault-config-operator
+        - system:serviceaccounts:cnpg-system
+        - system:serviceaccounts:valkey-operator-system
         - system:serviceaccounts:capsule-system
         - system:serviceaccounts:kube-system
       # Namespaces must be prefixed `<tenant>-` (collision-free, visibly tenant-scoped).

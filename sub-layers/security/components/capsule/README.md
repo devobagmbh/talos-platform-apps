@@ -56,12 +56,19 @@ shipped defaults are cluster-agnostic and fully operational as-is.
   bump cannot silently drop the CR render.
 - **`users: [{kind: Group, name: system:authenticated}]`** — every authenticated
   principal is a Capsule-managed tenant user (must own a `Tenant` to create namespaces).
-- **`ignoreUserWithGroups`** — exempts the platform operator ServiceAccounts (`argocd`,
-  `crossplane-system`, `cert-manager`, `external-secrets`, `vault-operator`,
-  `capsule-system`, `kube-system`) via their `system:serviceaccounts:<ns>` groups, so the
-  steady-state cluster-wide `namespaces.validating` hook does not reject their namespace /
-  resource management. (There is **no** `ignoredServiceAccountRegexp` field in the chart or
-  CRD — `ignoreUserWithGroups` is the supported exemption knob.)
+- **`ignoreUserWithGroups`** — exempts the platform operator ServiceAccounts via their
+  `system:serviceaccounts:<ns>` groups, so the steady-state cluster-wide
+  `namespaces.validating` hook does not reject their namespace / resource management.
+  Membership follows a two-class test (spelled out next to the list in
+  `helm/capsule.yaml`): (a) SAs that **create/manage namespaces** (`argocd`,
+  `crossplane-system`, `capsule-system`, `kube-system`); (b) SAs that **reconcile
+  CR-driven resources into (potentially tenant) namespaces**, whose writes must not be
+  tenant-policy-gated (`cert-manager`, `external-secrets`, `vault-operator`,
+  `vault-config-operator`, `cnpg-system`, `valkey-operator-system`). Operators whose
+  write surface is cluster-scoped or own-namespace-only (piraeus, the CSI drivers,
+  snapshot-controller, the observability stack) deliberately have **no** entry.
+  (There is **no** `ignoredServiceAccountRegexp` field in the chart or CRD —
+  `ignoreUserWithGroups` is the supported exemption knob.)
 - **`forceTenantPrefix: true`** — tenant namespaces must be named `<tenant>-…`.
 - **`protectedNamespaceRegex`** — reserves the catalog-shipped namespaces (from the
   committed `00-namespace.yaml` set **and** `helm/*.yaml` `namespace:` declarations, e.g.
@@ -73,15 +80,35 @@ shipped defaults are cluster-agnostic and fully operational as-is.
 > ⚠️ **Do NOT ship a second `CapsuleConfiguration` from a consumer repo.** In 0.13.x the
 > chart-rendered CR embeds a ~2000-line `spec.admission` (dynamic-webhook) block a consumer
 > cannot reproduce; a consumer-supplied `CapsuleConfiguration default` overwrites it and the
-> controller nil-panics (office-lab#229). Divergence (e.g. a different `users` group) must
-> go through the per-consumer override mechanism (apps#503, Kustomize-base + `overridable`),
-> **not** a raw CR patch.
+> controller nil-panics (apps#506). Divergence (e.g. a different `users` group) goes through
+> the consumer's `source.kustomize.patches` override on this native-OCI Kustomize base
+> (ADR-0024 calibrated-friction) — a targeted patch on the shipped CR, **not** a second
+> hand-written CR and **not** an imperative `kubectl` patch.
 >
 > **GitOps caveat — tenant governance gap.** An Argo-created namespace is *ignored* by
 > Capsule (the ArgoCD SA is in `ignoreUserWithGroups`), so a GitOps-managed namespace is
 > NOT placed in a tenant — it sits outside tenant-level ResourceQuota / NetworkPolicy until
-> the `administrators`-based placement lands (deferred follow-up; office-lab#229). A
+> the `administrators`-based placement lands (deferred follow-up; apps#506). A
 > tenant-owner-created namespace (kubectl / a tenant-scoped token) IS governed.
+
+### Migration — consumer-owned → catalog-owned `CapsuleConfiguration`
+
+Earlier component versions documented the `CapsuleConfiguration` as *consumer-owned*. A
+consumer that followed that and ships its own CR must migrate **in this order** — during
+a version bump, two Applications transiently manage the singleton, and the consumer's
+(`spec.admission`-less) CR can clobber the chart-generated block via SSA field-manager
+semantics, re-triggering the exact nil-panic this default fixes:
+
+1. **Delete the consumer `CapsuleConfiguration` from the consumer repo** (and let Argo
+   sync/prune it) **before** bumping this component's tag.
+2. Confirm it is gone: `kubectl get capsuleconfiguration default` → `NotFound`.
+3. Bump the component tag — the catalog CR lands as the only writer.
+
+**Emergency recovery** (a shipped default is wrong and blocks the cluster): the
+`config.validating` hook has `failurePolicy: Ignore`, so with the Argo sync paused a
+`kubectl delete capsuleconfiguration default` + re-create (or a targeted field patch) is
+safe and cannot wedge admission; reconcile the permanent fix as a
+`source.kustomize.patches` override (or a catalog PR) immediately after and unpause.
 
 ## Namespace & Pod Security Admission
 

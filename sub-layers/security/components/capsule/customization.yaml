@@ -10,7 +10,7 @@
 # CRs; no ConfigMap or Secret is mounted by the controller-manager pod. The
 # CapsuleConfiguration CR is CATALOG-owned (shipped in the rendered workload as a
 # tenancy default — a consumer-supplied one would overwrite the chart-generated
-# spec.admission block → operator nil-panic; office-lab#229). Only the concrete Tenant
+# spec.admission block → operator nil-panic; apps#506). Only the concrete Tenant
 # CRs are consumer-owned and live in the consumer cluster repos — neither is a
 # freeze-line shape (no secretKeyRef, envFrom, or volumeMount referencing consumer data
 # in the rendered workload). The operator does
@@ -25,11 +25,10 @@
 freeze_line:
   # controller-manager workload + RBAC + admission webhooks + the catalog-owned
   # CapsuleConfiguration, published as a native-OCI Kustomize base (kustomization.yaml +
-  # manifest.yaml, `task package` per apps#508) → the consumer wires the operator Argo
-  # Application as an oci:// source (sourceType=Kustomize), sync-wave 0. The freeze line
-  # stays all-empty (cluster-agnostic; see header) — the base is consumed as-is; this
-  # only reflects the artifact FORM (chart-OCI → native-OCI), matching mimir #548 and the
-  # capsule-crds half.
+  # manifest.yaml — the catalog-universal `task package` form) → the consumer wires the
+  # operator Argo Application as an oci:// source (sourceType=Kustomize), sync-wave 0.
+  # The freeze line stays all-empty (cluster-agnostic; see header) — the base is
+  # consumed as-is, matching the capsule-crds half.
   workload: rendered/manifest.yaml
 provided_refs: {}
 provided_selectors: {}
