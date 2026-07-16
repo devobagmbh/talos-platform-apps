@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-07-16
+
+- **Capability registration (#649)**: added the `events-collect` capability to `catalog/capability-index.yaml` (Observability: Events; impl `alloy` active + `otelcol` considered, `swap_class: consumer-change`) — the prerequisite index entry the planned `observability/alloy-singleton` component references. Re-verified the two concepts carrying `capability-index.yaml` in `sources:` (`glossary.md`, `architecture/capability-layer-model.md`): no present-tense claim is affected (neither enumerates the capability set), timestamps bumped for the source touch.
+
 ## 2026-07-13
 
 - **Self-maintenance**: added the knowledge-bundle maintenance directive to `AGENTS.md` (§ Knowledge-bundle maintenance) and its mechanical backstop `task okf:freshness` (advisory; a `sources:` change in a PR without a concept `timestamp:` bump is flagged), run by `okf-freshness.yml`. Adopted hand-written from the upstream `openknowledge` `docs` rule; blocking flip tracked in #541.
