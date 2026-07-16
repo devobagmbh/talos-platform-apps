@@ -1,0 +1,58 @@
+# Hand-authored, scope-down RBAC for the metrics-discovery role (rbac.create:
+# false in helm/alloy-metrics.yaml — the chart's own default ClusterRole is a
+# superset covering every Alloy component: logs/traces discovery, node/kubelet
+# read, and the nonResourceURLs "/metrics" grant. Only the subset the
+# `prometheus.operator.*` discovery components need is granted here
+# (CWE-250 scope-down):
+#
+# GRANTED (get/list/watch only, never write):
+#   - core: pods, services, endpoints, secrets, configmaps
+#   - monitoring.coreos.com: servicemonitors, podmonitors, probes, scrapeconfigs,
+#     prometheusrules
+#
+# EXCLUDED, deliberately, vs. the chart's default RBAC:
+#   - core: nodes, events — node-local scraping is the node-local role's job
+#     (served by the existing sub-layers/observability/components/alloy/
+#     DaemonSet), so this cluster-wide discovery role has no need for node reads.
+#   - apps/replicasets — only needed by otelcol.processor.k8sattributes, which
+#     this role does not run.
+#   - monitoring.coreos.com/alertmanagerconfigs — only needed by
+#     mimir.alerts.kubernetes, which this role does not run.
+#
+# Cluster-wide `secrets` and `configmaps` read is retained deliberately: a
+# ServiceMonitor/PodMonitor `tlsConfig`/`bearerTokenSecret`/`basicAuth` can
+# reference a CA-bundle ConfigMap OR a credential Secret in the TARGET's
+# namespace (any namespace in the cluster, not just alloy-metrics) — the chart's
+# own default RBAC couples exactly these two resources for that reason. See
+# README §RBAC posture for the bounding controls (read-only, restricted PSA,
+# consumer NetworkPolicy egress bound, least-privilege opt-in to narrow further).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-metrics
+  labels:
+    app.kubernetes.io/name: alloy-metrics
+    app.kubernetes.io/managed-by: argocd
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "secrets", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "podmonitors", "probes", "scrapeconfigs", "prometheusrules"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-metrics
+  labels:
+    app.kubernetes.io/name: alloy-metrics
+    app.kubernetes.io/managed-by: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-metrics
+subjects:
+  - kind: ServiceAccount
+    name: alloy-metrics
+    namespace: alloy-metrics
