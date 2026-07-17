@@ -195,9 +195,11 @@ and burns a round.
 images are pinned, the customization contract matches its schema, and known-core
 K8s shapes are well-formed. It does **not** prove the component is correct:
 `kubeconform -ignore-missing-schemas` silently passes any CRD it lacks a schema
-for, and `policies/` today carries essentially one enforced rule
-(`no_latest_image_tag` — the rest of `policies/README.md` is aspirational, not
-implemented). So most acceptance rests on the evaluator's semantic AC judgment
+for, and `policies/` today enforces six Conftest rules (`no_latest_image_tag`,
+`no_privileged_containers`, `pod_security_standards`, `required_resource_limits`,
+`no_inline_secrets`, `pod_security_conformance`) — the PNI-v2 `platform/` set and
+the other rules mapped in `policies/README.md` remain aspirational, not
+implemented. So most acceptance rests on the evaluator's semantic AC judgment
 plus the downstream GHA + human-PR gate, not on a green Tier 1.
 
 **A class the gate structurally cannot reach — runtime-only defects.** Render +
