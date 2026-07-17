@@ -1,7 +1,10 @@
 requires:
-  storage-objects/garage: ">=v0.1.0"  # Garage API
-  secrets/external-secrets: ">=v0.1.0"  # ExternalSecret for access keys
+  storage-objects/garage: ">=v0.1.0" # the running Garage + admin API this Job provisions against
+  secrets/external-secrets: ">=v0.1.0" # consumer syncs adminToken + key material from Vault via ESO
 
 provides:
   - name: garage-buckets
-    api_surface: []  # filled in with issue #13
+    version:
+      sot: none # a provisioning Job — no versioned workload or chart of its own
+    api_surface: [] # ships no CRD/API
+    capabilities: [] # provides no swappable capability; the s3-object capability belongs to storage-objects/garage
