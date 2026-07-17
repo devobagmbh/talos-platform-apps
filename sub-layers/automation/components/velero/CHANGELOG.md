@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/automation/velero-v0.1.0...automation/velero-v0.2.0) (2026-07-17)
+
+
+### Features
+
+* **automation/velero:** build Velero backup workload (strict-B) ([#405](https://github.com/devobagmbh/talos-platform-apps/issues/405)) ([eda640e](https://github.com/devobagmbh/talos-platform-apps/commit/eda640ea68b39ffff1a479bbddda22208cac40c7))
+
 ## 0.1.0 (2026-06-25)
 
 
