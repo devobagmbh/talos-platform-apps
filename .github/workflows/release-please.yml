@@ -37,6 +37,21 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Manual escape hatch for the shared-manifest deadlock. Every per-component
+  # release PR edits the same .release-please-manifest.json; a mass release (e.g.
+  # after a bulk migration) makes the adjacent JSON lines conflict, so once some
+  # siblings merge the rest go DIRTY. `always-update: true` (in
+  # release-please-config.json) makes each run recreate every open release PR on
+  # the current main HEAD, clearing the textual conflict — so an ordinary
+  # push:[main] rebases the stuck PRs instead of leaving them DIRTY. This does NOT
+  # make a flood fully autonomous: each rebase-push dismisses the PR's approval
+  # (branch-protection dismiss_stale_reviews), so a mass wave still needs O(n)
+  # serial re-approvals (release-please does the rebase; the human only
+  # re-approves — no git rebuild). This dispatch is the recovery for the one state
+  # push:[main] cannot reach: all open release PRs DIRTY with no mergeable PR left
+  # to push main. Re-runnable if a large sweep hits the timeout below. See
+  # AGENTS.md § Release automation.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -54,9 +69,16 @@ jobs:
     runs-on: ubuntu-latest
     # Bound the run: the concurrency group above is cancel-in-progress: false, so a
     # hung token-mint or release-please call would otherwise hold the queue (and
-    # block every subsequent release run) up to the 6h GHA default. 10 min is ample
-    # for a metadata-only API run.
-    timeout-minutes: 10
+    # block every subsequent release run) up to the 6h GHA default. A steady-state
+    # run is a metadata-only API call (well under a minute); but `always-update:
+    # true` makes each run touch EVERY open release PR, and `sequential-calls:
+    # true` issues those updates serially — so a mass wave (dozens of open release
+    # PRs) sweeps far longer than the former metadata-only case. 20 min gives that
+    # sweep headroom while staying far below the 6h default it guards against; a
+    # sweep that still times out mid-wave is recoverable — the next push (or a
+    # workflow_dispatch) re-runs it, and the open-PR count shrinks as the queue
+    # drains, so successive sweeps finish faster.
+    timeout-minutes: 20
     # Skip (neutral, not failed) until the App is configured, so the workflow does
     # not red-X every push to main during the one-time setup window. Once the repo
     # variable RELEASE_PLEASE_APP_ID is set, the job runs.
