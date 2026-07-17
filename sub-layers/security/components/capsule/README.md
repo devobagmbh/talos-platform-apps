@@ -43,14 +43,73 @@ The rendered workload (`rendered/manifest.yaml`) includes:
 **Zero `CustomResourceDefinition` objects** — the 11 CRD schemas ship in
 `security/capsule-crds`, not here (strict-B workload half).
 
-## The `CapsuleConfiguration` CR — a catalog default
+## The `CapsuleConfiguration` CR — chart-generated, tenancy policy consumer-owned
 
-The `CapsuleConfiguration` CR named `default` ships as a catalog default (equivalent to
-the kubevirt `KubeVirt` CR precedent). The controller reads it to determine the webhook
-service name, TLS secret references, RBAC role names, and admission user groups. The
-shipped defaults are cluster-agnostic and fully operational as-is. A consumer who needs
-to diverge (e.g. add custom `users`/`administrators` groups, or tune RBAC role names)
-patches the CR via their own Argo overlay — that is not a freeze-line shape.
+The `CapsuleConfiguration` CR named `default` ships **chart-generated** in this artifact
+(`manager.options.createConfiguration: true`, pinned). That is load-bearing: the chart
+embeds the ~2000-line `spec.admission` (dynamic-webhook) block that a consumer cannot
+author.
+
+> ⚠️ **Never ship a second `CapsuleConfiguration` from a consumer repo.** A
+> consumer-supplied `default` CR overwrites the chart-generated `spec.admission` block
+> and the operator **nil-panics at admission setup** (apps#506 — deployed, panicked,
+> rolled back). Consumer divergence goes through `source.kustomize.patches` on THIS
+> shipped CR — never a second hand-written CR, never an imperative `kubectl` patch.
+
+**Tenancy policy is consumer-owned.** The catalog deliberately ships every tenancy field
+at its chart default, which is **inert**: `users` matches only the placeholder group
+`projectcapsule.dev` (nobody real), `ignoreUserWithGroups`/`administrators` are empty,
+`forceTenantPrefix` is off, `protectedNamespaceRegex` is unset — Capsule manages nobody
+until the consumer opts in. Which principals are tenant-managed, which operator SAs are
+exempt, and which namespaces are protected are cluster-specific decisions and live in
+the consumer repo as a patch on the shipped CR (ADR-0024 calibrated-friction), e.g.:
+
+```yaml
+# consumer Application source.kustomize.patches entry (CR field paths verified
+# against the rendered CapsuleConfiguration of THIS chart version)
+- target: { group: capsule.clastix.io, kind: CapsuleConfiguration, name: default }
+  patch: |
+    - op: replace
+      path: /spec/users
+      value: [{ kind: Group, name: system:authenticated }]
+    - op: replace
+      path: /spec/forceTenantPrefix
+      value: true
+    - op: replace
+      path: /spec/protectedNamespaceRegex
+      value: "^(kube-.*|capsule-system|…)$"
+    - op: replace
+      path: /spec/ignoreUserWithGroups
+      value: [system:serviceaccounts:argocd, "…"]
+```
+
+(All four fields exist in the rendered CR at their inert defaults, so `op: replace` is
+stable; re-verify paths against `rendered/manifest.yaml` on a chart bump.)
+
+**Consumer guidance (recommended values, not enforced by the catalog):**
+
+- `users: [{kind: Group, name: system:authenticated}]` turns Capsule on for every
+  authenticated principal — humans AND ServiceAccounts. Then `ignoreUserWithGroups`
+  must carve platform operator SAs back out, membership test (two classes):
+  (a) SAs that **create/manage namespaces** (the GitOps controller, Crossplane,
+  capsule-system, kube-system); (b) SAs that **reconcile CR-driven resources into
+  (potentially tenant) namespaces** — cert-manager, external-secrets, vault-operator,
+  vault-config-operator, cnpg-system, valkey-operator-system. Operators with a
+  cluster-scoped or own-namespace-only write surface (piraeus, CSI drivers,
+  snapshot-controller, observability, metrics-server) need **no** entry.
+- `protectedNamespaceRegex` should reserve, at minimum, every catalog-shipped namespace
+  (the committed `manifests/00-namespace.yaml` set plus `helm/*.yaml` `namespace:`
+  declarations) and the consumer's platform namespaces — the reliable anti-squatting
+  defense, since `forceTenantPrefix` is per-tenant overridable. When a new catalog
+  component lands, extend the consumer regex (see the AGENTS.md validation checklist).
+- `administrators` (chart field): entities that are automatically owners of ALL
+  tenants — the right hook for a dedicated GitOps tenant-namespace reconciler identity.
+
+The steady-state cluster-wide `namespaces.validating` webhook has `failurePolicy: Fail`
+by upstream design; `config.validating` is `failurePolicy: Ignore`, so in an emergency
+(a bad patched value blocks the cluster) a `kubectl delete capsuleconfiguration default`
++ re-sync with the Argo sync paused is safe — reconcile the permanent fix as a patch
+immediately after.
 
 ## Namespace & Pod Security Admission
 

@@ -268,6 +268,7 @@ Before PR open:
 - [ ] `task ci` green (full pipeline locally)
 - [ ] `compatibility.yaml` updated when the Helm chart version changed
 - [ ] README in the affected sub-layer updated when components or consumers changed
+- [ ] New/renamed component **namespace** reflected in the `security/capsule` README's recommended `protectedNamespaceRegex` consumer guidance (tenancy policy is consumer-owned; the catalog only maintains the recommendation — manual until the #516 generator lands)
 - [ ] Conventional-commits style with sub-layer scope
 - [ ] At least one reviewer subagent run; for pipeline/signing topics, record the provenance risks in the `notes` field — `provenance-reviewer` is M2-deferred (no backing agent today), is reactivated at M2 onboarding and becomes mandatory here then
 
