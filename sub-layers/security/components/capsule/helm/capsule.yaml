@@ -67,13 +67,14 @@ values:
       # CR is load-bearing: it embeds a large chart-generated spec.admission
       # (dynamic-webhook) block a consumer cannot author; a consumer-supplied
       # CapsuleConfiguration overwrites it and the operator nil-panics at admission
-      # setup (apps#506).
+      # setup (#506).
       # DELIBERATELY nothing else here: every tenancy-policy field (users,
       # forceTenantPrefix, protectedNamespaceRegex, ignoreUserWithGroups,
       # administrators) stays at its chart default — INERT (users matches only the
       # placeholder group `projectcapsule.dev`, so Capsule manages nobody). Tenancy
       # policy is cluster-specific and CONSUMER-owned: the consumer overlays those
       # fields on the shipped CR via source.kustomize.patches (README §CapsuleConfiguration).
-      # -- Render the chart's `CapsuleConfiguration` singleton (pinned `true`; its
-      # load-bearing `spec.admission` block is the apps#506 nil-panic fix — see prose above).
+      # -- Render the chart-generated `CapsuleConfiguration` singleton (pinned `true`):
+      # its large `spec.admission` block is the #506 nil-panic fix and cannot be
+      # consumer-authored, while every tenancy field stays inert (consumer-owned via patch).
       createConfiguration: true

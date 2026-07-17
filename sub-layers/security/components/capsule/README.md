@@ -52,14 +52,14 @@ cannot author.
 
 > ⚠️ **Never ship a second `CapsuleConfiguration` from a consumer repo.** A
 > consumer-supplied `default` CR overwrites the chart-generated `spec.admission` block
-> and the operator **nil-panics at admission setup** (apps#506 — deployed, panicked,
+> and the operator **nil-panics at admission setup** (#506 — deployed, panicked,
 > rolled back). Consumer divergence goes through `source.kustomize.patches` on THIS
 > shipped CR — never a second hand-written CR, never an imperative `kubectl` patch.
 
 **Tenancy policy is consumer-owned.** The catalog deliberately ships every tenancy field
 at its chart default, which is **inert**: `users` matches only the placeholder group
 `projectcapsule.dev` (nobody real), `ignoreUserWithGroups`/`administrators` are empty,
-`forceTenantPrefix` is off, `protectedNamespaceRegex` is unset — Capsule manages nobody
+`forceTenantPrefix` is off, `protectedNamespaceRegex` is empty (matches nothing) — Capsule manages nobody
 until the consumer opts in. Which principals are tenant-managed, which operator SAs are
 exempt, and which namespaces are protected are cluster-specific decisions and live in
 the consumer repo as a patch on the shipped CR (ADR-0024 calibrated-friction), e.g.:
@@ -80,6 +80,10 @@ the consumer repo as a patch on the shipped CR (ADR-0024 calibrated-friction), e
       value: "^(kube-.*|capsule-system|…)$"
     - op: replace
       path: /spec/ignoreUserWithGroups
+      # A whole-namespace group (system:serviceaccounts:<ns>) is acceptable ONLY for a
+      # platform-controlled namespace with no tenant-writable ServiceAccounts (e.g. the
+      # GitOps reconciler's own namespace); never a shared/less-controlled one — see the
+      # membership-test guidance below.
       value: [system:serviceaccounts:argocd, "…"]
 ```
 
