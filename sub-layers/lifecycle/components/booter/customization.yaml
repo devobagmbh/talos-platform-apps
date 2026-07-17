@@ -1,0 +1,21 @@
+# Customization Contract v2 (ADR-0024). booter ships the proxyDHCP workload
+# shell (Namespace, ServiceAccount, Deployment) plus a documented placeholder
+# `booter-config` ConfigMap. The signed workload is the hardened baseline; the
+# consumer supplies the real proxyDHCP config file (Shape b) and pins booter onto
+# the boot-VLAN node via a nodeSelector overlay on the Deployment (a standard
+# ADR-0024 consumer overlay of the signed workload, not a provided_selector).
+freeze_line:
+  workload: rendered/manifest.yaml # Namespace + SA + ConfigMap shell + Deployment — never consumer-patched except the overlayable fields below
+provided_refs:
+  config: booter-config # Shape (b): the ConfigMap whose .data the consumer overrides with the real proxyDHCP config
+provided_selectors: {} # no operator-assembled config CRs (nodeSelector is a plain Deployment overlay, not Shape d)
+required:
+  env_keys: []
+  config_files: # the consumer authors the proxyDHCP config file; the Deployment mounts it read-only and runs `--config=/etc/booter/booter.yaml`
+    - path: /etc/booter/booter.yaml
+      ref: booter-config
+      key: booter.yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "0" # independent of crossplane/providers/compositions; boot-path responder
+external_dependencies: [] # requires: {} — complements lifecycle/ipxe at runtime, no build-order dependency
