@@ -1,0 +1,120 @@
+# alloy-singleton — Grafana Alloy deployed as a single-replica Deployment that
+# watches the cluster's Kubernetes Events (core/v1 Events) and forwards them to a
+# logs sink (observability/loki). This is the events-collect capability
+# implementation (issue #649): a singleton by nature, because exactly ONE collector
+# must watch the shared cluster Event stream — a clustered/DaemonSet topology would
+# double-ingest. This is why the workload is a Deployment/replicas-1 and clustering
+# is disabled, distinct from the node-local alloy DaemonSet (logs/metrics/traces).
+#
+# Freeze-line (ADR-0024 v2, Shape b): the WORKLOAD (this rendered Deployment +
+# Service/SA and the hand-shipped Namespace/ClusterRole/ClusterRoleBinding) is
+# catalog-owned and signed; the CONFIG is 100% consumer-owned. The consumer authors
+# the `alloy-singleton-config` ConfigMap (key `config.alloy`) carrying the pipeline —
+# a `loki.source.kubernetes_events` source and the Loki sink endpoint, which are
+# cluster-specific. The workload mounts that ConfigMap at /etc/alloy and runs
+# /etc/alloy/config.alloy. See customization.yaml + README §Consumer obligations.
+
+metadata:
+  chart: alloy
+  repo: https://grafana.github.io/helm-charts
+  version: 1.10.0  # bare SemVer — NO leading 'v' (--version v1.10.0 fails to resolve)
+  # appVersion v1.17.0 → image tag docker.io/grafana/alloy:v1.17.0 (chart appVersion
+  # pin, NEVER :latest; never overridden here). VERIFY at push
+  # (`helm show chart alloy --repo <repo> --version 1.10.0`) that 1.10.0 is still
+  # current stable.
+  namespace: alloy-singleton
+
+values:
+  # This component ships NO CRDs. The chart's `crds` subchart defaults to
+  # create: true and would render the monitoring.grafana.com PodLogs CRD into the
+  # workload; strict-B / ADR-0028 does not apply here, so disable CRD creation
+  # explicitly. The rendered workload MUST contain zero kind: CustomResourceDefinition.
+  crds:
+    create: false
+
+  # The chart's RBAC (a ClusterRole granting broad get/list/watch across many core
+  # kinds) is suppressed. This component ships a hand-authored, minimal ClusterRole
+  # (manifests/10-rbac.yaml) granting get/list/watch on core `events` ONLY — the
+  # least privilege an Event collector needs (CWE-250). rbac.create:false does NOT
+  # suppress the ServiceAccount, which is created below.
+  rbac:
+    create: false
+
+  serviceAccount:
+    # The chart still creates the ServiceAccount (rbac.create:false does not suppress
+    # it). Pin the name so the hand-shipped ClusterRoleBinding subject matches and the
+    # pod template's serviceAccountName resolves to it.
+    create: true
+    name: alloy-singleton
+
+  controller:
+    # Deployment (NOT the chart default daemonset): a single collector watching the
+    # cluster-wide Event stream. Pinned explicitly — the chart default is daemonset.
+    type: deployment
+    # Exactly one replica. The Kubernetes Event stream is shared cluster state; a
+    # second replica would double-ingest every Event.
+    replicas: 1
+
+  alloy:
+    # Shape (b) freeze-line: do NOT create an in-chart ConfigMap. Reference the
+    # EXISTING consumer-supplied ConfigMap `alloy-singleton-config` (key
+    # `config.alloy`). The `config` volume mounts it at /etc/alloy; the alloy process
+    # runs /etc/alloy/config.alloy. The consumer owns the whole file (the
+    # loki.source.kubernetes_events source + the Loki sink); the signed workload is
+    # never patched.
+    configMap:
+      create: false
+      name: alloy-singleton-config
+      key: config.alloy
+
+    # Singleton topology: clustering disabled. With a single replica there is no peer
+    # set to form, and clustering would add a headless Service + gossip the singleton
+    # does not need. Pinned false so the rendered container args carry no
+    # `--cluster.enabled` flag.
+    clustering:
+      enabled: false
+
+    # No host mounts. Events are collected through the Kubernetes API
+    # (loki.source.kubernetes_events) + the hand-shipped ClusterRole — no host access
+    # is needed, so the workload satisfies the `restricted` PSA level.
+    mounts:
+      varlog: false
+      dockercontainers: false
+
+    # Container-level restricted predicates for the Alloy container. The chart leaves
+    # alloy.securityContext empty by default; set explicitly (explicit-not-inherited)
+    # so the rendered container satisfies `enforce: restricted` and a future chart
+    # bump cannot silently weaken it.
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 473
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+  # Container-level restricted predicates for the config-reloader sidecar
+  # (prometheus-config-reloader, pinned to a digest by the chart — never :latest).
+  # The chart leaves configReloader.securityContext empty; set explicitly so BOTH
+  # containers in the pod satisfy the restricted container predicates.
+  configReloader:
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 473
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+  # Pod-level restricted predicates. The chart leaves global.podSecurityContext empty
+  # (the pod template renders no pod-level securityContext), so set them here so the
+  # rendered pod template satisfies `enforce: restricted` at the pod scope.
+  global:
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
