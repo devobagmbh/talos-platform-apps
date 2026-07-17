@@ -217,6 +217,28 @@ tasks:
       find sub-layers -path '*/components/*/rendered/manifest.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
+  lint:rendered:one:
+    desc: 'kubeconform against ONE component: task lint:rendered:one -- <sub-layer>/<component>'
+    summary: |
+      Component-scoped variant of lint:rendered — renders + kubeconforms ONLY the
+      named component's rendered/manifest.yaml. A single-component caller (the
+      catalog-evaluator verifying one component) uses this so it does not kubeconform
+      all ~60 components' manifests at once, whose aggregate output overflows a
+      subagent context (issue #702). The repo-wide lint:rendered stays the task ci gate.
+    cmd: |
+      component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
+        echo "usage: task lint:rendered:one -- <sub-layer>/<component>"
+        exit 1
+      fi
+      task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
+      out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
+      if [ ! -s "$out" ]; then
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: this guard catches only a zero-byte manifest; any non-empty output slips it, including a failed or partial helm render — render:one appends '---' unconditionally and never checks helm's exit code, so a failed render leaves a non-empty manifest (bare '---' or partial output) this guard does not catch (see #704)."
+        exit 1
+      fi
+      kubeconform -strict -ignore-missing-schemas -summary "$out"
+
   lint:kustomize-base:
     desc: 'kustomize build gate: every non-empty rendered/manifest.yaml must build as the trivial consumer base (resources: [manifest.yaml]) that `task package` ships.'
     summary: |
@@ -2276,6 +2298,29 @@ tasks:
       echo ""
       conftest test --policy policies/ --all-namespaces $files
 
+  scan:conftest:one:
+    desc: 'Conftest against ONE component: task scan:conftest:one -- <sub-layer>/<component>'
+    summary: |
+      Component-scoped variant of scan:conftest — renders + conftests ONLY the named
+      component (not the whole matrix), so a single-component caller (the
+      catalog-evaluator) gets bounded output instead of the full-catalog render that
+      overflows a subagent context (issue #702). The repo-wide scan:conftest stays the
+      task ci gate.
+    cmd: |
+      component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
+        echo "usage: task scan:conftest:one -- <sub-layer>/<component>"
+        exit 1
+      fi
+      task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
+      out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
+      if [ ! -s "$out" ]; then
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: this guard catches only a zero-byte manifest; any non-empty output slips it, including a failed or partial helm render — render:one appends '---' unconditionally and never checks helm's exit code, so a failed render leaves a non-empty manifest (bare '---' or partial output) this guard does not catch (see #704)."
+        exit 1
+      fi
+      echo "Conftest against ${component_id}:"
+      conftest test --policy policies/ --all-namespaces "$out"
+
   scan:psa-conformance:
     desc: 'PSA conformance: each component workload must satisfy its declared Namespace enforce level (combine, per component)'
     deps: [render]
@@ -2303,6 +2348,33 @@ tasks:
       done
       if [ "$rc" -eq 0 ]; then echo "✓ all components conform to their declared PSA enforce level"; fi
       exit $rc
+
+  scan:psa-conformance:one:
+    desc: 'PSA conformance for ONE component: task scan:psa-conformance:one -- <sub-layer>/<component>'
+    summary: |
+      Component-scoped variant of scan:psa-conformance — the conftest --combine
+      conformance check (Namespace + its workloads) on ONLY the named component, so a
+      single-component caller (the catalog-evaluator) gets bounded output instead of
+      the full-catalog render loop that overflows a subagent context (issue #702). The
+      repo-wide scan:psa-conformance stays the task ci gate.
+    cmd: |
+      component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
+        echo "usage: task scan:psa-conformance:one -- <sub-layer>/<component>"
+        exit 1
+      fi
+      task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
+      out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
+      if [ ! -s "$out" ]; then
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: this guard catches only a zero-byte manifest; any non-empty output slips it, including a failed or partial helm render — render:one appends '---' unconditionally and never checks helm's exit code, so a failed render leaves a non-empty manifest (bare '---' or partial output) this guard does not catch (see #704)."
+        exit 1
+      fi
+      if ! out_result=$(conftest test --combine --all-namespaces --policy policies/conformance/ "$out" 2>&1); then
+        echo "✗ ${component_id}"
+        printf '%s\n' "$out_result" | grep 'FAIL' | sed 's/^/    /'
+        exit 1
+      fi
+      echo "✓ ${component_id} conforms to its declared PSA enforce level"
 
   scan:conftest-verify:
     desc: Conftest-Policy-Selbsttests (testdata/-Korpus)
