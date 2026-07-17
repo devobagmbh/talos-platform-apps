@@ -3,6 +3,8 @@
   "release-type": "simple",
   "bootstrap-sha": "97855686e84e462efa26afcf20c7ec1bda7e33c0",
   "separate-pull-requests": true,
+  "always-update": true,
+  "sequential-calls": true,
   "packages": {
     "sub-layers/automation/components/velero": {
       "component": "automation/velero",
