@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/registry/harbor-v0.3.0...registry/harbor-v0.4.0) (2026-07-17)
+
+
+### Features
+
+* **registry/harbor:** resolve externalURL (EXT_ENDPOINT) as Shape (a) consumer env ([#401](https://github.com/devobagmbh/talos-platform-apps/issues/401)) ([d13ec1d](https://github.com/devobagmbh/talos-platform-apps/commit/d13ec1d36b49f82aa068b11ce31ad26f46c8b335))
+
 ## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/registry/harbor-v0.2.0...registry/harbor-v0.3.0) (2026-06-22)
 
 
