@@ -17,4 +17,10 @@ provides:
       # role). The capability-index is tool-keyed (grafana-alloy), not
       # component-keyed — both this component and the sibling DaemonSet
       # legitimately claim it.
+      # swap_class MUST match the capability-index entry (catalog/README.md §59):
+      # metrics-scrape is implemented via grafana-alloy → drop-in (same as the
+      # sibling observability/alloy DaemonSet). The DaemonSet→StatefulSet
+      # topology-migration cost is a distinct axis with no field in the current
+      # schema; it is documented in README §Clustering & scaling instead (a
+      # first-class per-topology swap field would be an ADR-0021 change).
       - {id: metrics-scrape, swap_class: drop-in}
