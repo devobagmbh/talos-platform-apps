@@ -4,9 +4,20 @@
 # secret `dex-config` (key `config.yaml`). That single file carries everything
 # cluster-specific AND sensitive (issuer, storage, connectors=EntraID OIDC,
 # staticClients, oauth2), so the whole config is one consumer-supplied Shape (c)
-# secret — no Shape (b) merged file, no Kustomize patch of the signed workload.
+# secret — no Shape (b) merged file. Config divergence goes through that secret,
+# not a workload patch.
 freeze_line:
-  workload: rendered/manifest.yaml # Deployment/Service/SA/RBAC — never consumer-patched
+  # Deployment/Service/SA/RBAC, published as a native-OCI Kustomize base
+  # (kustomization.yaml + manifest.yaml, `task package` per apps#508) → the consumer
+  # wires the dex Argo Application as an oci:// source (sourceType=Kustomize) instead
+  # of the old chart-OCI/helm form whose consumer values were a no-op. This migrates
+  # the artifact FORM (chart-OCI → native-OCI) to match the catalog-wide move
+  # (cf. observability/mimir #548, security/capsule #701). The dexidp chart stays the
+  # render source (helm/dex.yaml, chart 0.24.0); only packaging changes. Config still
+  # comes via the Shape-(c) `dex-config` secret — but native-OCI now also permits
+  # additive per-cluster overlays via source.kustomize.patches (ADR-0024
+  # calibrated-friction), e.g. a pod-template annotation to roll dex on a config change.
+  workload: rendered/manifest.yaml
 provided_refs:
   secret: dex-config # Shape (c): the full dex config.yaml (config + connector/client secrets)
 provided_selectors: {} # no consumer-labeled CRs
