@@ -54,6 +54,16 @@ values:
     # Exactly one replica. The Kubernetes Event stream is shared cluster state; a
     # second replica would double-ingest every Event.
     replicas: 1
+    # Enforce the singleton invariant at the ROLLOUT layer too: Recreate, not the
+    # default RollingUpdate. RollingUpdate briefly starts a second pod before the old
+    # one terminates (maxSurge 1 / maxUnavailable 0 at replicas 1), and for that
+    # overlap window two pods both watch + forward the shared Event stream = transient
+    # double-ingestion — the very thing the singleton design prevents. Recreate tears
+    # the old pod down before starting the new one; a short event gap on update is the
+    # correct trade for an events sink (Alloy holds no durable watch cursor — storage
+    # is the ephemeral /tmp/alloy path — so overlap is not resumability-bounded).
+    updateStrategy:
+      type: Recreate
 
   alloy:
     # Shape (b) freeze-line: do NOT create an in-chart ConfigMap. Reference the

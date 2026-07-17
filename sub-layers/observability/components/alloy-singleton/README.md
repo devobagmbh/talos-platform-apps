@@ -68,6 +68,30 @@ config):
 
 See `customization.yaml` for the machine-readable freeze-line contract.
 
+## Hardening / consumer notes
+
+- **Rollout strategy is `Recreate`** (`controller.updateStrategy.type: Recreate`), not
+  the default RollingUpdate — this preserves the singleton invariant during updates
+  (no two pods briefly co-ingesting the Event stream), at the cost of a short event
+  gap while the pod restarts.
+- **Event API group.** The ClusterRole grants `core/v1` Events (`apiGroups: [""]`)
+  only, matching Alloy's `loki.source.kubernetes_events`. A consumer whose pipeline
+  also watches the newer `events.k8s.io/v1` API group must extend the ClusterRole via
+  `kustomize.patches` (an under-permission would surface at runtime, never as a
+  privilege escalation).
+- **ServiceAccount token.** `automountServiceAccountToken` is left at the chart
+  default (mounted into both containers). A consumer hardening least-privilege can
+  scope the token to the `alloy` container only — the `config-reloader` sidecar needs
+  no Kubernetes API access.
+- **`readOnlyRootFilesystem`** is not set on the containers (beyond the PSA
+  `restricted` floor). Enabling it requires a writable `emptyDir` at the Alloy
+  storage path (`/tmp/alloy`); because that change is only provable against a live
+  cluster (no runtime write-path can be missed) and this catalog has no pre-merge
+  ArgoCD E2E gate yet, it is deferred to a cluster-verified follow-up rather than
+  shipped unverified. A consumer can add it via `kustomize.patches` today.
+- **No `livenessProbe`** (only a readinessProbe on `/-/ready`); a consumer can add one
+  via `kustomize.patches`.
+
 ## ADR references
 
 - [ADR-0024](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-catalog-customization-contract.md) — customization contract, freeze-line **Shape (b)** (consumer-authored config file).
