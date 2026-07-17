@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/devobagmbh/talos-platform-apps/compare/identity/dex-v0.2.1...identity/dex-v0.2.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **identity/dex:** add swap_class to identity-oidc capability ([#534](https://github.com/devobagmbh/talos-platform-apps/issues/534)) ([4ac2709](https://github.com/devobagmbh/talos-platform-apps/commit/4ac27096818aac8128d26178c1c9a37bdf39dd45))
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/identity/dex-v0.2.0...identity/dex-v0.2.1) (2026-07-17)
 
 
