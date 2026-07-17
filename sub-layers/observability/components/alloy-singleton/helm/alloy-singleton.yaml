@@ -95,6 +95,19 @@ values:
         drop:
           - ALL
 
+    # -- Resource requests + memory limit for the Alloy container. The chart
+    # leaves alloy.resources empty ({}) by default, so the rendered container
+    # carries none and fails the conftest `base.required_resource_limits` gate.
+    # Modest, singleton-appropriate values for an Event-only collector (one
+    # replica watching the cluster Event stream). NO cpu limit is set on
+    # purpose — the policy does not require it and a CPU limit risks throttling.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+
   # Container-level restricted predicates for the config-reloader sidecar
   # (prometheus-config-reloader, pinned to a digest by the chart — never :latest).
   # The chart leaves configReloader.securityContext empty; set explicitly so BOTH
@@ -109,6 +122,19 @@ values:
       capabilities:
         drop:
           - ALL
+
+    # -- Resource requests + memory limit for the config-reloader sidecar. The
+    # chart ships requests (cpu 10m / memory 50Mi) but NO limits, so the
+    # rendered sidecar fails the same conftest `base.required_resource_limits`
+    # gate as the alloy container. Requests are restated explicitly (the map is
+    # replaced, not deep-merged, when set) and a memory limit is added. NO cpu
+    # limit — same rationale as the alloy container (avoid throttling).
+    resources:
+      requests:
+        cpu: 10m
+        memory: 50Mi
+      limits:
+        memory: 64Mi
 
   # Pod-level restricted predicates. The chart leaves global.podSecurityContext empty
   # (the pod template renders no pod-level securityContext), so set them here so the
