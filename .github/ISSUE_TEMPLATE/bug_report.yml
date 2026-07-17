@@ -1,16 +1,16 @@
 name: Bug Report
-description: Fehler in talos-platform-apps melden (Sub-Layer-Render, Pipeline, OCI-Publish, Konsumenten-Inkompatibilität)
-labels: ["type:feature", "area:gitops"]
+description: Report a defect in talos-platform-apps (sub-layer render, pipeline, OCI publish, consumer incompatibility)
+labels: ["kind: bug", "area: gitops"]
 body:
   - type: markdown
     attributes:
       value: |
-        Danke für den Bug-Report. Fülle die Felder aus, damit wir das Issue zügig triagen können.
+        Thanks for the bug report. Fill in the fields so we can triage it quickly.
 
   - type: dropdown
     id: sub-layer
     attributes:
-      label: Betroffener Sub-Layer
+      label: Affected sub-layer
       options:
         - automation
         - databases
@@ -20,28 +20,28 @@ body:
         - registry
         - secrets
         - storage-objects
-        - cross-cutting (Pipeline / Build / Tooling)
+        - cross-cutting (pipeline / build / tooling)
     validations:
       required: true
 
   - type: dropdown
     id: stage
     attributes:
-      label: Wo tritt der Fehler auf?
+      label: Where does the failure occur?
       options:
-        - "task render (lokal)"
-        - "task ci (lokal)"
-        - "GHA-Pipeline (PR-Trigger)"
-        - "GHA-Pipeline (Tag-Push, OCI-Publish/Sign)"
-        - "Konsumenten-Cluster (Argo-Sync nach OCI-Pull)"
-        - "Andere"
+        - "task render (local)"
+        - "task ci (local)"
+        - "GHA pipeline (PR trigger)"
+        - "GHA pipeline (tag push, OCI publish/sign)"
+        - "Consumer cluster (Argo sync after OCI pull)"
+        - "Other"
     validations:
       required: true
 
   - type: input
     id: tag
     attributes:
-      label: Betroffenes OCI-Tag (falls relevant)
+      label: Affected OCI tag (if relevant)
       placeholder: "observability/loki-v0.3.1"
     validations:
       required: false
@@ -49,29 +49,29 @@ body:
   - type: textarea
     id: description
     attributes:
-      label: Was ist passiert?
+      label: What happened?
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Erwartetes Verhalten
+      label: Expected behavior
     validations:
       required: true
 
   - type: textarea
     id: reproduce
     attributes:
-      label: Reproduktionsschritte
-      description: "Konkrete Befehle inkl. Devbox-Zustand, falls relevant."
+      label: Steps to reproduce
+      description: "Concrete commands incl. devbox state, if relevant."
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Logs / Output
+      label: Logs / output
       render: shell
     validations:
       required: false
