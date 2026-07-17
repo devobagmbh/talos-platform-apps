@@ -16,6 +16,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` (microservices) | `oci://.../observability/mimir:vX.Y.Z` |
 | [`tempo`](components/tempo/) | 10 | Helm `grafana-community/tempo` (monolithic single binary) | `oci://.../observability/tempo:vX.Y.Z` |
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
+| [`alloy-metrics`](components/alloy-metrics/) | 20 | Helm `grafana/alloy` (clustered StatefulSet, Prometheus-format metrics-scrape role) | `oci://.../observability/alloy-metrics:vX.Y.Z` |
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |

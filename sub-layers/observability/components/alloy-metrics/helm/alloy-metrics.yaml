@@ -1,0 +1,181 @@
+# alloy-metrics — clustered Grafana Alloy collector, ServiceMonitor/PodMonitor
+# discovery role only.
+#
+# Part of the role-scoped Alloy split (epic #649): the all-in-one `alloy` DaemonSet
+# (sub-layers/observability/components/alloy/) duplicates every prometheus-operator
+# scrape target N times across nodes because a DaemonSet has no notion of sharding
+# discovery targets. This component moves cluster-wide metric discovery onto a
+# clustered StatefulSet — `alloy.clustering.enabled: true` distributes discovered
+# ServiceMonitor/PodMonitor targets across replicas instead of every node
+# re-scraping every target.
+#
+# Freeze-line (ADR-0024 v2, Shape b): the WORKLOAD (this rendered StatefulSet) is
+# catalog-owned and signed; the CONFIG is 100% consumer-owned. The consumer authors
+# the `alloy-metrics-config` ConfigMap (key `config.alloy`) carrying the discovery +
+# scrape + remote-write pipeline, which is cluster-specific (the Mimir remote-write
+# endpoint differs per consumer). The workload mounts that ConfigMap at /etc/alloy
+# and runs /etc/alloy/config.alloy (verified against chart templates
+# `containers/_agent.yaml` + `controllers/_pod.yaml` + `_config.tpl`, version
+# 1.10.0). See customization.yaml + README §Consumer obligations.
+
+metadata:
+  chart: alloy
+  repo: https://grafana.github.io/helm-charts
+  version: 1.10.0  # bare SemVer — NO leading 'v' (--version v1.10.0 fails to resolve)
+  # appVersion v1.17.0 → image tag docker.io/grafana/alloy:v1.17.0 (chart appVersion
+  # pin, NEVER :latest; never overridden here). VERIFY at push
+  # (`helm show chart alloy --repo <repo> --version 1.10.0`) that 1.10.0 is still
+  # current stable.
+  namespace: alloy-metrics
+
+values:
+  # The chart's `crds` subchart defaults to create: true and would render the
+  # monitoring.grafana.com PodLogs CRD into the workload. This component ships NO
+  # CRDs (strict-B / ADR-0028 does not apply), so disable CRD creation explicitly.
+  # The rendered workload MUST contain zero kind: CustomResourceDefinition.
+  crds:
+    create: false
+
+  controller:
+    # StatefulSet: a clustered, sharded discovery role, not a per-node collector.
+    type: statefulset
+
+    # Chart default. A consumer overlays this via `source.kustomize.patches` for
+    # live sharding/dedup across replicas — the catalog ships the single-replica
+    # baseline (see README §Clustering & scaling).
+    replicas: 1
+
+    # Writable storage for the restricted (readOnlyRootFilesystem: true) workload.
+    # An emptyDir is writable even with a read-only root filesystem because it is a
+    # mounted volume, not part of the root fs. The WAL under storagePath (/tmp/alloy)
+    # is therefore ephemeral (documented Alloy behavior — data is lost between
+    # reboots), which is acceptable for a stateless metric-forwarding role. The
+    # matching volumeMount lives under alloy.mounts.extra below.
+    volumes:
+      extra:
+        - name: alloy-storage
+          emptyDir: {}
+
+  alloy:
+    # -- prometheus.operator.scrapeconfigs (used by the consumer-owned
+    # config.alloy pipeline, see README §Consumer obligations) is EXPERIMENTAL
+    # upstream and refuses to start below this stability level (chart default:
+    # "generally-available"; see grafana/alloy docs on component stability).
+    stabilityLevel: "experimental"
+
+    # Shape (b) freeze-line: do NOT create an in-chart ConfigMap. Reference the
+    # EXISTING consumer-supplied ConfigMap `alloy-metrics-config` (key
+    # `config.alloy`). The `config` volume mounts it at /etc/alloy; the alloy
+    # process runs /etc/alloy/config.alloy. The consumer owns the whole
+    # discovery+scrape+remote-write pipeline; the signed workload is never patched.
+    configMap:
+      create: false
+      name: alloy-metrics-config
+      key: config.alloy
+
+    # Clustering distributes discovery targets across replicas — the core reason
+    # this component exists as a StatefulSet rather than a DaemonSet. This renders
+    # a headless `<release>-cluster` Service and injects `--cluster.enabled` +
+    # `--cluster.join-addresses=<release>-cluster` into the alloy container args
+    # even at replicas: 1 (inert until a consumer scales replicas >= 2; see
+    # README §Clustering & scaling).
+    clustering:
+      enabled: true
+
+    # No host mounts. This role discovers ServiceMonitor/PodMonitor targets
+    # through the Kubernetes API + the hand-shipped RBAC and scrapes them over the
+    # network — neither needs host access, so the workload satisfies the
+    # `restricted` PSA level. See README §Namespace & Pod Security.
+    mounts:
+      varlog: false
+      dockercontainers: false
+      # Mount the writable emptyDir (declared under controller.volumes.extra above)
+      # at the storagePath /tmp/alloy — the container-side half of the
+      # restricted-compatible writable-storage pattern (readOnlyRootFilesystem makes
+      # the rest of the root fs, including /tmp, read-only).
+      extra:
+        - name: alloy-storage
+          mountPath: /tmp/alloy
+
+    # Container-level restricted predicates for the Alloy container. The chart
+    # leaves alloy.securityContext empty by default; set explicitly (explicit-not-
+    # inherited) so the rendered container satisfies `enforce: restricted` and a
+    # future chart bump cannot weaken it.
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 473
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+    # base.required_resource_limits (policies/base) requires requests.cpu,
+    # requests.memory, and limits.memory on every container; this is a new
+    # workload (not on the transitional grandfather set), so it must declare them
+    # from day one. No cpu limit is set deliberately — a discovery/scrape role
+    # benefits from CPU bursting during large target-set reloads rather than
+    # throttling; memory is bounded to catch a runaway WAL/cache.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+  # Container-level restricted predicates + resource bounds for the
+  # config-reloader sidecar (prometheus-config-reloader, pinned to a digest by the
+  # chart — never :latest). The chart leaves configReloader.securityContext empty
+  # and sets requests only (no limits); set both explicitly so both containers in
+  # the pod satisfy `enforce: restricted` and base.required_resource_limits.
+  configReloader:
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 473
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+    resources:
+      requests:
+        cpu: 10m
+        memory: 50Mi
+      limits:
+        memory: 128Mi
+
+  # Pod-level restricted predicates. The chart leaves global.podSecurityContext
+  # empty (the pod template renders no pod-level securityContext), so set them here
+  # so the rendered pod template satisfies `enforce: restricted` at the pod scope.
+  global:
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+
+  # The chart's own cluster-wide read RBAC is a superset covering every Alloy
+  # component (logs/metrics/traces + node discovery). This component only needs
+  # the metrics-discovery subset, so rbac.create is disabled and the catalog ships
+  # a narrower hand-authored ClusterRole/ClusterRoleBinding instead
+  # (manifests/10-rbac.yaml) — see README §RBAC posture.
+  rbac:
+    create: false
+
+  # serviceAccount.create: true is the chart default; pin the NAME explicitly
+  # (the chart otherwise derives an unstable name from the release fullname) so
+  # the hand-shipped ClusterRoleBinding (manifests/10-rbac.yaml) references a
+  # known, deterministic subject. rbac.create: false above does NOT suppress the
+  # ServiceAccount — that is a separate chart value.
+  serviceAccount:
+    create: true
+    name: alloy-metrics
+
+  # NOTE: no PodDisruptionBudget key is set (controller.podDisruptionBudget.enabled
+  # stays at the chart default false). A minAvailable: 1 PDB at the catalog default
+  # replicas: 1 would block ALL voluntary disruption (no room to evict the sole
+  # pod). A consumer overlaying replicas >= 2 adds its own PDB in the same overlay
+  # that raises replicas. See README §Clustering & scaling.
