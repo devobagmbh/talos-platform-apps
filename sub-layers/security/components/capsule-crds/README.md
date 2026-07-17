@@ -38,10 +38,13 @@ No pods, no Services, no RBAC, no Namespace, no Deployment — the artifact is
 purely the 11 CRDs. All operator workload resources ship in the workload artifact
 `security/capsule`, not here.
 
-The `CapsuleConfiguration` CR (the operator-config singleton) and `Tenant` CRs
-are **consumer-owned** — they live in the consumer-cluster repo overlay, not in
-this catalog component. This artifact only establishes the CRD schemas so those
-CRs have registered types.
+`Tenant` CRs are **consumer-owned** — they live in the consumer-cluster repo
+overlay, not in this catalog component. The `CapsuleConfiguration` singleton
+`default` ships **chart-generated** in the workload half
+[`security/capsule`](../capsule/README.md) (its load-bearing `spec.admission`
+block cannot be consumer-authored); consumers diverge tenancy policy via
+`source.kustomize.patches` on that shipped CR, never a second CR. This artifact
+only establishes the CRD schemas so those CRs have registered types.
 
 ## Strict-B consumer wiring (ADR-0028)
 
