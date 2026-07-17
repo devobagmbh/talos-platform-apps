@@ -79,6 +79,16 @@ none of these:
 
   ```river
   // config.alloy — minimal stub; replace with real discovery + remote_write.
+  // Every prometheus.operator.* block below MUST carry its own `clustering {
+  // enabled = true }` — see §Clustering & scaling: chart-level membership
+  // (alloy.clustering.enabled) does not shard anything by itself. Omitting
+  // this at replicas >= 2 makes every replica scrape every target (N×
+  // duplicate scrapes into Mimir), not just a missed optimization.
+  prometheus.operator.servicemonitors "primary" {
+    forward_to = [prometheus.remote_write.mimir.receiver]
+    clustering { enabled = true }   // REQUIRED for target sharding across replicas
+  }
+
   prometheus.remote_write "mimir" {
     endpoint {
       url = "http://mimir-nginx.mimir.svc.cluster.local/api/v1/push"
@@ -171,6 +181,17 @@ shard across) at the catalog default; a consumer realizes the sharding by
 overlaying `controller.replicas >= 2` via `source.kustomize.patches`. The catalog
 ships **no PodDisruptionBudget** for exactly this reason — see §Consumer
 obligations above.
+
+**Chart-level membership alone shards nothing.** `alloy.clustering.enabled`
+only makes the Alloy process join a cluster — it does not, by itself, make any
+`prometheus.operator.*` discovery component distribute targets across replicas.
+Each such component in the consumer-owned `config.alloy` MUST additionally
+carry its own `clustering { enabled = true }` block (canonical Grafana Alloy
+behavior: without it, the component ignores cluster membership and scrapes
+every target it receives). At `replicas >= 2` without that inner block, every
+replica scrapes every target — N× duplicate scrapes into Mimir, the exact
+cardinality/OOM class this component exists to prevent. See the stub in
+§Consumer obligations above for the required shape.
 
 ## Risks / build notes
 
