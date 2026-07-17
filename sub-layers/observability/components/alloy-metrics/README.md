@@ -70,8 +70,12 @@ none of these:
   `prometheus.operator.probes` / `prometheus.operator.scrapeconfigs` components
   feeding a `prometheus.remote_write` block pointed at the cluster's Mimir
   endpoint. That endpoint URL is cluster-specific and lives nowhere in the
-  catalog. **A no-op stub** the consumer can start from before wiring real
-  discovery (see §Risks / build notes below for why this matters at sync time):
+  catalog. **`prometheus.operator.scrapeconfigs` is EXPERIMENTAL upstream** —
+  the workload sets `alloy.stabilityLevel: "experimental"` (see
+  `helm/alloy-metrics.yaml`) specifically so this component is usable; without
+  that flag Alloy refuses to load a `config.alloy` that references it. **A
+  no-op stub** the consumer can start from before wiring real discovery (see
+  §Risks / build notes below for why this matters at sync time):
 
   ```river
   // config.alloy — minimal stub; replace with real discovery + remote_write.
@@ -126,6 +130,9 @@ what the `prometheus.operator.*` discovery components need:
 - core: `pods`, `services`, `endpoints`, `secrets`, `configmaps`
 - `monitoring.coreos.com`: `servicemonitors`, `podmonitors`, `probes`,
   `scrapeconfigs`, `prometheusrules`
+- `networking.k8s.io`: `ingresses` — `prometheus.operator.probes` discovers
+  targets via Ingress objects referenced by a Probe CR's
+  `spec.targets.ingress` (documented prometheus-operator Probe behavior).
 
 **Excluded**, deliberately, versus the chart's default RBAC:
 

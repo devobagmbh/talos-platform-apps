@@ -57,6 +57,12 @@ values:
           emptyDir: {}
 
   alloy:
+    # -- prometheus.operator.scrapeconfigs (used by the consumer-owned
+    # config.alloy pipeline, see README §Consumer obligations) is EXPERIMENTAL
+    # upstream and refuses to start below this stability level (chart default:
+    # "generally-available"; see grafana/alloy docs on component stability).
+    stabilityLevel: "experimental"
+
     # Shape (b) freeze-line: do NOT create an in-chart ConfigMap. Reference the
     # EXISTING consumer-supplied ConfigMap `alloy-metrics-config` (key
     # `config.alloy`). The `config` volume mounts it at /etc/alloy; the alloy

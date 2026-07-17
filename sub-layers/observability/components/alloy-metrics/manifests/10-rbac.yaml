@@ -9,6 +9,10 @@
 #   - core: pods, services, endpoints, secrets, configmaps
 #   - monitoring.coreos.com: servicemonitors, podmonitors, probes, scrapeconfigs,
 #     prometheusrules
+#   - networking.k8s.io: ingresses — prometheus.operator.probes discovers
+#     targets via Ingress objects referenced by a Probe CR's
+#     spec.targets.ingress (documented prometheus-operator Probe behavior), so
+#     this read is required for that discovery path to function.
 #
 # EXCLUDED, deliberately, vs. the chart's default RBAC:
 #   - core: nodes, events — node-local scraping is the node-local role's job
@@ -39,6 +43,9 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["monitoring.coreos.com"]
     resources: ["servicemonitors", "podmonitors", "probes", "scrapeconfigs", "prometheusrules"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
