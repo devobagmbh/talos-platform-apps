@@ -200,6 +200,24 @@ for, and `policies/` today carries essentially one enforced rule
 implemented). So most acceptance rests on the evaluator's semantic AC judgment
 plus the downstream GHA + human-PR gate, not on a green Tier 1.
 
+**A class the gate structurally cannot reach — runtime-only defects.** Render +
+lint + conftest never RUN the pod, so a workload that is well-formed but
+un-runnable still passes the **deterministic gate** — and render-based review does
+not catch it either (neither the evaluator nor a read-only reviewer runs the pod).
+The recurring trap: `readOnlyRootFilesystem: true` with a writable runtime path
+that has no volume — e.g. `--storage.path=/tmp/<x>` (a WAL/cache/storage dir) and
+no `emptyDir` mounted at that path — renders cleanly, then CrashLoops at runtime
+(`mkdir …: read-only file system`; PR #194, `observability/alloy`). Fix: mount a
+writable `emptyDir` **at the path the process writes** — see `observability/alloy`
+(emptyDir at the storage path, not bare `/tmp`) and `identity/dex` (the simpler
+`readOnlyRootFilesystem: true` + writable `/tmp` emptyDir). Because only a running
+pod surfaces this, the local Talos E2E (below) is the catch: for a
+`readOnlyRootFilesystem: true` workload with a writable runtime path, treat the E2E
+as **required when the cluster is reachable** (do not defer it by default per the
+reachability gate below) — and when the cluster is unreachable, the
+`NOT-LOCALLY-VERIFIABLE` deferral carries **elevated risk for this class**, so flag
+it in the verify record rather than recording it as routine.
+
 **Chart-ref caveat:** a vendored `vendor/<chart>-<version>.tgz` makes
 `task render:one` render from the local archive *without resolving the declared
 `chart`/`repo`/`version`*. The sandbox is normally offline, so chart-ref

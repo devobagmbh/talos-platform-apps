@@ -80,6 +80,10 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 
 - `silent: true` globally — commands do not echo themselves
 - **Logic lives in the Taskfile**, not in external `scripts/` bash files. Even complex bash code is implemented inline in `cmds:` (multi-line `|`). External scripts would undermine the "pipeline = task caller" convention (pipeline → task → script would be one level too deep).
+- **`cmd:` runs under mvdan/sh (a POSIX sh), not `/bin/bash`** — two distinct failure modes, one inherent to `set -e`, the other only if you enable `set -o pipefail`:
+  - **Group-abort under `set -e`:** a `{ cmd1; cmd2; }` group aborts on the first member that exits non-zero *before* later members run; the abort fires on the member's own status, so an outer `|| true` on the surrounding pipe does not mask it. A no-match `grep` exits 1, so `{ grep image …; grep package …; } | …` silently drops the second `grep`. Guard a member with `|| true` **only where its non-zero exit is an expected, ignorable state** (e.g. an extraction `grep` that may legitimately match nothing) — never blanket-`|| true` a member whose failure should abort the task (that is gate-blinding). Precedent + the safe pattern: the `lint:version` task comment.
+  - **SIGPIPE under `pipefail`:** a `grep -q` that closes a pipe early raises a SIGPIPE that terminates the script under `set -o pipefail`; avoid `grep -q` over a pipe (use a pipe-free membership test). Distinct mechanism, distinct precedent: the `validate:release-config` task comment.
+  - **E2E-verify inlined logic by running `task <name>`** (not `bash script.sh` — plain bash without `set -e` won't reproduce the abort) **with an input that reaches the failing branch** — a happy-path run where every `grep` matches never exercises the no-match drop.
 
 ## Coding Style & Naming
 
