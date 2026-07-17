@@ -234,7 +234,7 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: a failed helm render is NOT caught here — render:one appends '---' unconditionally and does not check helm's exit code, so a failed render leaves a non-empty '---'-only manifest (see #704)."
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: this guard catches only a zero-byte manifest; any non-empty output slips it, including a failed or partial helm render — render:one appends '---' unconditionally and never checks helm's exit code, so a failed render leaves a non-empty manifest (bare '---' or partial output) this guard does not catch (see #704)."
         exit 1
       fi
       kubeconform -strict -ignore-missing-schemas -summary "$out"
@@ -2315,7 +2315,7 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: a failed helm render is NOT caught here — render:one appends '---' unconditionally and does not check helm's exit code, so a failed render leaves a non-empty '---'-only manifest (see #704)."
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: this guard catches only a zero-byte manifest; any non-empty output slips it, including a failed or partial helm render — render:one appends '---' unconditionally and never checks helm's exit code, so a failed render leaves a non-empty manifest (bare '---' or partial output) this guard does not catch (see #704)."
         exit 1
       fi
       echo "Conftest against ${component_id}:"
@@ -2366,7 +2366,7 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: a failed helm render is NOT caught here — render:one appends '---' unconditionally and does not check helm's exit code, so a failed render leaves a non-empty '---'-only manifest (see #704)."
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: this guard catches only a zero-byte manifest; any non-empty output slips it, including a failed or partial helm render — render:one appends '---' unconditionally and never checks helm's exit code, so a failed render leaves a non-empty manifest (bare '---' or partial output) this guard does not catch (see #704)."
         exit 1
       fi
       if ! out_result=$(conftest test --combine --all-namespaces --policy policies/conformance/ "$out" 2>&1); then
