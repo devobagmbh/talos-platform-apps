@@ -137,7 +137,12 @@ The component ships a **scope-down** cluster-scoped read `ClusterRole`
 default). It grants **read-only** (`get`/`list`/`watch`, never write) on exactly
 what the `prometheus.operator.*` discovery components need:
 
-- core: `pods`, `services`, `endpoints`, `secrets`, `configmaps`
+- core: `namespaces`, `pods`, `services`, `endpoints`, `secrets`, `configmaps`
+  — `namespaces` is required for **namespaceSelector resolution**: a
+  ServiceMonitor/PodMonitor/Probe with a label-based `namespaceSelector` (or
+  `any: true`) makes the `prometheus.operator.*` component enumerate namespaces
+  to find matches; without `namespaces` list/watch it silently resolves to zero
+  namespaces → zero targets (a silent scrape gap, not an error).
 - `monitoring.coreos.com`: `servicemonitors`, `podmonitors`, `probes`,
   `scrapeconfigs`, `prometheusrules`
 - `networking.k8s.io`: `ingresses` — `prometheus.operator.probes` discovers
