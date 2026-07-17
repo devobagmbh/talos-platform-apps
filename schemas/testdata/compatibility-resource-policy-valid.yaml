@@ -9,5 +9,6 @@ resource_policy:
   class: tunable
   tunable_targets:
     - workload: test-distributor
+      kind: Deployment
       containers: [distributor]
       reason: stateless, load-driven — consumer right-sizes per ingest volume

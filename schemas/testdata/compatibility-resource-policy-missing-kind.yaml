@@ -1,0 +1,13 @@
+---
+# Negative fixture: a tunable_targets item without 'kind' should fail the
+# item-level required:[workload,kind,containers] — kind+name is the allowlist key
+# (ADR-0024); a name-only target loses the rename/collision guard.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: test
+      containers: [test]   # no 'kind' — fails required

@@ -1,0 +1,14 @@
+---
+# Negative fixture: a 'kind' outside the enum (Deployment/StatefulSet/DaemonSet)
+# should fail the kind enum. The resource-sizing axis targets only container-
+# bearing workload kinds; 'Pod' is not an override target (ADR-0024).
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: test
+      kind: Pod   # outside enum — fails
+      containers: [test]

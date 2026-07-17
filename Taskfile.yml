@@ -3609,7 +3609,10 @@ tasks:
                   schemas/testdata/compatibility-resource-policy-tunable-empty-targets.yaml \
                   schemas/testdata/compatibility-resource-policy-unknown-key.yaml \
                   schemas/testdata/compatibility-resource-policy-target-unknown-key.yaml \
-                  schemas/testdata/compatibility-resource-policy-star-not-sole.yaml; do
+                  schemas/testdata/compatibility-resource-policy-star-not-sole.yaml \
+                  schemas/testdata/compatibility-resource-policy-missing-kind.yaml \
+                  schemas/testdata/compatibility-resource-policy-bad-kind-enum.yaml \
+                  schemas/testdata/compatibility-resource-policy-empty-workload.yaml; do
           if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
             echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
             fail=1

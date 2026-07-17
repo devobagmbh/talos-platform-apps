@@ -1,0 +1,14 @@
+---
+# Negative fixture: a degenerate empty 'workload' name should fail minLength:1 —
+# an empty name matches no rendered workload (a silent no-op the allowlist must
+# not carry). Guards the same silent-no-op class the tunable/fixed coherence does.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+resource_policy:
+  class: tunable
+  tunable_targets:
+    - workload: ""   # empty — fails minLength:1
+      kind: Deployment
+      containers: [test]
