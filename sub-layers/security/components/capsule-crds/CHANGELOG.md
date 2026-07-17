@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/security/capsule-crds-v0.1.0...security/capsule-crds-v0.1.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **security/capsule-crds:** migrate to native-OCI Kustomize base ([#551](https://github.com/devobagmbh/talos-platform-apps/issues/551)) ([bd699e5](https://github.com/devobagmbh/talos-platform-apps/commit/bd699e594fd1bcd44195842541d4761e4dd2cb62))
+
 ## 0.1.0 (2026-07-02)
 
 
