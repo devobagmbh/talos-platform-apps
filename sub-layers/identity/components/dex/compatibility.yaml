@@ -11,4 +11,4 @@ provides:
       chart: 0.24.0
     api_surface: []
     capabilities:
-      - id: identity-oidc  # OIDC broker federating EntraID (ADR-0010)
+      - {id: identity-oidc, swap_class: label-move}  # OIDC broker federating EntraID (ADR-0010); swap_class matches the active impl in catalog/capability-index.yaml
