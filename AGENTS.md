@@ -127,7 +127,7 @@ The end-to-end issue→PR interface — how an issue becomes a merged, ADR-confo
 
 **Merge queue (binding).** `main` requires the `merge-queue-main` ruleset (`merge_method: SQUASH`, `grouping_strategy: ALLGREEN`, `min_entries_to_merge: 1` / `max_entries_to_merge: 5`). `gh pr merge <N> --squash` (or `--auto --squash`) therefore **enqueues** the PR: the queue rebuilds it against `main`, re-runs the required checks on the `merge_group` head (the required-check workflows are `merge_group`-aware since #513), and squash-merges only when the group is all-green — there is no immediate merge-commit, and the merge method is fixed by the ruleset (`SQUASH`), so an explicit method flag only has to match it. `--delete-branch`/`-d` is **incompatible** with the queue, and the head branch is **not** auto-deleted either (`delete_branch_on_merge` is off) — delete it separately if wanted. Because the queue rebuilds against `main`, a `BEHIND` PR needs no manual `gh pr update-branch`; the queue does the update.
 
-**Required status checks** — all MUST be green, and `strict` is on so the PR branch MUST also be up to date with `main` (satisfied by the queue's rebuild, per § Merge queue above):
+**Required status checks** — all MUST be green. `strict` is on (the PR branch MUST be up to date with `main`); the queue's rebuild against `main` satisfies this automatically (§ Merge queue above):
 
 | Check (context name) | Enforces |
 |---|---|
@@ -136,6 +136,8 @@ The end-to-end issue→PR interface — how an issue becomes a merged, ADR-confo
 | `require-issue-link` | the PR links an issue (`Closes #N`) **or** carries the `no-issue` label (`pr-issue-link.yml`) |
 | `gitleaks (secret-scan)` | no secret leaks in the PR's changed commit range (`security-scan.yml`) — the context name is the job name `gitleaks (secret-scan)`, **not** bare `gitleaks` |
 | `commit-lint` *(pending)* | Conventional PR title + single-component scope (G2, #464/#465); added as a required context once #465 merges |
+
+**Adding a required check under the merge queue:** a newly-required check MUST also fire on the `merge_group` event, not only `pull_request` — otherwise the queue's re-validation never reports for it and an enqueued PR stalls indefinitely. All current required checks are `merge_group`-aware (#513); the pending `commit-lint` short-circuits on `merge_group` by design.
 
 **Non-status-check merge gates:**
 
