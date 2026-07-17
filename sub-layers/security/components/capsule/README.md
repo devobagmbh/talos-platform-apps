@@ -107,9 +107,9 @@ stable; re-verify paths against `rendered/manifest.yaml` on a chart bump.)
 
 The steady-state cluster-wide `namespaces.validating` webhook has `failurePolicy: Fail`
 by upstream design; `config.validating` is `failurePolicy: Ignore`, so in an emergency
-(a bad patched value blocks the cluster) a `kubectl delete capsuleconfiguration default`
-+ re-sync with the Argo sync paused is safe — reconcile the permanent fix as a patch
-immediately after.
+(a bad patched value blocks the cluster) it is safe to `kubectl delete
+capsuleconfiguration default` and re-sync with the Argo sync paused — reconcile the
+permanent fix as a patch immediately after.
 
 ## Namespace & Pod Security Admission
 
