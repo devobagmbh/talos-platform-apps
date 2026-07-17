@@ -55,16 +55,26 @@ judgment and the downstream GHA + human-PR gate — do not over-trust a green Ti
 1. `task render:one -- <sub-layer>/<component>` — re-render independently; the
    builder's render is not trusted. Run it twice and confirm byte-identical
    output (idempotency; guards remote-chart non-determinism).
-2. `task lint` and `task lint:rendered` — YAML/markdown + kubeconform.
+2. `task lint` and `task lint:rendered:one -- <sub-layer>/<component>` —
+   YAML/markdown (repo-wide source lint) + kubeconform on THIS component's rendered
+   manifest only. Use the `:one` variant, never bare `task lint:rendered`: the
+   repo-wide form kubeconforms all ~60 components' manifests in one call and
+   overflows this dispatch's context (issue #702).
 3. `task validate:contract -- <sub-layer>/<component>` — customization.yaml
    against `schemas/customization.schema.json`. (Deliberately not in `task ci`;
    run it explicitly.)
-4. `task scan:conftest` — rendered output against `policies/` (per-document policies).
-   Then `task scan:psa-conformance` — the PSA workload-conformance gate. You MUST run
-   this one yourself: `scan:conftest` does NOT cover it (the conformance policy needs
-   `conftest --combine`, which `scan:conftest` does not pass, so the conformance rules
-   are inert there). This is the gate you defer PSA admissibility to in the §Namespace
-   posture lens below — trusting it without running it IS the "caught by neither" hole.
+4. `task scan:conftest:one -- <sub-layer>/<component>` — rendered output against
+   `policies/` (per-document policies). Then
+   `task scan:psa-conformance:one -- <sub-layer>/<component>` — the PSA
+   workload-conformance gate. You MUST run this one yourself: `scan:conftest:one`
+   does NOT cover it (the conformance policy needs `conftest --combine`, which
+   `scan:conftest:one` does not pass, so the conformance rules are inert there). This
+   is the gate you defer PSA admissibility to in the §Namespace posture lens below —
+   trusting it without running it IS the "caught by neither" hole. Use the `:one`
+   variants, never the bare repo-wide `task scan:conftest` / `task scan:psa-conformance`:
+   those carry `deps: [render]` and render + scan all ~60 components in one call,
+   overflowing this dispatch's context (issue #702). The repo-wide forms stay the
+   `task ci` gate the orchestrator runs.
 5. **Chart-ref resolution** (the hallucinated-dependency class — invented
    versions/repos pass `helm template` but do not exist upstream; and a vendored
    `vendor/<chart>-<version>.tgz` makes `task render:one` render from the local

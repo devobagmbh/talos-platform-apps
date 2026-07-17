@@ -116,9 +116,8 @@ fi
 
 # Escalation domains are a closed set; enforce membership before constructing any
 # review-<domain>.md path (an out-of-set / path-traversal-shaped value is a
-# contract violation, not a missing-artifact case). Only security + operational-
-# safety have a backing reviewer agent today; provenance/compatibility/architecture
-# are reserved for M2 (escalating to one denies until its agent is restored).
+# contract violation, not a missing-artifact case). All five domains now have a
+# backing reviewer agent (provenance/compatibility/architecture restored at M2).
 assert_domain() {
   case "$1" in
     security|operational-safety|provenance|compatibility|architecture) return 0 ;;

@@ -43,14 +43,100 @@ The rendered workload (`rendered/manifest.yaml`) includes:
 **Zero `CustomResourceDefinition` objects** — the 11 CRD schemas ship in
 `security/capsule-crds`, not here (strict-B workload half).
 
-## The `CapsuleConfiguration` CR — a catalog default
+## The `CapsuleConfiguration` CR — chart-generated, tenancy policy consumer-owned
 
-The `CapsuleConfiguration` CR named `default` ships as a catalog default (equivalent to
-the kubevirt `KubeVirt` CR precedent). The controller reads it to determine the webhook
-service name, TLS secret references, RBAC role names, and admission user groups. The
-shipped defaults are cluster-agnostic and fully operational as-is. A consumer who needs
-to diverge (e.g. add custom `users`/`administrators` groups, or tune RBAC role names)
-patches the CR via their own Argo overlay — that is not a freeze-line shape.
+The `CapsuleConfiguration` CR named `default` ships **chart-generated** in this artifact
+(`manager.options.createConfiguration: true`, pinned). That is load-bearing: the chart
+embeds a large chart-generated `spec.admission` (dynamic-webhook) block that a consumer
+cannot author.
+
+> ⚠️ **Never ship a second `CapsuleConfiguration` from a consumer repo.** A
+> consumer-supplied `default` CR overwrites the chart-generated `spec.admission` block
+> and the operator **nil-panics at admission setup** (#506 — deployed, panicked,
+> rolled back). Consumer divergence goes through `source.kustomize.patches` on THIS
+> shipped CR — never a second hand-written CR, never an imperative `kubectl` patch.
+
+**Tenancy policy is consumer-owned.** The catalog deliberately ships every tenancy field
+at its chart default, which is **inert**: `users` matches only the placeholder group
+`projectcapsule.dev` (nobody real), `ignoreUserWithGroups`/`administrators` are empty,
+`forceTenantPrefix` is off, `protectedNamespaceRegex` is empty (matches nothing) — Capsule manages nobody
+until the consumer opts in. Which principals are tenant-managed, which operator SAs are
+exempt, and which namespaces are protected are cluster-specific decisions and live in
+the consumer repo as a patch on the shipped CR (ADR-0024 calibrated-friction), e.g.:
+
+```yaml
+# consumer Application source.kustomize.patches entry (CR field paths verified
+# against the rendered CapsuleConfiguration of THIS chart version)
+- target: { group: capsule.clastix.io, kind: CapsuleConfiguration, name: default }
+  patch: |
+    - op: replace
+      path: /spec/users
+      value: [{ kind: Group, name: system:authenticated }]
+    - op: replace
+      path: /spec/forceTenantPrefix
+      value: true
+    - op: replace
+      path: /spec/protectedNamespaceRegex
+      value: "^(kube-.*|capsule-system|…)$"
+    - op: replace
+      path: /spec/ignoreUserWithGroups
+      # A whole-namespace group (system:serviceaccounts:<ns>) is acceptable ONLY for a
+      # platform-controlled namespace with no tenant-writable ServiceAccounts (e.g. the
+      # GitOps reconciler's own namespace); never a shared/less-controlled one — see the
+      # membership-test guidance below.
+      value: [system:serviceaccounts:argocd, "…"]
+```
+
+(All four fields exist in the rendered CR at their inert defaults, so `op: replace` is
+stable; re-verify paths against `rendered/manifest.yaml` on a chart bump.)
+
+> ⚠️ **Fail-open until a consumer opts in.** Shipping every tenancy field inert means a
+> consumer that deploys this artifact **without** the patch above gets **zero** tenant
+> enforcement — silently. This is deliberate (ADR-0024: the catalog ships no cluster
+> policy), but a consumer MUST supply the tenancy patch to actually enforce isolation.
+
+**Consumer guidance (recommended values, not enforced by the catalog):**
+
+- `users: [{kind: Group, name: system:authenticated}]` turns Capsule on for every
+  authenticated principal — humans AND ServiceAccounts. Then `ignoreUserWithGroups`
+  must carve platform operator SAs back out, membership test (two classes):
+  (a) SAs that **create/manage namespaces** (the GitOps controller, Crossplane,
+  capsule-system, kube-system); (b) SAs that **reconcile CR-driven resources into
+  (potentially tenant) namespaces** — cert-manager, external-secrets, vault-operator,
+  vault-config-operator, cnpg-system, valkey-operator-system. Operators with a
+  cluster-scoped or own-namespace-only write surface (piraeus, CSI drivers,
+  snapshot-controller, observability, metrics-server) need **no** entry. Prefer a
+  **specific** SA identity (`system:serviceaccount:<ns>:<name>`) over the whole-namespace
+  group (`system:serviceaccounts:<ns>`) where feasible — the group form exempts *every*
+  SA in that namespace from Capsule; **never** exempt a namespace that tenants can create
+  ServiceAccounts in (it would hand them a tenancy bypass).
+- `protectedNamespaceRegex` should reserve, at minimum, every catalog-shipped namespace
+  (the committed `manifests/00-namespace.yaml` set plus `helm/*.yaml` `namespace:`
+  declarations) and the consumer's platform namespaces — the reliable anti-squatting
+  defense, since `forceTenantPrefix` is per-tenant overridable. When a new catalog
+  component lands, extend the consumer regex (see the maintainer note below).
+- `administrators` (chart field): entities that are automatically owners of ALL
+  tenants — the right hook for a dedicated GitOps tenant-namespace reconciler identity.
+
+> **Maintainer note (catalog):** when a new component's namespace lands in the catalog,
+> extend the recommended `protectedNamespaceRegex` guidance above so consumers can reserve
+> it — the catalog only maintains the recommendation (tenancy policy is consumer-owned;
+> manual until the #516 generator lands).
+
+**Emergency recovery** has two cases, because the runtime hooks the operator installs
+(cluster-wide `namespaces.validating`, `failurePolicy: Fail`; `config.validating`,
+`failurePolicy: Ignore`) exist independently of the CR:
+
+- **Bad patched value, operator still healthy** (a wedge caused by the patch itself): it
+  is safe to `kubectl delete capsuleconfiguration default` and re-sync with the Argo sync
+  paused — the running operator re-derives its state — then reconcile the permanent fix
+  as a patch immediately after.
+- **Operator fully down:** deleting the `CapsuleConfiguration` is a **no-op** for
+  unblocking the cluster — the runtime `namespaces.validating`
+  `ValidatingWebhookConfiguration` (`failurePolicy: Fail`) stays registered and keeps
+  blocking namespace CREATE/UPDATE/DELETE cluster-wide, and no operator is running to
+  reconcile the CR anyway. This path additionally requires deleting that runtime
+  `ValidatingWebhookConfiguration`; the operator recreates it on recovery.
 
 ## Namespace & Pod Security Admission
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/devobagmbh/talos-platform-apps/compare/storage-block/snapshot-controller-crds-v0.1.0...storage-block/snapshot-controller-crds-v0.1.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **storage-block/snapshot-controller-crds:** migrate to native-OCI Kustomize base ([#592](https://github.com/devobagmbh/talos-platform-apps/issues/592)) ([a8a2974](https://github.com/devobagmbh/talos-platform-apps/commit/a8a29742f5101ce910b72909a9b0635644b08d07))
+
 ## 0.1.0 (2026-06-25)
 
 

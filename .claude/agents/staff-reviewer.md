@@ -93,20 +93,20 @@ friction waste; under-escalating is dangerous.
 |---|---|
 | `sub-layers/secrets/`, `*vault*.yaml`, `.sops.yaml*`, Vault policy manifests, Kyverno ClusterPolicies, RBAC, NetworkPolicies / CCNPs | `security` |
 | `sub-layers/*/components/*/helm/*` with DR / bootstrap impact, Argo sync-wave changes | `operational-safety` |
-| `.github/workflows/oci-publish.yml`, `Taskfile.yml` push / sign / attest targets, cosign config | `provenance` (M2) |
-| `compatibility.yaml` / `customization.yaml` changes, Helm chart major bumps | `compatibility` (M2) |
-| New sub-layers, new top-level directories, architecture-pattern breaks | `architecture` (M2) |
+| `.github/workflows/oci-publish.yml`, `Taskfile.yml` push / sign / attest targets, cosign config | `provenance` |
+| `compatibility.yaml` / `customization.yaml` changes, Helm chart major bumps, `helm/*` default-value changes that can break a consumer (removed / renamed / behavior-changing) | `compatibility` |
+| New sub-layers, new top-level directories, architecture-pattern breaks | `architecture` |
 
 Multiple escalations are allowed and common (e.g. a Vault HA touch →
 `security` + `operational-safety`).
 
-**Only `security` and `operational-safety` have a backing reviewer agent today.**
-The three `(M2)` domains are reserved for M2 onboarding — their reviewer agents
-were parked in the 9→5 reduction. Until they return, do **not** put an `(M2)`
-domain in `escalations[]`: the commit hook would demand a `review-<domain>.md`
-that no agent can produce, dead-ending the gate. Instead, record the
-needed-but-deferred review in `notes` and keep `verdict: approved` if your own
-scope is clean.
+**All five escalation domains now have a backing reviewer agent** — the
+`provenance`, `compatibility`, and `architecture` reviewers were restored at M2.
+When a change triggers a domain, list it in `escalations[]`; the orchestrator or
+skill that dispatched you runs that domain review and records it as
+`review-<domain>.md`. (The commit hook that will enforce this is still dormant —
+unbound in `settings.json` — so until it is bound the escalation is
+orchestrator-dispatched; that does not change what you signal.)
 
 ## What you review yourself (before any escalation)
 

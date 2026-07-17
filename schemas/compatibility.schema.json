@@ -28,18 +28,25 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["workload", "containers"],
+            "required": ["workload", "kind", "containers"],
             "properties": {
               "workload": {
                 "type": "string",
-                "description": "The workload (Deployment/StatefulSet/DaemonSet) name whose containers are override-able."
+                "minLength": 1,
+                "description": "The workload name whose containers are override-able. Paired with 'kind' as the allowlist key: kind+name together guard against a rename/collision attack (a Deployment and a StatefulSet sharing a name must not both satisfy a name-only rule); the forward-safety diff-gate (#460) matches rendered workloads by kind+name (ADR-0024 Resource-Sizing)."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["Deployment", "StatefulSet", "DaemonSet"],
+                "description": "The workload kind, required alongside 'workload' so the allowlist keys on kind+name (ADR-0024). Restricted to the container-bearing workload kinds the resource-sizing axis targets; extending this set is a design change gated on the ADR."
               },
               "containers": {
                 "type": "array",
                 "description": "Explicit container names the consumer may patch. Use '*' as the single entry only when ALL containers of the workload are tunable; mixing '*' with a named container is rejected as ambiguous.",
                 "minItems": 1,
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1
                 },
                 "if": { "contains": { "const": "*" } },
                 "then": { "maxItems": 1 }

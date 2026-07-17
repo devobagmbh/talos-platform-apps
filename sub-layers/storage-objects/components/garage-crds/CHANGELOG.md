@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/storage-objects/garage-crds-v0.2.0...storage-objects/garage-crds-v0.2.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **storage-objects/garage-crds:** migrate to native-OCI Kustomize base ([#642](https://github.com/devobagmbh/talos-platform-apps/issues/642)) ([a0deb41](https://github.com/devobagmbh/talos-platform-apps/commit/a0deb41fba08b9728536b05d5e692fd104eb1129))
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/storage-objects/garage-crds-v0.1.0...storage-objects/garage-crds-v0.2.0) (2026-06-22)
 
 

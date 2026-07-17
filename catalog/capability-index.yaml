@@ -89,6 +89,24 @@ capabilities:
       - {name: loki, status: active, swap_class: drop-in}
       - {name: victoria-logs, status: considered, swap_class: drop-in}
 
+  # — Observability: Events ———————————————————————————————————
+  - id: events-collect
+    name: Kubernetes Event collection
+    domain: observability
+    # Watches the cluster's Kubernetes Events (core/v1 Events) and forwards them to
+    # a logs sink. A singleton by nature — exactly one collector watches the shared
+    # Event stream, so a clustered/DaemonSet topology would double-ingest (issue #649:
+    # observability/alloy-singleton is the Deployment/replicas-1 implementation).
+    # swap_class consumer-change (NOT label-move): unlike logs-collect there is no
+    # producer-pod label to move — Events are cluster API objects, not pod-labelled
+    # logs — and under ADR-0024 Shape (b) the consumer supplies a tool-specific
+    # collector config, so swapping the tool forces the consumer to rewrite that
+    # config (mirrors ntp-service's chrony.conf rationale). No collector-owned data,
+    # so not data-migration.
+    implementations:
+      - {name: alloy, status: active, swap_class: consumer-change}  # observability/alloy-singleton (#649); 'active' = chosen design, the component ships via #649
+      - {name: otelcol, status: considered, swap_class: consumer-change}  # OpenTelemetry Collector k8sobjects receiver (watches Events)
+
   # — Observability: Traces ———————————————————————————————————
   - id: traces-collect
     name: Trace-Collector (OTLP)
@@ -254,6 +272,21 @@ capabilities:
       - {name: local-path-provisioner, status: active, swap_class: data-migration}
       - {name: openebs-localpv, status: considered, swap_class: drop-in}
       - {name: topolvm, status: considered, swap_class: rewrite-required}
+  - id: block-storage-network
+    name: Network-attached block storage (external NAS/SAN via iSCSI)
+    domain: storage-block
+    # Durable block volumes provisioned as iSCSI LUNs on an EXTERNAL NAS/SAN, so the
+    # data tier lives off-node and survives a node rebuild. A distinct axis from
+    # block-storage-replicated (in-cluster, DRBD/distributed) and block-storage-local
+    # (node-local disk). CNCF storage taxonomy: CSI block storage; the distinguishing
+    # property here is the network-attached / external-array topology (landscape.cncf.io
+    # cloud-native-storage — Ceph/Longhorn/Piraeus occupy the replicated axis).
+    requires_hardware_features: [iscsi-initiator]   # Layer C: Talos iscsi-tools node extension (ADR-0026)
+    implementations:
+      # Swapping the backend array re-provisions LUNs and migrates data — PVs do not
+      # transparently move between a TrueNAS and a Synology (hence data-migration).
+      - {name: democratic-csi, status: active, swap_class: data-migration}   # ZFS/TrueNAS (+ Synology) over iSCSI
+      - {name: synology-csi, status: active, swap_class: data-migration}      # Synology DSM iSCSI LUNs (ADR-0026)
 
   # — Netzwerk —————————————————————————————————————————————————
   - id: secondary-network-attachment

@@ -9,5 +9,6 @@ resource_policy:
   class: tunable
   tunable_targets:
     - workload: test
+      kind: Deployment
       containers: [test]
   bogus: true   # unknown key — fails additionalProperties:false

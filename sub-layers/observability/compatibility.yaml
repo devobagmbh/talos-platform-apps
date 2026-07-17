@@ -11,6 +11,7 @@ components:
   - mimir                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - tempo                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - alloy                   # sync-wave 20 — needs the Loki/Mimir/Tempo endpoints
+  - alloy-metrics           # sync-wave 20 — clustered StatefulSet metrics-scrape role (epic #649); needs the Mimir endpoint
   - grafana                 # sync-wave 20 — datasources point to Loki/Mimir/Tempo
   - hubble                  # sync-wave 0  — Cilium network-flow visibility (relay/ui); independent of LGTM, needs the Cilium-agent Hubble server
   - metrics-server          # sync-wave 0  — Resource Metrics API (HPA + kubectl top); independent, needs only the K8s control-plane API

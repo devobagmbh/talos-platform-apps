@@ -1,0 +1,74 @@
+# Hand-authored, scope-down RBAC for the metrics-discovery role (rbac.create:
+# false in helm/alloy-metrics.yaml — the chart's own default ClusterRole is a
+# superset covering every Alloy component: logs/traces discovery, node/kubelet
+# read, and the nonResourceURLs "/metrics" grant. Only the subset the
+# `prometheus.operator.*` discovery components need is granted here
+# (CWE-250 scope-down):
+#
+# GRANTED (get/list/watch only, never write):
+#   - core: namespaces, pods, services, endpoints, secrets, configmaps
+#     `namespaces` is required for namespaceSelector resolution: a
+#     ServiceMonitor/PodMonitor/Probe with a LABEL-based namespaceSelector
+#     (matchLabels / matchExpressions) or `any: true` makes the
+#     prometheus.operator.* component enumerate namespaces to find matches.
+#     Without namespaces list/watch it silently resolves to ZERO namespaces →
+#     zero targets discovered (a silent scrape gap, not an error) — canonical
+#     Grafana Alloy prometheus.operator RBAC. A ServiceMonitor scoped only to
+#     its own namespace (name-based selector) does not exercise this path, but
+#     this is a cluster-wide discovery role, so the grant is required.
+#   - monitoring.coreos.com: servicemonitors, podmonitors, probes, scrapeconfigs,
+#     prometheusrules
+#   - networking.k8s.io: ingresses — prometheus.operator.probes discovers
+#     targets via Ingress objects referenced by a Probe CR's
+#     spec.targets.ingress (documented prometheus-operator Probe behavior), so
+#     this read is required for that discovery path to function.
+#
+# EXCLUDED, deliberately, vs. the chart's default RBAC:
+#   - core: nodes, events — node-local scraping is the node-local role's job
+#     (served by the existing sub-layers/observability/components/alloy/
+#     DaemonSet), so this cluster-wide discovery role has no need for node reads.
+#   - apps/replicasets — only needed by otelcol.processor.k8sattributes, which
+#     this role does not run.
+#   - monitoring.coreos.com/alertmanagerconfigs — only needed by
+#     mimir.alerts.kubernetes, which this role does not run.
+#
+# Cluster-wide `secrets` and `configmaps` read is retained deliberately: a
+# ServiceMonitor/PodMonitor `tlsConfig`/`bearerTokenSecret`/`basicAuth` can
+# reference a CA-bundle ConfigMap OR a credential Secret in the TARGET's
+# namespace (any namespace in the cluster, not just alloy-metrics) — the chart's
+# own default RBAC couples exactly these two resources for that reason. See
+# README §RBAC posture for the bounding controls (read-only, restricted PSA,
+# consumer NetworkPolicy egress bound, least-privilege opt-in to narrow further).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-metrics
+  labels:
+    app.kubernetes.io/name: alloy-metrics
+    app.kubernetes.io/managed-by: argocd
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "endpoints", "secrets", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "podmonitors", "probes", "scrapeconfigs", "prometheusrules"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-metrics
+  labels:
+    app.kubernetes.io/name: alloy-metrics
+    app.kubernetes.io/managed-by: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-metrics
+subjects:
+  - kind: ServiceAccount
+    name: alloy-metrics
+    namespace: alloy-metrics

@@ -3,6 +3,8 @@
   "release-type": "simple",
   "bootstrap-sha": "97855686e84e462efa26afcf20c7ec1bda7e33c0",
   "separate-pull-requests": true,
+  "always-update": true,
+  "sequential-calls": true,
   "packages": {
     "sub-layers/automation/components/velero": {
       "component": "automation/velero",
@@ -82,6 +84,10 @@
     },
     "sub-layers/observability/components/alloy": {
       "component": "observability/alloy"
+    },
+    "sub-layers/observability/components/alloy-metrics": {
+      "component": "observability/alloy-metrics",
+      "initial-version": "0.1.0"
     },
     "sub-layers/observability/components/grafana": {
       "component": "observability/grafana",

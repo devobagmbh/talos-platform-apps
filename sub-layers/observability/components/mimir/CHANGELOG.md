@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.4.0...observability/mimir-v0.4.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **observability/mimir:** migrate to native-OCI Kustomize base (first app) ([#548](https://github.com/devobagmbh/talos-platform-apps/issues/548)) ([10e97d5](https://github.com/devobagmbh/talos-platform-apps/commit/10e97d5fcd10c3f75bf2b25e5dd769aa41505887))
+
 ## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.3.0...observability/mimir-v0.4.0) (2026-07-10)
 
 

@@ -85,6 +85,30 @@ values:
     # -- (bool) the operator controller Deployment + its RBAC. THE workload of this
     # component; never disable.
     enabled: true
+    # -- (string) digest-pin the operator controller image (issue #175 — supply-chain
+    # hardening). The chart renders `<registry>/<repository>:<tag>@sha256:<sha>`, so the
+    # tag stays chart-default (appVersion v0.91.0) and the digest is the authoritative
+    # pull reference. Bump this together with the chart version — VERIFY at push
+    # (`crane digest quay.io/prometheus-operator/prometheus-operator:<tag>`). Digest for
+    # quay.io/prometheus-operator/prometheus-operator:v0.91.0.
+    image:
+      sha: 9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d
+    # -- (string) digest-pin the prometheus-config-reloader image (issue #175 —
+    # supply-chain hardening). The operator injects this as its
+    # `--prometheus-config-reloader` flag and runs it as a sidecar in every Prometheus
+    # pod it manages, so it is as much attack surface as the operator itself. Tag stays
+    # chart-default (appVersion v0.91.0). Digest for
+    # quay.io/prometheus-operator/prometheus-config-reloader:v0.91.0.
+    prometheusConfigReloader:
+      image:
+        sha: 7d9e4eea5f1139e602508871f422b0116c60e87c662f3dcd234d5ab60cd0d8c1
+    # -- (string) digest-pin the Thanos default base image (issue #175). The operator
+    # injects it via `--thanos-default-base-image` ONLY when a Prometheus CR requests a
+    # Thanos sidecar (no catalog default enables one); pinned so the operator's full
+    # injectable image surface is digest-anchored. Tag is chart-pinned at v0.41.0.
+    # Digest for quay.io/thanos/thanos:v0.41.0.
+    thanosImage:
+      sha: cf3e9b292e4302ad4a4955b56379703aea39516607d382a57604a3d003c35d10
     admissionWebhooks:
       # -- (bool) the admission webhook that validates PrometheusRule / AlertmanagerConfig
       # CRs before they reach the operator. Shipped with the operator framework.
@@ -94,6 +118,13 @@ values:
         # Jobs (createSecret + patchWebhook). This is why cert-manager is NOT a
         # dependency of this component — the operator manages its own webhook cert.
         enabled: true
+        # -- (string) digest-pin the kube-webhook-certgen image (issue #175 —
+        # supply-chain hardening; both the createSecret and patchWebhook Jobs share this
+        # image). Chart renders `<registry>/<repository>:<tag>@sha256:<sha>`; the tag
+        # stays chart-default (1.8.3). Digest for
+        # ghcr.io/jkroepke/kube-webhook-certgen:1.8.3.
+        image:
+          sha: 8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728
       certManager:
         # -- (bool) cert-manager is NOT a dependency; the patch Jobs above handle the
         # webhook cert. Never set true here — it would introduce a hard cert-manager

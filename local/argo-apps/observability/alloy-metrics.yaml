@@ -1,0 +1,42 @@
+# Argo Application for observability/alloy-metrics (local test environment).
+# Clustered Grafana Alloy StatefulSet (Prometheus-format metrics-scrape role, epic
+# #649). Ships its own dedicated `alloy-metrics` namespace
+# (pod-security.kubernetes.io/enforce: restricted) + a cluster-scoped read
+# ClusterRole/ClusterRoleBinding; no CRDs (strict-B N/A).
+# The workload mounts an EXISTING consumer-supplied `alloy-metrics-config`
+# ConfigMap (key config.alloy) — the local test seeds a minimal stub before this
+# app syncs (see the component README §Consumer obligations for the stub content).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-alloy-metrics
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: alloy-metrics
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/alloy-metrics
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: alloy-metrics
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The artifact ships its own labelled Namespace (sole-claimant rule); Argo
+      # applies Namespaces before namespaced resources, so the PSA label lands
+      # before any pod. CreateNamespace=true is a harmless belt-and-suspenders.
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
