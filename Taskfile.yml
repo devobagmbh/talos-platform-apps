@@ -234,7 +234,7 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "ERROR: ${component_id} rendered an empty manifest (${out}) — a component under verification must render resources; failing closed (a caller-arg with an empty component half, or a failed render, lands here)."
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: a helm-template failure that still emits a bare '---' separator is NOT caught here — render:one does not check helm's exit code (tracked separately)."
         exit 1
       fi
       kubeconform -strict -ignore-missing-schemas -summary "$out"
@@ -2315,7 +2315,7 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "ERROR: ${component_id} rendered an empty manifest (${out}) — a component under verification must render resources; failing closed (a caller-arg with an empty component half, or a failed render, lands here)."
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: a helm-template failure that still emits a bare '---' separator is NOT caught here — render:one does not check helm's exit code (tracked separately)."
         exit 1
       fi
       echo "Conftest against ${component_id}:"
@@ -2366,7 +2366,7 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "ERROR: ${component_id} rendered an empty manifest (${out}) — a component under verification must render resources; failing closed (a caller-arg with an empty component half, or a failed render, lands here)."
+        echo "ERROR: ${component_id} rendered an empty (zero-output) manifest (${out}) — a component under verification must render resources; failing closed. Reaches here on an empty-component-half arg (e.g. '<sub-layer>/') or a render that produced no output. NOTE: a helm-template failure that still emits a bare '---' separator is NOT caught here — render:one does not check helm's exit code (tracked separately)."
         exit 1
       fi
       if ! out_result=$(conftest test --combine --all-namespaces --policy policies/conformance/ "$out" 2>&1); then
