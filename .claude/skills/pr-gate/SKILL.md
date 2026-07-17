@@ -125,8 +125,8 @@ Five load-bearing invariants:
      merge guard.
 6. Re-read `state` (+ `isDraft`) **freshly** before the Phase-5 post AND `state` +
    `mergeStateStatus` before any enqueue (Phase 6) — a value read here is stale by then, the PR can
-   close / merge / convert-to-draft mid-review (a long multi-agent fan-out widens that window), and
-   a squash-merge deletes the head branch. The head SHA can also move mid-review; the skill does
+   close / merge / convert-to-draft mid-review (a long multi-agent fan-out widens that window). The
+   head SHA can also move mid-review; the skill does
    **not** mechanically pin it (a persisted anchor would be the fix) — that drift is a labelled
    Phase-5 residual, not a guard.
 
@@ -471,11 +471,15 @@ Only reached on an `approved` verdict when the operator asked to merge. Under th
 the required checks on the projected merge tree, and squash-merges asynchronously.
 The merge method comes from the ruleset (`SQUASH`); `--squash` is kept as the correct,
 harmless match. **Re-fetch
-state fresh** (`gh pr view <N> --json state,isDraft,mergeStateStatus,reviewDecision,baseRefName,isCrossRepository,labels`
+state fresh** (`gh pr view <N> --json state,isDraft,mergeStateStatus,reviewDecision,baseRefName,isCrossRepository,labels,autoMergeRequest`
 — `labels` is load-bearing for the stub/release-please guard below and drifts as the bot
 labels asynchronously, so re-read it here, never reuse Phase 0's value; `isDraft` catches
 a convert-to-draft between Phase 5 and here — `isDraft == true` → stop, "converted to
-draft, not mergeable", same terminal-arm as MERGED/CLOSED below). GitHub computes
+draft, not mergeable", same terminal-arm as MERGED/CLOSED below). **Idempotency:
+`autoMergeRequest != null` → the PR is already enqueued / auto-merge armed → report the
+enqueued state and stop; do not re-issue the enqueue** (a status re-run of `/pr-gate` on a
+queued PR is a no-op, not a second enqueue — `mergeStateStatus` has no "queued" value, so
+this field is the only reliable signal that the PR is already in the queue). GitHub computes
 mergeability asynchronously, so a read right after any push often returns
 `mergeStateStatus: UNKNOWN`; when it does, re-poll up to **3 times** with a few seconds
 (≈2–3 s) between polls, and if still `UNKNOWN`, do not enqueue — report "mergeability not yet
@@ -484,7 +488,7 @@ computed, re-run shortly". Never read `UNKNOWN` as mergeable.
 1. **Terminal arms first.** `state ∈ {MERGED, CLOSED}` → report "already merged/closed",
    run the Phase-1(b) cleanup block (the literal `${TMPDIR:-/tmp}/pr-gate-ci-<N>` path +
    the `refs/pr-gate/<N>` ref) if a `task ci` worktree was created, stop.
-2. **Merge guards — block + report, never enqueue:**
+2. **Enqueue guards — block + report, never enqueue:**
    - `baseRefName != main` → a stacked PR (enqueueing would land the change into the base
      branch, not `main`); name the required merge order (merge the base PR first).
    - an unmerged strict-B `-crds` sibling, or a plan-declared `requires` /
@@ -565,11 +569,17 @@ computed, re-run shortly". Never read `UNKNOWN` as mergeable.
         `BREAKING CHANGE:` (dropping it makes release-please cut the wrong SemVer bump) and
         `Signed-off-by:` — rewriting only the prose. (Trailer-verbatim is a carried-forward
         residual: a malicious `Closes #<unrelated>` or spoofed `Co-Authored-By:` in an
-        untrusted body survives the edit — flag a suspicious cross-issue `Closes` as a
-        Phase-4 finding, do not silently rewrite the trailer.)
+        untrusted body survives the edit — so flag **mechanically** any `Closes`/`Fixes`/
+        `Resolves #<n>` whose `<n>` ≠ the PR's own linked issue as a **blocking** Phase-4
+        finding; do not silently rewrite the trailer, and do not leave the check to
+        judgment.)
      2. **Title defect** → correct with `gh pr edit <N> --title` (never a merge-time
-        `--subject`, which would land an unlinted subject in `main`); this re-triggers
-        `commit-lint`, so re-check the admissibility gate once it reports back — the same
+        `--subject`, which would land an unlinted subject in `main`), **applying the same
+        Phase-5 redaction/defang discipline** — under `squash_merge_commit_title=PR_TITLE`
+        the title becomes a permanent public-`main` commit subject, and `commit-lint` checks
+        Conventional-Commit shape, not consumer names / RFC1918 IPs, so strip those first.
+        The edit re-triggers `commit-lint`, so re-check the admissibility gate once it
+        reports back — the same
         bounded settle discipline as the `UNKNOWN` poll above (a few checks, not an unbounded
         busy-loop); if it is not green in that window, report and let the operator re-run
         rather than enqueueing while the title check is pending.
@@ -581,10 +591,19 @@ computed, re-run shortly". Never read `UNKNOWN` as mergeable.
         `--delete-branch`/`-d`** — incompatible with a merge queue (`gh` errors `Cannot use
         -d/--delete-branch when merge queue is enabled`); and the head branch is **not**
         auto-deleted (`delete_branch_on_merge` is off), so branch cleanup is a separate
-        manual step if wanted. This targets the repo's server-side `merge-queue-main`
-        ruleset; the queue performs the squash-merge, so there is no merge-commit SHA at
-        confirm time. Report that the PR was **enqueued** (cite `mergeStateStatus` / the
-        queue state), noting the squash-merge completes asynchronously in the queue.
+        manual step if wanted. This targets the repo's server-side `merge-queue-main` ruleset.
+        **On a non-zero exit** — `allow_auto_merge` toggled off since the session read it, a
+        secondary rate-limit, a transient 5xx, or the PR flipping `BLOCKED` in the race window
+        — surface the command's stderr verbatim, do **not** report "enqueued" (never fabricate
+        the success state), and stop (the Phase-0 `gh api user` "indeterminate → surface and
+        stop" discipline). On success, confirm the PR is actually armed —
+        `gh pr view <N> --json state,mergeStateStatus,autoMergeRequest` should show
+        `autoMergeRequest` **non-null** — then report the PR **enqueued** (cite the queue
+        state; there is no merge-commit SHA at confirm time, the queue squashes asynchronously).
+        State that "enqueued" is **non-terminal**: the queue rebuilds against `main` and can
+        still **drop** the PR (a required check flips red on the rebuilt tree → back to
+        `state: OPEN`, `autoMergeRequest: null`, auto-merge disabled), so the async outcome
+        must be re-checked and a dropped PR is recovered by re-running `/pr-gate`.
         **Never `--admin`.**
    - **Not satisfied** → do not enqueue; name the blocking gate: `BLOCKED` (a required
      review / CODEOWNERS approval unmet, or an unsigned commit — the queue re-runs checks
@@ -592,12 +611,10 @@ computed, re-run shortly". Never read `UNKNOWN` as mergeable.
      queue cannot auto-resolve; a human resolves it), a definitively red non-advisory
      check (`UNSTABLE` outside the closed advisory set — e.g. `commit-lint`), or
      `UNSTABLE` with a **failing** required check. **`BEHIND` is not a blocker** — it is
-     admissible and handled in the satisfied branch above (which surfaces the moved-base
-     residual — the queue rebuilds and re-runs automated checks but not the Phase-3
-     semantic reviewers — and recommends re-running `/pr-gate` when the base moved
-     materially); there is no manual `gh pr update-branch` step. (A manual force-push / new
-     commit to the head likewise unbinds the reviewed evidence → re-run `/pr-gate`.)
-     (`UNKNOWN` is handled by the settle-loop above.)
+     admissible; the satisfied branch above handles it (moved-base / semantic-staleness
+     residual + the re-run recommendation), and there is no manual `gh pr update-branch`
+     step. (A manual force-push / new commit to the head unbinds the reviewed evidence →
+     re-run `/pr-gate`.) (`UNKNOWN` is handled by the settle-loop above.)
 
 ## Error-class checklist (the review lenses; this repo's defect classes)
 
