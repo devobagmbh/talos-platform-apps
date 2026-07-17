@@ -78,9 +78,11 @@ Reviewer agents emit the canonical reviewer verdict
 commit hooks (`require-review.sh`, `pre-commit`) read `verdict` and treat a
 non-empty `escalations[]` (closed set:
 `security | operational-safety | provenance | compatibility | architecture`) as
-the trigger for domain reviews. Only `security` and `operational-safety` have a
-backing reviewer agent today; `provenance` / `compatibility` / `architecture` are
-M2-deferred — escalating to one denies until its reviewer is restored, so record
-those as `notes` rather than `escalations[]` for now. `task check:primitives` (c)
+the trigger for domain reviews. **All five domains now have a backing reviewer
+agent** — `provenance` / `compatibility` / `architecture` were restored at M2 —
+so a triggered domain goes in `escalations[]` (dispatched and recorded as
+`review-<domain>.md`), not in `notes`. The commit hooks stay dormant until the
+reviewer-emission substrate is wired and they are bound; until then the escalation
+is orchestrator-dispatched. `task check:primitives` (c)
 keeps the verdict/enum consistent across agents, both hooks, and the workflow —
 run it before committing.

@@ -8,13 +8,13 @@ This repo follows the **mcp-server style**: its own `.claude/` directory with su
 
 ### Hooks
 
-- `.claude/hooks/require-review.sh` — PreToolUse gate for `Bash` commits. **Currently inactive** (not bound in `settings.json`). Background: with a single maintainer, fail-closed would be self-sabotage (Bobby's bus-factor critique, 2026-05-26). The script stays in the repo; it is reactivated once M2 onboards.
-- `.claude/hooks/pre-commit` — native Git pre-commit path that validates **review artifacts** (`review.md` `verdict` + implementer≠reviewer role separation). Dormant (not installed; reactivated at M2).
+- `.claude/hooks/require-review.sh` — PreToolUse gate for `Bash` commits. **Currently inactive** (not bound in `settings.json`). With two maintainers (Thomas + Robert, both in CODEOWNERS) and M2 reached, fail-closed review enforcement is warranted; the hook binds in the **final** reactivation stage, after the `.claude/reviews/` emission substrate it depends on is wired — binding it before that substrate exists would block every commit. Until then the script is the contract the review agents emit against.
+- `.claude/hooks/pre-commit` — native Git pre-commit path that validates **review artifacts** (`review.md` `verdict` + implementer≠reviewer role separation). Inactive (not installed); bound in the same final reactivation stage as `require-review.sh`, after the emission substrate lands.
 - **`lefthook.yml`** — the **active** Git-hook orchestrator (a command-runner over devbox-provided binaries + `task` targets; no managed toolchain, so `devbox.json` stays the single tool-version SoT). pre-commit jobs: single-component scope, signing-config, `task lint`, gitleaks, whitespace/conflicts, no-rendered, no-makefile, no-large-files; commit-msg job: Conventional Commit. Check logic lives in the Taskfile (`lint:commit-msg`, `lint:commit-scope`, `lint:signing-config`). The `signing-config` job fails fast when commit signing is not configured locally (`main` enforces `required_signatures`; an unsigned commit makes the PR BLOCKED) — see `README.md` § Commit signing. Replaces the former `.pre-commit-config.yaml`. Install per clone: `lefthook install`. Note: git-emitting jobs use `git --no-pager` (lefthook runs jobs in a PTY → a bare `git diff` would launch the pager and hang). See ADR-0032.
 
-### Subagents — 5 impl/review roles + 1 build verifier + 2 plan-phase roles
+### Subagents — 8 impl/review roles + 1 build verifier + 2 plan-phase roles
 
-Tiered-review model, adapted from `talos-mcp-server`. **Reduced to 5 impl/review roles (2026-05-26)** — with a single maintainer, a 9-role *review* apparatus is theater. On top of that comes `catalog-evaluator` as a separate build-time verifier: this is *not* a sixth review-theater role but the judge-builder separation — an agent that builds *and* verifies its own work is the documented self-verification/self-preference failure (MAST FC3, arXiv:2410.21819 + 2402.08115). The full review hierarchy is reactivated once M2 arrives. The "5" count concerns only the **impl/review** axis (the 9→5 reduction); the plan phase is a separate axis and adds the `catalog-planner`/`plan-reviewer` pair (below).
+Tiered-review model, adapted from `talos-mcp-server`. At the 2026-05-26 reduction (Bobby's bus-factor critique) the apparatus was trimmed to 5 impl/review roles while M2 was pending; **M2 is now reached (2026-06)** and the escalation reviewers are restored — `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer` are back. The fourth parked role, `senior-plan-reviewer`, is **not** restored: `plan-reviewer` subsumes it (same tools/model/verdict, dual conformance/adversarial stance), so a separate one would be an A5 vanity split. `catalog-evaluator` stays a separate build-time verifier (not a review role): judge-builder separation, since an agent that builds *and* verifies its own work is the documented self-verification/self-preference failure (MAST FC3). The plan phase is a separate axis with the `catalog-planner`/`plan-reviewer` pair (below).
 
 Available in `.claude/agents/`:
 
@@ -23,6 +23,9 @@ Available in `.claude/agents/`:
 - `staff-reviewer` — primary gate before commits, triages to specialists when needed
 - `security-reviewer` — Vault/SOPS/cosign/SBOM/RBAC/policies
 - `operational-safety-reviewer` — bootstrap ordering, DR risks, backup paths
+- `principal-architect-reviewer` — architecture escalation: sub-layer boundaries, OCI-layer model (ADR-0009), ADR obligation, API-surface shape
+- `provenance-reviewer` — supply-chain escalation: cosign keyless identity, SLSA, SBOM, chart/image source trust
+- `compatibility-reviewer` — compatibility escalation: compatibility.yaml, chart/CRD bumps, consumer-breaking value changes
 - `researcher` — research in the base/other repos, findings synthesis
 
 Plan-phase pair (judge-builder separation, orchestrated by the `plan-catalog-app` skill):
@@ -30,7 +33,7 @@ Plan-phase pair (judge-builder separation, orchestrated by the `plan-catalog-app
 - `catalog-planner` — writes the catalog-app plan (components, dependency graph + build_order, capability mapping, freeze-line sketch, testable ACs); write scope is `.work/plan/` only, no verdict (builder class)
 - `plan-reviewer` — read-only plan reviewer, canonical verdict enum; one definition serves both the conformance and the adversarial persona (stance per brief)
 
-To restore from git history at M2 onboarding: `senior-plan-reviewer`, `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer`.
+Restored at M2 (2026-06): `principal-architect-reviewer`, `provenance-reviewer`, `compatibility-reviewer` (the three escalation-domain reviewers — architecture / provenance / compatibility). `senior-plan-reviewer` is **not** restored — `plan-reviewer` subsumes it (A5).
 
 ### Skills + Workflows
 
