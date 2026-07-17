@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/identity/dex-v0.2.0...identity/dex-v0.2.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* **identity/dex:** migrate to native-OCI Kustomize base ([#707](https://github.com/devobagmbh/talos-platform-apps/issues/707)) ([092fe86](https://github.com/devobagmbh/talos-platform-apps/commit/092fe86acae460abfff1d034de15220dc7211d36)), closes [#708](https://github.com/devobagmbh/talos-platform-apps/issues/708)
+
 ## [0.2.0](https://github.com/devobagmbh/talos-platform-apps/compare/identity/dex-v0.1.0...identity/dex-v0.2.0) (2026-06-22)
 
 
