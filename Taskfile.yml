@@ -218,7 +218,7 @@ tasks:
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
 
   lint:rendered:one:
-    desc: 'kubeconform gegen EINE Komponente: task lint:rendered:one -- <sub-layer>/<component>'
+    desc: 'kubeconform against ONE component: task lint:rendered:one -- <sub-layer>/<component>'
     summary: |
       Component-scoped variant of lint:rendered — renders + kubeconforms ONLY the
       named component's rendered/manifest.yaml. A single-component caller (the
@@ -234,8 +234,8 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "Kein nicht-leeres ${out} — nichts zu prüfen"
-        exit 0
+        echo "ERROR: ${component_id} rendered an empty manifest (${out}) — a component under verification must render resources; failing closed (a caller-arg with an empty component half, or a failed render, lands here)."
+        exit 1
       fi
       kubeconform -strict -ignore-missing-schemas -summary "$out"
 
@@ -2299,7 +2299,7 @@ tasks:
       conftest test --policy policies/ --all-namespaces $files
 
   scan:conftest:one:
-    desc: 'Conftest gegen EINE Komponente: task scan:conftest:one -- <sub-layer>/<component>'
+    desc: 'Conftest against ONE component: task scan:conftest:one -- <sub-layer>/<component>'
     summary: |
       Component-scoped variant of scan:conftest — renders + conftests ONLY the named
       component (not the whole matrix), so a single-component caller (the
@@ -2315,10 +2315,10 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "Kein nicht-leeres ${out} — nichts zu prüfen"
-        exit 0
+        echo "ERROR: ${component_id} rendered an empty manifest (${out}) — a component under verification must render resources; failing closed (a caller-arg with an empty component half, or a failed render, lands here)."
+        exit 1
       fi
-      echo "Conftest gegen ${component_id}:"
+      echo "Conftest against ${component_id}:"
       conftest test --policy policies/ --all-namespaces "$out"
 
   scan:psa-conformance:
@@ -2350,7 +2350,7 @@ tasks:
       exit $rc
 
   scan:psa-conformance:one:
-    desc: 'PSA conformance gegen EINE Komponente: task scan:psa-conformance:one -- <sub-layer>/<component>'
+    desc: 'PSA conformance for ONE component: task scan:psa-conformance:one -- <sub-layer>/<component>'
     summary: |
       Component-scoped variant of scan:psa-conformance — the conftest --combine
       conformance check (Namespace + its workloads) on ONLY the named component, so a
@@ -2366,8 +2366,8 @@ tasks:
       task render:one -- "$component_id" >/dev/null || { echo "ERROR: render failed for ${component_id} (re-run: task render:one -- ${component_id})"; exit 1; }
       out="sub-layers/${component_id%/*}/components/${component_id#*/}/rendered/manifest.yaml"
       if [ ! -s "$out" ]; then
-        echo "Kein nicht-leeres ${out} — nichts zu prüfen"
-        exit 0
+        echo "ERROR: ${component_id} rendered an empty manifest (${out}) — a component under verification must render resources; failing closed (a caller-arg with an empty component half, or a failed render, lands here)."
+        exit 1
       fi
       if ! out_result=$(conftest test --combine --all-namespaces --policy policies/conformance/ "$out" 2>&1); then
         echo "✗ ${component_id}"
