@@ -17,6 +17,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`tempo`](components/tempo/) | 10 | Helm `grafana-community/tempo` (monolithic single binary) | `oci://.../observability/tempo:vX.Y.Z` |
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`alloy-metrics`](components/alloy-metrics/) | 20 | Helm `grafana/alloy` (clustered StatefulSet, Prometheus-format metrics-scrape role) | `oci://.../observability/alloy-metrics:vX.Y.Z` |
+| [`alloy-singleton`](components/alloy-singleton/) | 20 | Helm `grafana/alloy` (Deployment, single-replica cluster Event collector → Loki; `events-collect`) | `oci://.../observability/alloy-singleton:vX.Y.Z` |
 | [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
@@ -35,7 +36,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 > `validate:crd-split`). The stack itself is the *composition* of the components
 > above, documented in the dedicated section below.
 
-Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter. Wave 10: three storage endpoints (each requiring the `s3-object` capability; the platform's Garage impl provides it). Wave 20: collector + UI (need the endpoints from wave 10).
+Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter. Wave 10: three storage endpoints (each requiring the `s3-object` capability; the platform's Garage impl provides it). Wave 20: collectors + UI (need the endpoints from wave 10) — the node-local `alloy` DaemonSet (logs/metrics/traces), the clustered `alloy-metrics` StatefulSet (Prometheus-format metrics discovery), the `alloy-singleton` Deployment (cluster Event collection), and Grafana.
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
