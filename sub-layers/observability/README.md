@@ -10,7 +10,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 |---|---|---|---|
 | [`prometheus-operator-crds`](components/prometheus-operator-crds/) | -1 | Vendored manifests from the upstream `prometheus-operator/prometheus-operator` repo (v0.91.0, `example/prometheus-operator-crd-full/`; strict-B CRDs artifact, ADR-0028) | `oci://.../observability/prometheus-operator-crds:vX.Y.Z` |
 | [`grafana-operator-crds`](components/grafana-operator-crds/) | -1 | Vendored manifests from Helm `grafana/grafana-operator` (strict-B CRDs artifact, ADR-0028 — the `grafana.integreatly.org` CRDs) | `oci://.../observability/grafana-operator-crds:vX.Y.Z` |
-| [`prometheus-operator`](components/prometheus-operator/) | 0 | Helm `prometheus-community/kube-prometheus-stack` (operator-only, strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
+| [`prometheus-operator`](components/prometheus-operator/) | 0 | Vendored manifests from the upstream `prometheus-operator/prometheus-operator` repo (v0.91.0, `example/rbac/`; strict-B workload artifact, ADR-0028) | `oci://.../observability/prometheus-operator:vX.Y.Z` |
 | [`grafana-operator`](components/grafana-operator/) | 0 | Helm `grafana/grafana-operator` (operator controller, strict-B workload artifact, ADR-0028) | `oci://.../observability/grafana-operator:vX.Y.Z` |
 | [`loki`](components/loki/) | 10 | Helm `grafana/loki` (SingleBinary) | `oci://.../observability/loki:vX.Y.Z` |
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` (microservices) | `oci://.../observability/mimir:vX.Y.Z` |

@@ -6,8 +6,8 @@
 # > 0 in the -crds artifact).
 requires:
   # The monitoring.coreos.com CRDs must exist before the controller comes up (the
-  # operator's RBAC + admission webhook reference them). The -crds artifact lands at
-  # Argo sync-wave -1, this workload at 0.
+  # operator's RBAC references them). The -crds artifact lands at Argo sync-wave -1,
+  # this workload at 0.
   observability/prometheus-operator-crds: ">=v0.1.0"
 
 # api-surface-only, NO capability — `capabilities: []` is the deliberate design, NOT a
@@ -21,7 +21,6 @@ provides:
   - name: prometheus-operator
     version:
       sot: app
-      app: v0.91.0   # real prometheus-operator app; kube-prometheus-stack chart 86.2.3 (rendered label is chart version — misleading; A7 matches v0.91.0 via image tag)
-      chart: 86.2.3
+      app: v0.91.0   # prometheus-operator app version = the operator image tag (vendored from upstream repo, example/rbac/prometheus-operator/); A7 parity matches this against the image tag
     api_surface: []
     capabilities: []
