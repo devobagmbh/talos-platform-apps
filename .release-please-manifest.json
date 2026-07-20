@@ -61,5 +61,6 @@
   "sub-layers/secrets/components/vault-operator-crds": "0.1.1",
   "sub-layers/compute/components/nvidia-device-plugin": "0.1.1",
   "sub-layers/secrets/components/vault-config-operator": "0.1.0",
-  "sub-layers/observability/components/alloy-metrics": "0.1.1"
+  "sub-layers/observability/components/alloy-metrics": "0.1.1",
+  "sub-layers/observability/components/alloy-singleton": "0.1.0"
 }
