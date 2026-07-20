@@ -8,49 +8,41 @@ CustomResourceDefinitions are a **separate** component,
 CRDs first (the `-crds` artifact, sync-wave -1), controller after (this artifact,
 sync-wave 0).
 
-Rendered from the prometheus-community
-[`kube-prometheus-stack`](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
-chart in **operator-only mode**, pinned to **86.2.3** (appVersion `v0.91.0`). The
-standalone `prometheus-operator` chart is DEPRECATED upstream; kube-prometheus-stack
-with every instance, exporter, and scraper disabled is the maintained path to a
-framework-only render.
+Vendored verbatim from the upstream
+[`prometheus-operator/prometheus-operator`](https://github.com/prometheus-operator/prometheus-operator)
+repository, tag **v0.91.0**, directory `example/rbac/prometheus-operator/`. Delivered
+as raw vendored manifests (`kind: manifests`, no Helm reference); re-vendor from the
+matching upstream tag on every version bump.
 
-The chart source is a deliberate but **swappable** implementation detail: this
-component is defined by *what it ships* (the operator controller + RBAC + admission
-webhook, **0** CRDs — the render-parity contract), not by the chart it renders from.
-kube-prometheus-stack operator-only is chosen because it is currently the only
-maintained Helm path (a standalone operator-only chart is an open upstream request,
-[prometheus-community/helm-charts#5497](https://github.com/prometheus-community/helm-charts/issues/5497)).
-A **chart→chart** swap (e.g. if #5497 ships) stays localized to
-[`helm/prometheus-operator.yaml`](helm/prometheus-operator.yaml) (`chart` / `repo` /
-`version` + values), with no change to the OCI path, the capability contract, or the
-consumer's Argo wiring. Vendoring the operator's own `bundle.yaml` as raw `manifests/`
-is a **larger** change — it replaces `helm/` with `manifests/`, and because that bundle
-ships the operator CRDs inline it must be re-split to keep this workload artifact
-CRD-free (the strict-B `task validate:crd-split` gate asserts **0** CRDs here) and the
-version block re-established; only the OCI path and the capability contract stay fixed.
+Two deliberate deltas from the upstream base:
+
+- namespaced objects are moved from `default` to `monitoring` (consumer-overlayable;
+  no `Namespace` object ships — the `monitoring` namespace is consumer-owned, see
+  [Namespace & Pod Security Admission](#namespace--pod-security-admission));
+- the operator and `prometheus-config-reloader` images are **digest-pinned** (issue
+  #175 supply-chain hardening) — tags stay upstream-default `v0.91.0`, the `@sha256`
+  digest is the authoritative pull reference. Re-verify on each bump
+  (`oras manifest fetch --descriptor quay.io/.../prometheus-operator:<tag>`).
+
+This component is defined by *what it ships* (the operator controller + RBAC +
+Service, **0** CRDs — the strict-B `task validate:crd-split` gate asserts 0 CRDs
+here), not by the source it is vendored from.
 
 ## What ships
 
 The Prometheus Operator controller framework, and nothing else:
 
 - the operator controller **Deployment**,
-- its **RBAC** — 2 ClusterRole + 2 ClusterRoleBinding, 1 Role + 1 RoleBinding,
-  2 ServiceAccount,
-- the operator **Service**,
-- the **self-managed admission webhook** — 1 MutatingWebhookConfiguration +
-  1 ValidatingWebhookConfiguration, plus 2 `kube-webhook-certgen` **Jobs**
-  (createSecret + patchWebhook) that mint and rotate the webhook serving cert,
-- 2 **ServiceMonitor** — one for the operator's own metrics, and one for the kubelet
-  node endpoints in `kube-system` (a chart default; it scrapes the kubelet over TLS
-  with `insecureSkipVerify: true`, since the kubelet serves a self-signed cert).
+- its **RBAC** — 1 ClusterRole + 1 ClusterRoleBinding + 1 ServiceAccount,
+- the operator **Service** (headless, port 8080),
+- 1 **ServiceMonitor** for the operator's own metrics.
 
-Everything else the chart can emit is disabled in
-[`helm/prometheus-operator.yaml`](helm/prometheus-operator.yaml): **0** CRDs (they
-live in the `-crds` artifact), and **0** Prometheus / Alertmanager / Grafana /
-node-exporter DaemonSet / kube-state-metrics / control-plane-scraper resources.
-Those instances and exporters belong to the Prometheus **instance** component
-(issue #20) and the LGTM-A stack, not to this framework.
+**0** CRDs (they live in the `-crds` artifact — the strict-B gate asserts 0 here),
+**0** Prometheus / Alertmanager / Grafana / node-exporter DaemonSet /
+kube-state-metrics / control-plane-scraper resources, and **no admission webhook**
+(a consumer opt-in — see [Admission webhook](#admission-webhook)). Those instances and
+exporters belong to the Prometheus **instance** component (issue #20) and the LGTM-A
+stack, not to this framework.
 
 ## OCI
 
@@ -87,45 +79,28 @@ The consumer cluster repo wires **two** Argo `Application`s — the `-crds` app
    `argocd.argoproj.io/sync-wave: "0"`, which then reconciles against CRDs that
    already exist.
 
-## Admission webhook & bootstrap
+## Admission webhook
 
-The operator's `monitoring.coreos.com` admission webhook is **self-managed** — there is
-no cert-manager dependency. Two `kube-webhook-certgen` Jobs mint and inject the serving
-cert, and they carry Helm hook annotations that ArgoCD maps onto its own sync phases
-([ArgoCD Helm-hook support](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/)):
+This artifact ships **no** admission webhook. Upstream's optional `PrometheusRule` /
+`AlertmanagerConfig` validating webhook (`example/admission-webhook/`) needs a TLS
+cert source (cert-manager `Certificate`), which would make cert-manager a **fixed
+dependency** of a catalog framework component — deliberately avoided so the component
+stays dependency-free. Without the webhook, a malformed `PrometheusRule` or
+`AlertmanagerConfig` is **admitted** and surfaces later as an operator reconcile error
+rather than being rejected at admission time.
 
-- the **createSecret** Job (`helm.sh/hook: pre-install,pre-upgrade`) runs as an Argo
-  **PreSync** hook — it creates the TLS `Secret` *before* the main sync applies the
-  operator `Deployment` that mounts it, so the controller never blocks on a missing
-  Secret;
-- the **patchWebhook** Job (`helm.sh/hook: post-install,post-upgrade`) runs as an Argo
-  **PostSync** hook — it patches the webhook `caBundle` once the operator is up.
-
-Both Jobs carry `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`, so
-every sync re-runs them and re-mints the serving cert; cert rotation needs no manual
-step. Consumers **MUST NOT** attach their own `argocd.argoproj.io/hook` annotations to
-this Application: per ArgoCD, defining *any* Argo hook makes it ignore *all* Helm hooks,
-which would collapse the PreSync/PostSync ordering and break the cert bootstrap.
-
-Both webhook configurations ship `failurePolicy: Ignore` (the chart default, left
-unchanged). This is intentional for a monitoring-scoped webhook — an operator restart
-MUST NOT block cluster admission. The trade-off: a malformed `PrometheusRule` or
-`AlertmanagerConfig` submitted while the operator is unavailable is **admitted** rather
-than rejected, surfacing later as an operator reconcile error instead of an admission
-failure. A consumer that wants `failurePolicy: Fail` MUST override it in a consumer-layer
-values patch — it is not a catalog default.
-
-## Selector-label contract
-
-The chart stamps a `release:` label on the rendered ServiceMonitors (and on the
-operator's RBAC and Service) derived from `.Release.Name` — which, at apply time, is
-the **consumer's ArgoCD Application name**, NOT `fullnameOverride` and NOT a
-catalog-baked value. A consumer running the Prometheus instance with the chart
-default `serviceMonitorSelectorNilUsesHelmValues: true` therefore matches only
-ServiceMonitors carrying `release: <their-Application-name>`. Consumers MUST name the
-workload Argo Application consistently with their Prometheus instance's selector
-expectation, or relax that selector — this is a consumer composition concern, not a
+A consumer that wants admission-time validation opts in **in the consumer repo** by
+wiring the webhook (with its own cert source) alongside this component — it is not a
 catalog default.
+
+## Selector labels
+
+The operator `Service` and its `ServiceMonitor` carry the stable upstream
+`app.kubernetes.io/{name,component}` labels (`name: prometheus-operator`,
+`component: controller`) — **not** a Helm `.Release.Name`-derived `release:` label. A
+consumer running a Prometheus instance that selects ServiceMonitors by label MUST
+match on these `app.kubernetes.io` labels (or relax its selector). This is a consumer
+composition concern, not a catalog default.
 
 ## Namespace & Pod Security Admission
 
@@ -142,25 +117,23 @@ The consumer MUST label the `monitoring` namespace:
 pod-security.kubernetes.io/enforce: restricted
 ```
 
-**`restricted` is the derived level** — all three pod-bearing workloads provably
-satisfy it. Evidence from the rendered `securityContext`: the operator Deployment pod
-and both `kube-webhook-certgen` Job pods set `runAsNonRoot: true` +
-`seccompProfile.type: RuntimeDefault` at the pod level, and every container sets
-`allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` (plus
-`readOnlyRootFilesystem: true`). No pod requires host access, so `restricted` does
-not reject any pod at admission.
+**`restricted` is the derived level** — the operator provably satisfies it. Evidence
+from the rendered `securityContext`: the operator Deployment pod sets
+`runAsNonRoot: true` + `runAsUser: 65534` + `seccompProfile.type: RuntimeDefault` at
+the pod level, and the container sets `allowPrivilegeEscalation: false` +
+`capabilities.drop: [ALL]` + `readOnlyRootFilesystem: true`. No pod requires host
+access, so `restricted` does not reject it at admission.
 
 ## Security posture
 
-The operator `ClusterRole` carries the upstream kube-prometheus-stack default grant set
+The operator `ClusterRole` carries the upstream prometheus-operator default grant set
 — broad verbs on the `monitoring.coreos.com` resources it owns, plus cluster-wide verbs
 on the core `Secret` and `ConfigMap` objects it manages for the Prometheus and
 Alertmanager instances it reconciles. These grants are **inherent to the operator's
-reconcile contract**, not introduced by this catalog component, and the chart exposes no
-narrower scoping at this version. A consumer MAY further constrain the operator's blast
-radius with a `NetworkPolicy` and namespace isolation. No long-lived keys or secret
-material ship in this artifact — the webhook serving cert is minted in-cluster at deploy
-time (see [Admission webhook & bootstrap](#admission-webhook--bootstrap)).
+reconcile contract**, not introduced by this catalog component, and the upstream base
+exposes no narrower scoping at this version. A consumer MAY further constrain the
+operator's blast radius with a `NetworkPolicy` and namespace isolation. No long-lived
+keys or secret material ship in this artifact.
 
 ## Capability
 
@@ -176,12 +149,12 @@ state, not a deferral:
   (issue #20), not to this controller framework. This component only provisions the
   controller that reconciles those instances' CRs.
 
-## appVersion parity
+## Version parity
 
-kube-prometheus-stack `86.2.3` and prometheus-operator-crds `29.0.0` both resolve to
-appVersion **`v0.91.0`**. Bump the two artifacts **together**: a controller running a
-newer operator version than the installed CRD schemas (or vice versa) risks CRD schema
-drift — the operator may reject or mis-reconcile CRs whose schema it does not match.
+This workload and the `-crds` artifact are both vendored from prometheus-operator
+**v0.91.0**. Bump the two artifacts **together**: a controller running a newer operator
+version than the installed CRD schemas (or vice versa) risks CRD schema drift — the
+operator may reject or mis-reconcile CRs whose schema it does not match.
 
 ## Migration
 

@@ -1,0 +1,258 @@
+# Prometheus Operator controller — strict-B WORKLOAD half (ADR-0028). Ships ONLY the
+# controller (ServiceAccount + ClusterRole/Binding + Deployment + Service +
+# ServiceMonitor). The CRD half is the SEPARATE component
+# observability/prometheus-operator-crds (sync-wave -1); this workload (sync-wave 0)
+# comes up against CRDs that already exist.
+#
+# Vendored verbatim from prometheus-operator/prometheus-operator @ v0.91.0,
+# example/rbac/prometheus-operator/. Two deliberate deltas from upstream:
+#   1. namespaced objects moved default -> monitoring (consumer-overlayable; no
+#      Namespace object is shipped — the monitoring namespace is consumer-owned).
+#   2. operator + prometheus-config-reloader images digest-pinned (issue #175
+#      supply-chain hardening); tags stay chart-default v0.91.0, the @sha256 digest
+#      is authoritative. Re-verify + re-vendor from the matching tag on every bump
+#      (`oras manifest fetch --descriptor quay.io/.../prometheus-operator:<tag>`).
+# No admission webhook is shipped: it is a consumer opt-in (needs a TLS cert source),
+# never a fixed catalog dependency.
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.91.0
+  name: prometheus-operator
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.91.0
+  name: prometheus-operator
+rules:
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - alertmanagers
+  - alertmanagers/finalizers
+  - alertmanagers/status
+  - alertmanagerconfigs
+  - prometheuses
+  - prometheuses/finalizers
+  - prometheuses/status
+  - prometheusagents
+  - prometheusagents/finalizers
+  - prometheusagents/status
+  - thanosrulers
+  - thanosrulers/finalizers
+  - thanosrulers/status
+  - scrapeconfigs
+  - scrapeconfigs/status
+  - servicemonitors
+  - servicemonitors/status
+  - podmonitors
+  - podmonitors/status
+  - probes
+  - probes/status
+  - prometheusrules
+  - prometheusrules/status
+  verbs:
+  - '*'
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - services
+  - services/finalizers
+  verbs:
+  - get
+  - create
+  - update
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - patch
+  - create
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - get
+  - create
+  - update
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.91.0
+  name: prometheus-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-operator
+subjects:
+- kind: ServiceAccount
+  name: prometheus-operator
+  namespace: monitoring
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.91.0
+  name: prometheus-operator
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/name: prometheus-operator
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: prometheus-operator
+      labels:
+        app.kubernetes.io/component: controller
+        app.kubernetes.io/name: prometheus-operator
+        app.kubernetes.io/version: 0.91.0
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --kubelet-service=kube-system/kubelet
+        - --prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.91.0@sha256:7d9e4eea5f1139e602508871f422b0116c60e87c662f3dcd234d5ab60cd0d8c1
+        - --watch-referenced-objects-in-all-namespaces=true
+        - --disable-unmanaged-prometheus-configuration=true
+        - --kubelet-endpoints=true
+        - --kubelet-endpointslice=false
+        env:
+        - name: GOGC
+          value: "30"
+        image: quay.io/prometheus-operator/prometheus-operator:v0.91.0@sha256:9e53e13139218aca79ee000172de73355e9174ef2904585bfad9497fc71aae2d
+        name: prometheus-operator
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          limits:
+            cpu: 200m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: prometheus-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.91.0
+  name: prometheus-operator
+  namespace: monitoring
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+  selector:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/component: controller
+    app.kubernetes.io/name: prometheus-operator
+    app.kubernetes.io/version: 0.91.0
+  name: prometheus-operator
+  namespace: monitoring
+spec:
+  endpoints:
+  - honorLabels: true
+    port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/name: prometheus-operator
+      app.kubernetes.io/version: 0.91.0

@@ -1,10 +1,10 @@
 # Customization Contract v2 (ADR-0024). Strict-B WORKLOAD artifact (ADR-0028): the
-# Prometheus Operator controller + its RBAC + self-managed admission webhook. The
-# controller is cluster-agnostic at the freeze line — it needs nothing from the
-# consumer to render a valid, signed workload, so every provided/required shape is
-# empty. The controller lands at sync-wave 0, after the CRDs (-crds artifact, wave -1).
+# Prometheus Operator controller + its RBAC + Service. The controller is
+# cluster-agnostic at the freeze line — it needs nothing from the consumer to render a
+# valid, signed workload, so every provided/required shape is empty. The controller
+# lands at sync-wave 0, after the CRDs (-crds artifact, wave -1).
 freeze_line:
-  workload: rendered/manifest.yaml  # operator Deployment + RBAC + webhook + cert Jobs — never consumer-patched
+  workload: rendered/manifest.yaml  # operator Deployment + RBAC + Service + ServiceMonitor — never consumer-patched
 provided_refs: {}
 provided_selectors: {}
 required:
