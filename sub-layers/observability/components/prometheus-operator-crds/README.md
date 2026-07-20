@@ -7,12 +7,14 @@ controller workload is a **separate** component, `observability/prometheus-opera
 The two together form the strict-B pair: CRDs first (this artifact, sync-wave -1),
 controller after (sync-wave 0).
 
-Helm chart [`prometheus-operator-crds`](https://github.com/prometheus-community/helm-charts/tree/main/charts/prometheus-operator-crds)
-from `https://prometheus-community.github.io/helm-charts`, pinned to **29.0.0**
-(appVersion `v0.91.0`). This is the dedicated CRDs-only chart from
-prometheus-community: it renders exactly the 10 `monitoring.coreos.com` CRDs and
-nothing else — no controller, no Service, no RBAC, no Namespace (CRDs are
-cluster-scoped).
+Vendored verbatim from the upstream
+[`prometheus-operator/prometheus-operator`](https://github.com/prometheus-operator/prometheus-operator)
+repository, tag **v0.91.0**, directory `example/prometheus-operator-crd-full/` — the
+full CRD set (with field descriptions). These are exactly the 10
+`monitoring.coreos.com` CRDs and nothing else — no controller, no Service, no RBAC,
+no Namespace (CRDs are cluster-scoped). Delivered as raw vendored manifests
+(`kind: manifests`, no Helm reference); re-vendor from the matching upstream tag on
+every version bump.
 
 ## What ships
 
@@ -64,7 +66,7 @@ here, **== 0** in the workload artifact). Its workload counterpart is
 
 ## Upgrading CRD schemas
 
-When this artifact is bumped to a chart version that changes CRD schemas, the
+When this artifact is bumped to a new upstream tag that changes CRD schemas, the
 consumer's Argo sync applies the new schema in-place (ServerSideApply). Two
 hazards to check before syncing a new version:
 
@@ -74,8 +76,8 @@ hazards to check before syncing a new version:
   upstream prometheus-operator changelog for validation changes and audit existing
   CRs before syncing.
 - **Field removal** — because the consumer app runs `Prune=false`, fields/CRDs
-  the chart removes are **not** auto-pruned from the cluster; removal needs manual
-  intervention. Never assume a chart downgrade or field drop reconciles itself.
+  the upstream removes are **not** auto-pruned from the cluster; removal needs
+  manual intervention. Never assume a downgrade or field drop reconciles itself.
 
 CRD upgrades are forward-compatible by convention (the operator supports the
 served versions), but a major operator bump (`v0.x` API churn) warrants a

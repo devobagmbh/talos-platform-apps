@@ -19,7 +19,7 @@ provides:
   - name: prometheus-operator-crds
     version:
       sot: crd-schema
-      crd_schema: v0.91.0   # monitoring.coreos.com CRDs from prometheus-operator v0.91.0 (chart 29.0.0)
+      crd_schema: v0.91.0   # monitoring.coreos.com CRDs from prometheus-operator v0.91.0 (upstream repo, example/prometheus-operator-crd-full/)
     api_surface:
       - monitoring.coreos.com/Prometheus@v1
     capabilities: []
