@@ -1,0 +1,41 @@
+# Hand-authored, minimal RBAC for the singleton Event collector. The Grafana Alloy
+# chart's own RBAC is suppressed (helm values rbac.create:false) because its
+# ClusterRole grants broad get/list/watch across many core kinds (pods, nodes,
+# services, endpoints, configmaps, secrets, …) — far more than an Event collector
+# needs. This ClusterRole is the hardest RBAC floor for the events-collect capability
+# (CWE-250, least privilege): get/list/watch on core `events` ONLY.
+#
+# It MUST NOT grant core {secrets, configmaps, nodes, pods, services, endpoints} nor
+# any monitoring.coreos.com resource — the workload reads nothing but the cluster
+# Event stream. Cluster-scoped (ClusterRole, not Role) so a single collector observes
+# Events in every namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-singleton
+  labels:
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: alloy-singleton
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+---
+# Binds the minimal ClusterRole to the chart-created ServiceAccount
+# (serviceAccount.name: alloy-singleton in the alloy-singleton namespace). The pod
+# template's serviceAccountName resolves to this same ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-singleton
+  labels:
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: alloy-singleton
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-singleton
+subjects:
+  - kind: ServiceAccount
+    name: alloy-singleton
+    namespace: alloy-singleton
