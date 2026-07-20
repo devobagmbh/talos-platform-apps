@@ -9,9 +9,13 @@
 #   1. namespaced objects moved default -> monitoring (consumer-overlayable; no
 #      Namespace object is shipped — the monitoring namespace is consumer-owned).
 #   2. operator + prometheus-config-reloader images digest-pinned (issue #175
-#      supply-chain hardening); tags stay chart-default v0.91.0, the @sha256 digest
-#      is authoritative. Re-verify + re-vendor from the matching tag on every bump
-#      (`oras manifest fetch --descriptor quay.io/.../prometheus-operator:<tag>`).
+#      supply-chain hardening); tags stay upstream-default v0.91.0, the @sha256 digest
+#      is authoritative. The config-reloader digest is on the --prometheus-config-reloader
+#      arg (line ~191), not an image: key, so it is outside the Trivy [Ii]mage:-keyed
+#      scan (accepted, like RELATED_IMAGE_*; the pin still gives reproducibility). Re-verify
+#      + re-vendor BOTH pinned digests from the matching tag on every bump:
+#        oras manifest fetch --descriptor quay.io/prometheus-operator/prometheus-operator:<tag>
+#        oras manifest fetch --descriptor quay.io/prometheus-operator/prometheus-config-reloader:<tag>
 # No admission webhook is shipped: it is a consumer opt-in (needs a TLS cert source),
 # never a fixed catalog dependency.
 ---

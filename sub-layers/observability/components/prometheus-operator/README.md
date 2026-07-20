@@ -21,8 +21,13 @@ Two deliberate deltas from the upstream base:
   [Namespace & Pod Security Admission](#namespace--pod-security-admission));
 - the operator and `prometheus-config-reloader` images are **digest-pinned** (issue
   #175 supply-chain hardening) — tags stay upstream-default `v0.91.0`, the `@sha256`
-  digest is the authoritative pull reference. Re-verify on each bump
-  (`oras manifest fetch --descriptor quay.io/.../prometheus-operator:<tag>`).
+  digest is the authoritative pull reference. Re-verify **both** pinned digests on
+  each bump:
+
+  ```console
+  oras manifest fetch --descriptor quay.io/prometheus-operator/prometheus-operator:<tag>
+  oras manifest fetch --descriptor quay.io/prometheus-operator/prometheus-config-reloader:<tag>
+  ```
 
 This component is defined by *what it ships* (the operator controller + RBAC +
 Service, **0** CRDs — the strict-B `task validate:crd-split` gate asserts 0 CRDs
@@ -50,8 +55,9 @@ stack, not to this framework.
 ghcr.io/devobagmbh/talos-platform-apps/observability/prometheus-operator
 ```
 
-Published registry tag `0.1.0` (the `task push` step strips the leading `v`); the
-git tag is the distinct `observability/prometheus-operator-v0.1.0`.
+Published with registry tag `X.Y.Z` (the `task push` step strips the leading `v`);
+the git tag follows the pattern `observability/prometheus-operator-vX.Y.Z`. The
+current version is tracked in `.release-please-manifest.json`, not here.
 
 ## Sync-wave
 
@@ -126,14 +132,18 @@ access, so `restricted` does not reject it at admission.
 
 ## Security posture
 
-The operator `ClusterRole` carries the upstream prometheus-operator default grant set
-— broad verbs on the `monitoring.coreos.com` resources it owns, plus cluster-wide verbs
-on the core `Secret` and `ConfigMap` objects it manages for the Prometheus and
-Alertmanager instances it reconciles. These grants are **inherent to the operator's
-reconcile contract**, not introduced by this catalog component, and the upstream base
-exposes no narrower scoping at this version. A consumer MAY further constrain the
-operator's blast radius with a `NetworkPolicy` and namespace isolation. No long-lived
-keys or secret material ship in this artifact.
+The operator `ClusterRole` is a faithful verbatim vendor of the upstream default grant
+set. It carries `*` verbs on the `monitoring.coreos.com` resources it owns, `*` on
+`apps/statefulsets` (the mechanism by which it creates and reconciles the Prometheus /
+Alertmanager / ThanosRuler workloads) and on the core `ConfigMap` / `Secret` objects it
+manages for those instances, plus narrower verbs on the further core objects it
+reconciles — `services` and `endpoints` (get/create/update/delete), `pods`
+(list/delete) — and read-only access to `nodes`, `namespaces`, `ingresses`, and
+`storageclasses`, with `events` create/patch. These grants are **inherent to the
+operator's reconcile contract**, not introduced by this catalog component, and the
+upstream base exposes no narrower scoping at this version. A consumer MAY further
+constrain the operator's blast radius with a `NetworkPolicy` and namespace isolation.
+No long-lived keys or secret material ship in this artifact.
 
 ## Capability
 
