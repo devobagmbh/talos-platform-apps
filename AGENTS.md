@@ -80,6 +80,10 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 
 - `silent: true` globally — commands do not echo themselves
 - **Logic lives in the Taskfile**, not in external `scripts/` bash files. Even complex bash code is implemented inline in `cmds:` (multi-line `|`). External scripts would undermine the "pipeline = task caller" convention (pipeline → task → script would be one level too deep).
+- **`cmd:` runs under mvdan/sh (a POSIX sh), not `/bin/bash`** — two distinct failure modes, one inherent to `set -e`, the other only if you enable `set -o pipefail`:
+  - **Group-abort under `set -e`:** a `{ cmd1; cmd2; }` group aborts on the first member that exits non-zero *before* later members run; the abort fires on the member's own status, so an outer `|| true` on the surrounding pipe does not mask it. A no-match `grep` exits 1, so `{ grep image …; grep package …; } | …` silently drops the second `grep`. Guard a member with `|| true` **only where its non-zero exit is an expected, ignorable state** (e.g. an extraction `grep` that may legitimately match nothing) — never blanket-`|| true` a member whose failure should abort the task (that is gate-blinding). Precedent + the safe pattern: the `lint:version` task comment.
+  - **SIGPIPE under `pipefail`:** a `grep -q` that closes a pipe early raises a SIGPIPE that terminates the script under `set -o pipefail`; avoid `grep -q` over a pipe (use a pipe-free membership test). Distinct mechanism, distinct precedent: the `validate:release-config` task comment.
+  - **E2E-verify inlined logic by running `task <name>`** (not `bash script.sh` — plain bash without `set -e` won't reproduce the abort) **with an input that reaches the failing branch** — a happy-path run where every `grep` matches never exercises the no-match drop.
 
 ## Coding Style & Naming
 
@@ -117,11 +121,13 @@ The end-to-end issue→PR interface — how an issue becomes a merged, ADR-confo
 
 ## Branch protection & merge gates
 
-`main` is protected; a PR merges only when every gate below is green. **The live GitHub branch-protection config is authoritative** — this section describes the configured contract so every contributor and every agent harness knows how a PR becomes mergeable *without querying the API*. If the two ever diverge, the live config wins and this section MUST be corrected. **Never `gh pr merge --admin`**: `enforce_admins` is off, so an admin *can* bypass, but bypassing a gate is a policy violation, not a workflow — this is a multi-maintainer repo (see § Multi-Agent Coordination + `.github/CODEOWNERS`). The fix for a `mergeStateStatus: BLOCKED` PR is always to satisfy the gate.
+`main` is protected; a PR merges only when every gate below is green. **The live GitHub branch-protection config is authoritative** — this section describes the configured contract so every contributor and every agent harness knows how a PR becomes mergeable *without querying the API*. If the two ever diverge, the live config wins and this section MUST be corrected. **Never `gh pr merge --admin`**: the `merge-queue-main` ruleset blocks it **mechanically** (`Changes must be made through the merge queue`; `bypass_actors: []`, `current_user_can_bypass: never`), so no actor — admin included — can bypass the queue. (`enforce_admins` is off on the classic protection layer, so that layer alone would let an admin bypass; the ruleset is what removes the escape hatch.) The fix for a `mergeStateStatus: BLOCKED` PR is always to satisfy the gate — this is a multi-maintainer repo (see § Multi-Agent Coordination + `.github/CODEOWNERS`).
 
-**Merge method — squash-only.** Merge-commit and rebase merges are disabled; `gh pr merge <N> --squash` is the only path (`--merge` / `--rebase` are rejected). The squashed commit takes its **subject from the PR title** (`squash_merge_commit_title=PR_TITLE`) and its **body from the PR description** (`squash_merge_commit_message=PR_BODY`). Consequence: the **PR title MUST be a valid Conventional Commit with a single sub-layer/component scope** — that title becomes the commit release-please path-maps to a component (§ CI conventions → Release automation). `required_linear_history` keeps `main` merge-commit-free, consistent with squash-only.
+**Merge method — squash-only.** Merge-commit and rebase merges are disabled; `gh pr merge <N> --squash` is the only path (`--merge` / `--rebase` are rejected). The squashed commit takes its **subject from the PR title** (`squash_merge_commit_title=PR_TITLE`) and its **body from the PR description** (`squash_merge_commit_message=PR_BODY`). Consequence: the **PR title MUST be a valid Conventional Commit with a single sub-layer/component scope** — that title becomes the commit release-please path-maps to a component (§ CI conventions → Release automation). `required_linear_history` keeps `main` merge-commit-free, consistent with squash-only. Under the merge queue (next paragraph), `gh pr merge <N> --squash` **enqueues** the PR rather than merging it immediately.
 
-**Required status checks** — all MUST be green, and `strict` is on so the PR branch MUST also be up to date with `main`:
+**Merge queue (binding).** `main` requires the `merge-queue-main` ruleset (`merge_method: SQUASH`, `grouping_strategy: ALLGREEN`, `min_entries_to_merge: 1` / `max_entries_to_merge: 5`). `gh pr merge <N> --squash` (or `--auto --squash`) therefore **enqueues** the PR: the queue rebuilds it against `main`, re-runs the required checks on the `merge_group` head (the required-check workflows are `merge_group`-aware since #513), and squash-merges only when the group is all-green — there is no immediate merge-commit, and the merge method is fixed by the ruleset (`SQUASH`), so an explicit method flag only has to match it. `--delete-branch`/`-d` is **incompatible** with the queue, and the head branch is **not** auto-deleted either (`delete_branch_on_merge` is off) — delete it separately if wanted. Because the queue rebuilds against `main`, a `BEHIND` PR needs no manual `gh pr update-branch`; the queue does the update.
+
+**Required status checks** — all MUST be green. `strict` is on (the PR branch MUST be up to date with `main`); the queue's rebuild against `main` satisfies this automatically (§ Merge queue above):
 
 | Check (context name) | Enforces |
 |---|---|
@@ -130,6 +136,8 @@ The end-to-end issue→PR interface — how an issue becomes a merged, ADR-confo
 | `require-issue-link` | the PR links an issue (`Closes #N`) **or** carries the `no-issue` label (`pr-issue-link.yml`) |
 | `gitleaks (secret-scan)` | no secret leaks in the PR's changed commit range (`security-scan.yml`) — the context name is the job name `gitleaks (secret-scan)`, **not** bare `gitleaks` |
 | `commit-lint` *(pending)* | Conventional PR title + single-component scope (G2, #464/#465); added as a required context once #465 merges |
+
+**Adding a required check under the merge queue:** a newly-required check MUST also fire on the `merge_group` event, not only `pull_request` — otherwise the queue's re-validation never reports for it and an enqueued PR stalls indefinitely. All current required checks are `merge_group`-aware (#513); the pending `commit-lint` short-circuits on `merge_group` by design.
 
 **Non-status-check merge gates:**
 

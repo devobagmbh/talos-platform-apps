@@ -1,0 +1,15 @@
+requires:
+  # Runtime sink component (deploy-time ordering for the Argo Application, not a
+  # build-time dep): the singleton Event collector forwards Kubernetes Events to Loki
+  # as structured log records. A Helm wrapper renders independently of whether Loki
+  # exists in-tree.
+  observability/loki: ">=v0.1.0"  # events ship to Loki as structured log records
+provides:
+  - name: alloy-singleton
+    version:
+      sot: app
+      app: v1.17.0   # real Alloy app (chart 1.10.0 appVersion)
+      chart: 1.10.0
+    api_surface: []
+    capabilities:
+      - {id: events-collect, swap_class: consumer-change}

@@ -195,10 +195,30 @@ and burns a round.
 images are pinned, the customization contract matches its schema, and known-core
 K8s shapes are well-formed. It does **not** prove the component is correct:
 `kubeconform -ignore-missing-schemas` silently passes any CRD it lacks a schema
-for, and `policies/` today carries essentially one enforced rule
-(`no_latest_image_tag` — the rest of `policies/README.md` is aspirational, not
-implemented). So most acceptance rests on the evaluator's semantic AC judgment
+for, and `policies/` today enforces six Conftest rules (`no_latest_image_tag`,
+`no_privileged_containers`, `pod_security_standards`, `required_resource_limits`,
+`no_inline_secrets`, `pod_security_conformance`) — the PNI-v2 `platform/` set and
+the other rules mapped in `policies/README.md` remain aspirational, not
+implemented. So most acceptance rests on the evaluator's semantic AC judgment
 plus the downstream GHA + human-PR gate, not on a green Tier 1.
+
+**A class the gate structurally cannot reach — runtime-only defects.** Render +
+lint + conftest never RUN the pod, so a workload that is well-formed but
+un-runnable still passes the **deterministic gate** — and render-based review does
+not catch it either (neither the evaluator nor a read-only reviewer runs the pod).
+The recurring trap: `readOnlyRootFilesystem: true` with a writable runtime path
+that has no volume — e.g. `--storage.path=/tmp/<x>` (a WAL/cache/storage dir) and
+no `emptyDir` mounted at that path — renders cleanly, then CrashLoops at runtime
+(`mkdir …: read-only file system`; PR #194, `observability/alloy`). Fix: mount a
+writable `emptyDir` **at the path the process writes** — see `observability/alloy`
+(emptyDir at the storage path, not bare `/tmp`) and `identity/dex` (the simpler
+`readOnlyRootFilesystem: true` + writable `/tmp` emptyDir). Because only a running
+pod surfaces this, the local Talos E2E (below) is the catch: for a
+`readOnlyRootFilesystem: true` workload with a writable runtime path, treat the E2E
+as **required when the cluster is reachable** (do not defer it by default per the
+reachability gate below) — and when the cluster is unreachable, the
+`NOT-LOCALLY-VERIFIABLE` deferral carries **elevated risk for this class**, so flag
+it in the verify record rather than recording it as routine.
 
 **Chart-ref caveat:** a vendored `vendor/<chart>-<version>.tgz` makes
 `task render:one` render from the local archive *without resolving the declared

@@ -1,0 +1,28 @@
+# The component's own namespace. alloy-singleton is the sole catalog occupant
+# (dedicated namespace), so this component ships the Namespace object — a shipped
+# manifest takes precedence over Argo `managedNamespaceMetadata`, making the PSA
+# posture authoritative and self-contained (see the build skill's CONVENTIONS.md
+# § Namespace & PSA).
+#
+# enforce: restricted — the singleton Event collector watches core/v1 Events through
+# the Kubernetes API (loki.source.kubernetes_events) + the hand-shipped minimal
+# ClusterRole; it ships NO host mounts (mounts.varlog / mounts.dockercontainers,
+# hostNetwork, hostPID all false), so it has no host-access need. Confirmed against
+# the rendered Deployment pod template: pod securityContext runAsNonRoot:true +
+# seccompProfile RuntimeDefault, and BOTH containers (alloy + config-reloader) set
+# allowPrivilegeEscalation:false + capabilities.drop:[ALL] (+ runAsNonRoot,
+# runAsUser 473, seccompProfile RuntimeDefault), so the workload is fully
+# restricted-compliant.
+#
+# The consumer adds the PNI trust-anchor labels (platform.io/provide.*), the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor), and the
+# audit/warn modes in its Argo overlay; the catalog ships only the enforce level and
+# the ownership labels. See the README §Consumer obligations.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alloy-singleton
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: alloy-singleton

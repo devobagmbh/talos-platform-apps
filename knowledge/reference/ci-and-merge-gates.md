@@ -3,7 +3,7 @@ type: reference
 title: CI and merge gates
 description: The CI conventions, the required status checks, and the branch-protection contract that gate a merge to main.
 tags: [reference, ci, merge-gate, branch-protection]
-timestamp: 2026-07-11
+timestamp: 2026-07-17
 sources:
   - AGENTS.md
   - Taskfile.yml
@@ -44,7 +44,7 @@ All must be green, with `strict` on (the PR branch must be up to date with main)
 - **CODEOWNERS review** - at least one approving review from the code owner.
 - **Conversation resolution** - all review threads resolved.
 
-## Merge method - squash-only
+## Merge method - squash-only, via the merge queue
 
 Merge-commit and rebase merges are disabled; `gh pr merge <N> --squash` is the
 only path. The squashed commit takes its **subject from the PR title** and its
@@ -52,8 +52,17 @@ only path. The squashed commit takes its **subject from the PR title** and its
 Commit with a single sub-layer/component scope - that title is what release-please
 path-maps to a component (see [Release automation](release-automation.md)).
 
-Never `gh pr merge --admin`: the fix for a BLOCKED PR is always to satisfy the
-gate, not to bypass it.
+`main` requires the `merge-queue-main` ruleset (`merge_method: SQUASH`,
+`grouping_strategy: ALLGREEN`), so `gh pr merge <N> --squash` (or `--auto --squash`)
+**enqueues** the PR rather than merging it immediately: the queue rebuilds it against
+`main`, re-runs the required checks on the `merge_group` head, and squash-merges only
+when the group is all-green - there is no immediate merge-commit, and the merge method
+is fixed by the ruleset. `--delete-branch`/`-d` is incompatible with the queue and the
+head branch is not auto-deleted (`delete_branch_on_merge` is off).
+
+Never `gh pr merge --admin`: the ruleset blocks it mechanically (no actor can bypass;
+`gh` returns `Changes must be made through the merge queue`), and the fix for a BLOCKED
+PR is always to satisfy the gate, not to bypass it.
 
 ## Where the detail lives
 

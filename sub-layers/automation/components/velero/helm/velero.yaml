@@ -1,0 +1,73 @@
+# Velero (Helm `vmware-tanzu/velero`) — Layer-2 default values for talos-platform-apps.
+#
+# Cluster-specific bits (S3 endpoint/bucket/region, the AWS-format credential
+# Secret contents, the velero-plugin-for-aws initContainer, BackupStorageLocation /
+# VolumeSnapshotLocation / Schedule CRs) live in the consumer repos (Layer 3). This
+# file is the Helm-values default for the catalog.
+#
+# Strict-B WORKLOAD half (ADR-0028): this artifact renders the Velero server
+# Deployment + the node-agent DaemonSet + RBAC, 0 CustomResourceDefinitions. The 13
+# velero.io CRDs ship in the separate `automation/velero-crds` artifact, which the
+# consumer wires at sync-wave -1 BEFORE this workload (wave 0).
+
+metadata:
+  chart: velero
+  repo: https://vmware-tanzu.github.io/helm-charts
+  version: 12.1.0  # appVersion 1.18.1; verified 2026-06 via `helm show values`; pin/verify at push
+  namespace: velero
+
+values:
+  # -- Do NOT manage CRDs from this workload (strict-B, ADR-0028). The 13 velero.io
+  # CRDs ship in the separate `automation/velero-crds` artifact at sync-wave -1,
+  # established before this operator. Set false so this artifact renders 0 CRDs and
+  # no CRD-upgrade Job.
+  upgradeCRDs: false
+
+  # -- Deploy the node-agent DaemonSet (filesystem / Kopia PodVolume backup). It
+  # mounts the kubelet hostPaths (/var/lib/kubelet/pods + /var/lib/kubelet/plugins)
+  # and runs as root, which is why the namespace carries PSA enforce: privileged.
+  deployNodeAgent: true
+
+  # -- Suppress the chart-default BackupStorageLocation render. With backupsEnabled
+  # true the chart emits a BSL with empty provider/bucket; the consumer creates the
+  # BackupStorageLocation CR (S3 endpoint/bucket/region) in Layer 3, so the catalog
+  # renders none.
+  backupsEnabled: false
+
+  # -- Suppress the chart-default VolumeSnapshotLocation render. Same rationale as
+  # backupsEnabled: the consumer creates the VolumeSnapshotLocation CR in Layer 3.
+  snapshotsEnabled: false
+
+  credentials:
+    # -- Mount object-store credentials from a pre-existing Secret. The catalog ships
+    # NO credential material (Hard Constraint: no real secrets in the repo).
+    useSecret: true
+    # -- The consumer pre-creates this Secret in the `velero` namespace with key
+    # `cloud` (an AWS-format credentials file). Declared as a freeze-line
+    # required.secret_keys entry in customization.yaml. The catalog provides no values.
+    existingSecret: velero-s3-credentials
+
+  # -- No initContainers baked in. The velero-plugin-for-aws object-store plugin is
+  # consumer-supplied in the Layer-3 overlay (a versioned plugin image is a
+  # consumer-composition concern, not a catalog default), so the catalog ships none.
+  initContainers: []
+
+  # -- Velero server resource requests/limits (catalog defaults; the consumer may
+  # override per cluster). Sized for the controller reconcile loop, not data movement.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  nodeAgent:
+    # -- node-agent DaemonSet resource requests/limits (catalog defaults; the
+    # consumer may override). The node-agent performs PodVolume (Kopia) data
+    # movement, so it is sized higher than the server.
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        memory: 1Gi

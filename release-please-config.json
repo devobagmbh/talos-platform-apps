@@ -89,6 +89,10 @@
       "component": "observability/alloy-metrics",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/alloy-singleton": {
+      "component": "observability/alloy-singleton",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/grafana": {
       "component": "observability/grafana",
       "initial-version": "0.1.0"
