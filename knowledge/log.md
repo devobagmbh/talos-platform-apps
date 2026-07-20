@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-07-17
+
+- **Merge-queue model correction**: `reference/ci-and-merge-gates.md` § Merge method now documents that `main` runs the `merge-queue-main` ruleset (`SQUASH`, `ALLGREEN`), so `gh pr merge --squash` (or `--auto --squash`) **enqueues** rather than merging immediately (queue rebuilds against `main`, re-runs required checks on the `merge_group` head, squash-merges when all-green; `--delete-branch` incompatible, head branch not auto-deleted, `--admin` mechanically blocked by the ruleset). Timestamp bumped (`AGENTS.md` in `sources:` was correspondingly corrected in the same change). Mirrors the `AGENTS.md` § Branch protection & merge gates correction and the `pr-gate` skill rework. Oracle bound via `gh api`: repo settings `allow_auto_merge: true`, `delete_branch_on_merge: false`; ruleset `merge-queue-main` active (`gh api .../rulesets`) — `merge_method: SQUASH`, `grouping_strategy: ALLGREEN`, `min/max_entries_to_merge: 1/5`, `bypass_actors: []`, `current_user_can_bypass: never`.
+
 ## 2026-07-16
 
 - **Capability registration (#649)**: added the `events-collect` capability to `catalog/capability-index.yaml` (Observability: Events; impl `alloy` active + `otelcol` considered, `swap_class: consumer-change`) — the prerequisite index entry the planned `observability/alloy-singleton` component references. Re-verified the two concepts carrying `capability-index.yaml` in `sources:` (`glossary.md`, `architecture/capability-layer-model.md`): no present-tense claim is affected (neither enumerates the capability set), timestamps bumped for the source touch.
