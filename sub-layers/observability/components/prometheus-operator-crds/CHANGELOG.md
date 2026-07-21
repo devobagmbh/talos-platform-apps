@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/devobagmbh/talos-platform-apps/compare/observability/prometheus-operator-crds-v0.2.1...observability/prometheus-operator-crds-v0.2.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **observability/prometheus-operator-crds:** vendor CRDs from upstream repo ([#722](https://github.com/devobagmbh/talos-platform-apps/issues/722)) ([5e175a8](https://github.com/devobagmbh/talos-platform-apps/commit/5e175a83e8f89af4dedc3e4eb1fc64396cda7424))
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/prometheus-operator-crds-v0.2.0...observability/prometheus-operator-crds-v0.2.1) (2026-07-15)
 
 
