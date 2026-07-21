@@ -1,0 +1,14 @@
+requires:
+  s3-object: "*" # S3-compatible object store (capability; catalog/capability-index.yaml). Garage = active platform impl (ADR-0007)
+provides:
+  - name: loki-distributed
+    version:
+      sot: app
+      app: 3.6.7 # Loki appVersion (image tag docker.io/grafana/loki:3.6.7)
+      chart: 6.55.0 # grafana/loki chart version, Distributed deployment mode
+    api_surface: [] # the chart ships no CRDs / exposed API groups in Distributed mode
+    # Same two capabilities as the SingleBinary sibling observability/loki: this
+    # component is an alternative TOPOLOGY of the same store, not a different interface.
+    capabilities:
+      - {id: logs-storage, swap_class: data-migration}
+      - {id: logs-query, swap_class: drop-in}

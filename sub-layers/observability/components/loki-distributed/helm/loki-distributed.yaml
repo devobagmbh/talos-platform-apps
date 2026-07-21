@@ -1,0 +1,398 @@
+# loki-distributed — Grafana Loki in the chart's `Distributed` deployment mode: the
+# platform's HIGHLY-AVAILABLE log store + LogQL query endpoint. Layer-2 default values
+# for talos-platform-apps. Every Loki target runs as its own microservice workload,
+# backed by an S3-compatible object store for chunks + ruler.
+#
+# Sibling relationship: `observability/loki` ships the SAME chart at the SAME version in
+# `SingleBinary` mode (one StatefulSet, replicas 1) for single-node consumers. This
+# component is the second, independently versioned artifact a MULTI-NODE consumer picks
+# instead; the two are never deployed together into one namespace.
+#
+# Freeze-line (ADR-0024 v2, Shapes a + c): the WORKLOAD (the rendered Deployments/
+# StatefulSets + Services + RBAC + the chart-generated loki config ConfigMap + the
+# Namespace) is catalog-owned and signed; the S3 CONNECTION is 100% consumer-owned and
+# per-cluster. The rendered Loki config references ${VAR} placeholders (NOT hardcoded
+# endpoints/keys); Loki resolves them at runtime from consumer-supplied env via
+# `-config.expand-env=true`. Two refs:
+#   - ConfigMap loki-distributed-runtime-config (envFrom, non-secret): S3_ENDPOINT,
+#     S3_REGION, S3_BUCKET_CHUNKS, S3_BUCKET_RULER, S3_INSECURE
+#   - Secret    loki-distributed-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
+#     S3_SECRET_ACCESS_KEY
+# The required KEY NAMES are byte-identical to `observability/loki`'s, so a consumer
+# swapping SingleBinary <-> Distributed reuses its existing ConfigMap/Secret contents
+# unchanged (only the ref NAMES are component-scoped).
+#
+# Chart-template verification (chart 6.55.0):
+#   * expand-env + envFrom: every Distributed component container renders
+#     `{{ concat .Values.global.extraArgs .Values.<component>.extraArgs }}` into its
+#     `args` and `{{ concat .Values.global.extraEnvFrom .Values.<component>.extraEnvFrom }}`
+#     into its `envFrom` (templates/{distributor,ingester,querier,query-frontend,
+#     query-scheduler,index-gateway,compactor,ruler}/*.yaml). So the two `global.*` knobs
+#     below reach EVERY S3-touching pod — no per-component duplication needed. Confirmed
+#     against the rendered manifest, not just the templates.
+#   * The ${VAR} placeholders land in the rendered loki config via the
+#     `loki.lokiStorageConfig.s3` helper (_helpers.tpl), which emits `endpoint:`,
+#     `region:`, `access_key_id:`, `secret_access_key:`, `insecure:` straight from
+#     loki.storage.s3.* and `bucketnames:` from loki.storage.bucketNames.*.
+
+metadata:
+  chart: loki
+  repo: https://grafana.github.io/helm-charts
+  version: 6.55.0  # bare SemVer — NO leading 'v' (--version v6.55.0 fails to resolve)
+  # appVersion 3.6.7 → image tag docker.io/grafana/loki:3.6.7 (chart appVersion pin,
+  # NEVER :latest; never overridden here). Deliberately the SAME chart version as the
+  # SingleBinary sibling `observability/loki` — the two artifacts differ in topology,
+  # not in Loki version. VERIFY at push
+  # (`helm show chart loki --repo https://grafana.github.io/helm-charts --version 6.55.0`)
+  # that 6.55.0 is still current stable and appVersion is still 3.6.7.
+  namespace: loki-distributed
+
+values:
+  # -- (string) Loki topology. `Distributed` runs each Loki target (distributor,
+  # ingester, querier, query-frontend, query-scheduler, index-gateway, compactor, ruler)
+  # as its own workload, which is what makes single-pod loss survivable on the ingest
+  # and query paths.
+  deploymentMode: Distributed
+
+  global:
+    # -- (list) CLI args appended to EVERY chart-managed component container.
+    # `-config.expand-env=true` is the flag that makes Loki expand the ${VAR}
+    # placeholders in the rendered config from the container environment — without it
+    # the S3 endpoint/credentials would be read literally as the string "${S3_ENDPOINT}"
+    # and every write would fail. MUST stay in lockstep with the ${VAR} values under
+    # `loki.storage` below.
+    extraArgs:
+      - -config.expand-env=true
+    # -- (list) envFrom sources added to EVERY chart-managed component container.
+    # Shape (a)+(c) freeze-line: the consumer-owned S3 connection enters here so the
+    # ${VAR} placeholders resolve at runtime. The chart's documented scope for this key
+    # covers every Distributed-mode component, which is why it replaces the SingleBinary
+    # sibling's per-target `singleBinary.extraEnvFrom`.
+    extraEnvFrom:
+      - configMapRef:
+          name: loki-distributed-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_CHUNKS, S3_BUCKET_RULER, S3_INSECURE
+      - secretRef:
+          name: loki-distributed-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+  # The non-Distributed topologies MUST be scaled to 0. This is not cosmetic: the chart's
+  # templates/validate.yaml FAILS the render outright ("You have more than zero replicas
+  # configured for scalable targets ... and distributed targets") when any of
+  # read/write/backend keeps its chart default of 3 while a distributed target has
+  # replicas > 0. `singleBinary.replicas` already defaults to 0 but is restated so a
+  # future chart-default change cannot silently resurrect a second copy of Loki.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+  singleBinary:
+    replicas: 0
+
+  loki:
+    # -- (bool) Multi-tenancy off — the platform log store is single-tenant.
+    auth_enabled: false
+
+    commonConfig:
+      # -- (int) Ring replication factor. 3 with 3 ingesters means every log stream is
+      # written to all three, so the quorum (2) still holds when one ingester is lost —
+      # this is the value that makes the AC "ingest survives the loss of any single pod"
+      # true. MUST move in lockstep with `ingester.replicas` below: RF greater than the
+      # ingester count makes every write fail with "too many unhealthy instances in the
+      # ring".
+      replication_factor: 3
+
+    # -- (map) S3 object storage (s3-object capability). The connection values are
+    # ${VAR} placeholders, NOT real endpoints/keys: the freeze-line keeps the S3
+    # connection 100% consumer-owned. Path-style addressing is baked (the self-hosted S3
+    # standard — MinIO, Garage and similar require it); the TLS mode is consumer-owned
+    # via ${S3_INSECURE}. Rendered into common.storage.s3 + ruler_storage.s3 by the
+    # loki.lokiStorageConfig.s3 helper and expanded at runtime by -config.expand-env=true.
+    storage:
+      type: s3
+      bucketNames:
+        chunks: ${S3_BUCKET_CHUNKS}
+        ruler: ${S3_BUCKET_RULER}
+      s3:
+        endpoint: ${S3_ENDPOINT}
+        region: ${S3_REGION}
+        accessKeyId: ${S3_ACCESS_KEY_ID}
+        secretAccessKey: ${S3_SECRET_ACCESS_KEY}
+        s3ForcePathStyle: true  # path-style addressing — the self-hosted S3 standard (baked, not consumer-tunable)
+        insecure: ${S3_INSECURE} # consumer-owned, required: "false"=TLS, "true"=plain HTTP (a TLS-less S3 endpoint)
+
+    # -- (map) Index/object schema. The chart default is empty and
+    # templates/validate.yaml FAILS the render without one ("You must provide a
+    # schema_config for Loki"). TSDB + v13 is the current-generation single-store
+    # index/object layout; the `from` date is the schema's activation boundary and MUST
+    # NOT be moved backwards once data exists behind it.
+    schemaConfig:
+      configs:
+        - from: "2024-04-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+    # -- (map) Pod-level securityContext applied to every chart-managed Loki pod. The
+    # chart default sets runAsNonRoot + runAsUser/Group 10001 + fsGroup but OMITS
+    # seccompProfile, which caps the pod at `baseline`. The namespace declares
+    # `pod-security.kubernetes.io/enforce: restricted`, so the seccompProfile is added
+    # here — dropping it would make every pod fail live admission. Re-stating the runAs*
+    # keys pins the posture against a future chart-default change.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 10001
+      runAsGroup: 10001
+      fsGroup: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    # -- (map) Container-level securityContext applied to every chart-managed Loki
+    # container. The chart default already sets readOnlyRootFilesystem +
+    # capabilities.drop:[ALL] + allowPrivilegeEscalation:false; they are re-stated (plus
+    # seccompProfile) so the rendered containers provably satisfy `restricted` and a
+    # chart bump cannot weaken the declared namespace level.
+    containerSecurityContext:
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+
+  # --- Topology ------------------------------------------------------------------
+  # The minimum footprint under which the ingest and query paths both survive the loss
+  # of any single pod. Every component carries requests.cpu + requests.memory +
+  # limits.memory and NO cpu limit (a cpu limit only throttles; memory is the
+  # incompressible OOM risk) — the shape the repo's `base.required_resource_limits`
+  # policy enforces. The values are a platform starting point sized for a modest
+  # multi-node cluster; a consumer raises them per-cluster via its Argo Kustomize
+  # overlay (ADR-0024), not by a catalog PR.
+
+  ingester:
+    # -- (int) Three ingesters, matching loki.commonConfig.replication_factor above.
+    # The chart's default hard podAntiAffinity (topologyKey kubernetes.io/hostname)
+    # keeps them on three DISTINCT nodes, so a node loss costs at most one replica.
+    replicas: 3
+    zoneAwareReplication:
+      # -- (bool) Zone-aware replication OFF. The chart default is `true`, which splits
+      # the ingester into three per-zone StatefulSets (…-ingester-zone-a/-b/-c, one
+      # replica each at `ingester.replicas: 3`), labelled `rollout-group: ingester` and
+      # annotated `rollout-max-unavailable: "1"`. That label/annotation pair is the
+      # coordination surface of the grafana `rollout-operator` subchart — which this
+      # chart defaults to `rollout_operator.enabled: false`, so nothing consumes it.
+      # VERIFIED EMPIRICALLY by rendering this component once with zone-awareness ON
+      # (chart 6.55.0): the three per-zone StatefulSets each render
+      # `updateStrategy.type: RollingUpdate`, NOT `OnDelete` — `ingester.updateStrategy`
+      # defaults to RollingUpdate in this chart version, so the trap is NOT a rollout
+      # that never starts. It is the opposite: the three zone StatefulSets roll
+      # INDEPENDENTLY AND CONCURRENTLY with no operator serialising them, so an upgrade
+      # can restart the holder of every replica of a stream at once and drop the write
+      # quorum. One flat StatefulSet of 3 is rolled one pod at a time by the StatefulSet
+      # controller itself — exactly the serialisation the rollout-operator would
+      # otherwise have to provide. The chart's own values comment additionally
+      # recommends running Loki inside a single availability zone.
+      enabled: false
+    resources:
+      requests:
+        cpu: 200m
+        # QoS: requests.memory == limits.memory reserves the full envelope so the kubelet
+        # cannot evict an ingester below its limit during WAL replay — the peak-memory
+        # moment, and the point at which an evicted ingester enters a CrashLoop that never
+        # flushes. (This does NOT make the pod Guaranteed; that would also need a cpu
+        # limit, which the no-throttle convention forbids.)
+        memory: 2Gi
+      limits:
+        memory: 2Gi
+
+  distributor:
+    # -- (int) Two distributors: the write entrypoint, stateless, load-balanced by its
+    # Service — losing one leaves the ingest path serving.
+    replicas: 2
+    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
+    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
+    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+  querier:
+    # -- (int) Two queriers: stateless query executors pulled from the scheduler queue.
+    replicas: 2
+    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
+    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
+    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+  queryFrontend:
+    # -- (int) Two query-frontends: the read entrypoint a consumer's Grafana datasource
+    # targets; splits and queues queries.
+    replicas: 2
+    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
+    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
+    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+
+  queryScheduler:
+    # -- (int) Two query-schedulers: the queue between frontends and queriers. Running
+    # two keeps the read path serving when one is lost.
+    replicas: 2
+    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
+    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
+    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+
+  indexGateway:
+    # -- (int) Two index-gateways: they serve the TSDB index to the queriers, so a
+    # single-replica index-gateway would be a read-path single point of failure.
+    replicas: 2
+    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
+    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
+    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+  compactor:
+    # -- (int) ONE compactor — deliberately not redundant. The Loki compactor is a
+    # singleton by design (it owns index compaction and retention/deletion for the whole
+    # cluster); running two makes them contend over the same index objects. It sits on
+    # NEITHER the ingest nor the query path, so its loss does not violate the
+    # single-pod-loss requirement: writes and queries continue, only compaction and
+    # retention pause until it is rescheduled.
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+  ruler:
+    # -- (bool) KEEP the ruler enabled: the SingleBinary sibling runs `-target=all`,
+    # which includes the ruler, so an enabled ruler is functional parity — and it is what
+    # makes the S3_BUCKET_RULER key meaningful (the ruler reads its rules from
+    # ruler_storage.s3).
+    enabled: true
+    # -- (int) Two rulers so rule evaluation survives a single pod loss.
+    replicas: 2
+    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
+    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
+    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    maxUnavailable: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+  # The experimental / optional Loki targets stay at their chart-default `replicas: 0`
+  # and are therefore deliberately NOT deployed: the bloom components (an experimental
+  # accelerated-filtering path that needs its own object-storage layout), the pattern
+  # ingester (pattern extraction), and the overrides-exporter (per-tenant limit metrics,
+  # pointless in a single-tenant store). They are restated explicitly so their absence
+  # reads as a decision rather than an omission — enabling any of them is a deliberate
+  # catalog change with its own sizing and storage review.
+  bloomGateway:
+    replicas: 0
+  bloomPlanner:
+    replicas: 0
+  bloomBuilder:
+    replicas: 0
+  patternIngester:
+    replicas: 0
+  overridesExporter:
+    replicas: 0
+
+  # --- Disabled chart features ---------------------------------------------------
+
+  # The chart's nginx gateway is NOT shipped: it would add an unpinned third-party image
+  # and a second ingress surface to the signed artifact. Without it the consumer targets
+  # the component's own Services directly — the distributor Service for the write path,
+  # the query-frontend Service for the read path (both named in the component README).
+  gateway:
+    enabled: false
+
+  # Memcached chunk/results caches: query-latency optimisations that add two more
+  # Deployments plus memcached + exporter images to the signed artifact. Not shipped in
+  # the baseline; a consumer that needs them asks for a catalog change.
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
+  # The loki-canary DaemonSet and the helm test Pod are not GitOps workloads (Argo
+  # applies a test hook as a regular resource). `--skip-tests` in render:one already
+  # drops the test hook; both are disabled explicitly. NOTE: the chart FAILS the render
+  # if `test.enabled` is true while `lokiCanary.enabled` is false, so these two MUST be
+  # disabled together.
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+
+  # The chart's k8s-sidecar (sidecar.rules, enabled by default) watches the cluster for
+  # rule ConfigMaps / PrometheusRules and writes them into a local folder for the ruler.
+  # This ruler reads its rules from the S3 ruler bucket (ruler_storage.s3), so the
+  # in-cluster rule sidecar is redundant — disabling it keeps every frozen pod a single
+  # container and drops the kiwigrid/k8s-sidecar image from the artifact.
+  sidecar:
+    rules:
+      enabled: false
+
+  # External scrape: Alloy scrapes Loki's metrics endpoints from outside
+  # (observability/alloy). The chart's bundled monitoring (ServiceMonitor/rules/
+  # dashboards) and selfMonitoring (a bundled grafana-agent + canary) are therefore not
+  # wanted — they also depend on prometheus-operator CRDs / a grafana-agent this
+  # component does not ship. All four are already chart-default-off; restated so a chart
+  # default flip cannot pull CRD-dependent resources into the artifact.
+  monitoring:
+    dashboards:
+      enabled: false
+    rules:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    selfMonitoring:
+      enabled: false
+
+  # The bundled MinIO (an external S3-compatible store is the s3-object capability) and
+  # the rollout-operator (only meaningful with zone-aware ingesters, disabled above) are
+  # already chart-default-off; restated because both would otherwise silently add
+  # workloads and a second object store to the signed artifact.
+  minio:
+    enabled: false
+  rollout_operator:
+    enabled: false

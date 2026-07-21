@@ -1,0 +1,37 @@
+# The component's own namespace. loki-distributed is the sole catalog occupant
+# (dedicated namespace), so this component ships the Namespace object — a shipped
+# manifest takes precedence over Argo `managedNamespaceMetadata`, making the PSA posture
+# authoritative and self-contained (see the build skill's CONVENTIONS.md § Namespace &
+# PSA). The namespace is deliberately distinct from the SingleBinary sibling's `loki`
+# namespace: the two artifacts are alternative topologies of the same store and must not
+# contend over the same objects if a consumer ever has both applied during a migration.
+#
+# enforce: restricted — DERIVED from the rendered Distributed workload, checked against
+# EVERY one of the eight component pod templates (distributor, ingester, querier,
+# query-frontend, query-scheduler, index-gateway, compactor, ruler), not just one:
+#   * pod:       runAsNonRoot: true + seccompProfile: RuntimeDefault (the chart's pod
+#                default OMITS seccompProfile, which would cap the namespace at
+#                `baseline`; the helm values add it, so restricted holds).
+#   * container: allowPrivilegeEscalation: false + capabilities.drop: [ALL] +
+#                seccompProfile: RuntimeDefault (+ readOnlyRootFilesystem, runAsNonRoot,
+#                runAsUser 10001).
+#   * no Baseline-forbidden field anywhere: no hostPath volume (every non-ConfigMap
+#     volume is an emptyDir), no host namespace, no privileged container, no host port.
+# The rule-watching sidecar is disabled (sidecar.rules.enabled: false), so every pod is
+# a single container and the restricted container predicates hold for all of them.
+# MUST NOT be relaxed below the level the workload satisfies, and MUST NOT be raised
+# without re-deriving it from a fresh render — `task scan:psa-conformance` is the
+# deterministic check.
+#
+# The consumer adds the PNI trust-anchor labels (platform.io/provide.*), the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor), and the
+# audit/warn modes in its Argo overlay; the catalog ships only the enforce level and
+# the ownership labels. See the README § Namespace & Pod Security.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loki-distributed
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: loki-distributed
