@@ -46,20 +46,30 @@ A `kind: helm` wrapper over the `loki` chart
 | `loki-distributed-ruler` | `StatefulSet` | 2 | rule evaluation |
 | `loki-distributed-compactor` | `StatefulSet` | 1 | background maintenance |
 
-Alongside them: a `Service` per component (plus the `-headless` variants and the
-`loki-distributed-memberlist` gossip service), a `PodDisruptionBudget`
-(`maxUnavailable: 1`) per multi-replica component, a `ServiceAccount`, the chart's
-zero-permission `ClusterRole`/`ClusterRoleBinding` (`rules: []` — no API access
-granted), the chart-generated `loki` config `ConfigMap` and the `loki-runtime`
-overrides `ConfigMap`, and the dedicated `loki-distributed` `Namespace`.
+Alongside them: 13 `Service`s, a `PodDisruptionBudget` (`maxUnavailable: 1`) per
+multi-replica component, a `ServiceAccount`, the chart's zero-permission
+`ClusterRole`/`ClusterRoleBinding` (`rules: []` — no API access granted), the
+chart-generated `loki` config `ConfigMap` and the `loki-runtime` overrides `ConfigMap`,
+and the dedicated `loki-distributed` `Namespace`.
 
-Not every `StatefulSet` has a matching headless governing `Service` in this render: the
-compactor names `loki-distributed-compactor-headless` in `spec.serviceName` while only
-the ClusterIP `loki-distributed-compactor` is emitted, and the ruler's governing
-`Service` is a regular ClusterIP. That is upstream chart shape and has no functional
-consequence here — Kubernetes does not require the governing `Service` to exist, the
-single compactor is addressed by ClusterIP (which is what `common.compactor_grpc_address`
-in the rendered config resolves), and ruler peers find each other through memberlist.
+The `Service` shapes are not uniform, so do not assume a `-headless` sibling exists for
+every component. As rendered:
+
+- **Load-balancing `ClusterIP` plus a `-headless` sibling** — `distributor`,
+  `query-frontend`, `ingester`, `index-gateway` (these four are the only `-headless`
+  Services in the artifact).
+- **A single load-balancing `ClusterIP`** — `querier`, `compactor`.
+- **A single headless `Service`** (`clusterIP: None`, no `-headless` name suffix) —
+  `query-scheduler`, `ruler`.
+- Plus the headless `loki-distributed-memberlist` gossip `Service`.
+
+One consequence worth knowing before reading the render as broken: the compactor
+`StatefulSet` names `loki-distributed-compactor-headless` in `spec.serviceName`, but no
+`Service` of that name is emitted. That is upstream chart shape with no functional
+consequence here — Kubernetes does not require the governing `Service` to exist, and the
+single compactor is reached over its `ClusterIP` `Service`, which is what
+`common.compactor_grpc_address` in the rendered config resolves. The other three
+`StatefulSet`s resolve their `spec.serviceName` to a real headless `Service`.
 
 The chart ships **no** CustomResourceDefinitions, so strict-B (ADR-0028) does not apply
 and there is no `-crds` companion artifact. The rendered workload contains zero
@@ -222,14 +232,20 @@ consumer-tunable.
 ### Durability note
 
 Committed chunks live in the S3 object store and survive pod and node loss. The
-component ships **no** `PersistentVolumeClaim`s: every component's working directory is
-an `emptyDir` (the chart default in `Distributed` mode). The un-flushed write window is
-protected by `replication_factor: 3` across three ingesters — losing any single ingester
-loses no data, because two other replicas hold the same streams. A **simultaneous** loss
-of all ingesters (or a full-cluster restart) does lose the not-yet-flushed window. A
-consumer that wants that window on disk needs a catalog change enabling ingester
-persistence, not an overlay: `volumeClaimTemplates` cannot be added to a live
-`StatefulSet`.
+component ships **no** `PersistentVolumeClaim`s and declares no `volumeClaimTemplates`
+anywhere — nothing in this artifact requests durable storage. As rendered, five
+workloads (`ingester`, `querier`, `index-gateway`, `compactor`, `ruler`) mount an
+`emptyDir` at `/var/loki` as their working directory, and the compactor and ruler each
+mount one further `emptyDir` for scratch space. The remaining three (`distributor`,
+`query-frontend`, `query-scheduler`) mount no data volume at all — they are pure
+request-path processes whose only volumes are the two config `ConfigMap`s.
+
+The un-flushed write window is protected by `replication_factor: 3` across three
+ingesters — losing any single ingester loses no data, because two other replicas hold
+the same streams. A **simultaneous** loss of all ingesters (or a full-cluster restart)
+does lose the not-yet-flushed window. A consumer that wants that window on disk needs a
+catalog change enabling ingester persistence, not an overlay: `volumeClaimTemplates`
+cannot be added to a live `StatefulSet`.
 
 ## Namespace & Pod Security
 
