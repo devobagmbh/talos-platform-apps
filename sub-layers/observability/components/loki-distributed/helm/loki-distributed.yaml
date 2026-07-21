@@ -106,8 +106,11 @@ values:
     # ${VAR} placeholders, NOT real endpoints/keys: the freeze-line keeps the S3
     # connection 100% consumer-owned. Path-style addressing is baked (the self-hosted S3
     # standard — MinIO, Garage and similar require it); the TLS mode is consumer-owned
-    # via ${S3_INSECURE}. Rendered into common.storage.s3 + ruler_storage.s3 by the
-    # loki.lokiStorageConfig.s3 helper and expanded at runtime by -config.expand-env=true.
+    # via ${S3_INSECURE}. Rendered by the loki.lokiStorageConfig.s3 helper into
+    # common.storage.s3 (chunks) and ruler.storage.s3 (rules) — the ruler block is nested
+    # UNDER the top-level `ruler:` key, it is NOT a top-level `ruler_storage:` (that is
+    # the Mimir config shape, and the rendered loki config has no such key). Expanded at
+    # runtime by -config.expand-env=true.
     storage:
       type: s3
       bucketNames:
@@ -303,7 +306,7 @@ values:
     # -- (bool) KEEP the ruler enabled: the SingleBinary sibling runs `-target=all`,
     # which includes the ruler, so an enabled ruler is functional parity — and it is what
     # makes the S3_BUCKET_RULER key meaningful (the ruler reads its rules from
-    # ruler_storage.s3).
+    # ruler.storage.s3 in the rendered config).
     enabled: true
     # -- (int) Two rulers so rule evaluation survives a single pod loss.
     replicas: 2
@@ -365,7 +368,7 @@ values:
 
   # The chart's k8s-sidecar (sidecar.rules, enabled by default) watches the cluster for
   # rule ConfigMaps / PrometheusRules and writes them into a local folder for the ruler.
-  # This ruler reads its rules from the S3 ruler bucket (ruler_storage.s3), so the
+  # This ruler reads its rules from the S3 ruler bucket (ruler.storage.s3), so the
   # in-cluster rule sidecar is redundant — disabling it keeps every frozen pod a single
   # container and drops the kiwigrid/k8s-sidecar image from the artifact.
   sidecar:

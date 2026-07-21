@@ -53,6 +53,14 @@ zero-permission `ClusterRole`/`ClusterRoleBinding` (`rules: []` — no API acces
 granted), the chart-generated `loki` config `ConfigMap` and the `loki-runtime`
 overrides `ConfigMap`, and the dedicated `loki-distributed` `Namespace`.
 
+Not every `StatefulSet` has a matching headless governing `Service` in this render: the
+compactor names `loki-distributed-compactor-headless` in `spec.serviceName` while only
+the ClusterIP `loki-distributed-compactor` is emitted, and the ruler's governing
+`Service` is a regular ClusterIP. That is upstream chart shape and has no functional
+consequence here — Kubernetes does not require the governing `Service` to exist, the
+single compactor is addressed by ClusterIP (which is what `common.compactor_grpc_address`
+in the rendered config resolves), and ruler peers find each other through memberlist.
+
 The chart ships **no** CustomResourceDefinitions, so strict-B (ADR-0028) does not apply
 and there is no `-crds` companion artifact. The rendered workload contains zero
 `kind: CustomResourceDefinition`.
@@ -63,10 +71,15 @@ The design target is the **minimum** footprint under which the ingest and query 
 both survive the loss of any single pod.
 
 - **Ingesters: 3, with `replication_factor: 3`.** Every log stream is written to all
-  three ingesters, so the write quorum (2) still holds when one is lost. The chart's
-  default hard pod anti-affinity (`topologyKey: kubernetes.io/hostname`) places them on
-  three distinct nodes, so a node loss costs at most one replica — which is why this
-  component targets a cluster with at least three schedulable nodes.
+  three ingesters, so the write quorum (2) still holds when one is lost.
+- **Every workload spreads across nodes, not just the ingester.** All eight rendered
+  workloads carry the chart's hard pod anti-affinity —
+  `requiredDuringSchedulingIgnoredDuringExecution`, `topologyKey:
+  kubernetes.io/hostname`, scoped per `app.kubernetes.io/component`. Each component's
+  own replicas therefore land on distinct nodes (different components may still share
+  one), so a node loss costs at most one replica of any given component. That is what
+  makes pod-loss survival a node-loss survival too — and it is why this component
+  targets a cluster with at least three schedulable nodes (see § Consumer obligations).
 - **Zone-aware ingester replication is deliberately OFF** (the chart default is on).
   With it on, the chart renders three per-zone `StatefulSet`s labelled
   `rollout-group: ingester` and annotated `rollout-max-unavailable`, which are the
@@ -100,8 +113,10 @@ both survive the loss of any single pod.
   deliberate catalog change with its own sizing and storage review.
 - **Disabled**: the nginx `gateway` (see § Consumer entry points), the memcached
   `chunksCache`/`resultsCache`, the `lokiCanary` DaemonSet, the helm `test` hook, the
-  bundled `monitoring`/`selfMonitoring` (Alloy scrapes the metrics endpoints externally
-  — `observability/alloy`), the bundled `minio`, and the `rollout_operator`.
+  chart's whole `monitoring` block — which covers **both** its `serviceMonitor`/`rules`
+  scrape resources **and** its bundled dashboards — plus `selfMonitoring`, the bundled
+  `minio`, and the `rollout_operator`. Scrape wiring and dashboards are consequently
+  consumer-owned; § Consumer obligations states that split.
 
 Each workload declares `requests.cpu` + `requests.memory` + `limits.memory` and no CPU
 limit (a CPU limit only throttles; memory is the incompressible OOM risk). The values
@@ -164,10 +179,34 @@ of these:
   / `S3_BUCKET_RULER` point at. Loki CrashLoops on a missing S3 bucket until it appears
   (a visible, self-healing failure), so the consumer MUST order bucket provisioning
   ahead of this component in its composition.
-- **At least three schedulable nodes.** The ingester's chart-default hard pod
-  anti-affinity is `requiredDuringScheduling`, so with fewer nodes than ingester
-  replicas the surplus ingester pods stay `Pending` and the ring never reaches its
-  replication factor.
+- **At least three schedulable nodes.** *Every* workload in this artifact — not only the
+  ingester — carries the chart's hard `requiredDuringSchedulingIgnoredDuringExecution`
+  pod anti-affinity on `topologyKey: kubernetes.io/hostname`, scoped to its own
+  `app.kubernetes.io/component`. A component's replica count therefore cannot exceed the
+  node count. On a two-node cluster that means the third ingester **and** one replica of
+  every two-replica component (distributor, querier, query-frontend, query-scheduler,
+  index-gateway, ruler) stay `Pending` — the ingester ring never reaches its replication
+  factor, and each other component silently degrades to a single serving replica,
+  losing the single-pod-loss survival this component exists to provide.
+- **Metrics scrape wiring.** Every workload exposes Prometheus metrics on its
+  `http-metrics` port (`3100`), but this artifact contains **nothing that causes them to
+  be scraped**: it ships no `ServiceMonitor`, no `PodMonitor`, no scrape configuration,
+  and no bundled metrics agent (the chart's `monitoring.serviceMonitor` and its
+  `selfMonitoring` agent are both switched off — see § Why this topology). Making the
+  metrics land in a metrics store is therefore entirely the consumer's job: it points
+  its own collector (`observability/alloy`) at those endpoints, or supplies its own
+  `ServiceMonitor`s if it runs a prometheus-operator-based stack. Shipping either here
+  would bind the artifact to prometheus-operator CRDs it otherwise does not need.
+  Recording and alerting rules for Loki are likewise not shipped and are owned the same
+  way.
+- **Grafana dashboards.** This artifact ships **no dashboards** and no dashboard
+  `ConfigMap`s (the chart bundles a set; it is switched off by the same `monitoring`
+  block that disables the scrape resources above — one chart key, two distinct
+  ownership questions). Dashboard provisioning is a consumer concern, handled through
+  the catalog's Grafana components (`observability/grafana`,
+  `observability/grafana-operator`) and the consumer's own overlay. A consumer that
+  wants the upstream Loki dashboards imports them there rather than re-enabling
+  anything in this component.
 - **A per-cluster sizing overlay** where the platform defaults do not fit — replica
   counts and resource envelopes are the expected `source.kustomize.patches` surface.
 - **PNI labels** — the `platform.io/provide.*` namespace trust anchors, the
