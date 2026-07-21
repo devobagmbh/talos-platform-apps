@@ -1,0 +1,21 @@
+# Backstage catalog entity — registered as a catalog location in devoba-backstage
+# (prod overlay) so Backstage ingests this repo and TechDocs renders its Open-Knowledge-
+# Format bundle under knowledge/ (backstage.io/techdocs-ref: dir:. → the root mkdocs.yml,
+# docs_dir: knowledge). Same pattern as talos-platform-docs / talos-platform-base.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: talos-platform-apps
+  title: Talos Platform Apps
+  description: The signed, pre-rendered OCI application catalog (sub-layers/components) for the devoba Talos platform — OKF knowledge bundle, decisions, architecture.
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - documentation
+    - okf
+    - catalog
+    - oci
+spec:
+  type: library
+  lifecycle: production
+  owner: platform-team
