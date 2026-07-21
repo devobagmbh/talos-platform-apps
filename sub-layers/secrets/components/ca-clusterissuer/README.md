@@ -1,32 +1,32 @@
-# Komponente `secrets/ca-clusterissuer`
+# Component `secrets/ca-clusterissuer`
 
-cert-manager-`ClusterIssuer` vom Typ **CA**, der die Devoba-eigene CA hält und Leaf-Zertifikate für `*.office-lab.devoba.de` (bzw. die jeweilige Cluster-Domain) signiert.
+cert-manager `ClusterIssuer` of type **CA** that holds an operator-owned CA and signs leaf certificates for the cluster domain (`*.<cluster-domain>`).
 
-**Skelett** — Implementation im TLS-Issue.
+**Skeleton** — implementation in the TLS issue.
 
-## Hintergrund (Planungsupdate 2026-05-27)
+## Background (planning update 2026-05-27)
 
-TLS läuft **nicht** mehr über Let's-Encrypt / DNS01-ACME, sondern über eine **eigene CA**:
+TLS no longer runs via Let's Encrypt / DNS01-ACME, but via an **operator-owned CA**:
 
-- Die CA-**Root** wird via **Jamf** in den System-Trust der Devoba-Clients (Macs) ausgerollt — Browser/CLI vertrauen damit allen `*.office-lab.devoba.de`-Zertifikaten.
-- Im Cluster signiert dieser `ClusterIssuer` die Leaf-Certs aus dem CA-Key. Strukturell identisch zum lokalen mkcert-Setup (`local/mkcert-cluster-issuer.yaml`), nur mit der echten Devoba-CA.
-- DNS kommt von Unifi (Wildcard → Cluster-Ingress-VIP) — kein In-Cluster-DNS-Server, kein External-DNS, kein DNS01-Solver. Der frühere `dns`-Sub-Layer entfällt komplett.
+- The CA **root** is rolled out into the operator's client system trust stores via the operator's device-management (MDM) tooling — browsers/CLIs then trust every `*.<cluster-domain>` certificate.
+- Inside the cluster this `ClusterIssuer` signs the leaf certs from the CA key. Structurally identical to the local mkcert setup (`local/mkcert-cluster-issuer.yaml`), only with the real operator CA.
+- DNS is served by the site network (wildcard → cluster ingress VIP) — no in-cluster DNS server, no External-DNS, no DNS01 solver. The former `dns` sub-layer is dropped entirely.
 
-## CA-Key-Herkunft
+## CA-key provenance
 
-Der CA-Key (`ca.crt` + `ca.key`) ist sensibles Material und gehört **nicht** in dieses Repo. Er wird via ESO (`secrets/external-secrets`) aus Vault (Layer 3) in ein Secret synchronisiert, das der `ClusterIssuer` referenziert. Diese Komponente liefert nur die `ClusterIssuer`-Resource + das `ExternalSecret`-Template; der konkrete Vault-Pfad ist cluster-spezifisch (Konsumenten-Repo).
+The CA key (`ca.crt` + `ca.key`) is sensitive material and does **not** belong in this repo. It is synced via ESO (`secrets/external-secrets`) from Vault (Layer 3) into a Secret the `ClusterIssuer` references. This component ships only the `ClusterIssuer` resource + the `ExternalSecret` template; the concrete Vault path is cluster-specific (consumer repo).
 
-## Sync-Wave
+## Sync-wave
 
-`20` — braucht `secrets/external-secrets` (CRDs + laufenden Operator, der den CA-Key aus Vault zieht) und cert-manager (aus base).
+`20` — needs `secrets/external-secrets` (CRDs + a running operator that pulls the CA key from Vault) and cert-manager (from base).
 
 ## OCI
 
-```
+```text
 oci://ghcr.io/devobagmbh/talos-platform-apps/secrets/ca-clusterissuer:vX.Y.Z
 ```
 
-## Verwandte ADRs
+## Related ADRs
 
 - [ADR-0011 — Secrets-Management](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
-- ADR-0019 — TLS via eigene CA (Jamf-verteilt) *(neu)*
+- ADR-0019 — TLS via own CA (MDM-distributed) *(new)*
