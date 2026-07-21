@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/devobagmbh/talos-platform-apps/compare/observability/prometheus-operator-v0.2.1...observability/prometheus-operator-v0.2.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **observability/prometheus-operator:** vendor operator from upstream repo ([#723](https://github.com/devobagmbh/talos-platform-apps/issues/723)) ([7a239f1](https://github.com/devobagmbh/talos-platform-apps/commit/7a239f1a0339de00aabdb30cb31e5f3a7f042739))
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/prometheus-operator-v0.2.0...observability/prometheus-operator-v0.2.1) (2026-07-15)
 
 

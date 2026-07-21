@@ -19,7 +19,7 @@
   "sub-layers/observability/components/hubble": "0.2.1",
   "sub-layers/observability/components/kube-state-metrics": "0.2.1",
   "sub-layers/observability/components/metrics-server": "0.2.1",
-  "sub-layers/observability/components/prometheus-operator": "0.2.1",
+  "sub-layers/observability/components/prometheus-operator": "0.2.2",
   "sub-layers/observability/components/prometheus-operator-crds": "0.2.2",
   "sub-layers/registry/components/harbor": "0.4.0",
   "sub-layers/secrets/components/cert-manager": "0.2.1",
