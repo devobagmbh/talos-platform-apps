@@ -272,21 +272,26 @@ PR review under branch protection — the local gate is triage.
 
 ## Reading rendered artifacts
 
-A dispatched subagent extracts from a rendered artifact with line-scoped tools
-instead of reading it whole. The rule below states the artifact class it
-governs, the size threshold above which it binds, who it binds, the
-bounded-read mechanism, the tool surface it runs on, and what happens when the
-artifact is missing.
+A dispatched subagent extracts from a large artifact with line-scoped tools
+instead of reading it whole. The rule below states the size threshold above
+which it binds, the one exemption to it, who it binds, the bounded-read
+mechanism, the tool surface it runs on, and what happens when the artifact is
+missing.
 
-**(a) Class and exemption.** This rule governs the generated-artifact class —
-`rendered/manifest.yaml`, a `helm template` capture, a scan or lint log. Skill
-contracts, agent bodies, and component sources (`helm/**`, `manifests/**`,
-`customization.yaml`, `compatibility.yaml`, `README.md`) are exempt from the
-bounded-window requirement; a brief clause naming a single section of such a
-file is satisfied by reading that section via its heading anchor. This is an
-exemption from bounding, never a mandate to read whole.
+**(a) Size is the axis; the exemption is scope.** The generated-artifact class
+— `rendered/manifest.yaml`, a `helm template` capture, a scan or lint log — is
+the canonical case, but provenance is not a proxy for size: the largest files
+in this tree are the vendored CRD manifests under `manifests/**`, far above the
+trigger in (b), and reading one whole exhausts a dispatch exactly as a render
+does. So the bounded-window requirement binds any file over that trigger,
+whatever produced it. One exemption, scoped by reference rather than by
+provenance: a brief clause naming a single section of a contract or an agent
+body is exempt from the bounded-window requirement and is satisfied by reading
+that section via its heading anchor — an agent pointed at a specification *by
+section* is never required to bound-window it. This is an exemption from
+bounding, never a mandate to read whole.
 
-**(b) Trigger.** The discipline binds once a generated artifact exceeds 500
+**(b) Trigger.** The discipline binds once an artifact exceeds 500
 lines; an artifact whose size the agent cannot bound, or one whose lines are
 individually very long, is treated as large too. Above the threshold a
 whole-file read has exhausted dispatches before now; below it an end-to-end
@@ -309,23 +314,17 @@ within-render scope on its own: the assigned scope is the lens the dispatched
 agent's own contract gives it — the security lens for `security-reviewer`,
 the bootstrap/DR lens for `operational-safety-reviewer`, the whole artifact
 for a triaging gate such as `staff-reviewer`. The windows are what the lens
-bounds; an inventory entry outside a window the agent opened is reported as
-un-reviewed rather than opened by default — that report is what makes the gap
-visible. Three further clauses keep the budget from degenerating:
+bounds; an inventory entry the agent neither opened nor judged is named — by
+kind and name — in its output, as an ordinary finding in the vocabulary its own
+contract already gives it, rather than opened by default or left silent. That
+un-reviewed report is what makes the gap visible, and it needs no new verdict
+state to carry. Two further clauses keep the budget from degenerating:
 
 - *Floor, not ceiling* — the inventory bounds the minimum an agent covers,
   never the maximum: an agent MAY read beyond its inventory-derived windows
   whenever its lens gives it reason to, and the anchored `^kind:` pass exists
   to make an unexpected resource nameable, never as a licence to stop
   looking.
-- *The too-large branch is a finding, not a refusal* — when a lens covers so
-  much of the artifact that its windows would together approach the whole
-  file, the agent reports the scope as too large for one dispatch, reviews
-  what it can, and returns that work marked partially reviewed with the
-  un-read inventory entries named by kind and name. It never returns a
-  refusal or a null result; the named un-read entries are the consumable
-  output the orchestrator acts on (re-dispatch on the remainder, or record
-  the gap) — strictly more than a thrashed dispatch returns today.
 - *Residual, stated honestly* — an anchored `^kind:` match suppresses
   phantoms embedded in string values but still misses a resource emitted in
   flow style or indented inside a `List` wrapper, so the inventory bounds
@@ -338,19 +337,36 @@ line matches, including a blank one — yields the artifact's line count the
 trigger in (b) needs without reading it; `Grep` with a pattern (`-n`, `-C`)
 locates the inventory entries; `Read` with `offset`/`limit` opens the
 windows. An agent that holds Bash MAY use the equivalent shell form (`wc
--l`, `grep -n`, `sed -n '<range>p'`).
+-l`, `grep -n`, `sed -n '<range>p'`). Address the artifact by its explicit
+path, never by a directory-scoped search: `rendered/` is gitignored, so a
+search that skips ignored paths reaches nothing there and would report a
+present artifact as absent.
 
 **(f) Absent-artifact signal, by class.** A rendered artifact is generated
-and gitignored, and a read-only agent cannot regenerate it. When a rendered
-artifact the review depends on is absent — whether the brief named its path
-or the agent located it itself — the agent files `not-read: <path> absent`
-as a critical finding (the blocking tier `SKILL.md §Phase 5` requires closed
-before proceeding, never the deferrable medium/low tier) and does not report
-the artifact as reviewed. This mirrors the carve-out `SKILL.md §Phase 3`
-already draws for a missing findings file: an absent artifact is an
-infrastructure failure, not a defect verdict — it stops the dispatch from
-counting as a review and is surfaced to the operator, and it MUST NOT
-consume a Phase-4 fix-loop iteration, because no fix addresses it.
+and gitignored, so it is legitimately absent on a fresh worktree. When an
+artifact the review depends on is absent at its explicit path (per (e) — a
+directory-scoped search proves nothing here), the response is graded by what
+the agent holds, and it routes through the vocabulary that agent's own
+contract already defines rather than a severity invented by this rule:
+
+- An agent that holds Bash **regenerates** the artifact — `task render:one --
+  <sub-layer>/<component>` — and reads the result. Regeneration is the
+  first-line response, not a finding.
+- An agent that cannot regenerate it records the artifact as **not verifiable
+  in this dispatch** and says so in its output: for `catalog-evaluator` that
+  is the `not-locally-verifiable` per-AC verdict plus a
+  `not_locally_verifiable` entry naming the path; a read-only reviewer names
+  it in the field its own contract already gives it for unverifiable
+  material — `not_locally_verifiable` where the schema carries it, or
+  `notes:` plus a finding whose `issue:` states the absence where it does
+  not (the `staff-reviewer` case) — either way with `verdict: needs-info`
+  when its judgment depended on it.
+
+Either way the artifact is never reported as reviewed. This mirrors the
+carve-out `SKILL.md §Phase 3` already draws for a missing findings file: an
+absent artifact is an infrastructure failure, not a defect verdict — it is
+surfaced to the operator, who supplies or regenerates it, rather than being
+answered with a fix.
 
 **(g) Boundary.** This rule constrains how an artifact is read; the set of
 things to verify is unchanged. What a single dispatch can complete may fall
