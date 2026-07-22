@@ -8,6 +8,7 @@ components:
   # prometheus-operator(+-crds) above; see README.md "The kube-prometheus-stack
   # composition" for the full map (#38).
   - loki                    # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
+  - loki-distributed        # sync-wave 10 — same grafana/loki chart in Distributed mode: the HA topology, an ALTERNATIVE to `loki` (never co-deployed, own namespace); needs an S3 endpoint + bucket and >= 3 schedulable nodes
   - mimir                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - tempo                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - alloy                   # sync-wave 20 — needs the Loki/Mimir/Tempo endpoints

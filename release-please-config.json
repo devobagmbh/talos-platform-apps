@@ -115,6 +115,10 @@
       "component": "observability/loki",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/loki-distributed": {
+      "component": "observability/loki-distributed",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/metrics-server": {
       "component": "observability/metrics-server"
     },
