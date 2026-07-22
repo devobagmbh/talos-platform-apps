@@ -299,8 +299,9 @@ read is cheap. Line count is the measurable trigger — `Read`, `Grep`, and
 `Glob` report no byte size, so the token-density concern stays qualitative.
 
 **(c) Scope, by BCP-14 level.** Every dispatched subagent MUST follow this
-rule; the orchestrator SHOULD follow it when it inspects a generated artifact
-itself.
+rule; the orchestrator SHOULD follow it whenever it inspects any artifact over
+that trigger itself — the same size axis (a) sets, never a narrower
+generated-only scope, since the orchestrator's context outlives every dispatch.
 
 **(d) Two-step mechanism with a bounded read budget.** *Inventory first* —
 match a document-level `^kind:` (column 0) across the whole artifact to
@@ -315,8 +316,14 @@ agent's own contract gives it — the security lens for `security-reviewer`,
 the bootstrap/DR lens for `operational-safety-reviewer`, the whole artifact
 for a triaging gate such as `staff-reviewer`. The windows are what the lens
 bounds; an inventory entry the agent neither opened nor judged is named — by
-kind and name — in its output, as an ordinary finding in the vocabulary its own
-contract already gives it, rather than opened by default or left silent. That
+kind and name — in the free-text `notes:` field every output schema under
+`.claude/agents/` carries, rather than opened by default or left silent.
+`notes:` and not a `findings[]` entry, deliberately: the finding schemas of
+`security-reviewer` and `operational-safety-reviewer` require a `section:`
+value from a closed enum that defines none for coverage, and `staff-reviewer`
+reserves `approved` for an empty `findings` list — so filing coverage as a
+finding would either invent an enum value or cost the primary gate its clean
+verdict for a budget fact rather than a defect. That
 un-reviewed report is what makes the gap visible, and it needs no new verdict
 state to carry. Two further clauses keep the budget from degenerating:
 
@@ -351,16 +358,16 @@ contract already defines rather than a severity invented by this rule:
 
 - An agent that holds Bash **regenerates** the artifact — `task render:one --
   <sub-layer>/<component>` — and reads the result. Regeneration is the
-  first-line response, not a finding.
-- An agent that cannot regenerate it records the artifact as **not verifiable
-  in this dispatch** and says so in its output: for `catalog-evaluator` that
-  is the `not-locally-verifiable` per-AC verdict plus a
-  `not_locally_verifiable` entry naming the path; a read-only reviewer names
-  it in the field its own contract already gives it for unverifiable
-  material — `not_locally_verifiable` where the schema carries it, or
-  `notes:` plus a finding whose `issue:` states the absence where it does
-  not (the `staff-reviewer` case) — either way with `verdict: needs-info`
-  when its judgment depended on it.
+  first-line response, not a finding. `catalog-evaluator` holds Bash, so it is
+  always this case; only when regeneration itself fails does it record the
+  affected criterion as `not-locally-verifiable` with the path under
+  `not_locally_verifiable` — never as a substitute for running the render.
+- A read-only reviewer, which holds no Bash and so cannot regenerate, records
+  the artifact as **not verifiable in this dispatch** in the field its own
+  contract already gives it for unverifiable material —
+  `not_locally_verifiable` where the schema carries it, `notes:` where it does
+  not (the `staff-reviewer` case) — with `verdict: needs-info` when its
+  judgment depended on it.
 
 Either way the artifact is never reported as reviewed. This mirrors the
 carve-out `SKILL.md §Phase 3` already draws for a missing findings file: an
