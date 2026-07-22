@@ -29,8 +29,12 @@ freeze_line:
   # attach per-cluster overlays via `source.kustomize.patches`. Calibrated-friction
   # (ADR-0024): the base itself restricts nothing; the image digest is pinned at
   # admission (cosign) and dangerous classes are fenced by the consumer-side ADR-0018
-  # Kyverno safe-defaults — never a catalog allowlist here. Per-cluster replica counts
-  # and resource envelopes are the expected overlay surface for this component.
+  # Kyverno safe-defaults — never a catalog allowlist here. Per-cluster REPLICA COUNTS
+  # are the expected overlay surface; container resources are NOT — this component
+  # declares no `resource_policy` block, and schemas/compatibility.schema.json makes an
+  # absent block mean class `fixed` (no consumer override), so a per-cluster resource
+  # change is a catalog change today (ADR-0024 Resource-Sizing / docs#159 is the axis
+  # that would change that).
   workload: rendered/manifest.yaml
 provided_refs:
   env: loki-distributed-runtime-config # Shape (a): non-secret S3 connection scalars via envFrom

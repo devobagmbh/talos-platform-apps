@@ -13,20 +13,42 @@ It implements **two** capabilities in `catalog/capability-index.yaml`:
 | Log storage | `logs-storage` | `data-migration` |
 | Log query endpoint (LogQL) | `logs-query` | `drop-in` |
 
+`swap_class` scores substituting the **tool** (e.g. `loki` → `victoria-logs`), not the
+move between this component and its SingleBinary sibling: swapping the *store* is a
+`data-migration` (the chunks must be migrated), swapping the *query endpoint* is
+`drop-in` (LogQL-compatible). The capability index is tool-keyed, so both Loki
+components legitimately claim these ids; the sibling move is a separate axis, costed in
+§Relationship below.
+
 ## Relationship to `observability/loki`
 
 `observability/loki` ships the **same chart at the same version** in `SingleBinary`
 mode — one `StatefulSet`, one replica — for single-node consumers. This component is the
 **second, independently versioned** artifact: a multi-node consumer selects highly
 available log storage by pointing its Argo `Application` at `observability/loki-distributed`
-**instead of** `observability/loki`. The two are alternative topologies of one store,
-never deployed together; each ships its own dedicated namespace so an overlapping
-migration window cannot make two Argo `Application`s contend over the same objects.
+**instead of** `observability/loki`. The two are alternative topologies of one store and
+are not run together. Each ships its own dedicated namespace, which keeps two Argo
+`Application`s from contending over the same **Kubernetes** objects — it does **not**
+separate the S3 buckets, which stay shared state (§Failure modes and recovery).
 
-Consumer-visible contract parity is deliberate: the required env/secret **key names** are
-byte-identical across both components, so a consumer that already supplies the
-SingleBinary component's S3 keys reuses the same values here — only the ConfigMap/Secret
-**names** are component-scoped (see § Freeze-line).
+Switching between the two is **consumer-change-shaped with no data migration**: both
+renders emit an identical `schema_config` (tsdb / v13 / prefix `loki_index_` / 24h from
+`2024-04-01`), so the new component reads the existing buckets as they are. What a
+consumer actually changes:
+
+| | `observability/loki` | `observability/loki-distributed` |
+|---|---|---|
+| OCI repo | `…/observability/loki` | `…/observability/loki-distributed` |
+| Namespace | `loki` | `loki-distributed` |
+| Write endpoint | the single `loki` `Service` | `loki-distributed-distributor` |
+| Read endpoint | the same `loki` `Service` | `loki-distributed-query-frontend` |
+| Config refs | `loki-runtime-config` / `-secret` | `loki-distributed-runtime-config` / `-secret` |
+
+The ref **names** are component-scoped, but the **keys inside them are byte-identical**,
+so a consumer already supplying the SingleBinary component's S3 values reuses them
+verbatim (see §Freeze-line). Read the cut-over procedure in §Failure modes and recovery
+before switching — the buckets are shared state and the two components must not run
+against them concurrently.
 
 ## Contents
 
@@ -46,6 +68,11 @@ A `kind: helm` wrapper over the `loki` chart
 | `loki-distributed-ruler` | `StatefulSet` | 2 | rule evaluation |
 | `loki-distributed-compactor` | `StatefulSet` | 1 | background maintenance |
 
+In aggregate that is **16 pods** where the SingleBinary sibling runs 1, requesting
+**1.9 CPU cores and 9.5 GiB of memory** (13 GiB of memory limits) before any consumer
+resizing — the price of the HA topology, and the number to check a cluster against
+before selecting this component over `observability/loki`.
+
 Alongside them: 13 `Service`s, a `PodDisruptionBudget` (`maxUnavailable: 1`) per
 multi-replica component, a `ServiceAccount`, the chart's zero-permission
 `ClusterRole`/`ClusterRoleBinding` (`rules: []` — no API access granted), the
@@ -63,19 +90,36 @@ every component. As rendered:
   `query-scheduler`, `ruler`.
 - Plus the headless `loki-distributed-memberlist` gossip `Service`.
 
-One consequence worth knowing before reading the render as broken: the compactor
-`StatefulSet` names `loki-distributed-compactor-headless` in `spec.serviceName`, but no
-`Service` of that name is emitted. That is upstream chart shape with no functional
-consequence here — Kubernetes does not require the governing `Service` to exist, and the
-single compactor is reached over its `ClusterIP` `Service`, which is what
-`common.compactor_grpc_address` in the rendered config resolves. The other three
-`StatefulSet`s resolve their `spec.serviceName` to a real headless `Service`.
+Two upstream-chart quirks in that set, both harmless but both alarming on a first read.
+`query-frontend`, its `-headless` sibling and `query-scheduler` set
+`publishNotReadyAddresses: true` so the query components can discover each other before
+readiness — the consequence is that a restarting query-frontend is in DNS before it can
+serve, so brief query errors during a rollout are expected, not a fault. And the
+compactor's `spec.serviceName` names a `loki-distributed-compactor-headless` that is
+never emitted; Kubernetes does not require the governing `Service` to exist, and the
+single compactor is reached over its `ClusterIP` `Service` — which is what
+`common.compactor_grpc_address` resolves. The other three `StatefulSet`s resolve
+`spec.serviceName` to a real headless `Service`.
 
 The chart ships **no** CustomResourceDefinitions, so strict-B (ADR-0028) does not apply
 and there is no `-crds` companion artifact. The rendered workload contains zero
 `kind: CustomResourceDefinition`.
 
 ## Why this topology
+
+### Why `Distributed` and not `SimpleScalable`
+
+The chart offers a middle mode, `SimpleScalable` (three targets: read / write / backend),
+and it was a genuine candidate — it would also survive single-pod loss, with noticeably
+fewer workloads than the 16 pods above. It was rejected for two reasons. First,
+observability of Loki itself: the upstream `loki-overview` mixin selects on the
+microservices job names (`distributor`, `ingester`, `querier`, …) that only `Distributed`
+produces, so under `SimpleScalable`'s read/write/backend targets those dashboards and
+rules do not match. Second, stack consistency: `observability/mimir` already runs the
+equivalent microservices shape in this stack, so `Distributed` keeps one operational
+model across the metrics and logs stores rather than two.
+
+### Replica counts inside `Distributed`
 
 The design target is the **minimum** footprint under which the ingest and query paths
 both survive the loss of any single pod.
@@ -129,9 +173,12 @@ both survive the loss of any single pod.
   consumer-owned; § Consumer obligations states that split.
 
 Each workload declares `requests.cpu` + `requests.memory` + `limits.memory` and no CPU
-limit (a CPU limit only throttles; memory is the incompressible OOM risk). The values
-are a platform starting point for a modest multi-node cluster; a consumer raises them
-per-cluster through its Argo Kustomize overlay, not through a catalog PR.
+limit (a CPU limit only throttles; memory is the incompressible OOM risk). The values are
+a platform starting point for a modest multi-node cluster. They are **not** consumer-
+tunable today: this component declares no `resource_policy`, which
+`schemas/compatibility.schema.json` treats as class `fixed`, so resizing is a catalog
+change rather than an overlay (ADR-0024 Resource-Sizing / docs#159 is the axis that
+would open it). Replica counts *are* overlay surface.
 
 ## Consumer entry points
 
@@ -172,6 +219,11 @@ Two consumer-supplied refs feed the placeholders:
 These map into `common.storage.s3` (chunks) and `ruler.storage.s3` (rules) in the
 rendered config. See `customization.yaml`.
 
+Not everything about the S3 connection is consumer-owned: path-style addressing
+(`s3forcepathstyle: true`) sits on the catalog side of the freeze-line, baked into the
+workload because it is the self-hosted / path-style S3 standard that MinIO, Garage and
+similar require. It is not consumer-tunable.
+
 ## Consumer obligations (out of scope here)
 
 The consumer supplies, in its own cluster repo / Argo overlay — the catalog ships none
@@ -197,7 +249,9 @@ of these:
   every two-replica component (distributor, querier, query-frontend, query-scheduler,
   index-gateway, ruler) stay `Pending` — the ingester ring never reaches its replication
   factor, and each other component silently degrades to a single serving replica,
-  losing the single-pod-loss survival this component exists to provide.
+  losing the single-pod-loss survival this component exists to provide. **Four or more
+  nodes** are RECOMMENDED if the cluster is ever drained for maintenance — see §Failure
+  modes and recovery.
 - **Metrics scrape wiring.** Every workload exposes Prometheus metrics on its
   `http-metrics` port (`3100`), but this artifact contains **nothing that causes them to
   be scraped**: it ships no `ServiceMonitor`, no `PodMonitor`, no scrape configuration,
@@ -217,17 +271,20 @@ of these:
   `observability/grafana-operator`) and the consumer's own overlay. A consumer that
   wants the upstream Loki dashboards imports them there rather than re-enabling
   anything in this component.
-- **A per-cluster sizing overlay** where the platform defaults do not fit — replica
-  counts and resource envelopes are the expected `source.kustomize.patches` surface.
+- **Network isolation.** `auth_enabled: false` (single-tenant) and no shipped
+  `NetworkPolicy` together mean any pod with cluster-internal reach to the
+  query-frontend or querier `ClusterIP` can read every log line from every namespace.
+  That is the correct catalog default — the isolation boundary is a cluster-topology
+  decision — but it makes restricting access a consumer obligation, via `NetworkPolicy`
+  or a Cilium `CiliumClusterwideNetworkPolicy`.
+- **A per-cluster replica overlay** where the platform defaults do not fit — replica
+  counts are the expected `source.kustomize.patches` surface. Container resources are
+  not (class `fixed`; see §Why this topology).
 - **PNI labels** — the `platform.io/provide.*` namespace trust anchors, the
   `pod-security.kubernetes.io/enforce-version` pin (its cluster's Kubernetes minor), and
   the `audit`/`warn` PSA modes.
 - The Argo `Application` CR itself (with its `argocd.argoproj.io/sync-wave` annotation)
   — Argo definitions live in the consumer cluster repos, not here.
-
-Path-style addressing (`s3forcepathstyle: true`) is baked into the workload (the
-self-hosted / path-style S3 standard — MinIO, Garage and similar require it) and is not
-consumer-tunable.
 
 ### Durability note
 
@@ -242,10 +299,44 @@ request-path processes whose only volumes are the two config `ConfigMap`s.
 
 The un-flushed write window is protected by `replication_factor: 3` across three
 ingesters — losing any single ingester loses no data, because two other replicas hold
-the same streams. A **simultaneous** loss of all ingesters (or a full-cluster restart)
-does lose the not-yet-flushed window. A consumer that wants that window on disk needs a
-catalog change enabling ingester persistence, not an overlay: `volumeClaimTemplates`
-cannot be added to a live `StatefulSet`.
+the same streams. A consumer that wants that window on disk needs a catalog change
+enabling ingester persistence, not an overlay: `volumeClaimTemplates` cannot be added to
+a live `StatefulSet`.
+
+## Failure modes and recovery
+
+**Full-cluster restart.** Losing all ingesters at once (the one case
+`replication_factor: 3` does not cover) costs only the not-yet-flushed window; every
+chunk already written to S3 is intact, so if the object store is healthy there is
+nothing to restore and the component recovers by starting up. The size of the gap is
+bounded by the ingester's chunk idle/flush timing — this component overrides neither
+`chunk_idle_period` nor `max_chunk_age`, so Loki's upstream defaults for the pinned
+appVersion are what an operator sizes the gap from; a LogQL query spanning the restart
+shows the actual extent.
+
+**Compactor downtime.** While the singleton compactor is unscheduled, compaction and
+retention enforcement pause; writes and queries are unaffected and no data is lost. The
+exposure is the reverse of data loss — objects past the retention window keep existing
+instead of being pruned, so downtime approaching the retention period needs attention
+(storage growth, and data that policy says should be gone). Recovery needs no restore:
+the compactor re-reads its state from S3 on restart and holds no local cache worth
+preserving.
+
+**Node maintenance on exactly three nodes.** Draining one node evicts an ingester that
+cannot be rescheduled — the hard anti-affinity leaves no eligible node — so it stays
+`Pending` for the duration of the drain. Writes continue on the remaining two ingesters,
+but ingester fault tolerance during that window is **zero**: one more fault breaks the
+write path. Run four or more nodes if the cluster is drained as a matter of routine.
+
+**Cut-over from `observability/loki`.** The two components share the S3 buckets, and the
+namespace separation protects Kubernetes objects only. Running both **at the same time
+against the same chunks/ruler buckets corrupts the TSDB index**, because two compactors
+mutate the same objects. The supported path is therefore a **sequential** cut-over: stop
+the old Argo `Application`, confirm its pods are gone, then start the new one against
+the **same** buckets — no data migration, because both renders emit an identical
+`schema_config`. Distinct buckets are needed only if a consumer deliberately wants an
+overlapping window with both components live, and that is a separate data-migration
+exercise, not the cut-over path.
 
 ## Namespace & Pod Security
 

@@ -7,8 +7,20 @@ provides:
       app: 3.6.7 # Loki appVersion (image tag docker.io/grafana/loki:3.6.7)
       chart: 6.55.0 # grafana/loki chart version, Distributed deployment mode
     api_surface: [] # the chart ships no CRDs / exposed API groups in Distributed mode
-    # Same two capabilities as the SingleBinary sibling observability/loki: this
-    # component is an alternative TOPOLOGY of the same store, not a different interface.
+    # Second topology-scoped implementation alongside
+    # sub-layers/observability/components/loki (the SingleBinary role). The
+    # capability-index is tool-keyed ({name: loki, ...}), not component-keyed — both
+    # this component and the SingleBinary sibling are the tool `loki` and legitimately
+    # claim these ids.
+    # swap_class MUST match the capability-index entry (catalog/README.md): it scores
+    # swapping the TOOL (loki → victoria-logs) — logs-storage is data-migration (the
+    # chunks must be moved), logs-query is drop-in (LogQL-compatible).
+    # The SingleBinary↔Distributed move is a DISTINCT axis with no field in the current
+    # schema; it is consumer-change-shaped (different OCI repo, namespace, entry-point
+    # Services and ref names) but needs NO data migration — both renders emit an
+    # identical schema_config (tsdb/v13, prefix loki_index_, period 24h, from
+    # 2024-04-01), so the same buckets are read as-is. Documented in README
+    # §Relationship instead; a per-topology swap field would be an ADR-0021 change.
     capabilities:
       - {id: logs-storage, swap_class: data-migration}
       - {id: logs-query, swap_class: drop-in}

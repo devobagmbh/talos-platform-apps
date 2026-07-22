@@ -178,6 +178,13 @@ values:
   # overlay (ADR-0024), not by a catalog PR.
 
   ingester:
+    # NOTE — no `maxUnavailable` key here, unlike the six components below, and that is
+    # deliberate rather than an omission: the ingester's PDB comes from its own chart
+    # template (templates/ingester/poddisruptionbudget-ingester.yaml), not from a values
+    # key. Verified in the render — PodDisruptionBudget loki-distributed-ingester is
+    # emitted with maxUnavailable: 1 and a selector that additionally excludes the
+    # `rollout-group: ingester` zone StatefulSets. Adding a `maxUnavailable` value here
+    # would do nothing.
     # -- (int) Three ingesters, matching loki.commonConfig.replication_factor above.
     # The chart's default hard podAntiAffinity (topologyKey kubernetes.io/hostname)
     # keeps them on three DISTINCT nodes, so a node loss costs at most one replica.
