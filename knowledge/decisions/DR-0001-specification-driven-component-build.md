@@ -3,7 +3,7 @@ type: decision
 title: "DR-0001 — Specification-driven catalog component build"
 description: Repo-local decision record adopting a specification-driven, render-bound component build over copy-from-neighbor.
 tags: [decision, build-pipeline, psa, freeze-line, scaffold]
-timestamp: 2026-06-24
+timestamp: 2026-07-22
 sources:
   - .claude/skills/build-catalog-component/CONVENTIONS.md
   - .claude/agents/senior-implementer.md
