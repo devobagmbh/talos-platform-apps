@@ -3,7 +3,7 @@ type: reference
 title: observability sub-layer
 description: The LGTM-A telemetry stack, Prometheus/Grafana operators, exporters, and Hubble.
 tags: [reference, sub-layer, observability]
-timestamp: 2026-07-11
+timestamp: 2026-07-22
 sources:
   - sub-layers/observability/README.md
   - sub-layers/observability/compatibility.yaml
@@ -30,6 +30,7 @@ prefix: `ghcr.io/devobagmbh/talos-platform-apps/observability/`.
 | blackbox-exporter | 0 | - | - | - |
 | nvidia-dcgm-exporter | 0 | - | `gpu-runtime` (rewrite-required) | - |
 | loki | 10 | - | `logs-storage` (data-migration), `logs-query` (drop-in) | `s3-object` (cap) |
+| loki-distributed | 10 | - | `logs-storage` (data-migration), `logs-query` (drop-in) | `s3-object` (cap) |
 | mimir | 10 | - | `metrics-storage` (data-migration), `metrics-query` (drop-in) | `s3-object` (cap) |
 | tempo | 10 | - | `traces-storage` (data-migration), `traces-query` (drop-in) | `s3-object` (cap) |
 | alloy | 20 | - | `logs-collect` (label-move), `metrics-scrape` (drop-in), `traces-collect` (label-move) | loki, mimir, tempo |
@@ -44,5 +45,6 @@ these components), documented in the sub-layer README, not a component of its ow
 ## Notes
 
 - strict-B `-crds` halves: `prometheus-operator-crds`, `grafana-operator-crds`.
-- `loki`/`mimir`/`tempo` carry populated freeze-lines (env + secret keys for their object-store backend).
+- `loki`/`loki-distributed`/`mimir`/`tempo` carry populated freeze-lines (env + secret keys for their object-store backend).
+- `loki` and `loki-distributed` are the same chart in two topologies (SingleBinary vs Distributed) and are **mutually exclusive** — a consumer deploys one or the other, never both. They declare identical capabilities because `catalog/capability-index.yaml` is tool-keyed; the exclusion is documented in prose only, as the contract schema has no field for it.
 - Gap (tracked in issue #523): `grafana` lacks a `customization.yaml`; `hubble` README omits OCI path / sync-wave / ADR references.
