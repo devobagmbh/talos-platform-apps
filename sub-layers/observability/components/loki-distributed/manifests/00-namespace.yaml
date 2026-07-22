@@ -9,12 +9,13 @@
 # enforce: restricted — DERIVED from the rendered Distributed workload, checked against
 # EVERY one of the eight component pod templates (distributor, ingester, querier,
 # query-frontend, query-scheduler, index-gateway, compactor, ruler), not just one:
-#   * pod:       runAsNonRoot: true + seccompProfile: RuntimeDefault (the chart's pod
-#                default OMITS seccompProfile, which would cap the namespace at
-#                `baseline`; the helm values add it, so restricted holds).
+#   * pod:       runAsNonRoot: true + seccompProfile: RuntimeDefault (+ runAsUser 10001,
+#                runAsGroup 10001, fsGroup 10001 — runAsUser is set at the POD level
+#                only, never per container). The chart's pod default OMITS
+#                seccompProfile, which would cap the namespace at `baseline`; the helm
+#                values add it, so restricted holds.
 #   * container: allowPrivilegeEscalation: false + capabilities.drop: [ALL] +
-#                seccompProfile: RuntimeDefault (+ readOnlyRootFilesystem, runAsNonRoot,
-#                runAsUser 10001).
+#                seccompProfile: RuntimeDefault (+ readOnlyRootFilesystem, runAsNonRoot).
 #   * no Baseline-forbidden field anywhere: no hostPath volume (every non-ConfigMap
 #     volume is an emptyDir), no host namespace, no privileged container, no host port.
 # The rule-watching sidecar is disabled (sidecar.rules.enabled: false), so every pod is

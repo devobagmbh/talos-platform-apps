@@ -178,13 +178,18 @@ values:
   # overlay (ADR-0024), not by a catalog PR.
 
   ingester:
-    # NOTE — no `maxUnavailable` key here, unlike the six components below, and that is
-    # deliberate rather than an omission: the ingester's PDB comes from its own chart
-    # template (templates/ingester/poddisruptionbudget-ingester.yaml), not from a values
-    # key. Verified in the render — PodDisruptionBudget loki-distributed-ingester is
-    # emitted with maxUnavailable: 1 and a selector that additionally excludes the
-    # `rollout-group: ingester` zone StatefulSets. Adding a `maxUnavailable` value here
-    # would do nothing.
+    # NOTE — no `maxUnavailable` key here, unlike the six components below, because the
+    # CHART DEFAULT for `ingester.maxUnavailable` is already 1 (it and queryScheduler are
+    # the only two components the chart defaults; the other five default to null). The
+    # key IS honoured if set — the ingester's PDB template reads
+    # `.Values.ingester.maxUnavailable` exactly like every sibling template does;
+    # verified by rendering with `ingester.maxUnavailable: 2`, which emits
+    # `maxUnavailable: 2`. Omitting it here therefore accepts the default of 1, it does
+    # not bypass the key. The rendered PodDisruptionBudget loki-distributed-ingester
+    # carries maxUnavailable: 1 plus a selector excluding the `rollout-group: ingester`
+    # zone StatefulSets. Do NOT read this omission as "the key is ignored" and delete a
+    # sibling's key on that basis — for the five null-default components the key is
+    # load-bearing (see below).
     # -- (int) Three ingesters, matching loki.commonConfig.replication_factor above.
     # The chart's default hard podAntiAffinity (topologyKey kubernetes.io/hostname)
     # keeps them on three DISTINCT nodes, so a node loss costs at most one replica.
@@ -268,9 +273,10 @@ values:
     # -- (int) Two query-schedulers: the queue between frontends and queriers. Running
     # two keeps the read path serving when one is lost.
     replicas: 2
-    # -- (int) PodDisruptionBudget maxUnavailable. The chart FAILS the render when a
-    # component has replicas > 1 and no maxUnavailable (its PDB template calls `fail`).
-    # 1 keeps at least one replica serving through a voluntary disruption (node drain).
+    # -- (int) PodDisruptionBudget maxUnavailable. Set for explicitness only: unlike the
+    # five null-default components, queryScheduler (like ingester) already defaults to 1
+    # in the chart, so omitting it would NOT fail the render. 1 keeps at least one
+    # replica serving through a voluntary disruption (node drain).
     maxUnavailable: 1
     resources:
       requests:

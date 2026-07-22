@@ -126,14 +126,9 @@ both survive the loss of any single pod.
 
 - **Ingesters: 3, with `replication_factor: 3`.** Every log stream is written to all
   three ingesters, so the write quorum (2) still holds when one is lost.
-- **Every workload spreads across nodes, not just the ingester.** All eight rendered
-  workloads carry the chart's hard pod anti-affinity —
-  `requiredDuringSchedulingIgnoredDuringExecution`, `topologyKey:
-  kubernetes.io/hostname`, scoped per `app.kubernetes.io/component`. Each component's
-  own replicas therefore land on distinct nodes (different components may still share
-  one), so a node loss costs at most one replica of any given component. That is what
-  makes pod-loss survival a node-loss survival too — and it is why this component
-  targets a cluster with at least three schedulable nodes (see § Consumer obligations).
+- **Every workload spreads across nodes, not just the ingester** — all eight carry the
+  chart's hard pod anti-affinity, which turns pod-loss survival into node-loss survival
+  and sets the three-node floor. Mechanism and consequences: §Consumer obligations.
 - **Zone-aware ingester replication is deliberately OFF** (the chart default is on).
   With it on, the chart renders three per-zone `StatefulSet`s labelled
   `rollout-group: ingester` and annotated `rollout-max-unavailable`, which are the
@@ -314,13 +309,12 @@ bounded by the ingester's chunk idle/flush timing — this component overrides n
 appVersion are what an operator sizes the gap from; a LogQL query spanning the restart
 shows the actual extent.
 
-**Compactor downtime.** While the singleton compactor is unscheduled, compaction and
-retention enforcement pause; writes and queries are unaffected and no data is lost. The
-exposure is the reverse of data loss — objects past the retention window keep existing
-instead of being pruned, so downtime approaching the retention period needs attention
-(storage growth, and data that policy says should be gone). Recovery needs no restore:
-the compactor re-reads its state from S3 on restart and holds no local cache worth
-preserving.
+**Compactor downtime.** While the compactor is unscheduled, compaction and retention
+enforcement pause; writes and queries are unaffected and no data is lost. The exposure is
+the reverse of data loss — objects past the retention window keep existing instead of
+being pruned, so downtime approaching the retention period needs attention (storage
+growth, and data that policy says should be gone). Recovery needs no restore: it re-reads
+its state from S3 on restart and holds no local cache worth preserving.
 
 **Node maintenance on exactly three nodes.** Draining one node evicts an ingester that
 cannot be rescheduled — the hard anti-affinity leaves no eligible node — so it stays
@@ -333,10 +327,9 @@ namespace separation protects Kubernetes objects only. Running both **at the sam
 against the same chunks/ruler buckets corrupts the TSDB index**, because two compactors
 mutate the same objects. The supported path is therefore a **sequential** cut-over: stop
 the old Argo `Application`, confirm its pods are gone, then start the new one against
-the **same** buckets — no data migration, because both renders emit an identical
-`schema_config`. Distinct buckets are needed only if a consumer deliberately wants an
-overlapping window with both components live, and that is a separate data-migration
-exercise, not the cut-over path.
+the **same** buckets — no data migration (§Relationship). Distinct buckets are needed
+only if a consumer deliberately wants an overlapping window with both components live,
+and that is a separate data-migration exercise, not the cut-over path.
 
 ## Namespace & Pod Security
 
@@ -348,12 +341,13 @@ The component ships a dedicated `loki-distributed` `Namespace`
 `restricted` is the strictest posture the workload provably satisfies — derived from the
 rendered manifest and checked against **all eight** component pod templates, not one:
 
-- **Pod**: `runAsNonRoot: true` + `seccompProfile: RuntimeDefault`. The chart's pod
-  default omits `seccompProfile` (which would cap the namespace at `baseline`), so the
-  helm values add it explicitly.
+- **Pod**: `runAsNonRoot: true` + `seccompProfile: RuntimeDefault`, plus `runAsUser`,
+  `runAsGroup` and `fsGroup` `10001` — `runAsUser` is set at the **pod** level only and
+  appears in no container `securityContext`. The chart's pod default omits
+  `seccompProfile` (which would cap the namespace at `baseline`), so the helm values add
+  it explicitly.
 - **Container**: `allowPrivilegeEscalation: false` + `capabilities.drop: [ALL]` +
-  `seccompProfile: RuntimeDefault` (+ `readOnlyRootFilesystem`, `runAsNonRoot`,
-  `runAsUser: 10001`).
+  `seccompProfile: RuntimeDefault` (+ `readOnlyRootFilesystem`, `runAsNonRoot`).
 - **No Baseline-forbidden field** anywhere in the render: no `hostPath` volume, no host
   namespace, no privileged container, no host port.
 
