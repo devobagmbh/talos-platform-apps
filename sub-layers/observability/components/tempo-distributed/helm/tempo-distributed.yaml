@@ -254,10 +254,28 @@ values:
 
   # -- (map) Memcached caches. Chart default is `enabled: true`, which adds a memcached
   # Deployment + the memcached + exporter images to the signed artifact (a query-latency
-  # optimisation beyond the minimum HA set). Disabled — the config `cache:` block renders
-  # empty when memcached is off. A consumer that needs the caches asks for a catalog change.
+  # optimisation beyond the minimum HA set). Disabled — but disabling the Deployment alone
+  # does NOT empty the rendered tempo config `cache:` block: the chart's `tempo.cacheConfig`
+  # helper (templates/_helpers.tpl) falls back to `toYaml .Values.cache` verbatim when
+  # `memcached.enabled` is false, and the chart-default `.Values.cache` (values.yaml) is a
+  # fully-populated block whose `caches[].memcached.host` points at the
+  # `tempo-distributed-memcached` Service — which no longer exists once the Deployment is
+  # off. Every Tempo pod would then log `error setting memcache servers to host
+  # tempo-distributed-memcached ... no such host` on a loop (non-fatal, but continuous
+  # noise). The `cache.caches: []` override below empties that block: the helper then renders
+  # `cache:\n  caches: []` — Tempo runs with no cache, the documented intent. Two levers were
+  # NOT usable here: (1) `tempo.structuredConfig` deep-merges via the chart's `mergeOverwrite`,
+  # so an empty `cache:` map cannot clear the config-string's populated one; (2) an empty
+  # `cache: {}` at the values top level is silently deep-merged by Helm's `CoalesceTables`
+  # (maps are merged key-by-key, so the chart-default `caches` key survives). Overriding the
+  # `caches` LIST specifically works because Helm replaces lists wholesale rather than merging
+  # them. A consumer that needs the caches asks for a catalog change.
   memcached:
     enabled: false
+  # -- (list) Override the chart-default memcached cache block (see the memcached note above):
+  # an empty `caches` list replaces the chart's populated one, so no cache is configured.
+  cache:
+    caches: []
 
   # -- (map) The metrics-generator (span → RED-metrics remote_write). Chart default
   # `enabled: false`; restated. It adds a workload + needs a Prometheus remote_write target,
