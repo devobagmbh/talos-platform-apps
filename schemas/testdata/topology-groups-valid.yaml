@@ -1,0 +1,10 @@
+# fixture: POSITIVE — well-formed groups with real member dirs; schema + all four gate assertions pass.
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki, observability/loki-distributed]
+  - id: tempo
+    kind: mutual-exclusion
+    default: observability/tempo
+    members: [observability/tempo, observability/tempo-distributed]

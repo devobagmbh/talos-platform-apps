@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devoba.de/schemas/topology-groups.schema.json",
+  "title": "Topology-Variant Group Contract",
+  "description": "Declares the catalog's topology-variant groups: sets of components that are mutually-exclusive deployment topologies of the SAME product (a consumer picks exactly one member), where a concrete requires: pin to any member is satisfiable by any member of the group. Lives as the single central file catalog/topology-groups.yaml and is validated by task validate:topology-groups (in task ci). It does NOT change compatibility.schema.json, catalog/capability-index.yaml, any component compatibility.yaml, or any consumer requires: key — the requires: key stays a concrete <sub-layer>/<component> so catalog/README.md's concrete-pin rule is unweakened.\n\nIMPORTANT — expressibility only, NOT drop-in runtime wiring: the runtime write-endpoint DIFFERS between topologies (e.g. alloy must target loki-distributed-distributor, not loki). 'either satisfies' is a contract-expressibility property; swapping topologies still requires a consumer-overlay endpoint change (ADR-0024). Same-product-ness is REVIEW-enforced and necessary-not-sufficient (no sound mechanical oracle exists — capability-set identity false-accepts genuine tool-swaps and empty sets); see knowledge/decisions/DR-0003-topology-variant-contract.md.\n\nSchema-contract-parity decisions (rules/schema-contract-parity.md):\n1. Closed-vs-open: closed via additionalProperties:false at the top level and on each group object — parse hygiene plus a reject-legacy-key threat model (an unknown key fails validation), mirroring compatibility.schema.json decision 1. The gate extracts only the documented fields.\n2. Duplicate-key behavior: duplicate top-level or per-group YAML keys are a YAML authoring error; readers treat the file as corrupt and surface it, not silently last-wins (identical to compatibility.schema.json decision 2). Group id uniqueness cannot be keyed by a JSON-Schema uniqueItems, so the gate (validate:topology-groups) enforces it separately — a duplicate id fails task ci.\n3. No schema version field — evolution tracked via git history under harness-evolution 2-round review (rules/review-rigor.md). Migration path: a new kind enum value (e.g. a future role-additive) is added under that review with the gate + fixtures extended in the SAME PR; readers detect change via the schema/gate diff.\n4. catalog/topology-groups.yaml is repo-internal trusted data — no untrusted-data sentinel applies (identical to compatibility.schema.json decision 4).\n5. Per-field mutability: groups[] is append-only at the group level (a group is a stable consumer-facing contract; removing one is a breaking, consumer-coordinated change). members[] is append-only within a group. default is mutable-in-place but stable-by-convention (fixed when the component is first introduced, AGENTS.md Topology variants); a change is a breaking, consumer-coordinated event, and its leaf name is gate-checked to equal the group id. kind is mutable-in-place structurally but effectively fixed (one enum value today).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["groups"],
+  "properties": {
+    "groups": {
+      "type": "array",
+      "description": "The topology-variant groups. Each group is a set of mutually-exclusive topology alternatives of one product.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "default", "members"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable group identifier. By gate convention it equals the bare (default) component name and is unique across all groups (validate:topology-groups enforces both)."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["mutual-exclusion"],
+            "description": "The relationship the group asserts. 'mutual-exclusion' = the members are alternative topologies of the same product; a consumer deploys exactly one. This is author-declared and review-enforced; there is no mechanical same-product oracle (see DR-0003). A role-additive split (e.g. the alloy / alloy-metrics / alloy-singleton trio) is NOT a topology group and must not be declared here."
+          },
+          "default": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The product's default/primary topology, a member of members[]. Its leaf name (after the last '/') MUST equal the group id (gate-checked), preserving the AGENTS.md bare-name-default convention. Stable-by-convention; a change is a breaking, consumer-coordinated event."
+          },
+          "members": {
+            "type": "array",
+            "description": "The mutually-exclusive member components, each a concrete <sub-layer>/<component> id that maps to an existing sub-layers/<sub-layer>/components/<component>/ directory (gate-checked). A concrete requires: pin to any member is satisfied by any member.",
+            "minItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

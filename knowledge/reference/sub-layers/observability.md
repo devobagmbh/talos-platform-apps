@@ -3,7 +3,7 @@ type: reference
 title: observability sub-layer
 description: The LGTM-A telemetry stack, Prometheus/Grafana operators, exporters, and Hubble.
 tags: [reference, sub-layer, observability]
-timestamp: 2026-07-22
+timestamp: 2026-07-23
 sources:
   - sub-layers/observability/README.md
   - sub-layers/observability/compatibility.yaml
@@ -46,5 +46,5 @@ these components), documented in the sub-layer README, not a component of its ow
 
 - strict-B `-crds` halves: `prometheus-operator-crds`, `grafana-operator-crds`.
 - `loki`/`loki-distributed`/`mimir`/`tempo` carry populated freeze-lines (env + secret keys for their object-store backend).
-- `loki` and `loki-distributed` are the same chart in two topologies (SingleBinary vs Distributed) and are **mutually exclusive** — a consumer deploys one or the other, never both. They declare identical capabilities because `catalog/capability-index.yaml` is tool-keyed; the exclusion is documented in prose only, as the contract schema has no field for it.
+- `loki` and `loki-distributed` (and `tempo`/`tempo-distributed`) are the same chart in two topologies (SingleBinary vs Distributed) and are **mutually exclusive** — a consumer deploys one or the other, never both. They declare identical capabilities because `catalog/capability-index.yaml` is tool-keyed; the mutual-exclusion + either-satisfies relationship is expressed machine-readably in `catalog/topology-groups.yaml` (schema `schemas/topology-groups.schema.json`, gated by `task validate:topology-groups`), leaving the tool-keyed index and every `requires:` key unchanged (#733, DR-0003).
 - Gap (tracked in issue #523): `grafana` lacks a `customization.yaml`; `hubble` README omits OCI path / sync-wave / ADR references.

@@ -1,0 +1,38 @@
+# Topology-variant groups — the catalog's machine-readable mutual-exclusion + either-satisfies contract.
+#
+# Each group lists components that are ALTERNATIVE deployment topologies of the SAME product.
+#   - MUTUAL EXCLUSION: a consumer deploys EXACTLY ONE member of a group (e.g. loki OR loki-distributed,
+#     never both). The members are alternatives, not complements.
+#   - EITHER SATISFIES: a concrete `requires:` pin to any member (e.g. `observability/loki`) is satisfied
+#     by ANY member of that member's group. The `requires:` key stays a concrete <sub-layer>/<component>,
+#     so catalog/README.md's rule forbidding a capability-id substitution for a tool surface is UNWEAKENED.
+#
+# IMPORTANT — expressibility ONLY, NOT drop-in runtime wiring:
+#   "either satisfies" is a CONTRACT-EXPRESSIBILITY property. The runtime write-endpoint DIFFERS between
+#   topologies — e.g. alloy must target `loki-distributed-distributor`, NOT `loki`. Swapping a consumer
+#   from one topology to the other therefore STILL requires a consumer-overlay endpoint change (ADR-0024
+#   kustomize patch). Do NOT read "either satisfies" as "drop-in". This file does not fix, and must not
+#   create false confidence about, that runtime endpoint difference.
+#
+# Same-product-ness is REVIEW-ENFORCED and necessary-not-sufficient — there is NO sound mechanical oracle
+# (capability-set identity false-accepts genuine tool-swaps like loki+victoria-logs / tempo+jaeger and
+# false-accepts empty capability sets). The controls are: the author-declared `kind: mutual-exclusion`,
+# human review (this file is in the babysit pr:triage governance-withhold set, so a future single-file edit
+# is forced to a human, never auto-approvable), and the AGENTS.md Topology variants naming rule. A
+# role-additive split (the alloy / alloy-metrics / alloy-singleton trio) is NOT a topology group.
+#
+# mimir is EXCLUDED: it is the recorded legacy bare-name exception (AGENTS.md Topology variants, a Hard
+# Constraint) — its bare name already denotes the mimir-distributed microservices topology and it has no
+# sibling to be mutually exclusive with.
+#
+# Rationale, residuals, and the ADR-0021 amendment obligation: knowledge/decisions/DR-0003-topology-variant-contract.md
+# Schema + gate: schemas/topology-groups.schema.json validated by `task validate:topology-groups` (in `task ci`).
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki, observability/loki-distributed]
+  - id: tempo
+    kind: mutual-exclusion
+    default: observability/tempo
+    members: [observability/tempo, observability/tempo-distributed]

@@ -1,0 +1,12 @@
+# fixture: GATE-LOGIC REJECT (id-unique, order 2 — two groups share id "loki"). Each group is otherwise
+# well-formed (2 real members, valid kind, bare-name default in members, real dirs), so it passes schema
+# (order 1) and fails only at id-uniqueness. Reverting the id-unique check ACCEPTS it (C3).
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki, observability/loki-distributed]
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki, observability/loki-distributed]

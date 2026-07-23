@@ -1,0 +1,8 @@
+# fixture: SCHEMA REJECT (members uniqueItems — same member listed twice). Otherwise fully gate-valid —
+# valid kind, bare-name default in members, real dir, minItems:2 satisfied (2 entries). Removing
+# uniqueItems ACCEPTS it (D4/D5).
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki, observability/loki]

@@ -1,0 +1,9 @@
+# fixture: SCHEMA REJECT (additionalProperties:false — stray group key). Otherwise fully gate-valid —
+# every required field present and valid, 2 real members, bare-name default in members, real dirs.
+# Removing additionalProperties:false ACCEPTS it (D4).
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki, observability/loki-distributed]
+    description: an undocumented stray key

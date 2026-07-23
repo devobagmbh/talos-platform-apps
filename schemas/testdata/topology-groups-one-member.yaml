@@ -1,0 +1,7 @@
+# fixture: SCHEMA REJECT (members minItems:2). Otherwise fully gate-valid — valid kind, bare-name
+# default that IS the single member, real dir. Removing the minItems keyword ACCEPTS it (D4).
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki]

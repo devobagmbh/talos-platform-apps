@@ -929,7 +929,8 @@ tasks:
                     or test("^\\.gitleaks\\.toml$") or test("^\\.trivyignore\\.yaml$")
                     or test("^lefthook\\.yml$")
                     or test("^\\.github/") or test("^\\.claude/")
-                    or test("^policies/") or test("^schemas/")) then "governance"
+                    or test("^policies/") or test("^schemas/")
+                    or test("^catalog/topology-groups\\.yaml$")) then "governance"
            elif (.alreadyReviewedAtHead == true) then "reviewed"
            elif ((.changedLineCount | type) != "number") or (.changedLineCount < 1) or (.changedLineCount > 400)
                 or ((.changedFileCount | type) != "number") or (.changedFileCount < 1) or (.changedFileCount > 50)
@@ -993,6 +994,7 @@ tasks:
         {"number":125,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":0,"changedFileCount":1},
         {"number":126,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".trivyignore.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":2,"changedFileCount":1},
         {"number":127,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["lefthook.yml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":4,"changedFileCount":1},
+        {"number":128,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["catalog/topology-groups.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
         {"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
       ]
       JSON
@@ -1050,9 +1052,10 @@ tasks:
       assert_class 125 oversized        # changedLineCount 0 with non-empty files (GitHub 0/0 = uncomputable huge diff) → oversized, not "small"
       assert_class 126 governance       # .trivyignore.yaml (root platform-control config — CVE suppression)
       assert_class 127 governance       # lefthook.yml (root platform-control config — pre-commit gate orchestrator)
+      assert_class 128 governance       # catalog/topology-groups.yaml (topology-variant contract — same-product claim must be human-reviewed, #733)
       count="$(printf '%s\n' "$out" | grep -cE '[^[:space:]]' || true)"
-      if [ "${count:-0}" -ne 28 ]; then echo "FAIL: expected exactly 28 in-scope lines, got ${count:-0}"; fail=1; fi
-      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (28 in-scope / 2 dropped)"; fi
+      if [ "${count:-0}" -ne 29 ]; then echo "FAIL: expected exactly 29 in-scope lines, got ${count:-0}"; fail=1; fi
+      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (29 in-scope / 2 dropped)"; fi
       exit "$fail"
 
   lint:commit-scope:
@@ -1302,6 +1305,127 @@ tasks:
 
       [ "$ran" -gt 0 ] && echo "✓ test:release-config OK (${ran} case(s) ran)" || echo "ℹ test:release-config: no cases applicable in the current catalog state"
       exit 0
+
+  validate:topology-groups:
+    desc: 'Topology-variant contract: schema + id-unique + default-in-members + bare-name default + member dirs exist (#733)'
+    summary: |
+      Self-contained structural gate over catalog/topology-groups.yaml — the central
+      mutual-exclusion + either-satisfies contract for topology-sibling components.
+      Deterministic short-circuit order, exit on first failure:
+        1. schema             — validate against schemas/topology-groups.schema.json
+                                (members minItems:2 / kind enum / additionalProperties:false /
+                                members uniqueItems)
+        2. id-unique          — group ids are unique (a JSON-Schema uniqueItems cannot key on id)
+        3. default-in-members — each group's default is one of its members
+        4. default-bare-name  — each default's leaf name (after the last /) equals the group id
+                                (preserves the AGENTS.md bare-name-default convention)
+        5. member-dir-exists  — each member id maps to an existing sub-layers/<sl>/components/<c>/ dir
+      It reads ONLY the central file + checks directory existence — it NEVER opens a component
+      compatibility.yaml capability set: that live-data coupling would re-introduce the evolution
+      deadlock and is an unsound same-product oracle (same-product-ness is review-enforced; see
+      knowledge/decisions/DR-0003-topology-variant-contract.md). The path is env-overridable
+      (TOPOLOGY_GROUPS_FILE) so task test:topology-groups can drive this same logic over synthetic
+      fixtures — parity with validate:release-config's RP_CONFIG seam.
+    cmd: |
+      # NOTE: no `set -e` / no `set -o pipefail` and no `grep -q` over a pipe — go-task's
+      # embedded mvdan/sh aborts a { } group on the first non-zero member under set -e and
+      # terminates on the SIGPIPE `grep -q` raises under pipefail (cf. validate:release-config,
+      # lint:version). Exit codes are checked explicitly. The repo `yq` is python-yq (a jq
+      # wrapper), so the expressions below are jq syntax.
+      set -u
+      f="${TOPOLOGY_GROUPS_FILE:-catalog/topology-groups.yaml}"
+      schema="schemas/topology-groups.schema.json"
+      [ -f "$f" ] || { echo "✗ topology-groups file not found: $f"; exit 2; }
+      [ -f "$schema" ] || { echo "✗ schema not found: $schema"; exit 2; }
+      # (order 1) schema — catches members minItems/uniqueItems, kind enum, additionalProperties.
+      if ! check-jsonschema --schemafile "$schema" "$f" >/dev/null 2>&1; then
+        echo "✗ ${f}: schema validation failed:"
+        check-jsonschema --schemafile "$schema" "$f" 2>&1 | sed 's/^/    /'
+        exit 1
+      fi
+      gcount="$(yq -r '.groups | length' "$f")"
+      ids="$(yq -r '.groups[].id' "$f")"
+      # (order 2) id-unique — a JSON-Schema uniqueItems cannot key on the id field.
+      uniq="$(printf '%s\n' "$ids" | sort -u | sed '/^$/d' | wc -l | tr -d ' ')"
+      if [ "$gcount" != "$uniq" ]; then
+        echo "✗ ${f}: duplicate group id(s):"
+        printf '%s\n' "$ids" | sort | uniq -d | sed 's/^/    /'
+        exit 1
+      fi
+      # (order 3) default-in-members — $d binds the group's default before piping into .members
+      # (piping .members changes the '.' context, so .default must be captured first).
+      dnm="$(yq -r '.groups[] | (.default) as $d | select((.members | index($d)) == null) | .id' "$f")"
+      if [ -n "$dnm" ]; then
+        echo "✗ ${f}: group(s) whose default is not one of members:"
+        printf '%s\n' "$dnm" | sed 's/^/    /'
+        exit 1
+      fi
+      # (order 4) default-bare-name — leaf of default (after last /) must equal the group id.
+      dnb="$(yq -r '.groups[] | select((.default | split("/") | .[-1]) != .id) | .id' "$f")"
+      if [ -n "$dnb" ]; then
+        echo "✗ ${f}: group(s) whose default leaf name != group id (bare-name-default convention):"
+        printf '%s\n' "$dnb" | sed 's/^/    /'
+        exit 1
+      fi
+      # (order 5) member-dir-exists — anti-drift central->tree parity (one-directional; see the
+      # C7 completeness residual in DR-0003). Introduces the D2 member-rename/retirement coupling.
+      missing=""
+      for m in $(yq -r '.groups[].members[]' "$f"); do
+        sl="${m%%/*}"; comp="${m##*/}"
+        [ -d "sub-layers/${sl}/components/${comp}" ] || missing="${missing} ${m}"
+      done
+      if [ -n "$missing" ]; then
+        echo "✗ ${f}: member id(s) with no component dir under sub-layers/<sl>/components/<c>/:"
+        for m in $missing; do echo "    ${m}"; done
+        exit 1
+      fi
+      echo "✓ topology-groups OK: ${gcount} group(s), ids unique, defaults in members + bare-name, all member dirs exist"
+
+  test:topology-groups:
+    desc: 'Red-green test for validate:topology-groups (1 positive + 8 single-reason negatives; in task ci) (#733)'
+    summary: |
+      Hermetic red-green test for the topology-groups gate (network-free). Drives
+      validate:topology-groups over the schemas/testdata/topology-groups-*.yaml fixtures via
+      the TOPOLOGY_GROUPS_FILE seam (parity with test:release-config's RP_CONFIG/RP_MANIFEST).
+      The positive fixture MUST pass; each negative MUST fail, single-reason under the gate's
+      short-circuit order:
+        schema-reject     — one-member (members minItems:2), bad-kind (kind enum), unknown-key
+                            (additionalProperties:false), duplicate-member (members uniqueItems)
+        gate-logic reject — duplicate-id (id-unique), default-not-member (default-in-members),
+                            default-not-bare-name (bare-name), member-dir-missing (member dirs)
+      Each schema-reject fixture is otherwise-fully-valid, so removing the one targeted schema
+      keyword accepts it; each gate-logic fixture is otherwise-fully-valid, so reverting the one
+      targeted assertion accepts it — the red-green binding for every check (every gate-logic
+      assertion AND every exercised schema keyword has a fixture).
+    cmd: |
+      set -u
+      td="schemas/testdata"
+      fail=0
+      pass_case() {
+        if TOPOLOGY_GROUPS_FILE="$td/$1" task validate:topology-groups >/dev/null 2>&1; then
+          echo "✓ $1 accepted"
+        else
+          echo "✗ FAIL: $1 must be ACCEPTED but the gate rejected it"; fail=1
+        fi
+      }
+      reject_case() {
+        if TOPOLOGY_GROUPS_FILE="$td/$1" task validate:topology-groups >/dev/null 2>&1; then
+          echo "✗ FAIL: $1 must be REJECTED but the gate accepted it"; fail=1
+        else
+          echo "✓ $1 rejected"
+        fi
+      }
+      pass_case   topology-groups-valid.yaml
+      reject_case topology-groups-one-member.yaml
+      reject_case topology-groups-bad-kind.yaml
+      reject_case topology-groups-unknown-key.yaml
+      reject_case topology-groups-duplicate-member.yaml
+      reject_case topology-groups-duplicate-id.yaml
+      reject_case topology-groups-default-not-member.yaml
+      reject_case topology-groups-default-not-bare-name.yaml
+      reject_case topology-groups-member-dir-missing.yaml
+      if [ "$fail" -eq 0 ]; then echo "test:topology-groups OK — 1 positive accepted, 8 negatives rejected (single-reason)"; fi
+      exit "$fail"
 
   validate:trivyignore:
     desc: 'Guard: .trivyignore.yaml entry shape — bounded expired_at (≤ N=90 days out), non-empty statement, paths/purls scope (#478)'
@@ -3456,6 +3580,16 @@ tasks:
       # network). Wired into the PR `ci` so a regression in validate:release-config's
       # stub handling is caught automatically, not only when a dev remembers (#315 review).
       - task: test:release-config
+      # Topology-variant contract gate (#733) — a catalog-wide merge-time invariant over
+      # catalog/topology-groups.yaml (mutual-exclusion + either-satisfies), NOT artifact
+      # validation, so here alongside validate:release-config and DELIBERATELY not in
+      # ci:artifact (the publish hot path). Self-contained to the central file + dir
+      # existence (no component-capability read — see DR-0003).
+      - task: validate:topology-groups
+      # Hermetic red-green guard for validate:topology-groups (1 positive + 8 single-reason
+      # negatives, fast, no network). Wired here so a regression in the topology-groups gate
+      # is caught at PR time, mirroring test:release-config's placement.
+      - task: test:topology-groups
       # Hermetic red-green guard for the G2 PR-gate (#464): a regression in lint:pr or the
       # shared lint:conventional-subject helper is caught here, not only in the commit-lint
       # workflow on a live PR. Fast, no network (throwaway git repo).
