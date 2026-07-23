@@ -16,6 +16,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`loki-distributed`](components/loki-distributed/) | 10 | Helm `grafana/loki` (Distributed — the HA topology of the same chart; an **alternative** to `loki`, never deployed alongside it, and it needs at least three schedulable nodes) | `oci://.../observability/loki-distributed:vX.Y.Z` |
 | [`mimir`](components/mimir/) | 10 | Helm `grafana/mimir-distributed` (microservices) | `oci://.../observability/mimir:vX.Y.Z` |
 | [`tempo`](components/tempo/) | 10 | Helm `grafana-community/tempo` (monolithic single binary) | `oci://.../observability/tempo:vX.Y.Z` |
+| [`tempo-distributed`](components/tempo-distributed/) | 10 | Helm `grafana-community/tempo-distributed` (microservices — the HA topology of Tempo; an **alternative** to `tempo`, never deployed alongside it, own namespace, needs multiple schedulable nodes) | `oci://.../observability/tempo-distributed:vX.Y.Z` |
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`alloy-metrics`](components/alloy-metrics/) | 20 | Helm `grafana/alloy` (clustered StatefulSet, Prometheus-format metrics-scrape role) | `oci://.../observability/alloy-metrics:vX.Y.Z` |
 | [`alloy-singleton`](components/alloy-singleton/) | 20 | Helm `grafana/alloy` (Deployment, single-replica cluster Event collector → Loki; `events-collect`) | `oci://.../observability/alloy-singleton:vX.Y.Z` |
