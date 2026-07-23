@@ -1,0 +1,8 @@
+# fixture: GATE-LOGIC REJECT (default-in-members, order 3 — default is not one of members). Passes
+# schema + id-unique; the bare-name check (order 4) would still pass (leaf "loki" == id "loki") and both
+# members are real dirs, so this fails ONLY at default-in-members. Reverting that check ACCEPTS it.
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki
+    members: [observability/loki-distributed, observability/tempo-distributed]

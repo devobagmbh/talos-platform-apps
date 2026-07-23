@@ -1,0 +1,8 @@
+# fixture: GATE-LOGIC REJECT (member-dir-exists, order 5 — BOTH members are fake dirs, so ONLY this
+# check fires, C4). Passes schema, id-unique, default-in-members, and default-bare-name (leaf "foo" ==
+# id "foo"). Reverting the member-dir-exists check ACCEPTS it.
+groups:
+  - id: foo
+    kind: mutual-exclusion
+    default: observability/foo
+    members: [observability/foo, observability/foo-distributed]

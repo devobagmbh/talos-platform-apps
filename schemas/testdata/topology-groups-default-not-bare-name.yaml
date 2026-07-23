@@ -1,0 +1,8 @@
+# fixture: GATE-LOGIC REJECT (default-bare-name, order 4 — default IS a member but its leaf name
+# "loki-distributed" != group id "loki"). Passes schema, id-unique, default-in-members; both members are
+# real dirs, so it fails ONLY at the bare-name check. Reverting that check ACCEPTS it (C8).
+groups:
+  - id: loki
+    kind: mutual-exclusion
+    default: observability/loki-distributed
+    members: [observability/loki, observability/loki-distributed]
