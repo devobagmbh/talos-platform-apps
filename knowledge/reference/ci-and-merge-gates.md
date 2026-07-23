@@ -3,7 +3,7 @@ type: reference
 title: CI and merge gates
 description: The CI conventions, the required status checks, and the branch-protection contract that gate a merge to main.
 tags: [reference, ci, merge-gate, branch-protection]
-timestamp: 2026-07-17
+timestamp: 2026-07-23
 sources:
   - AGENTS.md
   - Taskfile.yml
