@@ -3,7 +3,7 @@ type: architecture
 title: CRD management (strict-B)
 description: The strict-B CRD-split model - a separate -crds OCI artifact per CRD-shipping component, sync-wave ordering, and prune protection.
 tags: [architecture, crd, argocd, sync-wave]
-timestamp: 2026-07-11
+timestamp: 2026-07-23
 sources:
   - AGENTS.md
   - Taskfile.yml
