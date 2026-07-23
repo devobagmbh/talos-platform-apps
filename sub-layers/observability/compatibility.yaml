@@ -11,6 +11,7 @@ components:
   - loki-distributed        # sync-wave 10 — same grafana/loki chart in Distributed mode: the HA topology, an ALTERNATIVE to `loki` (never co-deployed, own namespace); needs an S3 endpoint + bucket and >= 3 schedulable nodes
   - mimir                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
   - tempo                   # sync-wave 10 — needs an S3 endpoint + bucket (s3-object capability)
+  - tempo-distributed       # sync-wave 10 — grafana-community/tempo-distributed chart, microservices topology: the HA ALTERNATIVE to `tempo` (never co-deployed, own namespace); needs an S3 endpoint + bucket and multiple schedulable nodes
   - alloy                   # sync-wave 20 — needs the Loki/Mimir/Tempo endpoints
   - alloy-metrics           # sync-wave 20 — clustered StatefulSet metrics-scrape role (epic #649); needs the Mimir endpoint
   - alloy-singleton         # sync-wave 20 — singleton Deployment: cluster Event collection → Loki (events-collect)

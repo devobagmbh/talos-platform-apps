@@ -144,6 +144,10 @@
       "component": "observability/tempo",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/tempo-distributed": {
+      "component": "observability/tempo-distributed",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/registry/components/harbor": {
       "component": "registry/harbor"
     },
