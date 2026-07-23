@@ -1,0 +1,62 @@
+# Argo Application for observability/tempo-distributed (local test environment).
+# Grafana Tempo in the chart's `tempo-distributed` microservices mode — the HA
+# sibling of observability/tempo (monolithic). Ships its own dedicated
+# `tempo-distributed` namespace (pod-security.kubernetes.io/enforce: restricted);
+# no CRDs (strict-B N/A).
+#
+# NOT cluster-agnostic: the workload resolves its S3 connection at runtime from two
+# consumer-supplied refs (ADR-0024 freeze-line, Shapes a + c), so both MUST exist in
+# the destination namespace BEFORE this app syncs, or every pod stalls in
+# CreateContainerConfigError:
+#   ConfigMap tempo-distributed-runtime-config — S3_ENDPOINT, S3_REGION,
+#     S3_BUCKET_TRACES, S3_INSECURE
+#   Secret    tempo-distributed-runtime-secret — S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+# There is NO local fixture for this sub-layer yet (local/fixtures/ carries only
+# identity/dex, lifecycle/{crossview,ipxe}, network/chrony and registry/harbor), and
+# task local:fixtures is a silent no-op when a component's fixture directory is absent —
+# so nothing seeds these two refs automatically. Create them by hand before, or shortly
+# after, this Application syncs. A
+# local run consequently exercises admission, scheduling and container start; it does NOT
+# exercise an object-store round-trip, since the local cluster ships no S3 endpoint for
+# the refs to point at. In production both refs are consumer-owned.
+#
+# Single-node caveat: every workload carries the chart's HARD
+# requiredDuringScheduling pod anti-affinity on topologyKey kubernetes.io/hostname,
+# so on the one-node local cluster only ONE replica per component can schedule —
+# surplus replicas stay Pending by design. That is the component's documented
+# three-node consumer obligation, not a defect of this template.
+#
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-tempo-distributed
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: tempo-distributed
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/tempo-distributed
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tempo-distributed
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The artifact ships its own labelled Namespace (sole-claimant rule); Argo
+      # applies Namespaces before namespaced resources, so the PSA label lands
+      # before any pod. CreateNamespace=true is a harmless belt-and-suspenders.
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
