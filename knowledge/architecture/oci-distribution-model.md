@@ -3,7 +3,7 @@ type: architecture
 title: OCI distribution model
 description: The component as the OCI distribution unit, directory == identity, and the tag / path scheme.
 tags: [architecture, oci, versioning]
-timestamp: 2026-07-11
+timestamp: 2026-07-23
 sources:
   - AGENTS.md
   - Taskfile.yml

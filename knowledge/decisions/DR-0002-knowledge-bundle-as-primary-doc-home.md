@@ -3,7 +3,7 @@ type: decision
 title: "DR-0002 — The knowledge/ bundle as the primary documentation home (OKF)"
 description: Adopt an Open Knowledge Format bundle as the primary, consolidating documentation home for this repo, with a living gap analysis.
 tags: [decision, documentation, okf, knowledge-bundle, sot]
-timestamp: 2026-07-11
+timestamp: 2026-07-23
 sources:
   - knowledge/index.md
   - AGENTS.md
