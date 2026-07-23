@@ -1,0 +1,23 @@
+# Local loki-distributed fixture: the consumer-owned, NON-secret S3 connection
+# scalars (ConfigMap loki-distributed-runtime-config) that the frozen loki config
+# expands at runtime via -config.expand-env=true (customization.yaml, Shape a).
+# LOCAL-ONLY: points loki at the in-cluster garage S3 endpoint.
+#
+# This is the ONLY file under this fixture dir — there is deliberately NO secrets.yaml.
+# The credential Secret loki-distributed-runtime-secret (S3_ACCESS_KEY_ID /
+# S3_SECRET_ACCESS_KEY) is minted at apply time by task local:s3-backend from the
+# garage access key it provisions, never shipped here. A bare
+# task local:fixtures -- observability/loki-distributed therefore applies just this
+# ConfigMap and exits 0; run task local:s3-backend for the credential.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-distributed-runtime-config
+  namespace: loki-distributed
+data:
+  # garage S3 API Service (ClusterIP garage:3900 in the garage namespace), plain HTTP.
+  S3_ENDPOINT: "http://garage.garage.svc.cluster.local:3900"
+  S3_REGION: "garage"
+  S3_BUCKET_CHUNKS: "loki-chunks"
+  S3_BUCKET_RULER: "loki-ruler"
+  S3_INSECURE: "true"

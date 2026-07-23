@@ -4507,14 +4507,24 @@ tasks:
         task local:fixtures -- "$component_id"
       fi
 
-      # Hint about consumer-provided secrets — only if NO fixture provides them
-      # (otherwise they are created automatically above).
+      # Hint about consumer-supplied secrets that NO fixture provides. Two cases,
+      # both only when customization.yaml declares required.secret_keys:
+      #  - no fixtures directory → consumer-supplied, create manually (as before)
+      #  - fixtures directory WITHOUT secrets.yaml → the credential is minted
+      #    EXTERNALLY (e.g. the S3 credential via local:s3-backend), not by the
+      #    fixture. Without this branch the component would sit without a credential
+      #    (CreateContainerConfigError) from the moment the fixtures dir is created,
+      #    with LESS of a hint than before.
       cust="${comp_dir}/customization.yaml"
-      if [ ! -d "$fdir" ] && [ -f "$cust" ]; then
+      if [ -f "$cust" ]; then
         sref=$(yq -r '.provided_refs.secret // ""' "$cust" 2>/dev/null)
         skeys=$(yq -r '.required.secret_keys[]?' "$cust" 2>/dev/null | paste -sd, -)
         if [ -n "$skeys" ]; then
-          echo "ℹ ${component_id} needs secret '${sref}' with keys [${skeys}] (consumer-supplied, create manually — or create local/fixtures/${sub_layer}/${component}/)"
+          if [ ! -d "$fdir" ]; then
+            echo "ℹ ${component_id} needs secret '${sref}' with keys [${skeys}] (consumer-supplied, create manually — or create local/fixtures/${sub_layer}/${component}/)"
+          elif [ ! -f "$fdir/secrets.yaml" ]; then
+            echo "ℹ ${component_id} needs secret '${sref}' with keys [${skeys}] — externally minted, not fixture-supplied. Run: task local:s3-backend -- ${component_id} <tag>"
+          fi
         fi
       fi
 
@@ -4622,6 +4632,7 @@ tasks:
       while [ "$i" -lt "${count:-0}" ]; do
         name=$(yq -r ".secrets[$i].name" "$spec")
         cnpg=$(yq -r ".secrets[$i].fromCnpgApp // \"\"" "$spec")
+        hex=$(yq -r ".secrets[$i].generateHex[]?" "$spec")
         if $KC -n "$ns" get secret "$name" >/dev/null 2>&1; then
           echo "  ✓ secret ${name} exists (skip)"
         elif [ -n "$cnpg" ]; then
@@ -4634,6 +4645,23 @@ tasks:
           else
             echo "  ⚠ ${cnpg}-app not there (yet) — ${name} skipped"
           fi
+        elif [ -n "$hex" ]; then
+          # generateHex: hex-encoded random value(s) — e.g. garage's 64-char (32-byte)
+          # cluster rpc_secret. Applied as a base64 Secret manifest from stdin
+          # (kubectl apply -f -), NEVER --from-literal, so the value never lands on a
+          # process arg list (BC-SECRET); the block never echoes the value (BC-NOLEAK).
+          # Built with a SINGLE printf (a brace-group of multiple printfs writes only
+          # line 1 under mvdan/sh); the subshell isolates the positional-param build.
+          ( fmt='apiVersion: v1\nkind: Secret\nmetadata:\n  name: %s\n  namespace: %s\ntype: Opaque\ndata:\n'
+            set -- "$name" "$ns"
+            for key in $hex; do
+              val=$(head -c 32 /dev/urandom | od -An -v -tx1 | tr -d ' \n')
+              b64=$(printf '%s' "$val" | base64 | tr -d '\n')
+              fmt="${fmt}  %s: %s\n"
+              set -- "$@" "$key" "$b64"
+            done
+            printf "$fmt" "$@" ) | $KC -n "$ns" apply -f - >/dev/null
+          echo "  ✓ secret ${name} (generateHex)"
         else
           args=""
           # literals: fixed dev values (local convenience, e.g. admin/admin — NO
@@ -4652,6 +4680,184 @@ tasks:
         fi
         i=$((i+1))
       done
+
+  local:s3-backend:
+    desc: 'Bring up the storage-objects/garage S3 backend locally + seed an observability component against it: task local:s3-backend -- <sub-layer>/<component> <tag>'
+    summary: |
+      Full local object-store E2E enabler for the observability LGTM components.
+      Brings up storage-objects/garage on the local Talos cluster, provisions a
+      garage layout + buckets + an access key, seeds the target component's runtime
+      ConfigMap, and mints its credential Secret INLINE — credentials generated at
+      apply time, never committed. Afterwards an Argo-synced loki-distributed can
+      land a pushed log line in garage and read it back through the query path.
+
+      Full flow (observability object-store E2E):
+        task local:up
+        task local:s3-backend -- observability/loki-distributed 0.0.0-dev
+        task local:publish   -- observability/loki-distributed 0.0.0-dev
+        task local:apply     -- observability 0.0.0-dev
+        # push a log line, then read it back through the query path
+        task local:remove    -- observability
+
+      Idempotent + re-run-safe: a steady-state re-run is a no-op (a healthy target is
+      NOT restarted). After a garage reset (emptyDir is ephemeral) a re-run re-mints
+      the access key and rollout-restarts the target so it picks up the new credential
+      (otherwise a running workload keeps the stale key and 403s silently).
+      LOCAL_S3_REMINT=1 forces a clean re-mint (deletes the stale garage key + the
+      target Secret) for an interrupted/straddled run. Local-only; every kubectl/exec
+      pins the local Talos context, so there is no production surface.
+    cmd: |
+      # set -u only (NO -e / -o pipefail): garage queries legitimately exit non-zero
+      # (empty layout/bucket/key list) and a pipe-closing probe must not SIGPIPE the
+      # task — every critical step is checked explicitly with `|| { echo …; exit 1; }`.
+      set -u
+      set -- {{.CLI_ARGS}}
+      cid="${1:?usage: task local:s3-backend -- <sub-layer>/<component> <tag>}"
+      tag="${2:?usage: task local:s3-backend -- <sub-layer>/<component> <tag>}"
+      sl="${cid%/*}"; comp="${cid#*/}"
+      KC="kubectl --context {{.LOCAL_KUBE_CONTEXT}}"
+      GKC="$KC -n garage"
+      GEXEC="$GKC exec statefulset/garage -- /garage"   # BC-BIN: /garage in dxflrs/amd64_garage:v2.3.0
+      minted=0
+
+      $KC get ns argocd >/dev/null 2>&1 || { echo "ERROR: cluster/ArgoCD not up — run 'task local:up' first"; exit 1; }
+
+      rc="local/fixtures/${sl}/${comp}/manifests/runtime-config.yaml"
+      [ -f "$rc" ] || { echo "ERROR: no runtime-config fixture at ${rc} — ${cid} is not wired for the local S3 backend"; exit 1; }
+      # Target namespace from the argo-app template; credential Secret name from the
+      # component's freeze-line (provided_refs.secret), fallback <component>-runtime-secret.
+      ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
+      { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
+      sec=$(yq -r '.provided_refs.secret' "sub-layers/${sl}/components/${comp}/customization.yaml" 2>/dev/null)
+      { [ -z "$sec" ] || [ "$sec" = "null" ]; } && sec="${comp}-runtime-secret"
+      # Ensure the target namespace exists BEFORE the inline Secret mint (step 6);
+      # local:fixtures (step 7) re-creates it idempotently when it applies the ConfigMap.
+      $KC create namespace "$ns" --dry-run=client -o yaml | $KC apply -f - >/dev/null
+
+      # 1. publish garage (strict-B -crds + workload) to the local registry
+      echo "▶ publish storage-objects/garage-crds + garage @ ${tag}"
+      task local:publish -- storage-objects/garage-crds "$tag" || { echo "ERROR: publish storage-objects/garage-crds failed"; exit 1; }
+      task local:publish -- storage-objects/garage "$tag" || { echo "ERROR: publish storage-objects/garage failed"; exit 1; }
+
+      # 2. seed garage's non-secret config ConfigMap + hex rpc_secret (shared local:fixtures;
+      #    idempotent — a re-run does NOT rotate the rpc_secret out from a running cluster)
+      echo "▶ seed garage config + rpc secret"
+      task local:fixtures -- storage-objects/garage || { echo "ERROR: seeding storage-objects/garage fixtures failed"; exit 1; }
+
+      # 3. apply the storage-objects Argo apps (garage-crds wave -1, garage wave 0)
+      echo "▶ apply storage-objects Argo apps @ ${tag}"
+      task local:apply -- storage-objects "$tag" || { echo "ERROR: applying storage-objects Argo apps failed"; exit 1; }
+
+      # 4a. wait for the garage pod to EXIST (Argo creates the StatefulSet asynchronously)
+      echo "▶ wait for garage to become runnable"
+      $GKC wait --for=create pod -l app.kubernetes.io/name=garage --timeout=120s >/dev/null 2>&1 \
+        || { echo "ERROR: garage pod did not appear within 120s — check '${GKC} get pods' / '${GKC} get events'"; exit 1; }
+      # 4b. wait for the container to be STARTED (phase=Running) — NOT the /health
+      #     readinessProbe, so this is robust whether /health passes pre-layout or not (BR1).
+      $GKC wait --for=jsonpath='{.status.phase}'=Running pod -l app.kubernetes.io/name=garage --timeout=180s >/dev/null 2>&1 \
+        || { echo "ERROR: garage pod not Running within 180s — check '${GKC} describe pod -l app.kubernetes.io/name=garage'"; exit 1; }
+      # 4c. exec-readiness gate (PL2): phase=Running is FOOLED by CrashLoopBackOff (a bad
+      #     rpc_secret/config keeps the pod phase-Running while the container restart-loops),
+      #     so proceed only when a trivial garage exec actually SUCCEEDS. This closes that
+      #     hole AND turns the acknowledged bad-token failure into a clear error here.
+      ready=0; n=0
+      while [ "$n" -lt 20 ]; do
+        if $GEXEC status >/dev/null 2>&1; then ready=1; break; fi
+        n=$((n+1)); sleep 6
+      done
+      [ "$ready" = "1" ] || { echo "ERROR: garage is up but not answering 'garage status' after ~120s — likely a bad rpc_secret/config. Check '${GKC} logs statefulset/garage'"; exit 1; }
+
+      # 5. layout (idempotent, explicit per-step checks — no set -e; BC-LAYOUT strings/version
+      #    grounded against garage v2.3.0). Only touch the layout when no role is assigned.
+      layout=$($GEXEC layout show 2>&1)
+      case "$layout" in
+        *"No nodes"*|*"NO ROLE"*|*"no role"*|*"No role"*|*"currently have a role"*)
+          node_id=$($GEXEC node id -q 2>/dev/null | head -1); node_id="${node_id%%@*}"
+          [ -n "$node_id" ] || { echo "ERROR: could not determine the garage node id"; exit 1; }
+          $GEXEC layout assign -z dc1 -c 1G "$node_id" || { echo "ERROR: garage layout assign failed"; exit 1; }
+          cur=$($GEXEC layout show 2>/dev/null | sed -n 's/.*[Vv]ersion:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | tail -1); cur="${cur:-0}"
+          $GEXEC layout apply --version "$((cur+1))" || { echo "ERROR: garage layout apply failed"; exit 1; }
+          echo "  ✓ garage layout assigned + applied"
+          # non-gating settle: observe /health readiness only AFTER the layout, never before
+          $GKC rollout status statefulset/garage --timeout=120s >/dev/null 2>&1 || true
+          ;;
+        *) echo "  ✓ garage layout already assigned (skip)" ;;
+      esac
+
+      # 6. buckets — derived from the TARGET's runtime ConfigMap (component-driven, no
+      #    hardcoded loki names), idempotent (create only when absent), each create checked.
+      buckets=$(yq -r '.data | to_entries[] | select(.key | test("^S3_BUCKET_")) | .value' "$rc" 2>/dev/null)
+      [ -n "$buckets" ] || { echo "ERROR: no S3_BUCKET_* keys in ${rc}"; exit 1; }
+      have=$($GEXEC bucket list 2>/dev/null)
+      for b in $buckets; do
+        case "$have" in
+          *"$b"*) echo "  ✓ bucket ${b} exists (skip)" ;;
+          *) $GEXEC bucket create "$b" || { echo "ERROR: garage bucket create ${b} failed"; exit 1; }
+             echo "  ✓ bucket ${b} created"; have="${have} ${b}" ;;
+        esac
+      done
+
+      # 7. access key + credential Secret in lockstep (PL1/PL3/PL4; BC-KEYFMT/BC-SECRET/BC-NOLEAK).
+      key_name="$comp"
+      key_present=0; case "$($GEXEC key list 2>/dev/null)" in *"$key_name"*) key_present=1 ;; esac
+      secret_present=0; $KC -n "$ns" get secret "$sec" >/dev/null 2>&1 && secret_present=1
+      # Decide whether to mint: force (LOCAL_S3_REMINT=1) OR either side missing.
+      # DOCUMENTED RESIDUAL (PL4): the presence test does NOT verify the garage key and
+      # the Secret hold the SAME key. An interrupted run can persist a silent 403 that a
+      # plain "both present → skip" will not heal — recover with LOCAL_S3_REMINT=1 (or
+      # delete the ${sec} Secret) to force a clean re-mint.
+      if [ "${LOCAL_S3_REMINT:-0}" = "1" ] || [ "$key_present" = "0" ] || [ "$secret_present" = "0" ]; then
+        # --- mint branch (BC-NOLEAK: no `set -x`; never echo `out` / key values) ---
+        if [ "$key_present" = "1" ]; then
+          old_id=$($GEXEC key list 2>/dev/null | awk -v n="$key_name" '$0 ~ n {print $1; exit}')
+          [ -n "$old_id" ] && $GEXEC key delete "$old_id" --yes >/dev/null 2>&1
+        fi
+        out=$($GEXEC key create "$key_name" 2>/dev/null)
+        # BC-KEYFMT: extraction grounded against `garage key create` output on v2.3.0.
+        key_id=$(printf '%s\n' "$out" | sed -n 's/.*[Kk]ey ID:[[:space:]]*\([A-Za-z0-9][A-Za-z0-9]*\).*/\1/p' | head -1)
+        key_secret=$(printf '%s\n' "$out" | sed -n 's/.*[Ss]ecret key:[[:space:]]*\([A-Za-z0-9][A-Za-z0-9]*\).*/\1/p' | head -1)
+        # PL3 non-empty guard — refuse to apply an empty-credential Secret (that is the
+        # exact CreateContainerConfigError / empty-credential-403 state #736 eliminates).
+        if [ -z "$key_id" ] || [ -z "$key_secret" ]; then
+          echo "ERROR: could not extract Key ID / Secret key from 'garage key create' output — refusing to mint an empty-credential Secret. Inspect the garage CLI output format and adjust the parse."
+          exit 1
+        fi
+        for b in $buckets; do
+          $GEXEC bucket allow --read --write "$b" --key "$key_id" || { echo "ERROR: garage bucket allow on ${b} failed"; exit 1; }
+        done
+        # Atomic create/replace from stdin (BC-SECRET): build a base64 Secret manifest and
+        # apply it via `kubectl apply -f -` — no --from-literal (value never on an arg list),
+        # no delete-then-create window. Single printf (mvdan/sh brace-group quirk). The
+        # base64 encoders (printf builtin → base64) keep the plaintext off every arg list.
+        kid=$(printf '%s' "$key_id" | base64 | tr -d '\n')
+        ksec=$(printf '%s' "$key_secret" | base64 | tr -d '\n')
+        printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: %s\n  namespace: %s\ntype: Opaque\ndata:\n  S3_ACCESS_KEY_ID: %s\n  S3_SECRET_ACCESS_KEY: %s\n' \
+          "$sec" "$ns" "$kid" "$ksec" | $KC -n "$ns" apply -f - >/dev/null \
+          || { echo "ERROR: applying credential Secret ${sec} failed"; exit 1; }
+        minted=1
+        echo "  ✓ minted credential Secret ${sec} in namespace ${ns}"
+      else
+        echo "  ✓ credential Secret ${sec} present + garage key '${key_name}' exists (skip mint)"
+      fi
+
+      # 8. seed the TARGET's non-secret runtime ConfigMap — ONLY reached after the credential
+      #    Secret applied (step 7 exit 1s on any empty/failed credential). This fixture has no
+      #    secrets.yaml, so local:fixtures applies just the ConfigMap and exits 0.
+      echo "▶ seed ${cid} runtime ConfigMap"
+      task local:fixtures -- "$cid" || { echo "ERROR: seeding ${cid} runtime ConfigMap failed"; exit 1; }
+
+      # 9. re-mint restart (BR4 + PL1): restart the target workloads ONLY if we actually
+      #    minted AND they already exist (skip on first run before local:apply creates them).
+      #    A steady-state no-op re-run (no mint) does NOT disturb a healthy workload.
+      if [ "$minted" = "1" ]; then
+        wl=$($KC -n "$ns" get deployment,statefulset -l app.kubernetes.io/instance="$comp" -o name 2>/dev/null)
+        if [ -n "$wl" ]; then
+          echo "▶ re-minted credential → rollout restart ${cid} workloads"
+          $KC -n "$ns" rollout restart deployment,statefulset -l app.kubernetes.io/instance="$comp" >/dev/null 2>&1 || true
+        fi
+      fi
+
+      echo "✓ local S3 backend ready for ${cid} @ ${tag} (buckets: $(printf '%s ' $buckets))"
 
   local:remove:
     desc: 'Remove all Argo apps of a sub-layer: task local:remove -- <sub-layer>'

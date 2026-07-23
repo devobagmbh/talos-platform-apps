@@ -1,0 +1,34 @@
+# Local garage fixture: the consumer-owned runtime config (ConfigMap garage-config,
+# key garage.toml) that storage-objects/garage references via existingConfigMap.
+# LOCAL-ONLY single-node config for the object-store E2E — never a catalog default.
+#
+# The garage StatefulSet's init container mounts this at /mnt/garage.toml, substitutes
+# the rpc_secret from the garage-runtime-secret Secret into the __RPC_SECRET_REPLACE__
+# placeholder (vendored chart templates/workload.yaml:41), and writes the processed
+# file to /etc/garage.toml where the daemon reads it. emptyDir meta/data (ephemeral),
+# replication_factor 1, single node. s3_region MUST equal the consumer's S3_REGION
+# (loki-distributed-runtime-config: garage).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: garage
+data:
+  garage.toml: |
+    metadata_dir = "/mnt/meta"
+    data_dir = "/mnt/data"
+    db_engine = "lmdb"
+
+    replication_factor = 1
+
+    rpc_bind_addr = "[::]:3901"
+    # rpc_secret is substituted from the garage-runtime-secret Secret by the init
+    # container, which sed-replaces the placeholder token on the line below.
+    rpc_secret = "__RPC_SECRET_REPLACE__"
+
+    [s3_api]
+    s3_region = "garage"
+    api_bind_addr = "[::]:3900"
+
+    [admin]
+    api_bind_addr = "[::]:3903"
