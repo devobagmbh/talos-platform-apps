@@ -1,0 +1,23 @@
+requires:
+  s3-object: "*" # S3-compatible object store (capability; catalog/capability-index.yaml). Garage = active platform impl (ADR-0007)
+provides:
+  - name: tempo-distributed
+    version:
+      sot: app
+      app: 2.10.7 # Tempo appVersion (image tag docker.io/grafana/tempo:2.10.7)
+      chart: 2.26.2 # grafana-community/tempo-distributed chart version, microservices topology
+    api_surface: [] # the chart ships no CRDs / exposed API groups
+    # Second topology-scoped implementation alongside
+    # sub-layers/observability/components/tempo (the monolithic single-binary role). The
+    # capability-index is tool-keyed ({name: tempo, ...}), not component-keyed — both this
+    # component and the monolithic sibling are the tool `tempo` and legitimately claim
+    # these ids. swap_class MUST match the capability-index entry (catalog/README.md): it
+    # scores swapping the TOOL (tempo -> jaeger) — traces-storage is data-migration (the
+    # trace blocks must be moved), traces-query is drop-in.
+    # The monolithic<->distributed move is a DISTINCT axis with no field in the current
+    # schema; both topologies pin the SAME Tempo appVersion (2.10.7) and write the same S3
+    # bucket layout, so the swap needs NO data migration. Documented in README
+    # §Relationship instead; a per-topology swap field would be an ADR-0021 change.
+    capabilities:
+      - {id: traces-storage, swap_class: data-migration}
+      - {id: traces-query, swap_class: drop-in}

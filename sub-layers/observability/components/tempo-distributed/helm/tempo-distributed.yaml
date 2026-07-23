@@ -1,0 +1,300 @@
+# tempo-distributed — Grafana Tempo in the chart's microservices (distributed) topology:
+# the platform's HIGHLY-AVAILABLE trace store + trace-query endpoint. Layer-2 default
+# values for talos-platform-apps. Each Tempo target (distributor, ingester, querier,
+# query-frontend, compactor) runs as its own workload, backed by an S3-compatible object
+# store for the trace blocks, ingesting OTLP.
+#
+# Sibling relationship: `observability/tempo` ships the MONOLITHIC single-binary `tempo`
+# chart (one StatefulSet, replicas 1) for single-node consumers. This component is the
+# second, independently versioned artifact a MULTI-NODE consumer picks instead; the two
+# are topology variants of the same product, mutually exclusive, and never deployed
+# together into one namespace (AGENTS.md §Sub-layer conventions → Topology variants).
+#
+# Chart source & version pin (ratify on PR review): this renders the `tempo-distributed`
+# chart from the `grafana-community` Helm repo
+# (https://grafana-community.github.io/helm-charts), the actively-maintained successor to
+# the org-migrated `grafana/tempo-distributed` (the 2026-01-30 governance move; same move
+# documented on the monolithic sibling `observability/tempo`). `tempo` and
+# `tempo-distributed` are DIFFERENT upstream charts with independent version lines, so the
+# topology-variant "identical chart version at introduction" clause (written for the
+# same-chart loki case) cannot apply here. The faithful realization of that clause's
+# INTENT is appVersion alignment: chart 2.26.2 is the newest `tempo-distributed` revision
+# still carrying appVersion 2.10.7 — the SAME Tempo binary the monolithic sibling pins
+# (verified this session: `helm search repo grafana-community/tempo-distributed
+# --versions` → 2.26.0/2.26.1/2.26.2 all appVersion 2.10.7; 3.0.x carries the newer Tempo
+# 3.0.2). Aligning the Tempo binary keeps a consumer swap between the two topologies free
+# of a Tempo version boundary (AC2 no data migration, AC3 capability no-op). VERIFY at
+# push that 2.26.2 is still the top of the 2.10.7 line:
+# `helm show chart tempo-distributed --repo https://grafana-community.github.io/helm-charts --version 2.26.2`
+#
+# Freeze-line (ADR-0024 v2, Shapes a + c): the WORKLOAD (the rendered Deployments/
+# StatefulSets + Services + PodDisruptionBudgets + the chart-generated tempo config
+# ConfigMap + the Namespace) is catalog-owned and signed; the S3 CONNECTION is 100%
+# consumer-owned and per-cluster. The rendered Tempo config references ${VAR} placeholders
+# (NOT hardcoded endpoints/keys); Tempo resolves them at runtime from consumer-supplied
+# env via the `-config.expand-env=true` flag. Two refs:
+#   - ConfigMap tempo-distributed-runtime-config (envFrom, non-secret): S3_ENDPOINT,
+#     S3_REGION, S3_BUCKET_TRACES, S3_INSECURE
+#   - Secret    tempo-distributed-runtime-secret (envFrom, secret):     S3_ACCESS_KEY_ID,
+#     S3_SECRET_ACCESS_KEY
+# The required KEY NAMES are byte-identical to the monolithic sibling `observability/tempo`'s,
+# so a consumer swapping monolithic <-> distributed reuses its existing ConfigMap/Secret
+# contents unchanged (only the ref NAMES are component-scoped).
+#
+# Chart-template verification (chart 2.26.2):
+#   * expand-env + envFrom: the shared pod template templates/_pod.tpl renders every
+#     component container's `args` from
+#     `concat .Values.global.extraArgs (.Values.defaults.extraArgs) $component.extraArgs`
+#     and its `envFrom` from
+#     `concat .Values.global.extraEnvFrom (.Values.defaults.extraEnvFrom) $component.extraEnvFrom`.
+#     So the two `global.*` knobs below reach EVERY component pod (distributor, ingester,
+#     querier, query-frontend, compactor) — no per-component duplication. Confirmed against
+#     the rendered manifest, not just the template.
+#   * The ${VAR} placeholders land in the rendered tempo config via the top-level `config`
+#     template (templates/configmap-tempo.yaml → values.yaml `config:`), which renders
+#     `storage.trace.s3` verbatim from `toYaml .Values.storage.trace.s3` when
+#     `storage.trace.backend == s3`. Tempo S3 keys are snake_case (access_key/secret_key).
+#   * OTLP-only receivers: the chart renders `distributor.receivers` conditionally per
+#     `traces.<proto>.enabled` (all default false), and the distributor Service ports are
+#     ALSO fully conditional (templates/distributor/service-distributor.yaml). So enabling
+#     only `traces.otlp.{http,grpc}` yields an OTLP-only ingestion config AND an OTLP-only
+#     Service — no config-string override is needed here (unlike the monolithic sibling,
+#     whose `_ports.tpl` hard-dereferenced jaeger and forced a frozen config copy).
+
+metadata:
+  chart: tempo-distributed
+  repo: https://grafana-community.github.io/helm-charts
+  version: 2.26.2  # bare SemVer — NO leading 'v' (--version v2.26.2 fails to resolve)
+  # appVersion 2.10.7 → image tag docker.io/grafana/tempo:2.10.7 (chart appVersion pin,
+  # NEVER :latest; the image tag defaults to .Chart.AppVersion, not overridden here). The
+  # SAME Tempo binary as the monolithic sibling observability/tempo (appVersion alignment).
+  namespace: tempo-distributed
+
+values:
+  global:
+    # -- (list) CLI args appended to EVERY chart-managed component container (via the
+    # shared templates/_pod.tpl). `-config.expand-env=true` makes Tempo expand the ${VAR}
+    # placeholders in the rendered config from the container environment — without it the
+    # S3 endpoint/credentials would be read literally as the string "${S3_ENDPOINT}" and
+    # every write would fail. MUST stay in lockstep with the ${VAR} values under `storage`
+    # below.
+    extraArgs:
+      - -config.expand-env=true
+    # -- (list) envFrom sources added to EVERY chart-managed component container (via the
+    # shared templates/_pod.tpl). Shape (a)+(c) freeze-line: the consumer-owned S3
+    # connection enters here so the ${VAR} placeholders resolve at runtime.
+    extraEnvFrom:
+      - configMapRef:
+          name: tempo-distributed-runtime-config  # S3_ENDPOINT, S3_REGION, S3_BUCKET_TRACES, S3_INSECURE
+      - secretRef:
+          name: tempo-distributed-runtime-secret  # S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
+
+  # -- (bool) Disable anonymous usage reporting to Grafana Labs (top-level key; renders
+  # `usage_report.reporting_enabled: false` in the tempo config) — platform/airgap hygiene.
+  reportingEnabled: false
+
+  # -- (bool) Single-tenant platform trace store; multitenancy off (top-level key; chart
+  # default, restated so a chart-default change cannot silently enable it).
+  multitenancyEnabled: false
+
+  tempo:
+    # -- (map) Container-level securityContext applied to EVERY chart-managed container
+    # (the coalesce fallback `.Values.tempo.securityContext` in templates/_pod.tpl, used
+    # because no component overrides it). The chart default already sets
+    # readOnlyRootFilesystem + capabilities.drop:[ALL] + allowPrivilegeEscalation:false +
+    # runAsNonRoot but OMITS seccompProfile, which caps the pod at `baseline`. The
+    # namespace declares `pod-security.kubernetes.io/enforce: restricted`, so the
+    # seccompProfile is added here; the rest is re-stated so a chart bump cannot weaken
+    # the declared level. Tempo writes only under the mounted /var/tempo data volume, so
+    # readOnlyRootFilesystem:true is safe (kept from the chart default).
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    # -- (map) Pod-level securityContext applied to EVERY chart-managed pod (the coalesce
+    # fallback `.Values.tempo.podSecurityContext` in templates/_pod.tpl). The chart default
+    # sets only `fsGroup: 1000`; `restricted` needs a pod- or container-level
+    # runAsNonRoot + seccompProfile RuntimeDefault, so they are set here (plus the 1000
+    # uid/gid) to make every rendered pod provably satisfy `restricted`.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+
+  # -- (map) S3 object storage (s3-object capability). The connection values are ${VAR}
+  # placeholders, NOT real endpoints/keys: the freeze-line keeps the S3 connection 100%
+  # consumer-owned. Tempo uses ONE bucket (trace blocks). Rendered verbatim into
+  # storage.trace.s3 by the config template (`toYaml .Values.storage.trace.s3`) and
+  # expanded at runtime by -config.expand-env=true. Path-style addressing (forcepathstyle:
+  # true) is baked — the self-hosted S3 standard (MinIO, Garage, …); TLS mode is
+  # consumer-owned via ${S3_INSECURE} (default TLS-on). Tempo S3 keys are snake_case
+  # (access_key/secret_key), distinct from Loki's accessKeyId.
+  storage:
+    trace:
+      backend: s3
+      s3:
+        bucket: ${S3_BUCKET_TRACES}
+        endpoint: ${S3_ENDPOINT}
+        region: ${S3_REGION}
+        access_key: ${S3_ACCESS_KEY_ID}
+        secret_key: ${S3_SECRET_ACCESS_KEY}
+        insecure: ${S3_INSECURE}  # consumer-owned: "false"=TLS/HTTPS (default), "true"=plain HTTP (a TLS-less S3 endpoint)
+        forcepathstyle: true  # path-style addressing — the self-hosted S3 standard (baked, not consumer-tunable)
+
+  # -- (map) Ingestion receivers. Alloy forwards OTLP traces to Tempo (design issue #183),
+  # so ONLY the OTLP gRPC (:4317) and HTTP (:4318) receivers are enabled — parity with the
+  # monolithic sibling's ingest surface so the two topologies are interchangeable. The
+  # chart's jaeger/zipkin/opencensus receivers stay at their default `enabled: false`, so
+  # NEITHER the distributor config NOR the distributor Service render any jaeger/zipkin
+  # ports (both are fully conditional in chart 2.26.2 — verified against the render).
+  traces:
+    otlp:
+      http:
+        # -- (bool) Enable the OTLP HTTP receiver on :4318.
+        enabled: true
+      grpc:
+        # -- (bool) Enable the OTLP gRPC receiver on :4317.
+        enabled: true
+
+  # --- Topology (minimum HA set) -------------------------------------------------------
+  # The minimum footprint under which the ingest and query paths both survive the loss of
+  # any single pod (AC1). Every deployed component carries requests.cpu + requests.memory +
+  # limits.memory and NO cpu limit (a cpu limit only throttles; memory is the incompressible
+  # OOM risk) — the shape the repo's `base.required_resource_limits` policy enforces. The
+  # values are a platform starting point sized for a modest multi-node cluster; a consumer
+  # raises them per-cluster via its Argo Kustomize overlay (ADR-0024), not by a catalog PR.
+  # Each component's PodDisruptionBudget (chart default `podDisruptionBudget.enabled: true`)
+  # renders with `maxUnavailable: 1` whenever replicas > 1, keeping at least one replica
+  # serving through a voluntary disruption (node drain).
+
+  distributor:
+    # -- (int) Two distributors: the OTLP write entrypoint, stateless, load-balanced by its
+    # Service — losing one leaves the ingest path serving. Chart default `maxUnavailable: 1`
+    # applies to the rendered PDB.
+    replicas: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+  ingester:
+    # -- (int) Three ingesters, matching `ingester.config.replication_factor: 3` (chart
+    # default) so every trace is written to all three and the write quorum (2) still holds
+    # when one ingester is lost — the value that makes AC1 "ingest survives single-pod loss"
+    # true on the stateful hop. The chart's soft podAntiAffinity (topologyKey
+    # kubernetes.io/hostname) spreads them across nodes when available without blocking
+    # scheduling on smaller clusters. The rendered PDB maxUnavailable defaults to
+    # `replicas - (RF/2 + 1)` = 1.
+    replicas: 3
+    zoneAwareReplication:
+      # -- (bool) Zone-aware replication OFF (chart default, restated to pin it). Enabling it
+      # splits the ingester into per-zone StatefulSets coordinated by the grafana
+      # rollout-operator, which this component does not ship — a flat StatefulSet of 3 is
+      # rolled one pod at a time by the StatefulSet controller itself, the serialisation the
+      # operator would otherwise provide.
+      enabled: false
+    resources:
+      requests:
+        cpu: 200m
+        # QoS: requests.memory == limits.memory reserves the full envelope so the kubelet
+        # cannot evict an ingester below its limit during WAL replay (the peak-memory moment).
+        memory: 1Gi
+      limits:
+        memory: 1Gi
+
+  querier:
+    # -- (int) Two queriers: stateless query executors pulled from the query-frontend queue.
+    replicas: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+  queryFrontend:
+    # -- (int) Two query-frontends: the read entrypoint a consumer's Grafana datasource
+    # targets; splits and queues queries.
+    replicas: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+
+  compactor:
+    # -- (int) ONE compactor. It sits on NEITHER the ingest nor the query path (it compacts
+    # blocks in the object store), so its momentary loss does not violate AC1 — writes and
+    # queries continue, only compaction/retention pause until it is rescheduled. The Tempo
+    # compactor CAN scale horizontally (it shards work via the ring, unlike Loki's
+    # singleton compactor); 1 is the minimum that satisfies AC1, and a consumer raises it
+    # per-cluster. At replicas 1 no PDB renders (the chart gates the PDB on replicas > 1).
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+  # --- Disabled optional features (kept OFF; issue #731 Boundaries) --------------------
+
+  # -- (map) Memcached caches. Chart default is `enabled: true`, which adds a memcached
+  # Deployment + the memcached + exporter images to the signed artifact (a query-latency
+  # optimisation beyond the minimum HA set). Disabled — the config `cache:` block renders
+  # empty when memcached is off. A consumer that needs the caches asks for a catalog change.
+  memcached:
+    enabled: false
+
+  # -- (map) The metrics-generator (span → RED-metrics remote_write). Chart default
+  # `enabled: false`; restated. It adds a workload + needs a Prometheus remote_write target,
+  # both out of scope for the minimum HA trace store.
+  metricsGenerator:
+    enabled: false
+
+  # -- (map) The chart's reverse-proxy gateway (nginx). Chart default `enabled: false`;
+  # restated. It would add an unpinned third-party image and a second ingress surface to
+  # the signed artifact. Without it the consumer targets the component's own Services
+  # directly — the distributor Service (OTLP write path), the query-frontend Service (read
+  # path), both named in the README.
+  gateway:
+    enabled: false
+
+  # -- (map) The bundled MinIO (an external S3-compatible store is the s3-object
+  # capability). Chart default `enabled: false`; restated so a chart flip cannot silently
+  # add a second object store to the artifact.
+  minio:
+    enabled: false
+
+  # -- (map) The grafana rollout-operator (only meaningful with zone-aware ingesters,
+  # disabled above). Chart default `enabled: false`; restated.
+  rollout_operator:
+    enabled: false
+
+  # -- (map) Meta-monitoring. External scrape: Alloy scrapes Tempo's metrics endpoints from
+  # outside (observability/alloy). The chart's bundled ServiceMonitor and grafana-agent are
+  # chart-default-off; restated so a chart default flip cannot pull prometheus-operator
+  # CRD-dependent resources into the artifact.
+  metaMonitoring:
+    serviceMonitor:
+      enabled: false
+    grafanaAgent:
+      enabled: false
+
+  # -- (map) The bundled PrometheusRule (alerting rules). Chart default `enabled: false`;
+  # restated — it depends on the prometheus-operator CRD this component does not ship.
+  prometheusRule:
+    enabled: false
