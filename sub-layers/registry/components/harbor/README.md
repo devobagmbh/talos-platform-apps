@@ -6,18 +6,16 @@ Harbor (Helm `harbor/harbor` 1.19.1, appVersion 2.15.1) — container registry +
 
 The currently rendered profile targets a **single-node pull-through-cache consumer**:
 
-- **Storage: persistent** (ADR-0026) — Harbor state survives a node rebuild. Harbor keeps only its own PVCs (registry blobs 20Gi, jobLog 1Gi, trivy 5Gi); `storageClass` unset → consumer default (`synology-iscsi-storage`).
-- **DB + Redis: external** (`type: external`, #84) — Postgres via the `cnpg-postgres` capability (CloudNativePG), Redis via `redis-managed` (Valkey operator). Harbor no longer ships the `harbor-database` / `harbor-redis` StatefulSets.
+- **Storage: persistent** (ADR-0026) — Harbor state survives a node rebuild. Harbor's own PVCs: registry blobs 20Gi, jobLog 1Gi, database 8Gi, redis 1Gi, trivy 5Gi; `storageClass` unset → consumer default (`synology-iscsi-storage`).
+- **DB + Redis: bundled** (`type: internal`, reverts #84) — Harbor ships its own `harbor-database` (Postgres) + `harbor-redis` StatefulSets on internal PVCs. Harbor generates + owns their credentials; the lean fit for a single-consumer registry (no external CNPG/Valkey operators).
 - **Exposure: clusterIP**, TLS terminated externally at the Cilium Gateway (Gateway-API-only hard constraint, no Ingress).
 - **Auth: db_auth** (admin) — OIDC via Dex to follow.
 - **Secrets** (ADR-0023, Class B — consumer-supplied):
   - `harbor-runtime-secret` — keys `HARBOR_ADMIN_PASSWORD` + `secretKey` (consumer delivers via SOPS).
-  - `harbor-db` — key `password` (Postgres; CNPG auto-creates `<cluster>-app` with this key).
-  - `harbor-redis` — key `REDIS_PASSWORD` (Redis; map from the Valkey-operator secret).
-  - Internal service secrets (core/xsrf/jobservice/registry-http) are still Harbor-generated.
+  - Internal service secrets (core/xsrf/jobservice/registry-http) and the bundled DB/Redis credentials are all Harbor-generated — no consumer DB/Redis secret.
 - **externalURL** (ADR-0023, Class A — consumer-supplied env): harbor-core's `EXT_ENDPOINT` (Harbor's OIDC redirect + registry/UI base URL) is taken from a consumer `harbor-runtime-config` ConfigMap, key `EXTERNAL_URL` (explicit env, overrides the baked placeholder `https://REPLACE-ME.harbor.invalid`; `optional:true` → placeholder fallback if absent, non-breaking). The consumer MUST set it (`https://harbor.<cluster>.…`) for OIDC/redirects to work — no Kustomize patch of the signed workload (ADR-0024).
 
-The concrete CNPG `Cluster` (`harbor-pg` → service `harbor-pg-rw`) and `Valkey` CR (`harbor-cache:6379`) are **consumer-owned** (consumer repo), not part of this render. Customization contract: [`customization.yaml`](customization.yaml).
+Postgres + Redis are bundled with the workload (no consumer-owned CNPG/Valkey CRs). Customization contract: [`customization.yaml`](customization.yaml).
 
 ## Dex / OIDC SSO (Day-2, consumer-owned)
 
@@ -50,7 +48,7 @@ itself is a separate prerequisite — see identity/dex (#52), epic #47.
 
 ## Sync-wave
 
-`0` — no intra-sub-layer dependency. Cross-sub-layer `requires` (`cnpg-postgres`, `redis-managed`) are ordered by their own sync-waves in the consumer cluster manifests; the CNPG `Cluster` + `Valkey` CR must be Ready before Harbor starts.
+`0` — no intra-sub-layer dependency and no cross-sub-layer `requires` (DB/Redis are bundled).
 
 ## OCI
 
@@ -63,7 +61,7 @@ oci://ghcr.io/devobagmbh/talos-platform-apps/registry/harbor:vX.Y.Z
 - A pull-through-cache consumer — as a pull-through cache in front of GHCR/Docker Hub
 - A workload-registry consumer — as a workload registry for internal Devoba apps
 
-Both consumers run Harbor independently (own CNPG `Cluster`, own Valkey instance, own registry-blob PVC).
+A consumer runs a single bundled Harbor (own Postgres + Redis + registry-blob PVCs). Today the management/seeder cluster is the sole registry; other clusters pull from it (ADR-0026).
 
 ## Related ADRs
 

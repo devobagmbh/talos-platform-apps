@@ -2,19 +2,21 @@
 # Render input for `task render:one -- registry/harbor`.
 #
 # Day-1 profile: pull-through cache, single-node. Storage PERSISTENT
-# (ADR-0026) — Harbor state survives a node rebuild. Harbor keeps only its own
-# PVCs (registry-blobs/jobLog/trivy); Postgres + Redis are EXTERNAL
-# (CNPG + Valkey, #84), with no embedded harbor-database/harbor-redis.
+# (ADR-0026) — Harbor state survives a node rebuild. Postgres + Redis are
+# BUNDLED (Harbor's own harbor-database + harbor-redis StatefulSets, internal
+# PVCs). Harbor is a single-consumer registry (the management/seeder cluster),
+# so an embedded DB is the lean fit — no external CNPG/Valkey operators for a
+# workload with one consumer. (External backends stay a possible future profile
+# if a second, HA consumer ever appears; not built speculatively — YAGNI.)
 #
 # Consumer-side value layering (ADR-0023):
 #   - admin password + global secretKey → existingSecret `harbor-runtime-secret`
 #     (class B). The consumer supplies it via SOPS (Vault is not yet running).
-#   - externalURL → placeholder; the consumer patches it via Kustomize
-#     (class A, structural — Harbor bakes EXT_ENDPOINT into the core ConfigMap).
-#   - DB/Redis connection → cnpg-postgres + redis-managed capabilities. The
-#     concrete CNPG `Cluster` + `Valkey` CRs are consumer-owned; the
-#     existingSecrets `harbor-db` (key password) + `harbor-redis` (key
-#     REDIS_PASSWORD) are consumer-supplied (class B). See compatibility.yaml.
+#   - externalURL → placeholder; harbor-core takes EXT_ENDPOINT at RUNTIME from a
+#     consumer ConfigMap `harbor-runtime-config` (key EXTERNAL_URL) — Shape (a)
+#     env, see core.extraEnvVars below. No Kustomize patch of the signed workload.
+#   - DB/Redis → BUNDLED (internal harbor-database + harbor-redis). Harbor
+#     generates + owns their credentials; no consumer DB/Redis secret needed.
 #   - internal service secrets (core/xsrf/jobservice/registry-http) are left to
 #     Harbor to generate. A consumer may stabilize them via a SOPS/Vault existingSecret.
 
@@ -42,9 +44,9 @@ values:
   externalURL: https://REPLACE-ME.harbor.invalid
 
   # --- Storage: persistent (ADR-0026), so Harbor state survives a node rebuild.
-  # storageClass unset → the consumer's default StorageClass applies. Only the
-  # registry blobs + jobLog + trivy cache are Harbor's own PVCs now — Postgres
-  # and Redis state live in CNPG / Valkey (external, below), NOT in Harbor PVCs. ---
+  # storageClass unset → the consumer's default StorageClass applies. Registry
+  # blobs + jobLog + trivy cache AND the bundled Postgres + Redis are all Harbor's
+  # own PVCs. ---
   persistence:
     enabled: true
     persistentVolumeClaim:
@@ -53,45 +55,22 @@ values:
       jobservice:
         jobLog:
           size: 1Gi
+      database:
+        size: 8Gi
+      redis:
+        size: 1Gi
       trivy:
         size: 5Gi
 
-  # --- External backends (capability-first, #84): Postgres via cnpg-postgres,
-  # Redis via redis-managed (Valkey). Harbor no longer ships harbor-database /
-  # harbor-redis StatefulSets. The concrete CNPG `Cluster` + `Valkey` CRs are
-  # consumer-owned (consumer repo); this render only sets type=external + the
-  # connection convention + the existing-secret contract (ADR-0023). ---
+  # --- Bundled backends: Harbor ships its own harbor-database (Postgres) +
+  # harbor-redis StatefulSets (type: internal). Harbor generates + owns their
+  # credentials — no consumer-supplied DB/Redis secret. This is the lean fit for
+  # a single-consumer registry; external CNPG/Valkey would add stateful operators
+  # for no gain here (see the header note). Persistence sizes are set above. ---
   database:
-    type: external
-    external:
-      # Convention: a CNPG Cluster named `harbor-pg` in the harbor namespace →
-      # its read-write service `harbor-pg-rw`. Consumer patches host via kustomize
-      # if it names the cluster differently (ADR-0023 class A).
-      host: harbor-pg-rw
-      port: "5432"
-      username: harbor
-      coreDatabase: registry
-      sslmode: require            # CNPG serves TLS by default
-      # Consumer-supplied (class B). CNPG auto-creates `<cluster>-app` with a
-      # `password` key — point existingSecret at it (or a SOPS runtime-secret).
-      existingSecret: harbor-db
+    type: internal
   redis:
-    type: external
-    external:
-      # Convention: a Valkey CR `harbor-cache` → its service `harbor-cache:6379`.
-      addr: harbor-cache:6379
-      # ALL indices 0: the redis-managed capability (valkey-operator) runs Valkey in
-      # CLUSTER mode, where Redis `SELECT <db>` is forbidden ("SELECT is not allowed
-      # in cluster mode" → jobservice/registry/trivy crashloop). Harbor keys are
-      # component-prefixed, so sharing DB 0 is safe and is the standard cluster-Redis
-      # setup. (Separate indices only work against a standalone Redis.)
-      coreDatabaseIndex: "0"
-      jobserviceDatabaseIndex: "0"
-      registryDatabaseIndex: "0"
-      trivyAdapterIndex: "0"
-      # Consumer-supplied (class B). Key MUST be `REDIS_PASSWORD` (goharbor chart
-      # contract). Map it from the Valkey-operator secret in the consumer repo.
-      existingSecret: harbor-redis
+    type: internal
 
   # --- Secrets (ADR-0023 class B) ---
   # admin password: consumer supplies harbor-runtime-secret.HARBOR_ADMIN_PASSWORD

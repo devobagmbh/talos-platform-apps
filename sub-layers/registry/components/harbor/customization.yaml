@@ -26,15 +26,12 @@ external_dependencies: []
 # the ConfigMap absent the placeholder still applies (non-breaking), but OIDC redirects
 # + the registry/UI base URL only work once the consumer provides EXTERNAL_URL.
 #
-# NOTE external backends (#84) — beyond harbor-runtime-secret above, the consumer
-# wires the cnpg-postgres + redis-managed capabilities. The concrete CNPG `Cluster`
-# (`harbor-pg` → service `harbor-pg-rw`) and `Valkey` CR (`harbor-cache:6379`) are
-# consumer-owned (seeder repo). Two more consumer-supplied secrets, keys fixed by
-# the goharbor chart:
-#   - `harbor-db`    — key `password`        (DB; CNPG auto-creates `<cluster>-app`)
-#   - `harbor-redis` — key `REDIS_PASSWORD`  (Redis; map from the Valkey secret)
-# These are not in provided_refs (the schema models one ref); they are catalog
-# capability edges (see compatibility.yaml requires) + documented in README.
+# NOTE bundled backends (reverts #84) — Postgres + Redis are BUNDLED (Harbor's own
+# harbor-database + harbor-redis StatefulSets, internal PVCs). Harbor generates +
+# owns their credentials, so the consumer supplies NO DB/Redis secret — the lean
+# fit for a single-consumer registry (no external CNPG/Valkey operators). Only the
+# two harbor-runtime-secret keys above (Shape c) + EXTERNAL_URL (Shape a) are
+# consumer-supplied.
 #
 # NOTE Dex/OIDC SSO (Day-2, opt-in) — Harbor binds to the cluster Dex via its
 # native OIDC mode, but that is RUNTIME config (Harbor API `PUT /configurations`
