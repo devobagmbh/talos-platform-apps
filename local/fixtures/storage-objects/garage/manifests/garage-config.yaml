@@ -17,7 +17,13 @@ data:
   garage.toml: |
     metadata_dir = "/mnt/meta"
     data_dir = "/mnt/data"
-    db_engine = "lmdb"
+    # sqlite (not the lmdb default): the local emptyDir-backed /mnt filesystem in
+    # the podman-machine VM does not support the mmap syscalls lmdb needs — lmdb
+    # fails at startup with "Cannot open LMDB database: Function not implemented
+    # (os error 38)". sqlite uses ordinary read/write and is portable here. This is
+    # a LOCAL-ONLY fixture; real consumer deployments on persistent volumes may use
+    # lmdb. Grounded on the live local cluster (issue #736).
+    db_engine = "sqlite"
 
     replication_factor = 1
 
