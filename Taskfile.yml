@@ -877,7 +877,20 @@ tasks:
                       .trivyignore.yaml (CVE suppression — AGENTS.md requires a CODEOWNERS
                       delta inspection) and lefthook.yml (the pre-commit gate orchestrator),
                       plus .github/ / .claude/ and the policies/ + schemas/ admission-control
-                      gates. Always a human; this is what stops the loop approving a change
+                      gates, plus the two central catalog contract files
+                      catalog/topology-groups.yaml (#733: an author-declared same-product
+                      mutual-exclusion) and catalog/capability-index.yaml (#752: an
+                      author-declared capability-identity + swap_class assertion) — each
+                      encodes a trust assertion with no sound mechanical oracle (DR-0003), so
+                      a single-file edit to EITHER central file must be human-reviewed, never
+                      auto-approved. Scope note (asymmetric with #733): the topology-groups
+                      withhold covers its WHOLE machine-readable surface — a per-component
+                      topology copy cannot exist (compatibility.yaml is additionalProperties:false
+                      with no topology field). This capability-index withhold does NOT: swap_class
+                      is a schema-permitted per-component field, so the per-component
+                      provides[].capabilities[].swap_class copies under sub-layers/**/compatibility.yaml
+                      remain a separate, deliberately unwithheld surface (DR-0003 §Named residuals).
+                      Always a human; this is what stops the loop approving a change
                       that loosens its own gate or the platform's controls — e.g. a PR that
                       broadens .gitleaks.toml's allowlist so a later secret slips the
                       required scan. Sync rule: this set = CODEOWNERS' central-review tier
@@ -930,7 +943,8 @@ tasks:
                     or test("^lefthook\\.yml$")
                     or test("^\\.github/") or test("^\\.claude/")
                     or test("^policies/") or test("^schemas/")
-                    or test("^catalog/topology-groups\\.yaml$")) then "governance"
+                    or test("^catalog/topology-groups\\.yaml$")
+                    or test("^catalog/capability-index\\.yaml$")) then "governance"
            elif (.alreadyReviewedAtHead == true) then "reviewed"
            elif ((.changedLineCount | type) != "number") or (.changedLineCount < 1) or (.changedLineCount > 400)
                 or ((.changedFileCount | type) != "number") or (.changedFileCount < 1) or (.changedFileCount > 50)
@@ -953,7 +967,9 @@ tasks:
       PR's class + pin annotation. Red-green — the class precedence, the
       governance-path globs (AGENTS.md / .github/ / .claude/ + the root platform-control
       configs .gitleaks.toml / .trivyignore.yaml / lefthook.yml, each with its own
-      fixture #123/#126/#127), the release-please manifest/config globs, the oversized
+      fixture #123/#126/#127, and the two central catalog contract files
+      catalog/topology-groups.yaml / catalog/capability-index.yaml #128/#129),
+      the release-please manifest/config globs, the oversized
       line/file thresholds + null/zero/absent-size fail-safe, the self/fork/dirty tests,
       the draft/APPROVED drop, and the pin allowlist + 40-hex-SHA check are the single
       source in pr:triage; reverting ANY turns an assertion red (a should-be-withheld PR
@@ -995,6 +1011,7 @@ tasks:
         {"number":126,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":[".trivyignore.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":2,"changedFileCount":1},
         {"number":127,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["lefthook.yml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":4,"changedFileCount":1},
         {"number":128,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["catalog/topology-groups.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
+        {"number":129,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["catalog/capability-index.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
         {"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
       ]
       JSON
@@ -1053,9 +1070,10 @@ tasks:
       assert_class 126 governance       # .trivyignore.yaml (root platform-control config — CVE suppression)
       assert_class 127 governance       # lefthook.yml (root platform-control config — pre-commit gate orchestrator)
       assert_class 128 governance       # catalog/topology-groups.yaml (topology-variant contract — same-product claim must be human-reviewed, #733)
+      assert_class 129 governance       # catalog/capability-index.yaml (capability contract — capability-identity + swap_class claim must be human-reviewed, #752)
       count="$(printf '%s\n' "$out" | grep -cE '[^[:space:]]' || true)"
-      if [ "${count:-0}" -ne 29 ]; then echo "FAIL: expected exactly 29 in-scope lines, got ${count:-0}"; fail=1; fi
-      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (29 in-scope / 2 dropped)"; fi
+      if [ "${count:-0}" -ne 30 ]; then echo "FAIL: expected exactly 30 in-scope lines, got ${count:-0}"; fail=1; fi
+      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (30 in-scope / 2 dropped)"; fi
       exit "$fail"
 
   lint:commit-scope:
