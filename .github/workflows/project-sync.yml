@@ -1,15 +1,15 @@
 name: project-sync
 
-# Fügt neue Issues automatisch zum Org-Project "Office-Lab Cluster" (#3) hinzu und
-# setzt das Komponente-Feld aus dem area:*-Label ab.
+# Automatically adds new issues to the org project "Office-Lab Cluster" (#3) and
+# sets the Komponente field from the area:* label.
 #
-# Setup-Voraussetzung (einmalig pro Repo):
-#   1. Personal Access Token mit Scopes 'repo' + 'project' (Write) erzeugen.
-#   2. Als Repo-Secret PROJECT_TOKEN hinterlegen.
-#   3. Optional: Repo-Variable PROJECT_NUMBER auf 3 setzen (Default: 3).
+# Setup prerequisite (once per repo):
+#   1. Create a personal access token with scopes 'repo' + 'project' (write).
+#   2. Store it as the repo secret PROJECT_TOKEN.
+#   3. Optional: set the repo variable PROJECT_NUMBER to 3 (default: 3).
 #
-# Der GITHUB_TOKEN reicht NICHT — Project-V2-API erfordert User-Scoped Token
-# oder GitHub-App. Wir nutzen PAT-Variante, weil noch keine Org-App existiert.
+# The GITHUB_TOKEN is NOT enough — the Project V2 API requires a user-scoped token
+# or a GitHub App. We use the PAT variant because no org app exists yet.
 
 on:
   issues:
@@ -25,13 +25,13 @@ jobs:
       PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER || '3' }}
       ORG_LOGIN: devobagmbh
     steps:
-      # Early-Skip wenn Repo-Secret PROJECT_TOKEN fehlt (Step-Level if: kann
-      # secrets/env auswerten, Job-Level if: kann das nicht zuverlässig).
+      # Early skip if the repo secret PROJECT_TOKEN is missing (step-level if: can
+      # evaluate secrets/env, job-level if: cannot do that reliably).
       - name: Check PROJECT_TOKEN
         id: token
         run: |
           if [ -z "${{ secrets.PROJECT_TOKEN }}" ]; then
-            echo "PROJECT_TOKEN nicht gesetzt — skip Project-Sync"
+            echo "PROJECT_TOKEN not set — skip project sync"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -47,7 +47,7 @@ jobs:
             const issueNodeId = context.payload.issue.node_id;
             const issueLabels = (context.payload.issue.labels || []).map(l => l.name);
 
-            // 1. Project + Field-Map abrufen
+            // 1. Fetch project + field map
             const projectData = await github.graphql(`
               query($login: String!, $number: Int!) {
                 organization(login: $login) {
@@ -76,7 +76,7 @@ jobs:
               if (f && f.name) fieldByName[f.name] = f;
             }
 
-            // 2. Item zum Project hinzufügen (idempotent — vorhandene werden ignoriert)
+            // 2. Add item to the project (idempotent — existing ones are ignored)
             const addResult = await github.graphql(`
               mutation($projectId: ID!, $contentId: ID!) {
                 addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
@@ -88,7 +88,7 @@ jobs:
             const itemId = addResult.addProjectV2ItemById.item.id;
             core.info(`Added/found project item: ${itemId}`);
 
-            // 3. Komponente aus area:*-Label ableiten und setzen
+            // 3. Derive and set Komponente from the area:* label
             const areaToKomponente = {
               "area:dns": "DNS",
               "area:backup": "Backup-DR",
@@ -154,7 +154,7 @@ jobs:
               }
             }
 
-            // 4. Status auf Backlog setzen (nur bei opened)
+            // 4. Set status to Backlog (only on opened)
             if (context.payload.action === "opened" && fieldByName["Status"]) {
               const backlog = fieldByName["Status"].options.find(o => o.name === "Backlog");
               if (backlog) {

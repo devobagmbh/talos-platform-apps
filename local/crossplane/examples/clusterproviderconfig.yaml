@@ -1,10 +1,10 @@
-# Minimale ClusterProviderConfig für den lokalen Crossplane-Test.
-# Die Composition referenziert ClusterProviderConfig/opentofu-default — die
-# eigentliche CR (mit tofu-Backend + Credentials) ist aber CONSUMER-eigen
-# (seeder-Repo), NICHT im Katalog. Diese hier ist nur ein lokaler Dummy, damit
-# provider-opentofu die Config auflösen kann und bis zum echten tofu-Versuch
-# kommt (der dann mangels Backend/Hardware erwartbar fehlschlägt = Provider-Grenze).
-# Leeres spec → local-state, keine Credentials.
+# Minimal ClusterProviderConfig for the local Crossplane test.
+# The Composition references ClusterProviderConfig/opentofu-default — but the
+# actual CR (with tofu backend + credentials) is CONSUMER-owned
+# (seeder repo), NOT in the catalog. This one is only a local dummy so that
+# provider-opentofu can resolve the config and gets as far as the real tofu attempt
+# (which then, lacking a backend/hardware, expectedly fails = provider boundary).
+# Empty spec → local state, no credentials.
 apiVersion: opentofu.m.upbound.io/v1beta1
 kind: ClusterProviderConfig
 metadata:

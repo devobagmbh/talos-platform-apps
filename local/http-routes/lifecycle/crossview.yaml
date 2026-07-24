@@ -1,9 +1,9 @@
-# Lokale HTTPRoute für das Crossview-Dashboard.
-# In prod ist diese Route consumer-eigen (seeder-Repo, cluster-spezifischer
-# Hostname — ADR-0023/0024 Shape b); der Katalog shippt sie NICHT. Diese Datei
-# existiert nur für die lokale Test-Umgebung, analog zu argocd-route.yaml.
+# Local HTTPRoute for the Crossview dashboard.
+# In prod this route is consumer-owned (seeder repo, cluster-specific
+# hostname — ADR-0023/0024 shape b); the catalog does NOT ship it. This file
+# exists only for the local test environment, analogous to argocd-route.yaml.
 #   Gateway 'localhost-direct' (NS gateway) → listener https (*.localhost.direct)
-#     → HTTPRoute (Host crossview.localhost.direct) → Service crossview-service:80
+#     → HTTPRoute (host crossview.localhost.direct) → Service crossview-service:80
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

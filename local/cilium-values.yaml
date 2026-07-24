@@ -1,13 +1,13 @@
-# Cilium-Helm-Values für das lokale Talos-Setup (prod-konform).
-# Cluster-spezifische Settings kommen im Taskfile als --set-Flags dazu:
-# k8sServiceHost=localhost / k8sServicePort=7445 (Talos-KubePrism, wie im Seeder).
+# Cilium Helm values for the local Talos setup (prod-conformant).
+# Cluster-specific settings are added in the Taskfile as --set flags:
+# k8sServiceHost=localhost / k8sServicePort=7445 (Talos KubePrism, as in the Seeder).
 
-# --- Talos-spezifisch (Pflicht, sonst startet der cilium-agent nicht) ---
-# Talos ist immutable + lädt keine Kernel-Module. Der Default-Cilium-Chart gibt
-# dem clean-cilium-state-InitContainer die Capability SYS_MODULE → auf Talos
-# "operation not permitted" (clean-cilium-state crasht, Node bleibt NotReady).
-# Caps daher auf die Talos-Liste überschreiben (SYS_MODULE raus). Quelle: Talos-
-# Docs "Deploying Cilium CNI". Gilt 1:1 auch in prod (base liefert Cilium inline).
+# --- Talos-specific (mandatory, otherwise the cilium-agent won't start) ---
+# Talos is immutable + loads no kernel modules. The default Cilium chart gives
+# the clean-cilium-state InitContainer the SYS_MODULE capability → on Talos
+# "operation not permitted" (clean-cilium-state crashes, node stays NotReady).
+# So override caps with the Talos list (SYS_MODULE removed). Source: Talos
+# docs "Deploying Cilium CNI". Applies 1:1 in prod too (base ships Cilium inline).
 securityContext:
   capabilities:
     ciliumAgent:
@@ -26,21 +26,21 @@ securityContext:
       - NET_ADMIN
       - SYS_ADMIN
       - SYS_RESOURCE
-# Talos mountet cgroupv2 selbst unter /sys/fs/cgroup — Cilium soll NICHT
-# automounten (sonst kollidiert es mit dem Talos-Mount).
+# Talos mounts cgroupv2 itself under /sys/fs/cgroup — Cilium should NOT
+# automount (otherwise it collides with the Talos mount).
 cgroup:
   autoMount:
     enabled: false
   hostRoot: /sys/fs/cgroup
 
-# kube-proxy-Ersatz — Cilium übernimmt ClusterIP/NodePort/LoadBalancer
+# kube-proxy replacement — Cilium takes over ClusterIP/NodePort/LoadBalancer
 kubeProxyReplacement: true
 
-# CNI via Kubernetes-IPAM
+# CNI via Kubernetes IPAM
 ipam:
   mode: kubernetes
 
-# eBPF-basiertes NodePort + HostPort + ExternalIPs
+# eBPF-based NodePort + HostPort + ExternalIPs
 nodePort:
   enabled: true
 hostPort:
@@ -48,28 +48,28 @@ hostPort:
 externalIPs:
   enabled: true
 
-# Gateway-API als Ingress-Pattern (ADR-0014)
+# Gateway API as the ingress pattern (ADR-0014)
 gatewayAPI:
   enabled: true
-  # NodePort-Mode: Cilium-Gateway-Service kommt als NodePort statt LoadBalancer.
-  # NodePort 30443/30080 ist via talosctl -p auf Host 443/80 gemapped.
-  # Detail-Patch erfolgt nach Apply im Taskfile (task local:gateway:apply).
+  # NodePort mode: the Cilium Gateway service comes up as NodePort instead of LoadBalancer.
+  # NodePort 30443/30080 is mapped to host 443/80 via talosctl -p.
+  # The detailed patch happens after apply in the Taskfile (task local:gateway:apply).
 
-# eBPF-Host-Routing für Performance + L7-Policy-Support
+# eBPF host routing for performance + L7 policy support
 bpf:
   masquerade: true
 
-# Operator schlank
+# Operator kept lean
 operator:
   replicas: 1
 
-# Hubble (eBPF-Observability) — lokal nützlich für Debugging
+# Hubble (eBPF observability) — locally useful for debugging
 hubble:
   enabled: true
   relay:
     enabled: true
 
-# Cilium-LB-IPAM + L2-Announcements für späteren Wechsel auf LoadBalancer-Mode.
-# Aktuell ungenutzt; siehe local/cilium-l2-pool.yaml für Aktivierung.
+# Cilium LB-IPAM + L2 announcements for a later switch to LoadBalancer mode.
+# Currently unused; see local/cilium-l2-pool.yaml for activation.
 l2announcements:
   enabled: true

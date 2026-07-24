@@ -1,31 +1,31 @@
 ---
-# markdownlint-cli Config — pragmatische Regeln für die Devoba-Plattform-Doku.
+# markdownlint-cli config — pragmatic rules for the Devoba platform docs.
 default: true
 
-# Line length deaktivieren — wir nutzen Tabellen + Mermaid-Diagramme.
+# Disable line length — we use tables + Mermaid diagrams.
 MD013: false
 
-# Mehrfache H2/H3 mit gleichem Text erlaubt (z. B. wiederkehrende Sub-Sections).
+# Multiple H2/H3 with the same text allowed (e.g. recurring sub-sections).
 MD024: false
 
-# Inline-HTML erlaubt (Mermaid-Code-Blöcke, ggf. <details>-Blöcke).
+# Inline HTML allowed (Mermaid code blocks, possibly <details> blocks).
 MD033: false
 
-# Erste Zeile muss kein H1 sein (wir nutzen frontmatter teilweise).
+# The first line does not have to be an H1 (we partly use frontmatter).
 MD041: false
 
-# Code-Sprachen sind optional (Tabellen-Header lassen sich nicht immer typisieren).
+# Code languages are optional (table headers cannot always be typed).
 MD040: false
 
-# Tabellen-Pipe-Spacing (table-column-style) — neue markdownlint-Regel ab v0.38.
-# Rein kosmetisch; unsere Tabellen nutzen kompakte |---|-Separatoren bewusst.
+# Table pipe spacing (table-column-style) — new markdownlint rule as of v0.38.
+# Purely cosmetic; our tables deliberately use compact |---| separators.
 MD060: false
 
-# OKF-Konzepte im knowledge/-Bundle tragen sowohl einen Frontmatter-`title:`
-# (fürs openknowledge-Tooling) als auch eine Body-H1 (für Leser + verbatim
-# migrierte Records). Frontmatter-`title:` NICHT als H1 zählen — sonst meldet
-# MD025 die Body-H1 als doppelten Titel. Die "genau eine H1 im Body"-Prüfung
-# bleibt aktiv. Kein bestehendes Nicht-Bundle-.md trägt Frontmatter, daher
-# ändert dies deren Linting nicht.
+# OKF concepts in the knowledge/ bundle carry both a frontmatter `title:`
+# (for the openknowledge tooling) and a body H1 (for readers + verbatim
+# migrated records). Do NOT count the frontmatter `title:` as an H1 — otherwise
+# MD025 reports the body H1 as a duplicate title. The "exactly one H1 in the body"
+# check stays active. No existing non-bundle .md carries frontmatter, so this
+# does not change their linting.
 MD025:
   front_matter_title: ""

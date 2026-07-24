@@ -1,23 +1,23 @@
-# Render-Output
+# Render output
 rendered/
 **/rendered/
 *.rendered.yaml
 
-# Helm-Chart-Caches
+# Helm chart caches
 charts/*.tgz
 **/charts/*.tgz
 .helmcache/
 
-# SBOM/Provenance-Artefakte (werden via OCI publiziert, nicht committed)
+# SBOM/provenance artifacts (published via OCI, not committed)
 *.cdx.json
 *.spdx.json
 *.intoto.jsonl
 
-# Scan-Artefakte (von scan:trivy / scan:snyk, lokal generiert)
+# Scan artifacts (from scan:trivy / scan:snyk, generated locally)
 trivy-results.sarif
 snyk-results.sarif
 
-# SOPS-Decryption-Tempfiles
+# SOPS decryption tempfiles
 *.dec
 *.dec.yaml
 
@@ -28,10 +28,10 @@ snyk-results.sarif
 *.swp
 *~
 
-# Local-only Konfiguration
+# Local-only configuration
 .env
 
-# Lokales Dev-Setup (mkcert-CA-Kopien, lokale Cluster-Daten)
+# Local dev setup (mkcert CA copies, local cluster data)
 .mkcert/
 
 # Devbox / direnv State
@@ -51,7 +51,7 @@ snyk-results.sarif
 # Scratch / planning notes (not part of the published catalog, not linted)
 /Plans/
 
-# Verzeichnis-Skelett für Reviews behalten (Hook setzt es voraus)
+# Keep the directory skeleton for reviews (the hook requires it)
 !.claude/reviews/.gitkeep
 .mkcert-registry/
 .ansible/

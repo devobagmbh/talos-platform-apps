@@ -1,14 +1,14 @@
-# .sops.yaml — Template (Issue #3 blockiert finale Aktivierung)
+# .sops.yaml — template (Issue #3 blocks final activation)
 #
-# Sobald die fünf age-Recipients aus Issue #3 (5-Recipient-SOPS) generiert
-# sind, diese Datei zu .sops.yaml umbenennen und die <TODO>-Slots durch die
-# echten Public-Keys ersetzen. Pattern matcht alle *.enc.yaml/*.enc.json-
-# Dateien unterhalb von sub-layers/, plus Top-Level .env.enc usw.
+# As soon as the five age recipients from Issue #3 (5-recipient SOPS) are
+# generated, rename this file to .sops.yaml and replace the <TODO> slots with the
+# real public keys. The pattern matches all *.enc.yaml/*.enc.json
+# files below sub-layers/, plus top-level .env.enc etc.
 #
-# 4 menschliche Recipients (M1, M2, GF, Safe) + 1 Service-Recipient (Seeder)
-# — alle gleichberechtigt im Sinne der Encryption-Reihenfolge.
+# 4 human recipients (M1, M2, GF, Safe) + 1 service recipient (Seeder)
+# — all equally weighted in terms of encryption order.
 #
-# Doku: https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md
+# Docs: https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md
 
 creation_rules:
   - path_regex: '\.enc\.(yaml|yml|json|env)$'
@@ -17,17 +17,17 @@ creation_rules:
       # M1 — Maintainer 1 (Robert Schneider)
       # age1<TODO-fill-after-issue-3>
       ,
-      # M2 — Maintainer 2 (noch zu identifizieren)
+      # M2 — Maintainer 2 (to be identified)
       # age1<TODO-fill-after-issue-3>
       ,
-      # GF — Geschäftsführung
+      # GF — management
       # age1<TODO-fill-after-issue-3>
       ,
-      # Safe — ausgedruckter Air-Gap-Backup-Key
+      # Safe — printed air-gap backup key
       # age1<TODO-fill-after-issue-3>
       ,
-      # Seeder-Service — beim Stage-0-Init generiert, ermöglicht Crossplane-
-      # Workspace die automatische Decryption von Stage-1-Tofu-Variablen
-      # ohne menschlichen Key auf dem Seeder. Wird nach Seeder-Bootstrap
-      # hier eingetragen via Folge-PR.
+      # Seeder service — generated during Stage-0 init, enables the Crossplane
+      # workspace to automatically decrypt Stage-1 Tofu variables
+      # without a human key on the Seeder. Added here after Seeder bootstrap
+      # via a follow-up PR.
       # age1<TODO-fill-after-seeder-bootstrap>

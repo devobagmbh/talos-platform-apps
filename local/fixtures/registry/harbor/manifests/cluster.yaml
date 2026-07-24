@@ -1,7 +1,7 @@
-# Lokale CNPG-Instanz für Harbor — NUR Test-Umgebung.
-# In prod consumer-eigen (seeder-Repo). CNPG erzeugt Service harbor-pg-rw (harbors
-# DB_HOST) + Secret harbor-pg-app (user=harbor, key password). DB heißt `registry`
-# (harbors coreDatabase), Owner `harbor` (harbors username) — siehe helm/harbor.yaml.
+# Local CNPG instance for Harbor — TEST ENVIRONMENT ONLY.
+# In prod consumer-owned (seeder repo). CNPG creates Service harbor-pg-rw (Harbor's
+# DB_HOST) + Secret harbor-pg-app (user=harbor, key password). The DB is named `registry`
+# (Harbor's coreDatabase), owner `harbor` (Harbor's username) — see helm/harbor.yaml.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:

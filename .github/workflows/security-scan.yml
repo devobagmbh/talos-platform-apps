@@ -1,18 +1,18 @@
 name: security-scan
 
-# Security-Scans über alle Sub-Layer:
+# Security scans across all sub-layers:
 #   - gitleaks: secret-scan over the full committed history (backstop to the
 #               lefthook pre-commit hook, which is staged-only + --no-verify-bypassable)
-#   - trivy:    Vulnerability-Scan der referenzierten Container-Images + Helm-Charts
-#   - conftest: Rego-Policies gegen rendered Manifeste (policies/)
+#   - trivy:    vulnerability scan of the referenced container images + Helm charts
+#   - conftest: Rego policies against rendered manifests (policies/)
 #
-# Snyk ist bewusst NICHT hier — die saubere Variante (`env:` zur Token-Detection
-# + Job-Level `if:`) ist von GHA nicht erlaubt, weil `env`-Context im Job-`if:`
-# nicht resolvt. Reaktivieren wenn SNYK_TOKEN als Repo-Secret existiert; dann
-# als eigener Workflow mit Schedule-Trigger + sauberer Token-Prüfung im Step.
+# Snyk is deliberately NOT here — the clean variant (`env:` for token detection
+# + job-level `if:`) is not allowed by GHA, because the `env` context does not
+# resolve in the job `if:`. Reactivate when SNYK_TOKEN exists as a repo secret; then
+# as its own workflow with a schedule trigger + a clean token check in the step.
 #
-# CI-Konvention (siehe AGENTS.md): jeder Step ruft NUR task <name>, kein Inline.
-# Lokal reproduzierbar via `task scan` in der Devbox-Shell.
+# CI convention (see AGENTS.md): every step calls ONLY task <name>, no inline.
+# Locally reproducible via `task scan` in the Devbox shell.
 
 on:
   push:
@@ -25,7 +25,7 @@ on:
   # queue entry is wasted work.
   merge_group:
   schedule:
-    - cron: "0 4 * * 1"  # Montags 04:00 UTC
+    - cron: "0 4 * * 1"  # Mondays 04:00 UTC
 
 permissions:
   contents: read
@@ -84,12 +84,12 @@ jobs:
       - name: Trivy scan rendered manifests
         run: devbox run -- task scan:trivy
 
-      # Trivy-SARIF in den Security-Tab uploaden — nur auf public Repos.
-      # Code-Scanning / SARIF-Upload braucht bei PRIVATEN Repos GitHub Advanced
-      # Security (kostenpflichtig); ohne GHAS antwortet der Upload mit
-      # "Resource not accessible by integration". Solange das Repo private ist,
-      # bleiben die Trivy-Findings im Job-Log sichtbar, aber ohne Security-Tab-Upload.
-      # Sobald das Repo public wird, läuft der Upload automatisch.
+      # Upload the Trivy SARIF to the security tab — only on public repos.
+      # Code scanning / SARIF upload requires GitHub Advanced Security (paid) on
+      # PRIVATE repos; without GHAS the upload responds with
+      # "Resource not accessible by integration". As long as the repo is private,
+      # the Trivy findings remain visible in the job log, but without a security-tab upload.
+      # As soon as the repo becomes public, the upload runs automatically.
       - name: Upload SARIF
         if: github.event_name != 'pull_request' && github.event.repository.private == false
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
@@ -97,7 +97,7 @@ jobs:
           sarif_file: trivy-results.sarif
 
   conftest:
-    name: conftest (Rego-Policies)
+    name: conftest (Rego policies)
     # Not a required check — skip on merge_group (already ran on the PR; conftest is also
     # part of `task ci`, which the required `ci` job re-runs in the queue).
     if: github.event_name != 'merge_group'
@@ -116,7 +116,7 @@ jobs:
       - name: Conftest test
         run: devbox run -- task scan:conftest
 
-      - name: Conftest verify (Policy-Selbsttests)
+      - name: Conftest verify (policy self-tests)
         run: devbox run -- task scan:conftest-verify
 
   # Advisory image-CVE early-warning on PRs (E2). NOT a required check — its diff-

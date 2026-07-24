@@ -1,5 +1,5 @@
-# Argo-Application für lifecycle/ipxe.
-# Sync-Wave 0: unabhängig — kann parallel zu crossplane laufen.
+# Argo Application for lifecycle/ipxe.
+# Sync-Wave 0: independent — can run in parallel with crossplane.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,18 +21,18 @@ spec:
     server: https://kubernetes.default.svc
     namespace: ipxe
 
-  # K8s 1.32+ hat .status.terminatingReplicas in Deployment.status; Argos
-  # structured-merge-diff cached das alte OpenAPI-Schema und kann das Feld
-  # nicht typisieren → "field not declared in schema". Ignorieren ist sicher,
-  # weil status-Felder eh nicht durch Argo verwaltet werden.
+  # K8s 1.32+ has .status.terminatingReplicas in Deployment.status; Argo's
+  # structured-merge-diff caches the old OpenAPI schema and cannot type the
+  # field → "field not declared in schema". Ignoring is safe, because
+  # status fields are not managed by Argo anyway.
   ignoreDifferences:
     - group: apps
       kind: Deployment
       jsonPointers:
         - /status/terminatingReplicas
-    # boot.ipxe ist consumer-/test-eigen: lokal liefert die Fixture
-    # (local/fixtures/lifecycle/ipxe/) die echte boot.ipxe via harbor-Talos-Image.
-    # Ohne dieses Ignore würde selfHeal sie auf den Katalog-Platzhalter zurücksetzen.
+    # boot.ipxe is consumer/test-specific: locally the fixture
+    # (local/fixtures/lifecycle/ipxe/) provides the real boot.ipxe via the harbor Talos image.
+    # Without this ignore, selfHeal would reset it to the catalog placeholder.
     - group: ""
       kind: ConfigMap
       name: ipxe-boot-scripts

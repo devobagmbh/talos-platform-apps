@@ -1,11 +1,11 @@
-# Gateway-API Gateway für lokales Ingress-Routing.
-# Cilium erstellt für dieses Gateway einen Service, den der Taskfile
-# nach Apply auf NodePort 30080/30443 patcht — die talosctl-docker-Node
-# reicht 80/443 vom Host darauf durch (-p 30080:30080/30443:30443).
+# Gateway API Gateway for local ingress routing.
+# Cilium creates a Service for this Gateway, which the Taskfile
+# patches to NodePort 30080/30443 after apply — the talosctl docker node
+# forwards 80/443 from the host to it (-p 30080:30080/30443:30443).
 #
-# *.localhost.direct resolved zu 127.0.0.1 (DNS-Provider).
-# TLS-Cert wird per cert-manager mit dem mkcert-CA-ClusterIssuer
-# ausgestellt; Secret 'gateway-localhost-direct-tls' im selben NS.
+# *.localhost.direct resolves to 127.0.0.1 (DNS provider).
+# The TLS cert is issued by cert-manager with the mkcert CA ClusterIssuer;
+# Secret 'gateway-localhost-direct-tls' in the same NS.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -35,7 +35,7 @@ spec:
         namespaces:
           from: All
 ---
-# Wildcard-Certificate für *.localhost.direct via mkcert-CA
+# Wildcard certificate for *.localhost.direct via mkcert CA
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -50,5 +50,5 @@ spec:
   dnsNames:
     - "*.localhost.direct"
     - "localhost.direct"
-  duration: 2160h    # 90 Tage
-  renewBefore: 360h  # 15 Tage vor Ablauf erneuern
+  duration: 2160h    # 90 days
+  renewBefore: 360h  # renew 15 days before expiry

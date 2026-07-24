@@ -1,11 +1,11 @@
-# Lokale HTTPRoute für die Harbor-UI/-API.
-# In prod ist diese Route consumer-eigen (seeder-Repo, cluster-spezifischer
-# Hostname — ADR-0023/0024 Shape b); der Katalog shippt sie NICHT. Diese Datei
-# existiert nur für die lokale Test-Umgebung, analog zu argocd-route.yaml.
+# Local HTTPRoute for the Harbor UI/API.
+# In prod this route is consumer-owned (seeder repo, cluster-specific
+# hostname — ADR-0023/0024 shape b); the catalog does NOT ship it. This file
+# exists only for the local test environment, analogous to argocd-route.yaml.
 #   Gateway 'localhost-direct' (NS gateway) → listener https (*.localhost.direct)
-#     → HTTPRoute (Host harbor.localhost.direct) → Service harbor:80
-# Harbor terminiert intern plain HTTP (expose.type=clusterIP, tls off) — TLS endet
-# am Cilium-Gateway (mkcert-Wildcard).
+#     → HTTPRoute (host harbor.localhost.direct) → Service harbor:80
+# Harbor terminates plain HTTP internally (expose.type=clusterIP, tls off) — TLS ends
+# at the Cilium Gateway (mkcert wildcard).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

@@ -30,7 +30,7 @@
   ],
   "shell": {
     "init_hook": [
-      "echo 'talos-platform-apps devbox-shell aktiv — \"task --list\" für verfügbare Tasks'",
+      "echo 'talos-platform-apps devbox shell active — \"task --list\" for available tasks'",
       "if [ -f lefthook.yml ] && [ ! -f .git/hooks/pre-commit ]; then echo 'Note: git hooks not yet installed. Run: lefthook install'; fi",
       "if command -v podman >/dev/null 2>&1; then real_docker=false; if command -v docker >/dev/null 2>&1 && [ \"$(command -v docker)\" != \"$PWD/.direnv/bin/docker\" ] && docker info >/dev/null 2>&1; then real_docker=true; fi; if [ \"$real_docker\" = false ]; then if [ -z \"${DOCKER_HOST:-}\" ]; then sock=$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null); if [ -n \"$sock\" ] && [ -S \"$sock\" ]; then export DOCKER_HOST=\"unix://$sock\"; fi; fi; mkdir -p \"$PWD/.direnv/bin\"; if [ ! -x \"$PWD/.direnv/bin/docker\" ]; then printf '%s\\n' '#!/bin/sh' 'exec podman \"$@\"' > \"$PWD/.direnv/bin/docker.tmp\" && chmod +x \"$PWD/.direnv/bin/docker.tmp\" && mv \"$PWD/.direnv/bin/docker.tmp\" \"$PWD/.direnv/bin/docker\"; fi; case \":$PATH:\" in *\":$PWD/.direnv/bin:\"*) ;; *) export PATH=\"$PWD/.direnv/bin:$PATH\";; esac; echo 'podman runtime: docker->podman shim + DOCKER_HOST active for task local:* (one-time host setup: podman machine set --rootful --memory 8192)'; fi; fi"
     ],

@@ -1,11 +1,11 @@
 apiVersion: v1
 data:
-  boot.ipxe: "#!ipxe\n# Lokale Demo-boot.ipxe — zeigt das Muster: Talos bootet, und\
-    \ das OCI-Installer-\n# Image (machine.install.image) kommt aus der lokalen harbor-Pull-Through-Cache\n\
-    # (ADR-0012). In prod überschreibt der Konsument die ipxe-boot-scripts-ConfigMap\n\
-    # mit den echten Boot-Skripten (Schematic-ID, Kernel-Args, machine-config-URL).\n\
-    #\n# Boot-Assets (kernel/initramfs) liefert die Talos Image Factory (HTTP); das\n\
-    # OCI-Installer-Image zieht Talos beim Install aus harbor (gecacht von ghcr.io).\n\
+  boot.ipxe: "#!ipxe\n# Local demo boot.ipxe — shows the pattern: Talos boots, and\
+    \ the OCI installer\n# image (machine.install.image) comes from the local harbor pull-through cache\n\
+    # (ADR-0012). In prod the consumer overrides the ipxe-boot-scripts ConfigMap\n\
+    # with the real boot scripts (schematic ID, kernel args, machine-config URL).\n\
+    #\n# Boot assets (kernel/initramfs) are served by the Talos Image Factory (HTTP); the\n\
+    # OCI installer image is pulled by Talos at install time from harbor (cached from ghcr.io).\n\
     set arch        amd64\nset talos       v1.13.3\nset schematic   376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba\n\
     set factory     https://factory.talos.dev/image/${schematic}/${talos}\nset installer\
     \   harbor.localhost.direct/ghcr/siderolabs/installer:${talos}\n\necho ============================================================\n\

@@ -1,17 +1,17 @@
 name: oci-publish
 
-# Render + Lint + Scan auf PR; render + push + sign auf Tag-Push.
+# Render + Lint + Scan on PR; render + push + sign on tag push.
 #
-# Tag-Pattern: <sub-layer>/<component>-vX.Y.Z
-#   z. B. lifecycle/crossplane-v0.1.0, observability/loki-v0.3.1
-# Komponente ist die OCI-Distribution-Unit (ADR-0009); Sub-Layer ist die
-# organisatorische Klammer. Der Workflow extrahiert beide aus dem Tag und
-# publiziert genau diese eine Komponente als signiertes OCI-Artefakt.
+# Tag pattern: <sub-layer>/<component>-vX.Y.Z
+#   e.g. lifecycle/crossplane-v0.1.0, observability/loki-v0.3.1
+# The component is the OCI distribution unit (ADR-0009); the sub-layer is the
+# organizational bracket. The workflow extracts both from the tag and
+# publishes exactly this one component as a signed OCI artifact.
 #
-# Konvention (AGENTS.md § CI-Konventionen):
-#   1. Devbox-Cache aktiv (jetify-com/devbox-install-action)
-#   2. Lokal reproduzierbar via `task ci` und `task publish -- <sub-layer>/<component> <tag>`
-#   3. Pipeline = dünner Task-Caller — Steps rufen ausschließlich `task <name>`
+# Convention (AGENTS.md § CI conventions):
+#   1. Devbox cache active (jetify-com/devbox-install-action)
+#   2. Locally reproducible via `task ci` and `task publish -- <sub-layer>/<component> <tag>`
+#   3. Pipeline = thin task caller — steps call exclusively `task <name>`
 
 on:
   pull_request:
@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   # --------------------------------------------------------------------
-  # PR-Trigger: nur Lint + Render + Conftest. Kein Push, kein Sign.
+  # PR trigger: only Lint + Render + Conftest. No push, no sign.
   # --------------------------------------------------------------------
   ci:
     # Runs on PRs AND on merge_group (the queue re-validates the projected merge tree).
@@ -85,11 +85,11 @@ jobs:
           restore-keys: |
             okf-${{ runner.os }}-
 
-      - name: Lokale CI-Pipeline reproduzieren
+      - name: Reproduce local CI pipeline
         run: devbox run -- task ci
 
   # --------------------------------------------------------------------
-  # Tag-Push: render + push + sign für den getaggten Sub-Layer.
+  # Tag push: render + push + sign for the tagged sub-layer.
   # --------------------------------------------------------------------
   publish:
     if: startsWith(github.ref, 'refs/tags/')
@@ -115,16 +115,16 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Komponenten-ID und Tag aus refs/tags ableiten
+      - name: Derive component ID and tag from refs/tags
         id: parse
         shell: bash
         run: |
           set -eu
-          # tag ist z. B. "lifecycle/crossplane-v0.1.0"
+          # tag is e.g. "lifecycle/crossplane-v0.1.0"
           full="${GITHUB_REF_NAME}"
-          # Komponenten-ID = alles vor dem letzten "-v" (z. B. "lifecycle/crossplane")
+          # component ID = everything before the last "-v" (e.g. "lifecycle/crossplane")
           component_id="${full%-v*}"
-          # Version-Tag = "v" + Rest (z. B. "v0.1.0")
+          # version tag = "v" + rest (e.g. "v0.1.0")
           version="v${full##*-v}"
           # Both parsed fields flow verbatim into the signed `task publish`/`task
           # verify` steps, so validate BOTH here — independently of git's ref-name
@@ -158,16 +158,16 @@ jobs:
           echo "version=$version"           >> "$GITHUB_OUTPUT"
           echo "Tag '$full' → component_id='$component_id', version='$version'"
 
-      - name: "Lokale CI-Pipeline (artifact validation: lint + render + crd-split + conftest)"
+      - name: "Local CI pipeline (artifact validation: lint + render + crd-split + conftest)"
         # ci:artifact, NOT full ci — the publish job validates the artifact it is about to
         # sign; the catalog-wide release-coverage gates run at the PR gate, not per-publish (#318).
         run: devbox run -- task ci:artifact
 
-      - name: oras + cosign gegen GHCR authentifizieren
+      - name: Authenticate oras + cosign against GHCR
         run: |
-          # oras (push) und cosign (sign) lesen/schreiben ~/.docker/config.json —
-          # beide Logins nötig, sonst scheitert der oras-push bzw. cosign sign mit
-          # "UNAUTHORIZED" beim Pull-Scope des Artefakts.
+          # oras (push) and cosign (sign) read/write ~/.docker/config.json —
+          # both logins are required, otherwise the oras push or cosign sign fails with
+          # "UNAUTHORIZED" on the artifact's pull scope.
           echo "${{ secrets.GITHUB_TOKEN }}" | devbox run -- oras login ghcr.io \
             --username "${{ github.actor }}" \
             --password-stdin
@@ -205,7 +205,7 @@ jobs:
             "${{ steps.parse.outputs.component_id }}" \
             "${{ steps.parse.outputs.version }}"
 
-      - name: Verifikation (cosign verify)
+      - name: Verification (cosign verify)
         run: |
           devbox run -- task verify -- \
             "${{ steps.parse.outputs.component_id }}" \
