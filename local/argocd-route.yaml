@@ -1,9 +1,9 @@
-# HTTPRoute leitet argocd.localhost.direct an den ArgoCD-Server-Service.
-# Ressourcen-Verknüpfung:
+# HTTPRoute routes argocd.localhost.direct to the ArgoCD server service.
+# Resource chain:
 #   Gateway 'localhost-direct' (NS: gateway)
-#     → listener https (443, *.localhost.direct, mkcert-TLS)
-#       → HTTPRoute argocd (Match: Host argocd.localhost.direct)
-#         → Service argocd-server (NS: argocd, Port 443)
+#     → listener https (443, *.localhost.direct, mkcert TLS)
+#       → HTTPRoute argocd (match: Host argocd.localhost.direct)
+#         → Service argocd-server (NS: argocd, port 443)
 
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

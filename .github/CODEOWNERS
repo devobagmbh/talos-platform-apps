@@ -1,7 +1,7 @@
-# Default-Owner für alles, was nicht spezifisch ist.
+# Default owner for everything that is not specific.
 *                                     @robertschneiderdevoba @Nosmoht
 
-# Sub-Layer-Owner (initial M1; nach M2-Onboarding splittet sich das auf)
+# Sub-Layer owners (initially M1; splits up after M2 onboarding)
 /sub-layers/automation/               @robertschneiderdevoba @Nosmoht
 /sub-layers/databases/                @robertschneiderdevoba @Nosmoht
 /sub-layers/lifecycle/                @robertschneiderdevoba @Nosmoht
@@ -10,7 +10,7 @@
 /sub-layers/secrets/                  @robertschneiderdevoba @Nosmoht
 /sub-layers/storage-objects/          @robertschneiderdevoba @Nosmoht
 
-# Pipeline-Hygiene + Plattform-Konventionen (zentral, immer M1)
+# Pipeline hygiene + platform conventions (central, always M1)
 /.github/                             @robertschneiderdevoba @Nosmoht
 /.claude/                             @robertschneiderdevoba @Nosmoht
 /AGENTS.md                            @robertschneiderdevoba @Nosmoht

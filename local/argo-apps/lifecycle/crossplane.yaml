@@ -1,8 +1,8 @@
-# Argo-Application für lifecycle/crossplane.
-# Sync-Wave 0: bringt die pkg.crossplane.io- und apiextensions.crossplane.io-CRDs
-# mit, die alle anderen lifecycle-Komponenten als Voraussetzung haben.
-# Template-Platzhalter (envsubst durch task local:apply):
-#   ${TAG}       — Chart-Version (z. B. 0.0.0-dev)
+# Argo Application for lifecycle/crossplane.
+# Sync-Wave 0: provides the pkg.crossplane.io and apiextensions.crossplane.io CRDs
+# that all other lifecycle components require as a prerequisite.
+# Template placeholders (envsubst via task local:apply):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev)
 #   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -25,10 +25,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: crossplane-system
 
-  # K8s 1.32+ hat .status.terminatingReplicas in Deployment.status; Argos
-  # structured-merge-diff cached das alte OpenAPI-Schema und kann das Feld
-  # nicht typisieren → "field not declared in schema". Ignorieren ist sicher,
-  # weil status-Felder eh nicht durch Argo verwaltet werden.
+  # K8s 1.32+ has .status.terminatingReplicas in Deployment.status; Argo's
+  # structured-merge-diff caches the old OpenAPI schema and cannot type the
+  # field → "field not declared in schema". Ignoring is safe, because
+  # status fields are not managed by Argo anyway.
   ignoreDifferences:
     - group: apps
       kind: Deployment

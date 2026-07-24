@@ -1,8 +1,8 @@
-# ArgoCD-Helm-Values für lokales Kind-Setup (prod-konform).
-# Kein Ingress, kein Dex/Notifications/ApplicationSet/HA.
-# Exposure läuft über Gateway-API: Gateway 'localhost-direct' + HTTPRoute
-# 'argocd' (siehe local/gateway.yaml, local/argocd-route.yaml).
-# UI ist auf https://argocd.localhost.direct erreichbar.
+# ArgoCD Helm values for the local kind setup (prod-conformant).
+# No Ingress, no Dex/Notifications/ApplicationSet/HA.
+# Exposure runs via Gateway API: Gateway 'localhost-direct' + HTTPRoute
+# 'argocd' (see local/gateway.yaml, local/argocd-route.yaml).
+# UI is reachable at https://argocd.localhost.direct.
 
 global:
   domain: argocd.localhost.direct
@@ -11,11 +11,11 @@ server:
   service:
     type: ClusterIP
 
-  # Ingress aus — Gateway-API übernimmt
+  # Ingress off — Gateway API takes over
   ingress:
     enabled: false
 
-  # Argo macht intern TLS (für gRPC-Client). Gateway terminiert Front-TLS.
+  # Argo does TLS internally (for the gRPC client). Gateway terminates front TLS.
   extraArgs:
     - --insecure
 
@@ -29,7 +29,7 @@ notifications:
 applicationSet:
   enabled: false
 
-# Single-Instance Redis/Repo-Server reicht lokal
+# A single-instance Redis/repo-server is enough locally
 redis:
   enabled: true
 redis-ha:
@@ -43,27 +43,27 @@ configs:
   params:
     server.insecure: true
 
-  # Native-OCI-Repo registrieren (ADR-0009 §OCI-Artefakt-Form). ArgoCD v3.1+ zieht
-  # bei type=oci + url=oci://... den nativen OCI-Code-Pfad — der Katalog wird als
-  # generisches OCI-Artefakt publiziert (task push → oras), die Application-Source
-  # ist repoURL: oci://.../<component> + path: . und löst als sourceType=Kustomize
-  # auf (der Tarball trägt eine triviale kustomization.yaml neben manifest.yaml;
-  # kein Helm mehr). Die lokale Registry erlaubt anonymen Pull, daher keine
-  # Credentials; TLS-Trust läuft über das gemergte mkcert-CA-Bundle (repoServer
-  # initContainer unten), nicht über dieses Secret. Wird beim helm install
-  # automatisch als argocd.argoproj.io/secret-type=repository Secret erzeugt —
-  # kein manueller Apply-Step.
+  # Register the native OCI repo (ADR-0009 §OCI artifact form). ArgoCD v3.1+ uses
+  # the native OCI code path for type=oci + url=oci://... — the catalog is published
+  # as a generic OCI artifact (task push → oras), the Application source
+  # is repoURL: oci://.../<component> + path: . and resolves as sourceType=Kustomize
+  # (the tarball carries a trivial kustomization.yaml next to manifest.yaml;
+  # no more Helm). The local registry allows anonymous pull, so no
+  # credentials; TLS trust runs via the merged mkcert CA bundle (repoServer
+  # initContainer below), not via this Secret. It is created automatically on
+  # helm install as an argocd.argoproj.io/secret-type=repository Secret —
+  # no manual apply step.
   repositories:
     kind-registry-local:
       url: oci://kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
       type: oci
       name: kind-registry-local
 
-# argocd-repo-server muss die mkcert-CA trusten, damit die nativen OCI-Pulls gegen
-# https://kind-registry.registry.svc.cluster.local:5000 validieren. Wir mergen
-# die mkcert-CA an das System-CA-Bundle und overmounten /etc/ssl/certs/ca-certificates.crt.
-# Der InitContainer nutzt das Argo-Image selbst, damit das System-Bundle identisch
-# zum Runtime-Container ist.
+# argocd-repo-server must trust the mkcert CA so that the native OCI pulls validate
+# against https://kind-registry.registry.svc.cluster.local:5000. We merge
+# the mkcert CA into the system CA bundle and overmount /etc/ssl/certs/ca-certificates.crt.
+# The InitContainer uses the Argo image itself, so that the system bundle is identical
+# to the runtime container.
 repoServer:
   volumes:
     - name: mkcert-ca
@@ -73,8 +73,8 @@ repoServer:
       emptyDir: {}
   initContainers:
     - name: append-mkcert-ca
-      # = chart appVersion (argo-cd 9.4.5 → v3.3.2); halte diesen Tag bei einem
-      # Chart-Bump synchron zur --version in Taskfile local:argo:install.
+      # = chart appVersion (argo-cd 9.4.5 → v3.3.2); keep this tag in sync with
+      # the --version in Taskfile local:argo:install on a chart bump.
       image: quay.io/argoproj/argocd:v3.3.2
       command:
         - sh
@@ -83,7 +83,7 @@ repoServer:
           set -e
           cp /etc/ssl/certs/ca-certificates.crt /shared/ca-certificates.crt
           cat /mkcert/ca.crt >> /shared/ca-certificates.crt
-          echo "✓ mkcert-CA ins CA-Bundle aufgenommen ($(wc -l < /shared/ca-certificates.crt) Zeilen)"
+          echo "✓ mkcert CA added to the CA bundle ($(wc -l < /shared/ca-certificates.crt) lines)"
       volumeMounts:
         - name: mkcert-ca
           mountPath: /mkcert

@@ -1,8 +1,8 @@
-# Argo-Application für lifecycle/compositions.
-# Sync-Wave 20: braucht apiextensions.crossplane.io/{CompositeResourceDefinition,
-# Composition}-CRDs aus crossplane (Wave 0) UND aktive Provider-Pods aus
-# providers (Wave 10), damit Composition-Pipeline-Steps Workspace/Release
-# ausführbar sind.
+# Argo Application for lifecycle/compositions.
+# Sync-Wave 20: needs the apiextensions.crossplane.io/{CompositeResourceDefinition,
+# Composition} CRDs from crossplane (Wave 0) AND active provider pods from
+# providers (Wave 10), so that Composition pipeline steps can run
+# Workspace/Release.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -24,10 +24,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: crossplane-system
 
-  # K8s 1.32+ hat .status.terminatingReplicas in Deployment.status; Argos
-  # structured-merge-diff cached das alte OpenAPI-Schema und kann das Feld
-  # nicht typisieren → "field not declared in schema". Ignorieren ist sicher,
-  # weil status-Felder eh nicht durch Argo verwaltet werden.
+  # K8s 1.32+ has .status.terminatingReplicas in Deployment.status; Argo's
+  # structured-merge-diff caches the old OpenAPI schema and cannot type the
+  # field → "field not declared in schema". Ignoring is safe, because
+  # status fields are not managed by Argo anyway.
   ignoreDifferences:
     - group: apps
       kind: Deployment

@@ -1,5 +1,5 @@
-# Argo-Application für lifecycle/providers.
-# Sync-Wave 10: braucht die pkg.crossplane.io/Provider-CRD aus crossplane (Wave 0).
+# Argo Application for lifecycle/providers.
+# Sync-Wave 10: needs the pkg.crossplane.io/Provider CRD from crossplane (Wave 0).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -21,10 +21,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: crossplane-system
 
-  # K8s 1.32+ hat .status.terminatingReplicas in Deployment.status; Argos
-  # structured-merge-diff cached das alte OpenAPI-Schema und kann das Feld
-  # nicht typisieren → "field not declared in schema". Ignorieren ist sicher,
-  # weil status-Felder eh nicht durch Argo verwaltet werden.
+  # K8s 1.32+ has .status.terminatingReplicas in Deployment.status; Argo's
+  # structured-merge-diff caches the old OpenAPI schema and cannot type the
+  # field → "field not declared in schema". Ignoring is safe, because
+  # status fields are not managed by Argo anyway.
   ignoreDifferences:
     - group: apps
       kind: Deployment

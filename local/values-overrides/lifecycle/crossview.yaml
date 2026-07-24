@@ -1,22 +1,22 @@
-# Lokaler Helm-Values-Overlay für Crossview — NUR lokale Test-Umgebung.
-# Wird von local:dev / local:publish via EXTRA_VALUES an `task render:one`
-# gegeben (späteres --values gewinnt). CI/prod rendert OHNE diesen Overlay und
-# behält den Platzhalter aus helm/crossview.yaml (in prod liefert der Konsument
-# Host/CORS + Dex-OIDC, ADR-0023/0024 Shape b).
+# Local Helm values overlay for Crossview — LOCAL TEST ENVIRONMENT ONLY.
+# Passed by local:dev / local:publish via EXTRA_VALUES to `task render:one`
+# (a later --values wins). CI/prod renders WITHOUT this overlay and
+# keeps the placeholder from helm/crossview.yaml (in prod the consumer provides
+# host/CORS + Dex OIDC, ADR-0023/0024 shape b).
 #
-# CORS-Origin = Post-SSO-Login-Redirect-Ziel + erlaubter Browser-Origin. Lokal
-# auf den Gateway-Host, damit die UI hinter https://crossview.localhost.direct
-# funktioniert (statt localhost:5173).
+# CORS origin = post-SSO login redirect target + allowed browser origin. Locally
+# set to the Gateway host so the UI works behind https://crossview.localhost.direct
+# (instead of localhost:5173).
 config:
   server:
     cors:
       origin: https://crossview.localhost.direct
 
-# DB-Passwort direkt aus CNPGs LEBENDEM Auto-Secret <cluster>-app lesen, statt aus
-# einer Kopie (crossview-db). Die Kopie wird veraltet, sobald die CNPG-Instanz über
-# einen local:dev-Zyklus neu entsteht (neues Passwort) → "password authentication
-# failed". CNPG hält username/password in crossview-pg-app immer aktuell.
-# Nur lokal: in prod liefert der Konsument crossview-db (Shape c, ADR-0023/0024).
+# Read the DB password directly from CNPG's LIVE auto-secret <cluster>-app, instead of
+# from a copy (crossview-db). The copy goes stale as soon as the CNPG instance is
+# recreated across a local:dev cycle (new password) → "password authentication
+# failed". CNPG always keeps username/password in crossview-pg-app up to date.
+# Local only: in prod the consumer provides crossview-db (shape c, ADR-0023/0024).
 secrets:
   dbPassword:
     secretKeyRef:

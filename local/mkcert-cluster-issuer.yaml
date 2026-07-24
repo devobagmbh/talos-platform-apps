@@ -1,8 +1,8 @@
-# ClusterIssuer mit der mkcert-Root-CA als Trust-Anker.
-# Das Secret 'mkcert-ca' liegt im cert-manager-Namespace und wird vom
-# Taskfile (task local:certs) beim Setup angelegt.
+# ClusterIssuer with the mkcert root CA as the trust anchor.
+# The Secret 'mkcert-ca' lives in the cert-manager namespace and is created by
+# the Taskfile (task local:certs) during setup.
 #
-# Apps bekommen Certificates für *.localhost.direct via:
+# Apps get certificates for *.localhost.direct via:
 #   cert-manager.io/cluster-issuer: mkcert-ca
 
 apiVersion: cert-manager.io/v1

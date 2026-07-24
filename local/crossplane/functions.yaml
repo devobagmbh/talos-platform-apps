@@ -1,8 +1,8 @@
-# Function-Definitionen für `crossplane render` (offline Composition-Test).
-# crossplane render zieht diese Packages als OCI-Image und führt sie als Container
-# (Docker) aus. Versionen MÜSSEN zu sub-layers/lifecycle/components/providers/
-# (den im Cluster installierten Functions) passen — sonst testet man etwas anderes
-# als das, was in prod läuft.
+# Function definitions for `crossplane render` (offline Composition test).
+# crossplane render pulls these packages as OCI images and runs them as containers
+# (Docker). Versions MUST match sub-layers/lifecycle/components/providers/
+# (the Functions installed in the cluster) — otherwise you are testing something
+# other than what runs in prod.
 apiVersion: pkg.crossplane.io/v1
 kind: Function
 metadata:

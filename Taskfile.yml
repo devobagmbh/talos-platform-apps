@@ -1,28 +1,28 @@
-# Taskfile für talos-platform-apps
+# Taskfile for talos-platform-apps
 # https://taskfile.dev
 #
-# Konvention (siehe AGENTS.md § CI-Konventionen): Pipeline ist Task-Caller.
-# GHA-Workflows rufen ausschließlich `task <name>`; alle Logik wohnt hier.
+# Convention (see AGENTS.md § CI conventions): the pipeline is the task caller.
+# GHA workflows call only `task <name>`; all logic lives here.
 
 version: '3'
 
-# Konvention: Tasks sind silent. Commands echoen sich nicht selbst —
-# nur die Commands geben Output an die Konsole. Ausnahmen via `silent: false`
-# explizit am Task.
+# Convention: tasks are silent. Commands do not echo themselves —
+# only the commands emit output to the console. Exceptions via `silent: false`
+# explicitly on the task.
 silent: true
 
-# DOCKER_HOST aus dem aktiven docker-Context ableiten, damit talosctl (das hart
-# auf unix:///var/run/docker.sock schaut) auch auf Colima/Orbstack/Docker-Desktop
-# den richtigen Socket findet. Fallback = Standard-Socket. 2>/dev/null hält CI-
-# Jobs ohne docker still; nicht-docker-Tasks (lint/render/ci) ignorieren die Var.
+# Derive DOCKER_HOST from the active docker context so that talosctl (which looks
+# hard at unix:///var/run/docker.sock) also finds the right socket on
+# Colima/Orbstack/Docker-Desktop. Fallback = default socket. 2>/dev/null keeps CI
+# jobs without docker quiet; non-docker tasks (lint/render/ci) ignore the var.
 env:
   DOCKER_HOST:
     sh: docker context inspect --format '{{`{{ .Endpoints.docker.Host }}`}}' 2>/dev/null || echo "unix:///var/run/docker.sock"
 
 vars:
-  # Alle Komponenten als <sub-layer>/<component>-Liste, aus dem Verzeichnis-Baum
-  # gelesen. Komponente ist die OCI-Distribution-Unit (ADR-0009); Sub-Layer ist
-  # die organisatorische Klammer.
+  # All components as a <sub-layer>/<component> list, read from the directory
+  # tree. A component is the OCI distribution unit (ADR-0009); a sub-layer is
+  # the organizational bracket.
   COMPONENTS:
     sh: |
       shopt -s nullglob
@@ -59,27 +59,27 @@ vars:
 
 tasks:
   default:
-    desc: Liste verfügbare Targets
+    desc: List available targets
     cmd: task --list
 
   # --- Render ---
 
   render:
-    desc: Rendert alle Komponenten in sub-layers/*/components/*/rendered/manifest.yaml
+    desc: Render all components into sub-layers/*/components/*/rendered/manifest.yaml
     cmds:
       - for: { var: COMPONENTS }
         task: render:one
         vars: { COMPONENT_ID: '{{.ITEM}}' }
 
   render:one:
-    desc: 'Rendert eine Komponente: task render:one -- <sub-layer>/<component>'
+    desc: 'Render one component: task render:one -- <sub-layer>/<component>'
     summary: |
-      Komponente ist die OCI-Distribution-Unit. Pfad:
+      A component is the OCI distribution unit. Path:
         sub-layers/<sub-layer>/components/<component>/
-      Eingabe-Konvention:
-        helm/*.yaml      — YAML mit metadata.{chart,repo,version,namespace} + values
-                           oder metadata.inline: true für Custom-Stubs
-        manifests/*.yaml — Raw-Manifeste, werden 1:1 konkateniert
+      Input convention:
+        helm/*.yaml      — YAML with metadata.{chart,repo,version,namespace} + values
+                           or metadata.inline: true for custom stubs
+        manifests/*.yaml — raw manifests, concatenated 1:1
       Output:
         sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
     cmd: |
@@ -94,7 +94,7 @@ tasks:
       out="${root}/rendered/manifest.yaml"
 
       if [ ! -d "$root" ]; then
-        echo "ERROR: Komponente ${component_id} existiert nicht (${root})"
+        echo "ERROR: component ${component_id} does not exist (${root})"
         exit 1
       fi
 
@@ -111,8 +111,8 @@ tasks:
           namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
           echo "  ↳ Inline-Stub  $name (ns=$namespace)"
           {
-            echo "# Inline-Stub: $name (Komponente: ${component_id})"
-            echo "# Custom-Manifeste folgen im Sub-Layer-Inhalt-Issue."
+            echo "# Inline-Stub: $name (component: ${component_id})"
+            echo "# Custom manifests follow in the sub-layer content issue."
             echo "---"
             echo "apiVersion: v1"
             echo "kind: Namespace"
@@ -133,10 +133,10 @@ tasks:
 
         vals_tmp=$(mktemp)
         yq '.values' "$vfile" > "$vals_tmp"
-        # Optionaler lokaler Values-Overlay: nur gesetzt, wenn der Caller EXTRA_VALUES
-        # exportiert (local:dev/local:publish für UI-Komponenten — z. B. externalURL/
-        # CORS auf den .localhost.direct-Host). CI setzt es NIE → prod rendert mit den
-        # committeten Platzhaltern. Späteres --values gewinnt → Overlay sticht Default.
+        # Optional local values overlay: only set when the caller exports EXTRA_VALUES
+        # (local:dev/local:publish for UI components — e.g. externalURL/
+        # CORS on the .localhost.direct host). CI NEVER sets it → prod renders with the
+        # committed placeholders. A later --values wins → the overlay beats the default.
         extra_vals=""
         if [ -n "${EXTRA_VALUES:-}" ] && [ -f "${EXTRA_VALUES}" ]; then
           extra_vals="--values ${EXTRA_VALUES}"
@@ -174,13 +174,13 @@ tasks:
       echo "  → $(wc -l < "$out") Zeilen → ${out}"
 
   render:sublayer:
-    desc: 'Rendert alle Komponenten eines Sub-Layers: task render:sublayer -- <sub-layer>'
+    desc: 'Render all components of a sub-layer: task render:sublayer -- <sub-layer>'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task render:sublayer -- <sub-layer>}"
       sldir="sub-layers/${sub_layer}/components"
       if [ ! -d "$sldir" ]; then
-        echo "ERROR: ${sldir} existiert nicht"
+        echo "ERROR: ${sldir} does not exist"
         exit 1
       fi
       for cdir in "$sldir"/*/; do
@@ -191,7 +191,7 @@ tasks:
   # --- Lint ---
 
   lint:
-    desc: YAML- und Markdown-Lint
+    desc: YAML and Markdown lint
     cmds:
       - yamllint -c .yamllint.yaml sub-layers/ Taskfile.yml .github/
       # markdown: lint tracked files only (`git ls-files`). The old `**/*.md` glob
@@ -210,9 +210,9 @@ tasks:
       - git ls-files -z '*.md' ':!:*CHANGELOG.md' ':!:knowledge/SPEC.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
   lint:rendered:
-    desc: kubeconform gegen alle Komponenten-rendered/manifest.yaml
-    # Nur das gerenderte Roh-Manifest, nicht das gepackte rendered/chart/
-    # (Chart.yaml ist Helm-Metadaten, kein K8s-Resource → kubeconform-Error).
+    desc: kubeconform against all component rendered/manifest.yaml
+    # Only the rendered raw manifest, not the packaged rendered/chart/
+    # (Chart.yaml is Helm metadata, not a K8s resource → kubeconform error).
     cmd: |
       find sub-layers -path '*/components/*/rendered/manifest.yaml' -print0 2>/dev/null | \
         xargs -0 -r kubeconform -strict -ignore-missing-schemas -summary
@@ -870,7 +870,7 @@ tasks:
                       set (sub-layers/CHANGELOG/manifest), so without this class a
                       release PR would fall through to candidate.
         governance  — a changed path in the repo's central-review tier (its own
-                      .github/CODEOWNERS "zentral, immer M1" set: AGENTS.md, CLAUDE.md,
+                      .github/CODEOWNERS "central, always M1" set: AGENTS.md, CLAUDE.md,
                       Taskfile.yml — which holds THIS classifier — devbox.json/.lock,
                       .sops.yaml* = secret-decryption access) plus the root
                       platform-control configs .gitleaks.toml (the REQUIRED secret gate),
@@ -2345,7 +2345,7 @@ tasks:
   # --- Security-Scans (Issue #11.8) ---
 
   scan:
-    desc: alle Security-Scans (gitleaks + trivy + conftest + optional snyk)
+    desc: all security scans (gitleaks + trivy + conftest + optional snyk)
     cmds:
       - task: scan:secrets
       - task: scan:trivy
@@ -2355,7 +2355,7 @@ tasks:
         if [[ -n "${SNYK_TOKEN:-}" ]]; then
           task scan:snyk
         else
-          echo "SNYK_TOKEN nicht gesetzt — snyk skipped"
+          echo "SNYK_TOKEN not set — snyk skipped"
         fi
 
   scan:secrets:
@@ -2396,12 +2396,12 @@ tasks:
       fi
 
   scan:trivy:
-    desc: Trivy-Misconfig-Scan über sub-layers/, SARIF-Output
+    desc: Trivy misconfig scan over sub-layers/, SARIF output
     deps: [render]
-    # trivy fs akzeptiert nur EIN Target — daher das gesamte sub-layers/-Verzeichnis
-    # rekursiv scannen (statt 22 rendered-Dirs einzeln, was mit 'multiple targets
-    # cannot be specified' scheitert). Erfasst rendered/manifest.yaml + Quell-Manifeste;
-    # READMEs/compatibility.yaml werden vom Misconfig-Scanner ignoriert.
+    # trivy fs accepts only ONE target — so scan the entire sub-layers/ directory
+    # recursively (instead of 22 rendered dirs individually, which fails with 'multiple targets
+    # cannot be specified'). Covers rendered/manifest.yaml + source manifests;
+    # READMEs/compatibility.yaml are ignored by the misconfig scanner.
     cmd: |
       trivy fs sub-layers/ \
         --scanners misconfig,secret \
@@ -2409,15 +2409,15 @@ tasks:
         --output trivy-results.sarif
 
   scan:conftest:
-    desc: Conftest-Policies aus policies/ gegen alle Komponenten-rendered/-Manifeste
+    desc: Conftest policies from policies/ against all component rendered manifests
     deps: [render]
     cmd: |
       files=$(find sub-layers -path '*/components/*/rendered/manifest.yaml' -size +0 -type f)
       if [ -z "$files" ]; then
-        echo "Keine nicht-leeren rendered/manifest.yaml gefunden — nichts zu prüfen"
+        echo "No non-empty rendered/manifest.yaml found — nothing to check"
         exit 0
       fi
-      echo "Conftest gegen $(echo "$files" | wc -l | tr -d ' ') Komponenten-Manifeste:"
+      echo "Conftest against $(echo "$files" | wc -l | tr -d ' ') component manifests:"
       echo "$files" | sed 's/^/  - /'
       echo ""
       conftest test --policy policies/ --all-namespaces $files
@@ -2505,7 +2505,7 @@ tasks:
     cmd: conftest verify --policy policies/
 
   scan:snyk:
-    desc: Snyk IaC-Scan (braucht SNYK_TOKEN)
+    desc: Snyk IaC scan (needs SNYK_TOKEN)
     cmd: |
       snyk iac test sub-layers/ \
         --sarif-file-output=snyk-results.sarif
@@ -2880,12 +2880,12 @@ tasks:
 
       root="sub-layers/${sub_layer}/components/${component}"
       manifest="${root}/rendered/manifest.yaml"
-      test -s "$manifest" || { echo "ERROR: $manifest fehlt — vorher task render:one -- ${component_id}"; exit 1; }
+      test -s "$manifest" || { echo "ERROR: $manifest missing — run task render:one -- ${component_id} first"; exit 1; }
 
-      # ArgoCD-native-OCI erwartet EIN OCI-Artefakt mit genau einem Layer, dessen
-      # Inhalt (tar.gz) die Manifeste im Root trägt — der Konsument referenziert es
-      # mit source.path: '.'. Der Layer-Media-Type + die org.opencontainers.image.*-
-      # Annotationen werden beim `task push` gesetzt (oras). Doku:
+      # ArgoCD native OCI expects ONE OCI artifact with exactly one layer whose
+      # content (tar.gz) carries the manifests at the root — the consumer references it
+      # with source.path: '.'. The layer media type + the org.opencontainers.image.*
+      # annotations are set by `task push` (oras). Docs:
       # argo-cd.readthedocs.io/en/stable/user-guide/oci/
       out="${root}/rendered/${component}-${chart_version}.tar.gz"
       rm -f "$out"
@@ -2918,20 +2918,20 @@ tasks:
       echo "✓ Packaged: ${out}"
 
   push:
-    desc: 'oras push einer Komponente: task push -- <sub-layer>/<component> <tag>'
+    desc: 'oras push of a component: task push -- <sub-layer>/<component> <tag>'
     summary: |
-      Pusht den via "task package" gebauten Manifest-Tarball als generisches
-      OCI-Artefakt (ArgoCD-native-OCI, ADR-0009 §OCI-Artefakt-Form) nach
-      OCI_REGISTRY/<sub-layer>/<component>:<tag> — Single-Layer, Media-Type
-      application/vnd.oci.image.layer.v1.tar+gzip. KEIN Helm-Chart mehr.
+      Pushes the manifest tarball built via "task package" as a generic
+      OCI artifact (ArgoCD native OCI, ADR-0009 §OCI artifact form) to
+      OCI_REGISTRY/<sub-layer>/<component>:<tag> — single layer, media type
+      application/vnd.oci.image.layer.v1.tar+gzip. No more Helm chart.
 
       Default OCI_REGISTRY: ghcr.io/devobagmbh/talos-platform-apps
 
-      Voraussetzungen:
+      Prerequisites:
         - rendered + packaged
         - oras login OCI_REGISTRY
 
-      Beispiel: task push -- lifecycle/crossplane v0.1.0
+      Example: task push -- lifecycle/crossplane v0.1.0
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
     cmd: |
@@ -2944,17 +2944,17 @@ tasks:
 
       root="sub-layers/${sub_layer}/components/${component}"
       pkg="${root}/rendered/${component}-${chart_version}.tar.gz"
-      test -s "$pkg" || { echo "ERROR: $pkg fehlt — vorher task package -- ${component_id} $tag"; exit 1; }
+      test -s "$pkg" || { echo "ERROR: $pkg missing — run task package -- ${component_id} $tag first"; exit 1; }
 
-      # OCI-Manifest-Annotationen (ArgoCD-UI + Supply-Chain-Provenance). ArgoCD liest
-      # die org.opencontainers.image.*-Keys vom OCI-Manifest; oras setzt sie via
-      # --annotation. revision + created sind Build-Zeit-dynamisch, der Rest deterministisch.
+      # OCI manifest annotations (ArgoCD UI + supply-chain provenance). ArgoCD reads
+      # the org.opencontainers.image.* keys from the OCI manifest; oras sets them via
+      # --annotation. revision + created are build-time dynamic, the rest deterministic.
       repo_url="https://github.com/devobagmbh/talos-platform-apps"
       revision=$(git rev-parse HEAD 2>/dev/null || echo unknown)
       created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       component_url="${repo_url}/tree/main/sub-layers/${sub_layer}/components/${component}"
 
-      # app_version = reale Workload-Version (sot=app) aus compatibility.yaml, sonst Tag.
+      # app_version = real workload version (sot=app) from compatibility.yaml, else tag.
       compat="${root}/compatibility.yaml"
       app_version=""
       if [ -f "$compat" ]; then
@@ -2965,14 +2965,14 @@ tasks:
       ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${chart_version}"
       pkg_file="${component}-${chart_version}.tar.gz"
       echo "Pushing ${pkg} → oci://${ref}"
-      # Aus rendered/ pushen (relativer Dateiname): oras lehnt absolute Pfade ab und
-      # setzt den übergebenen Pfad als Layer-Title — so bleibt es der reine Dateiname.
-      # --plain-http=false erzwingt HTTPS: oras nutzt für localhost-Refs sonst per
-      # Default plain-HTTP und trifft die lokale mkcert-TLS-Registry (HTTPS) mit einem
-      # HTTP-Request → 400. Für ghcr.io (kein localhost) ist der Flag ein No-op.
+      # Push from rendered/ (relative filename): oras rejects absolute paths and
+      # sets the passed path as the layer title — so it stays the plain filename.
+      # --plain-http=false forces HTTPS: for localhost refs oras otherwise defaults to
+      # plain-HTTP and hits the local mkcert TLS registry (HTTPS) with an
+      # HTTP request → 400. For ghcr.io (not localhost) the flag is a no-op.
       ( cd "${root}/rendered" && oras push --plain-http=false "$ref" \
         --annotation "org.opencontainers.image.title=${component_id}" \
-        --annotation "org.opencontainers.image.description=Pre-rendered Devoba-Platform-Komponente ${component_id}" \
+        --annotation "org.opencontainers.image.description=Pre-rendered Devoba platform component ${component_id}" \
         --annotation "org.opencontainers.image.version=${chart_version}" \
         --annotation "org.opencontainers.image.revision=${revision}" \
         --annotation "org.opencontainers.image.source=${repo_url}" \
@@ -2989,8 +2989,8 @@ tasks:
   sign:
     desc: 'cosign sign keyless: task sign -- <sub-layer>/<component> <tag>'
     summary: |
-      Signiert das native OCI-Artefakt via cosign keyless.
-      Lokal-Setup (localhost/kind-registry) überspringt cosign.
+      Signs the native OCI artifact via cosign keyless.
+      Local setup (localhost/kind-registry) skips cosign.
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
     cmd: |
@@ -3002,7 +3002,7 @@ tasks:
       chart_version="${tag#v}"
       ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${chart_version}"
       if [[ "{{.OCI_REGISTRY}}" == *"localhost"* ]] || [[ "{{.OCI_REGISTRY}}" == *"kind-registry"* ]]; then
-        echo "Lokale Registry erkannt — cosign übersprungen"
+        echo "Local registry detected — cosign skipped"
         exit 0
       fi
       echo "Signing $ref (keyless)"
@@ -3010,14 +3010,14 @@ tasks:
       echo "✓ Signed: $ref"
 
   attest:
-    desc: 'SBOM + SLSA-Attestations (vertagt nach Phase 2 — ADR-0009 § Phase-1-Scope)'
+    desc: 'SBOM + SLSA attestations (deferred to Phase 2 — ADR-0009 § Phase-1 scope)'
     cmd: |
-      echo "Vertagt nach Phase 2+ (ADR-0009 § Phase-1-Scope)."
-      echo "SLSA-v1-Provenance + CycloneDX-SBOM werden aktiviert, sobald externe"
-      echo "Konsumenten existieren oder Audit-Anforderung greift."
+      echo "Deferred to Phase 2+ (ADR-0009 § Phase-1 scope)."
+      echo "SLSA-v1 provenance + CycloneDX SBOM are activated once external"
+      echo "consumers exist or an audit requirement applies."
 
   publish:
-    desc: 'render → package → push → sign einer Komponente: task publish -- <sub-layer>/<component> <tag>'
+    desc: 'render → package → push → sign a component: task publish -- <sub-layer>/<component> <tag>'
     cmd: |
       set -- {{.CLI_ARGS}}
       component_id="${1:?usage: task publish -- <sub-layer>/<component> <tag>}"
@@ -3029,14 +3029,14 @@ tasks:
       echo "✓ Published ${component_id}:${tag}"
 
   publish:sublayer:
-    desc: 'render + push aller Komponenten eines Sub-Layers mit gleichem Tag: task publish:sublayer -- <sub-layer> <tag>'
+    desc: 'render + push all components of a sub-layer with the same tag: task publish:sublayer -- <sub-layer> <tag>'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task publish:sublayer -- <sub-layer> <tag>}"
       tag="${2:?usage: task publish:sublayer -- <sub-layer> <tag>}"
       sldir="sub-layers/${sub_layer}/components"
       if [ ! -d "$sldir" ]; then
-        echo "ERROR: ${sldir} existiert nicht"
+        echo "ERROR: ${sldir} does not exist"
         exit 1
       fi
       for cdir in "$sldir"/*/; do
@@ -3045,9 +3045,9 @@ tasks:
       done
 
   verify:
-    desc: 'cosign verify einer Komponente: task verify -- <sub-layer>/<component> <tag>'
+    desc: 'cosign verify of a component: task verify -- <sub-layer>/<component> <tag>'
     summary: |
-      Verifiziert die cosign-Keyless-Signature. Erwartete Identity:
+      Verifies the cosign keyless signature. Expected identity:
         https://github.com/devobagmbh/talos-platform-apps/.github/workflows/oci-publish.yml@refs/tags/<sub-layer>/<component>-<tag>
     vars:
       OCI_REGISTRY: '{{.OCI_REGISTRY | default "ghcr.io/devobagmbh/talos-platform-apps"}}'
@@ -3057,14 +3057,14 @@ tasks:
       tag="${2:?usage: task verify -- <sub-layer>/<component> <tag>}"
       sub_layer="${component_id%/*}"
       component="${component_id#*/}"
-      # OCI-Tag ist die Chart-Version ohne v-Präfix (wie push/sign), nicht der Git-Tag
+      # OCI tag is the chart version without the v prefix (like push/sign), not the git tag
       chart_version="${tag#v}"
       ref="{{.OCI_REGISTRY}}/${sub_layer}/${component}:${chart_version}"
       cosign verify "$ref" \
         --certificate-identity-regexp "^https://github\.com/devobagmbh/talos-platform-apps/\.github/workflows/oci-publish\.yml@refs/tags/${sub_layer}/${component}-.*$" \
         --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-  # --- CI (lokal-äquivalent zur GHA-Pipeline) ---
+  # --- CI (locally equivalent to the GHA pipeline) ---
 
   okf:install:
     desc: 'Install the pinned openknowledge CLI (not a Nix/devbox pkg) into .okf/bin'
@@ -3559,7 +3559,7 @@ tasks:
       exit "$fail"
 
   ci:
-    desc: Lokale Reproduktion der GHA-PR-Pipeline (release-coverage gates + ci:artifact)
+    desc: Local reproduction of the GHA PR pipeline (release-coverage gates + ci:artifact)
     cmds:
       # Release-coverage gates — catalog-wide release-please invariants (config↔dir↔
       # manifest↔git-tag parity). These are PR/merge-time checks, NOT artifact
@@ -3776,13 +3776,13 @@ tasks:
   # corrupt shared .git. slug = <sub-layer>-<component>; branch = catalog-build/<slug>.
 
   worktree:create:
-    desc: 'Isolierten Worktree für eine Komponente anlegen: task worktree:create -- <sub-layer>/<component>'
+    desc: 'Create an isolated worktree for a component: task worktree:create -- <sub-layer>/<component>'
     summary: |
-      Cross-session-sicherer git-Worktree unter .claude/worktrees/<slug> auf Branch
-      catalog-build/<slug>. Idempotent (existierender Worktree wird wiederverwendet);
-      fail-fast, wenn der Branch bereits existiert (Claim einer anderen Session).
-      Gibt den absoluten Worktree-Pfad auf der LETZTEN Zeile aus (vom Skill via
-      `| tail -1` gelesen).
+      Cross-session-safe git worktree under .claude/worktrees/<slug> on branch
+      catalog-build/<slug>. Idempotent (an existing worktree is reused);
+      fail-fast if the branch already exists (claimed by another session).
+      Prints the absolute worktree path on the LAST line (read by the skill via
+      `| tail -1`).
     cmd: |
       component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
       if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
@@ -3866,7 +3866,7 @@ tasks:
       (cd "$wt" && pwd)
 
   worktree:remove:
-    desc: 'Worktree einer Komponente entfernen (Branch bleibt): task worktree:remove -- <sub-layer>/<component>'
+    desc: 'Remove a component worktree (branch is kept): task worktree:remove -- <sub-layer>/<component>'
     cmd: |
       component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
       if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
@@ -3913,7 +3913,7 @@ tasks:
       echo "removed worktree $wt (branch catalog-build/${slug} kept; delete with: git branch -D catalog-build/${slug})"
 
   worktree:list:
-    desc: Aktive Komponenten-Worktrees auflisten
+    desc: List active component worktrees
     cmd: |
       # `git worktree list` is cwd-independent — same list (absolute paths) from any cwd
       # inside the repo, including a linked worktree — so no main-root anchor is needed here.
@@ -3923,7 +3923,7 @@ tasks:
   # --- Housekeeping ---
 
   clean:
-    desc: rendered/-Output und Scan-Artefakte entfernen
+    desc: remove rendered/ output and scan artifacts
     cmds:
       - find sub-layers -path '*/components/*/rendered' -type d -exec rm -rf {} +
       - rm -f trivy-results.sarif snyk-results.sarif
@@ -3933,35 +3933,35 @@ tasks:
     cmd: lefthook install
 
   devbox-info:
-    desc: Devbox-Tool-Versionen anzeigen
+    desc: Show Devbox tool versions
     cmd: devbox info
 
-  # --- Lokale Entwicklung: Talos (docker) + Local-Registry + ArgoCD ---
+  # --- Local development: Talos (docker) + local registry + ArgoCD ---
 
   local:preflight:
-    desc: 'Prüft dass alle Tools im PATH sind (sonst hilfreicher Hinweis)'
+    desc: 'Checks that all tools are in PATH (otherwise a helpful hint)'
     cmd: |
       missing=""
       for t in docker talosctl kubectl kubectx helm mkcert envsubst yq; do
         command -v "$t" >/dev/null 2>&1 || missing="$missing $t"
       done
       if [ -n "$missing" ]; then
-        echo "ERROR: folgende Tools fehlen im PATH:$missing"
+        echo "ERROR: the following tools are missing from PATH:$missing"
         echo ""
-        echo "Vermutlich ist die Devbox-Shell für dieses Repo nicht aktiv."
+        echo "The Devbox shell for this repo is probably not active."
         echo "Fix:"
-        echo "  direnv allow            # einmalig, lädt Repo-Devbox-PATH bei cd"
-        echo "  oder"
-        echo "  devbox shell            # explizite Shell mit Repo-Tools"
+        echo "  direnv allow            # once, loads the repo Devbox PATH on cd"
+        echo "  or"
+        echo "  devbox shell            # explicit shell with the repo tools"
         exit 1
       fi
 
   local:up:
-    desc: 'Lokales Entwicklungs-Setup hoch: Registry + Talos + Gateway-API + Cilium + ArgoCD'
-    # WICHTIG: Gateway-API-CRDs müssen VOR Cilium installiert werden, sonst
-    # initialisiert der Cilium-Operator seinen Gateway-API-Controller nicht
-    # und es entsteht keine GatewayClass 'cilium' (Folge: Gateway hängt für
-    # immer in "Waiting for controller").
+    desc: 'Bring up the local development setup: registry + Talos + Gateway-API + Cilium + ArgoCD'
+    # IMPORTANT: the Gateway-API CRDs MUST be installed BEFORE Cilium, otherwise
+    # the Cilium operator does not initialize its Gateway-API controller
+    # and no GatewayClass 'cilium' is created (consequence: the Gateway hangs
+    # forever in "Waiting for controller").
     cmds:
       - task: local:preflight
       - task: local:registry:up
@@ -3976,54 +3976,54 @@ tasks:
       - task: local:registry:bridge
       - |
         echo ""
-        echo "✓ Lokales Setup bereit."
-        echo "  Argo-UI:       https://argocd.localhost.direct"
-        echo "  Argo-Admin-Pw: task local:argo:password"
-        echo "  Registry:      https://localhost:5001 (Workstation, mkcert-TLS)"
-        echo "                 kind-registry.registry.svc.cluster.local:5000 (Cluster, mkcert-TLS)"
-        echo "  Lokal pushen:  task local:publish -- <sub-layer> <tag>"
+        echo "✓ Local setup ready."
+        echo "  Argo UI:       https://argocd.localhost.direct"
+        echo "  Argo admin pw: task local:argo:password"
+        echo "  Registry:      https://localhost:5001 (workstation, mkcert TLS)"
+        echo "                 kind-registry.registry.svc.cluster.local:5000 (cluster, mkcert TLS)"
+        echo "  Local push:    task local:publish -- <sub-layer> <tag>"
 
   local:down:
-    desc: 'Alles abreißen: Cluster + Registry + Mkcert-Daten'
+    desc: 'Tear everything down: cluster + registry + mkcert data'
     cmds:
       - talosctl cluster destroy --name talos-platform-apps || true
       - task: local:registry:down
 
   local:stop:
-    desc: 'Cluster + Registry pausieren (Container stoppen, State bleibt)'
-    # Im Gegensatz zu local:down wird hier nichts gelöscht — beim nächsten
-    # local:start sind alle Workloads + Daten wieder da. Sinnvoll für
-    # Laptop-Suspend oder mehrtägige Pausen ohne Re-Install.
+    desc: 'Pause cluster + registry (stop containers, state is kept)'
+    # Unlike local:down, nothing is deleted here — on the next
+    # local:start all workloads + data are back. Useful for
+    # laptop suspend or multi-day breaks without a re-install.
     cmd: |
       for c in talos-platform-apps-controlplane-1 kind-registry; do
         if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c" 2>/dev/null)" = "true" ]; then
           docker stop "$c" >/dev/null
-          echo "✓ $c gestoppt"
+          echo "✓ $c stopped"
         else
-          echo "  $c läuft nicht (skip)"
+          echo "  $c is not running (skip)"
         fi
       done
 
   local:start:
-    desc: 'Pausierten Cluster + Registry wieder starten'
-    # Erwartet, dass local:up schon einmal lief — startet nur die bestehenden
-    # Container neu. Wartet bis die K8s-API antwortet, damit Folge-Tasks
-    # (kubectl, helm) nicht in Race-Conditions laufen.
+    desc: 'Restart a paused cluster + registry'
+    # Expects that local:up already ran once — only restarts the existing
+    # containers. Waits until the K8s API responds so that follow-up tasks
+    # (kubectl, helm) do not run into race conditions.
     cmd: |
       for c in kind-registry talos-platform-apps-controlplane-1; do
         if ! docker inspect "$c" >/dev/null 2>&1; then
-          echo "ERROR: Container '$c' existiert nicht — task local:up?"
+          echo "ERROR: container '$c' does not exist — task local:up?"
           exit 1
         fi
         if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c")" = "true" ]; then
-          echo "  $c läuft bereits"
+          echo "  $c is already running"
         else
           docker start "$c" >/dev/null
-          echo "✓ $c gestartet"
+          echo "✓ $c started"
         fi
       done
       kubectx {{.LOCAL_KUBE_CONTEXT}} >/dev/null 2>&1 || true
-      echo "warte bis K8s-API antwortet..."
+      echo "waiting until the K8s API responds..."
       ready=false
       for i in $(seq 1 60); do
         if kubectl --context {{.LOCAL_KUBE_CONTEXT}} get --raw='/readyz' >/dev/null 2>&1; then
@@ -4034,16 +4034,16 @@ tasks:
         sleep 2
       done
       if [ "$ready" != "true" ]; then
-        echo "ERROR: K8s-API auf Context {{.LOCAL_KUBE_CONTEXT}} nach 60 Versuchen nicht ready — task local:up?"
+        echo "ERROR: K8s API on context {{.LOCAL_KUBE_CONTEXT}} not ready after 60 attempts — task local:up?"
         exit 1
       fi
 
   local:registry:up:
-    desc: 'Lokale Docker-Registry auf localhost:5001 mit mkcert-TLS starten (idempotent)'
-    # Container terminiert TLS selbst — gleicher mkcert-Cert für Workstation
-    # (SAN: localhost, 127.0.0.1) und Cluster (SAN: kind-registry.registry.svc.cluster.local).
-    # Damit kann Argo intra-cluster die Cert-Chain validieren ohne --plain-http /
-    # insecure-Flags. mkcert -install ist idempotent.
+    desc: 'Start the local Docker registry on localhost:5001 with mkcert TLS (idempotent)'
+    # The container terminates TLS itself — same mkcert cert for the workstation
+    # (SAN: localhost, 127.0.0.1) and the cluster (SAN: kind-registry.registry.svc.cluster.local).
+    # This lets Argo validate the cert chain intra-cluster without --plain-http /
+    # insecure flags. mkcert -install is idempotent.
     cmd: |
       mkcert -install >/dev/null 2>&1
       mkdir -p .mkcert-registry
@@ -4055,10 +4055,10 @@ tasks:
           kind-registry.registry.svc.cluster.local >/dev/null
         chmod 644 kind-registry-key.pem
         cd ..
-        echo "✓ mkcert-Cert für kind-registry generiert"
+        echo "✓ mkcert cert for kind-registry generated"
       fi
       if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' kind-registry 2>/dev/null)" = "true" ]; then
-        echo "✓ kind-registry läuft bereits"
+        echo "✓ kind-registry is already running"
       else
         docker rm -f kind-registry >/dev/null 2>&1 || true
         docker run -d --restart=always \
@@ -4068,15 +4068,15 @@ tasks:
           -e REGISTRY_HTTP_TLS_KEY=/certs/kind-registry-key.pem \
           --name kind-registry \
           registry:2 >/dev/null
-        echo "✓ kind-registry gestartet (https://localhost:5001, TLS via mkcert)"
+        echo "✓ kind-registry started (https://localhost:5001, TLS via mkcert)"
       fi
 
   local:registry:down:
-    desc: 'Lokale Registry stoppen + entfernen'
+    desc: 'Stop + remove the local registry'
     cmd: docker rm -f kind-registry || true
 
   local:cluster:up:
-    desc: 'Talos-Cluster (docker provisioner) erstellen + lokale Registry verbinden'
+    desc: 'Create the Talos cluster (docker provisioner) + connect the local registry'
     cmds:
       - |
         # Talos docker-provisioner cluster: single schedulable control plane,
@@ -4084,17 +4084,17 @@ tasks:
         # and the localhost:5001 registry mirror all come from local/talos-patch.yaml.
         # Host 80/443 → NodePort 30080/30443 (Cilium-Gateway) via -p, the talosctl
         # analog of kind's extraPortMappings.
-        # Node-Sizing: der talosctl-Default (2GiB/2CPU) ist zu klein — Cilium + Argo
-        # + mehrere Plattform-Komponenten (crossplane, cnpg, …) sprengen 2GiB →
-        # apiserver-Timeouts + OOM. Default 8GiB/6CPU (Limit, keine Reservierung →
-        # passt auch in kleinere VMs, bis tatsächlich genutzt). Per LOCAL_NODE_MEMORY
-        # / LOCAL_NODE_CPUS übersteuerbar.
+        # Node sizing: the talosctl default (2GiB/2CPU) is too small — Cilium + Argo
+        # + several platform components (crossplane, cnpg, …) blow past 2GiB →
+        # apiserver timeouts + OOM. Default 8GiB/6CPU (limit, no reservation →
+        # fits smaller VMs too, until actually used). Overridable via LOCAL_NODE_MEMORY
+        # / LOCAL_NODE_CPUS.
         # talosctl create is NOT idempotent (it refuses if the state dir exists).
         # NOTE: `talosctl cluster show` is NOT a reliable existence probe — it exits
         # 0 with empty output even when nothing exists. Gate on the state dir.
         state_dir="${HOME}/.talos/clusters/talos-platform-apps"
         if [ -d "$state_dir" ]; then
-          echo "✓ Talos-Cluster 'talos-platform-apps' existiert bereits (skip create)"
+          echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create)"
         else
           talosctl cluster create docker \
             --name talos-platform-apps \
@@ -4136,12 +4136,12 @@ tasks:
         fi
         kubectx {{.LOCAL_KUBE_CONTEXT}}
       - |
-        # Registry-Container ins Talos-Docker-Netzwerk (= Cluster-Name) hängen,
-        # damit der Node sie über die Docker-DNS als kind-registry:5000 auflöst
-        # (Registry-Mirror im machine-config). 'connect' meckert wenn schon drin → || true.
+        # Attach the registry container to the Talos docker network (= cluster name)
+        # so the node resolves it via docker DNS as kind-registry:5000
+        # (registry mirror in the machine-config). 'connect' complains if already in → || true.
         docker network connect talos-platform-apps kind-registry 2>/dev/null || true
       - |
-        # ConfigMap nach KEP-1755 (local-registry-hosting)
+        # ConfigMap per KEP-1755 (local-registry-hosting)
         kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f - <<'EOF'
         apiVersion: v1
         kind: ConfigMap
@@ -4155,7 +4155,7 @@ tasks:
         EOF
 
   local:cert-manager:install:
-    desc: 'cert-manager via Helm installieren (CRDs inline)'
+    desc: 'Install cert-manager via Helm (CRDs inline)'
     cmd: |
       helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
       helm repo update jetstack
@@ -4167,14 +4167,14 @@ tasks:
         --wait --timeout 5m
 
   local:certs:
-    desc: 'mkcert-Root-CA ins System-Trust + Cluster-Secret + ConfigMap + ClusterIssuer'
-    # Drei Targets für die CA:
-    #   1. cert-manager-NS als TLS-Secret → ClusterIssuer für *.localhost.direct
-    #   2. argocd-NS als ConfigMap → initContainer mountet die CA und appended sie
-    #      an /etc/ssl/certs/ca-certificates.crt im argocd-repo-server-Pod,
-    #      damit die nativen OCI-Pulls gegen kind-registry-TLS validieren.
-    # Material kommt direkt aus $(mkcert -CAROOT) (kein lokales Zwischen-File,
-    # vermeidet Permission-Issues beim zweiten Lauf — mkcert speichert mit 0600).
+    desc: 'mkcert root CA into system trust + cluster secret + ConfigMap + ClusterIssuer'
+    # Three targets for the CA:
+    #   1. cert-manager NS as a TLS secret → ClusterIssuer for *.localhost.direct
+    #   2. argocd NS as a ConfigMap → an initContainer mounts the CA and appends it
+    #      to /etc/ssl/certs/ca-certificates.crt in the argocd-repo-server pod,
+    #      so the native OCI pulls validate against kind-registry TLS.
+    # Material comes directly from $(mkcert -CAROOT) (no local intermediate file,
+    # avoids permission issues on the second run — mkcert stores with 0600).
     cmd: |
       mkcert -install
       caroot=$(mkcert -CAROOT)
@@ -4188,14 +4188,14 @@ tasks:
         -n argocd \
         --dry-run=client -o yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/mkcert-cluster-issuer.yaml
-      echo "✓ mkcert-CA als ClusterIssuer + im argocd-NS bereit"
+      echo "✓ mkcert CA ready as ClusterIssuer + in the argocd NS"
 
   local:cilium:install:
-    desc: 'Cilium als CNI installieren (kubeProxyReplacement, Gateway-API enabled)'
+    desc: 'Install Cilium as the CNI (kubeProxyReplacement, Gateway-API enabled)'
     cmd: |
-      # Cilium ohne kube-proxy braucht eine API-Adresse. Auf Talos zeigt sie auf
-      # KubePrism (node-lokaler LB auf 127.0.0.1:7445, machine-config) — identisch
-      # zu talos-seeder-cluster/tofu/main.tf. Kein docker-inspect der Node-IP mehr.
+      # Cilium without kube-proxy needs an API address. On Talos it points to
+      # KubePrism (node-local LB on 127.0.0.1:7445, machine-config) — identical
+      # to talos-seeder-cluster/tofu/main.tf. No more docker-inspect of the node IP.
       echo "Cilium k8sServiceHost=localhost:7445 (KubePrism)"
       helm repo add cilium https://helm.cilium.io 2>/dev/null || true
       helm repo update cilium
@@ -4207,47 +4207,47 @@ tasks:
         --set k8sServiceHost=localhost \
         --set k8sServicePort=7445 \
         --wait --timeout 5m
-      # Wartet, bis CoreDNS via Cilium-CNI läuft. 5m statt 2m: beim Erst-Install
-      # zieht der Cilium-Agent/Operator/Envoy erst Images, bevor das CNI Pods
-      # verdrahtet — 2m war zu knapp und ließ local:up false-negativ failen.
+      # Waits until CoreDNS runs via the Cilium CNI. 5m instead of 2m: on the first
+      # install the Cilium agent/operator/Envoy pull images first, before the CNI wires
+      # up pods — 2m was too tight and made local:up fail false-negative.
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n kube-system rollout status deployment/coredns --timeout=5m
 
   local:storage:install:
-    desc: 'local-path-provisioner als Default-StorageClass (lokal — Katalog-CSI braucht das NAS)'
-    # Das lokale Talos-Cluster hat keine StorageClass; die Katalog-CSIs (synology/
-    # democratic) brauchen das echte NAS. Für stateful Local-Tests (CNPG-Cluster,
-    # Harbor-PVCs …) installieren wir Rancher local-path-provisioner. Talos-
-    # Anpassung: / ist read-only → hostPath nach /var/local-path-provisioner.
+    desc: 'local-path-provisioner as the default StorageClass (local — the catalog CSI needs the NAS)'
+    # The local Talos cluster has no StorageClass; the catalog CSIs (synology/
+    # democratic) need the real NAS. For stateful local tests (CNPG clusters,
+    # Harbor PVCs …) we install Rancher local-path-provisioner. Talos
+    # adjustment: / is read-only → hostPath to /var/local-path-provisioner.
     cmd: |
       ver="v0.0.30"
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${ver}/deploy/local-path-storage.yaml"
-      # Talos erzwingt Pod-Security; der Helper-Pod (mountet hostPath) braucht
-      # einen privileged-NS, sonst blockt PSA die PVC-Provisionierung.
+      # Talos enforces Pod Security; the helper pod (mounts hostPath) needs
+      # a privileged NS, otherwise PSA blocks the PVC provisioning.
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} label namespace local-path-storage pod-security.kubernetes.io/enforce=privileged --overwrite
       cfg='{"nodePathMap":[{"node":"DEFAULT_PATH_FOR_NON_LISTED_NODES","paths":["/var/local-path-provisioner"]}]}'
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n local-path-storage patch configmap local-path-config --type merge \
         -p "$(jq -nc --arg c "$cfg" '{data:{"config.json":$c}}')"
-      # local-path als Default-StorageClass (CNPG & Co. setzen kein storageClassName)
+      # local-path as the default StorageClass (CNPG & co. set no storageClassName)
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} patch storageclass local-path \
         -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n local-path-storage rollout restart deployment/local-path-provisioner
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n local-path-storage rollout status deployment/local-path-provisioner --timeout=2m
-      echo "✓ local-path ist Default-StorageClass"
+      echo "✓ local-path is the default StorageClass"
 
   local:gateway-api:install:
-    desc: 'Gateway-API-CRDs installieren (Standard-Channel v1.2.0)'
+    desc: 'Install the Gateway-API CRDs (standard channel v1.2.0)'
     cmd: |
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} wait --for=condition=Established crd/gateways.gateway.networking.k8s.io --timeout=2m
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=2m
 
   local:argo:install:
-    desc: 'ArgoCD via Helm im Cluster installieren (HTTPRoute auf argocd.localhost.direct)'
+    desc: 'Install ArgoCD via Helm in the cluster (HTTPRoute on argocd.localhost.direct)'
     cmd: |
-      # Chart-Version MUSS base's argocd_chart_version spiegeln (talos-platform-base
-      # tofu/modules/talos-cluster/variables.tf): die lokale Test-Umgebung nutzt
-      # dieselbe ArgoCD-Version wie das Substrat, sonst testet man gegen eine andere
-      # ArgoCD-Version als Produktion. base pinnt argo-cd 9.4.5 (= ArgoCD v3.3.2).
+      # The chart version MUST mirror base's argocd_chart_version (talos-platform-base
+      # tofu/modules/talos-cluster/variables.tf): the local test environment uses
+      # the same ArgoCD version as the substrate, otherwise you test against a different
+      # ArgoCD version than production. base pins argo-cd 9.4.5 (= ArgoCD v3.3.2).
       helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
       helm repo update argo
       helm upgrade --install argocd argo/argo-cd \
@@ -4258,17 +4258,17 @@ tasks:
         --wait --timeout 5m
 
   local:gateway:apply:
-    desc: 'Gateway + HTTPRoutes apply + Cilium-Gateway-Service auf NodePort patchen'
+    desc: 'apply Gateway + HTTPRoutes + patch the Cilium gateway service to NodePort'
     cmd: |
       kubectl create namespace gateway --dry-run=client -o yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/gateway.yaml
-      # warten bis Cilium den Gateway-Service erzeugt hat
+      # wait until Cilium has created the Gateway service
       for i in $(seq 1 30); do
         if kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n gateway get svc cilium-gateway-localhost-direct >/dev/null 2>&1; then break; fi
-        echo "  ... warte auf cilium-gateway-localhost-direct ($i/30)"
+        echo "  ... waiting for cilium-gateway-localhost-direct ($i/30)"
         sleep 2
       done
-      # Patch auf NodePort + feste Ports 30080/30443
+      # Patch to NodePort + fixed ports 30080/30443
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n gateway patch svc cilium-gateway-localhost-direct --type=merge -p '{
         "spec": {
           "type": "NodePort",
@@ -4279,78 +4279,78 @@ tasks:
         }
       }'
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/argocd-route.yaml
-      echo "✓ Gateway + ArgoCD-HTTPRoute angewendet"
+      echo "✓ Gateway + ArgoCD HTTPRoute applied"
 
   local:registry:bridge:
-    desc: 'kind-registry-Container als Cluster-Service exposen (Service+EndpointSlice)'
-    # Bridge ist Service+EndpointSlice ohne Selector im 'registry'-NS,
-    # statische Container-IP aus 'docker container inspect'. Damit ist der
-    # kind-registry-Container intra-cluster über die Service-DNS
-    # kind-registry.registry.svc.cluster.local:5000 erreichbar.
-    # TLS terminiert der Container selbst (mkcert-Cert mit Service-DNS-SAN),
-    # KEINE Gateway-HTTPRoute mehr — direkter Pfad ohne Re-Encrypt.
+    desc: 'Expose the kind-registry container as a cluster service (Service+EndpointSlice)'
+    # The bridge is a Service+EndpointSlice without a selector in the 'registry' NS,
+    # with a static container IP from 'docker container inspect'. This makes the
+    # kind-registry container reachable intra-cluster via the service DNS
+    # kind-registry.registry.svc.cluster.local:5000.
+    # The container terminates TLS itself (mkcert cert with a service-DNS SAN),
+    # NO more Gateway HTTPRoute — a direct path without re-encrypt.
     cmd: |
-      # Netzwerk = Cluster-Name (talosctl docker provisioner). Hyphen im Namen →
-      # index statt Dot-Access im Go-Template.
+      # Network = cluster name (talosctl docker provisioner). Hyphen in the name →
+      # index instead of dot access in the Go template.
       kind_registry_ip=$(docker container inspect kind-registry \
         --format '{{`{{ (index .NetworkSettings.Networks "talos-platform-apps").IPAddress }}`}}')
       if [ -z "$kind_registry_ip" ] || [ "$kind_registry_ip" = "<no value>" ]; then
-        echo "ERROR: kind-registry nicht im talos-platform-apps-Netzwerk — task local:cluster:up?"
+        echo "ERROR: kind-registry not in the talos-platform-apps network — task local:cluster:up?"
         exit 1
       fi
-      echo "kind-registry-Container IP: $kind_registry_ip"
+      echo "kind-registry container IP: $kind_registry_ip"
       KIND_REGISTRY_IP="$kind_registry_ip" envsubst < local/registry-bridge.yaml | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f -
-      echo "✓ Registry-Bridge angewendet"
-      echo "  Workstation-Push:  oci://localhost:5001/talos-platform-apps (mkcert-TLS, SAN: localhost)"
-      echo "  Cluster-Pull:      kind-registry.registry.svc.cluster.local:5000/talos-platform-apps (mkcert-TLS, SAN: Service-DNS)"
+      echo "✓ Registry bridge applied"
+      echo "  Workstation push:  oci://localhost:5001/talos-platform-apps (mkcert TLS, SAN: localhost)"
+      echo "  Cluster pull:      kind-registry.registry.svc.cluster.local:5000/talos-platform-apps (mkcert TLS, SAN: service DNS)"
 
   local:argo:uninstall:
-    desc: 'ArgoCD entfernen (Cluster bleibt)'
+    desc: 'Remove ArgoCD (cluster is kept)'
     cmd: helm uninstall argocd --namespace argocd --kube-context {{.LOCAL_KUBE_CONTEXT}} || true
 
   local:argo:ui:
-    desc: 'Argo-UI öffnen (falls Browser nicht automatisch startet: https://argocd.localhost.direct)'
+    desc: 'Open the Argo UI (if the browser does not start automatically: https://argocd.localhost.direct)'
     cmd: |
       pw=$(task local:argo:password --silent)
-      echo "Argo-UI: https://argocd.localhost.direct"
+      echo "Argo UI: https://argocd.localhost.direct"
       echo "Login:   admin / $pw"
       command -v open >/dev/null && open https://argocd.localhost.direct || true
 
   local:argo:password:
-    desc: 'Initial-Admin-Passwort von ArgoCD ausgeben'
+    desc: 'Print the initial admin password of ArgoCD'
     cmd: |
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd get secret argocd-initial-admin-secret \
         -o jsonpath='{.data.password}' | base64 -d
       echo ""
 
   local:publish:
-    desc: 'render + package + push einer Komponente zur lokalen Registry: task local:publish -- <sub-layer>/<component> <tag>'
+    desc: 'render + package + push a component to the local registry: task local:publish -- <sub-layer>/<component> <tag>'
     summary: |
-      Pusht an oci://localhost:5001/talos-platform-apps/<sub-layer>/<component>:<tag>
-      (Workstation-View, mkcert-TLS via SAN 'localhost'). Argo CD im Cluster
-      pullt dasselbe Artefakt intra-cluster über
+      Pushes to oci://localhost:5001/talos-platform-apps/<sub-layer>/<component>:<tag>
+      (workstation view, mkcert TLS via SAN 'localhost'). Argo CD in the cluster
+      pulls the same artifact intra-cluster via
       kind-registry.registry.svc.cluster.local:5000/talos-platform-apps/<sub-layer>/<component>:<tag>
-      (gleicher Container, gleicher mkcert-Cert mit anderem SAN).
+      (same container, same mkcert cert with a different SAN).
     cmd: |
       set -- {{.CLI_ARGS}}
       component_id="${1:?usage: task local:publish -- <sub-layer>/<component> <tag>}"
       tag="${2:?usage: task local:publish -- <sub-layer>/<component> <tag>}"
-      # Lokaler Values-Overlay (externalURL/CORS auf .localhost.direct), falls vorhanden
+      # Local values overlay (externalURL/CORS on .localhost.direct), if present
       ov="local/values-overrides/${component_id%/*}/${component_id#*/}.yaml"; [ -f "$ov" ] || ov=""
       EXTRA_VALUES="$ov" OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id"
       OCI_REGISTRY=localhost:5001/talos-platform-apps task package    -- "$component_id" "$tag"
       OCI_REGISTRY=localhost:5001/talos-platform-apps task push       -- "$component_id" "$tag"
-      echo "✓ Lokal publiziert: oci://localhost:5001/talos-platform-apps/${component_id}:${tag#v}"
+      echo "✓ Published locally: oci://localhost:5001/talos-platform-apps/${component_id}:${tag#v}"
 
   local:publish:sublayer:
-    desc: 'Alle Komponenten eines Sub-Layers lokal publishen: task local:publish:sublayer -- <sub-layer> <tag>'
+    desc: 'Publish all components of a sub-layer locally: task local:publish:sublayer -- <sub-layer> <tag>'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:publish:sublayer -- <sub-layer> <tag>}"
       tag="${2:?usage: task local:publish:sublayer -- <sub-layer> <tag>}"
       sldir="sub-layers/${sub_layer}/components"
       if [ ! -d "$sldir" ]; then
-        echo "ERROR: ${sldir} existiert nicht"
+        echo "ERROR: ${sldir} does not exist"
         exit 1
       fi
       for cdir in "$sldir"/*/; do
@@ -4359,14 +4359,14 @@ tasks:
       done
 
   local:apply:
-    desc: 'Argo-Apps eines Sub-Layers im Cluster anwenden: task local:apply -- <sub-layer> <tag>'
+    desc: 'Apply the Argo apps of a sub-layer in the cluster: task local:apply -- <sub-layer> <tag>'
     summary: |
-      Sucht local/argo-apps/<sub-layer>/*.yaml und applied jede Datei mit
-      envsubst-Substitution für ${TAG} und ${REGISTRY}. Pro Komponente eine
-      eigene Argo-Application mit fester sync-wave-Annotation im Template.
+      Looks for local/argo-apps/<sub-layer>/*.yaml and applies each file with
+      envsubst substitution for ${TAG} and ${REGISTRY}. One dedicated Argo
+      Application per component with a fixed sync-wave annotation in the template.
 
       ${REGISTRY} = kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
-                    (Cluster-Pull-Pfad, intra-cluster TLS via mkcert-SAN).
+                    (cluster pull path, intra-cluster TLS via mkcert SAN).
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:apply -- <sub-layer> <tag>}"
@@ -4380,7 +4380,7 @@ tasks:
       KC="kubectl --context {{.LOCAL_KUBE_CONTEXT}}"
 
       if [ ! -d "$apps_dir" ]; then
-        echo "ERROR: ${apps_dir} existiert nicht"
+        echo "ERROR: ${apps_dir} does not exist"
         exit 1
       fi
 
@@ -4390,28 +4390,28 @@ tasks:
         TAG="$chart_version" \
           REGISTRY="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps" \
           envsubst < "$tmpl" | $KC apply -f -
-        echo "  ✓ ${sub_layer}/${component} → Argo-App '${sub_layer}-${component}'"
-        # Lokale HTTPRoute mit applien, falls die Komponente eine UI hat (nur lokal).
+        echo "  ✓ ${sub_layer}/${component} → Argo app '${sub_layer}-${component}'"
+        # Also apply the local HTTPRoute if the component has a UI (local only).
         route="local/http-routes/${sub_layer}/${component}.yaml"
         if [ -f "$route" ]; then
           $KC apply -f "$route" >/dev/null
           echo "    🌐 https://${component}.localhost.direct"
         fi
       done
-      echo "✓ Sub-Layer ${sub_layer} angelegt (Tag ${chart_version})"
-      echo "  Sync-Status: ${KC} -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
+      echo "✓ Sub-layer ${sub_layer} created (tag ${chart_version})"
+      echo "  Sync status: ${KC} -n argocd get applications -l platform.devoba.de/sub-layer=${sub_layer}"
 
   local:deps:
-    desc: 'Transitive Katalog-Abhängigkeiten einer Komponente in Install-Reihenfolge: task local:deps -- <sub-layer>/<component>'
+    desc: 'Transitive catalog dependencies of a component in install order: task local:deps -- <sub-layer>/<component>'
     summary: |
-      Liest sub-layers/<sl>/<comp>/compatibility.yaml `requires` rekursiv:
-        - Component-Pfade (a/b) direkt,
-        - Capabilities (z. B. cnpg-postgres) via provides[].capabilities[].id der
-          anderen Komponenten aufgelöst (kein Hardcoding),
-        - talos-platform-base (Substrat) wird übersprungen.
-      Ausgabe (stdout): je Zeile eine Komponente, Dependencies zuerst (Post-Order),
-      das Ziel selbst NICHT enthalten. Warnungen → stderr. Quelle der Wahrheit ist
-      compatibility.yaml — es gibt KEIN separates Dependency-Format.
+      Reads sub-layers/<sl>/<comp>/compatibility.yaml `requires` recursively:
+        - component paths (a/b) directly,
+        - capabilities (e.g. cnpg-postgres) resolved via provides[].capabilities[].id of the
+          other components (no hardcoding),
+        - talos-platform-base (substrate) is skipped.
+      Output (stdout): one component per line, dependencies first (post-order),
+      the target itself NOT included. Warnings → stderr. The source of truth is
+      compatibility.yaml — there is NO separate dependency format.
     cmd: |
       set -uo pipefail
       set -- {{.CLI_ARGS}}
@@ -4419,7 +4419,7 @@ tasks:
 
       comp_file() { echo "sub-layers/${1%/*}/components/${1#*/}/compatibility.yaml"; }
 
-      # Capability-ID → erste Komponente, die sie in provides[].capabilities[] führt
+      # Capability ID → first component that lists it in provides[].capabilities[]
       cap_to_comp() {
         for cf in sub-layers/*/components/*/compatibility.yaml; do
           if yq -e ".provides[]?.capabilities[]? | select(.id == \"$1\")" "$cf" >/dev/null 2>&1; then
@@ -4441,7 +4441,7 @@ tasks:
           case "$k" in
             talos-platform-base*) continue ;;
             */*) dep="$k" ;;
-            *) dep=$(cap_to_comp "$k") || { echo "WARN: Capability '$k' (von $1) → keine Komponente im Katalog" >&2; continue; } ;;
+            *) dep=$(cap_to_comp "$k") || { echo "WARN: capability '$k' (from $1) → no component in the catalog" >&2; continue; } ;;
           esac
           case " $seen " in *" $dep "*) continue ;; esac
           seen="$seen $dep"
@@ -4453,16 +4453,16 @@ tasks:
       printf '%s' "$order" | tr '|' '\n' | sed '/^$/d'
 
   local:dev:
-    desc: 'Skaffold-artiger Watch-Loop für EINE Komponente: task local:dev -- <sub-layer>/<component>'
+    desc: 'Skaffold-style watch loop for ONE component: task local:dev -- <sub-layer>/<component>'
     summary: |
-      Beobachtet sub-layers/<sub-layer>/components/<component>/ und fährt bei JEDER
-      Änderung automatisch render → package → push (lokale Registry, frischer Tag)
-      + Argo-Hard-Refresh. Die automated-syncPolicy der Application appliert dann
-      selbst — kein manuelles publish/apply mehr.
+      Watches sub-layers/<sub-layer>/components/<component>/ and on EVERY
+      change automatically runs render → package → push (local registry, fresh tag)
+      + Argo hard-refresh. The Application's automated syncPolicy then applies
+      by itself — no more manual publish/apply.
 
-      rendered/ ist gitignored → watchexec triggert NICHT auf den eigenen Output
-      (kein Endlos-Loop). Strg-C beendet den Loop. Voraussetzung: ein Argo-App-
-      Template local/argo-apps/<sub-layer>/<component>.yaml (Vorlage: crossplane).
+      rendered/ is gitignored → watchexec does NOT trigger on its own output
+      (no endless loop). Ctrl-C ends the loop. Prerequisite: an Argo app
+      template local/argo-apps/<sub-layer>/<component>.yaml (template: crossplane).
     cmd: |
       set -- {{.CLI_ARGS}}
       component_id="${1:?usage: task local:dev -- <sub-layer>/<component>}"
@@ -4470,17 +4470,17 @@ tasks:
       component="${component_id#*/}"
       comp_dir="sub-layers/${sub_layer}/components/${component}"
       app_tmpl="local/argo-apps/${sub_layer}/${component}.yaml"
-      [ -d "$comp_dir" ] || { echo "ERROR: ${comp_dir} existiert nicht"; exit 1; }
-      [ -f "$app_tmpl" ] || { echo "ERROR: kein Argo-App-Template ${app_tmpl} — anlegen (Vorlage: local/argo-apps/lifecycle/crossplane.yaml)"; exit 1; }
-      kubectl --context {{.LOCAL_KUBE_CONTEXT}} get ns argocd >/dev/null 2>&1 || { echo "ERROR: Cluster/ArgoCD nicht da — erst 'task local:up'"; exit 1; }
+      [ -d "$comp_dir" ] || { echo "ERROR: ${comp_dir} does not exist"; exit 1; }
+      [ -f "$app_tmpl" ] || { echo "ERROR: no Argo app template ${app_tmpl} — create one (template: local/argo-apps/lifecycle/crossplane.yaml)"; exit 1; }
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} get ns argocd >/dev/null 2>&1 || { echo "ERROR: cluster/ArgoCD not there — run 'task local:up' first"; exit 1; }
 
-      # Katalog-Abhängigkeiten zuerst hochziehen (aus compatibility.yaml requires,
-      # via local:deps aufgelöst). Skip pro Dep, wenn Argo-App schon Synced/Healthy.
-      # Deaktivierbar mit LOCAL_DEV_SKIP_DEPS=1.
+      # Bring up the catalog dependencies first (from compatibility.yaml requires,
+      # resolved via local:deps). Skip per dep if the Argo app is already Synced/Healthy.
+      # Disable with LOCAL_DEV_SKIP_DEPS=1.
       if [ "${LOCAL_DEV_SKIP_DEPS:-0}" != "1" ]; then
         deps=$(task local:deps -- "$component_id" 2>/dev/null || true)
         if [ -n "$deps" ]; then
-          echo "Abhängigkeiten (Install-Reihenfolge): $(echo "$deps" | paste -sd' ' -)"
+          echo "Dependencies (install order): $(echo "$deps" | paste -sd' ' -)"
           echo "$deps" | while IFS= read -r dep; do
             [ -z "$dep" ] && continue
             dep_app="${dep%/*}-${dep#*/}"
@@ -4488,54 +4488,54 @@ tasks:
             h=$(kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd get application "$dep_app" -o jsonpath='{.status.health.status}' 2>/dev/null || true)
             s=$(kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd get application "$dep_app" -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
             if [ "$h" = "Healthy" ] && [ "$s" = "Synced" ]; then
-              echo "  ✓ ${dep} bereits Synced/Healthy (skip)"
+              echo "  ✓ ${dep} already Synced/Healthy (skip)"
             elif [ ! -f "$dep_tmpl" ]; then
-              echo "  ⚠ ${dep}: kein Argo-App-Template (${dep_tmpl}) — bitte manuell bereitstellen"
+              echo "  ⚠ ${dep}: no Argo app template (${dep_tmpl}) — please provide it manually"
             else
-              echo "  → ${dep} deployen…"
+              echo "  → deploying ${dep}…"
               task local:dev:sync -- "$dep"
             fi
           done
         fi
       fi
 
-      # Test-Fixtures: consumer-eigene Instanzen (CNPG-Cluster, Valkey) + Dev-Secrets,
-      # die der Katalog nicht liefert. Auto, sofern vorhanden; LOCAL_DEV_SKIP_FIXTURES=1 aus.
+      # Test fixtures: consumer-owned instances (CNPG clusters, Valkey) + dev secrets
+      # that the catalog does not provide. Auto if present; LOCAL_DEV_SKIP_FIXTURES=1 off.
       fdir="local/fixtures/${sub_layer}/${component}"
       if [ "${LOCAL_DEV_SKIP_FIXTURES:-0}" != "1" ] && [ -d "$fdir" ]; then
-        echo "Test-Fixtures (Instanzen + Dev-Secrets):"
+        echo "Test fixtures (instances + dev secrets):"
         task local:fixtures -- "$component_id"
       fi
 
-      # Hinweis auf consumer-gelieferte Secrets — nur wenn KEINE Fixture sie stellt
-      # (sonst werden sie oben automatisch erzeugt).
+      # Hint about consumer-provided secrets — only if NO fixture provides them
+      # (otherwise they are created automatically above).
       cust="${comp_dir}/customization.yaml"
       if [ ! -d "$fdir" ] && [ -f "$cust" ]; then
         sref=$(yq -r '.provided_refs.secret // ""' "$cust" 2>/dev/null)
         skeys=$(yq -r '.required.secret_keys[]?' "$cust" 2>/dev/null | paste -sd, -)
         if [ -n "$skeys" ]; then
-          echo "ℹ ${component_id} braucht Secret '${sref}' mit Keys [${skeys}] (consumer-supplied, manuell anlegen — oder local/fixtures/${sub_layer}/${component}/ anlegen)"
+          echo "ℹ ${component_id} needs secret '${sref}' with keys [${skeys}] (consumer-supplied, create manually — or create local/fixtures/${sub_layer}/${component}/)"
         fi
       fi
 
-      echo "Initial-Build ${component_id}…"
+      echo "Initial build ${component_id}…"
       task local:dev:sync -- "$component_id"
 
-      # Lokale HTTPRoute applien, falls die Komponente eine UI hat. Nur lokal —
-      # in prod ist die Route consumer-eigen (cluster-spez. Hostname, ADR-0023/0024).
+      # Apply the local HTTPRoute if the component has a UI. Local only —
+      # in prod the route is consumer-owned (cluster-specific hostname, ADR-0023/0024).
       route="local/http-routes/${sub_layer}/${component}.yaml"
       if [ -f "$route" ]; then
         kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f "$route" >/dev/null
-        echo "🌐 erreichbar unter https://${component}.localhost.direct"
+        echo "🌐 reachable at https://${component}.localhost.direct"
       fi
 
-      # Skaffold-artiges Teardown: Strg-C entfernt, was DIESE Komponente ausmacht —
-      # Argo-App + HTTPRoute + Fixtures (CR-Instanzen + generierte Secrets). Deps/
-      # Operatoren bleiben (teuer im Re-Deploy). LOCAL_DEV_KEEP=1 behält alles.
-      # WICHTIG: go-tasks mvdan/sh kann KEINE Signal-Traps ("invalid signal
-      # specification"). Watch + Trap laufen daher in echtem `bash -c`; Vars per env.
+      # Skaffold-style teardown: Ctrl-C removes what makes up THIS component —
+      # Argo app + HTTPRoute + fixtures (CR instances + generated secrets). Deps/
+      # operators stay (expensive to re-deploy). LOCAL_DEV_KEEP=1 keeps everything.
+      # IMPORTANT: go-task's mvdan/sh CANNOT do signal traps ("invalid signal
+      # specification"). Watch + trap therefore run in a real `bash -c`; vars via env.
       echo ""
-      echo "👀 Watching ${comp_dir} — Speichern löst Rebuild + Argo-Sync aus. Strg-C → Teardown."
+      echo "👀 Watching ${comp_dir} — saving triggers rebuild + Argo sync. Ctrl-C → teardown."
       DEV_SL="$sub_layer" DEV_COMP="$component" DEV_CID="$component_id" \
       DEV_COMPDIR="$comp_dir" DEV_ROUTE="$route" DEV_FDIR="$fdir" DEV_APPTMPL="$app_tmpl" \
       bash -c '
@@ -4543,8 +4543,8 @@ tasks:
         K="kubectl --context {{.LOCAL_KUBE_CONTEXT}}"
         cleanup() {
           trap - INT TERM
-          if [ "${LOCAL_DEV_KEEP:-0}" = "1" ]; then echo; echo "LOCAL_DEV_KEEP=1 → ${DEV_CID} bleibt im Cluster."; exit 0; fi
-          echo; echo "🧹 Strg-C → räume ${DEV_CID} auf …"
+          if [ "${LOCAL_DEV_KEEP:-0}" = "1" ]; then echo; echo "LOCAL_DEV_KEEP=1 → ${DEV_CID} stays in the cluster."; exit 0; fi
+          echo; echo "🧹 Ctrl-C → cleaning up ${DEV_CID} …"
           $K -n argocd delete application "${DEV_SL}-${DEV_COMP}" --ignore-not-found --wait=false >/dev/null 2>&1
           [ -f "$DEV_ROUTE" ] && $K delete -f "$DEV_ROUTE" --ignore-not-found --wait=false >/dev/null 2>&1
           if [ -d "$DEV_FDIR" ]; then
@@ -4554,7 +4554,7 @@ tasks:
               for n in $(yq -r ".secrets[].name" "$DEV_FDIR/secrets.yaml" 2>/dev/null); do $K -n "$fns" delete secret "$n" --ignore-not-found >/dev/null 2>&1; done
             fi
           fi
-          echo "  ✓ ${DEV_CID} (App, Route, Fixtures) entfernt. Operatoren/Deps bleiben — task local:down räumt alles ab."
+          echo "  ✓ ${DEV_CID} (app, route, fixtures) removed. Operators/deps stay — task local:down clears everything."
           exit 0
         }
         trap cleanup INT TERM
@@ -4562,11 +4562,11 @@ tasks:
       '
 
   local:dev:sync:
-    desc: 'Eine Dev-Iteration (intern, von local:dev getriggert): render→push→Argo-refresh mit frischem Tag'
-    # Eigenständig aufrufbar für einen einmaligen Sync. Frischer Tag pro Lauf
-    # (0.0.0-dev.<epoch>), weil ArgoCD OCI-Tags per Digest cached — gleicher Tag
-    # würde nicht neu gezogen. Fehlerhafter Render (Tippfehler mitten im Edit)
-    # bricht nur diese Iteration ab; der watchexec-Loop läuft weiter.
+    desc: 'One dev iteration (internal, triggered by local:dev): render→push→Argo refresh with a fresh tag'
+    # Callable standalone for a one-off sync. Fresh tag per run
+    # (0.0.0-dev.<epoch>), because ArgoCD caches OCI tags by digest — the same tag
+    # would not be re-pulled. A broken render (typo mid-edit)
+    # aborts only this iteration; the watchexec loop keeps running.
     cmd: |
       set -euo pipefail
       set -- {{.CLI_ARGS}}
@@ -4577,7 +4577,7 @@ tasks:
       app_name="${sub_layer}-${component}"
       registry="kind-registry.registry.svc.cluster.local:5000/talos-platform-apps"
       tag="0.0.0-dev.$(date +%s)"
-      # Lokaler Values-Overlay (externalURL/CORS auf .localhost.direct), falls vorhanden
+      # Local values overlay (externalURL/CORS on .localhost.direct), if present
       ov="local/values-overrides/${sub_layer}/${component}.yaml"; [ -f "$ov" ] || ov=""
       echo "▶ ${component_id} → ${tag}"
       EXTRA_VALUES="$ov" OCI_REGISTRY=localhost:5001/talos-platform-apps task render:one -- "$component_id" >/dev/null
@@ -4587,32 +4587,32 @@ tasks:
         | kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f - >/dev/null
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd annotate application "$app_name" \
         argocd.argoproj.io/refresh=hard --overwrite >/dev/null
-      echo "  ✓ ${app_name} → ${tag} (Argo auto-sync läuft)"
+      echo "  ✓ ${app_name} → ${tag} (Argo auto-sync running)"
 
   local:fixtures:
-    desc: 'Lokale Test-Fixtures (Capability-Instanzen + Dev-Secrets) einer Komponente: task local:fixtures -- <sub-layer>/<component>'
+    desc: 'Local test fixtures (capability instances + dev secrets) of a component: task local:fixtures -- <sub-layer>/<component>'
     summary: |
-      Bringt die consumer-eigenen Ressourcen, die der Katalog NICHT liefert
-      (ADR-0023/0024), für lokale Tests ein:
-        - CR-Manifeste aus local/fixtures/<sl>/<comp>/manifests/ (CNPG-Cluster, Valkey, …)
-        - Dev-Secrets aus secrets.yaml — zur Apply-Zeit generiert, idempotent
-          (keine Werte im Repo). `fromCnpgApp` kopiert das password aus dem
-          CNPG-Auto-Secret <cluster>-app, sonst Zufallswert pro Key.
-      No-op, wenn kein Fixtures-Verzeichnis existiert.
+      Brings in the consumer-owned resources that the catalog does NOT provide
+      (ADR-0023/0024), for local tests:
+        - CR manifests from local/fixtures/<sl>/<comp>/manifests/ (CNPG clusters, Valkey, …)
+        - dev secrets from secrets.yaml — generated at apply time, idempotent
+          (no values in the repo). `fromCnpgApp` copies the password from the
+          CNPG auto-secret <cluster>-app, else a random value per key.
+      No-op if no fixtures directory exists.
     cmd: |
       set -uo pipefail
       set -- {{.CLI_ARGS}}
       cid="${1:?usage: task local:fixtures -- <sub-layer>/<component>}"
       sl="${cid%/*}"; comp="${cid#*/}"
       fdir="local/fixtures/${sl}/${comp}"
-      [ -d "$fdir" ] || { echo "  (keine Fixtures für ${cid})"; exit 0; }
+      [ -d "$fdir" ] || { echo "  (no fixtures for ${cid})"; exit 0; }
       KC="kubectl --context {{.LOCAL_KUBE_CONTEXT}}"
       ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
       { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
       $KC create namespace "$ns" --dry-run=client -o yaml | $KC apply -f - >/dev/null
 
       if [ -d "$fdir/manifests" ]; then
-        $KC apply -f "$fdir/manifests" >/dev/null && echo "  ✓ Fixture-Manifeste angewendet"
+        $KC apply -f "$fdir/manifests" >/dev/null && echo "  ✓ fixture manifests applied"
       fi
 
       spec="$fdir/secrets.yaml"
@@ -4623,38 +4623,38 @@ tasks:
         name=$(yq -r ".secrets[$i].name" "$spec")
         cnpg=$(yq -r ".secrets[$i].fromCnpgApp // \"\"" "$spec")
         if $KC -n "$ns" get secret "$name" >/dev/null 2>&1; then
-          echo "  ✓ Secret ${name} existiert (skip)"
+          echo "  ✓ secret ${name} exists (skip)"
         elif [ -n "$cnpg" ]; then
-          echo "  → warte auf CNPG-Auto-Secret ${cnpg}-app …"
+          echo "  → waiting for CNPG auto-secret ${cnpg}-app …"
           for _ in $(seq 1 60); do $KC -n "$ns" get secret "${cnpg}-app" >/dev/null 2>&1 && break; sleep 2; done
           pw=$($KC -n "$ns" get secret "${cnpg}-app" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
           if [ -n "$pw" ]; then
             $KC -n "$ns" create secret generic "$name" --from-literal=password="$pw" >/dev/null
-            echo "  ✓ Secret ${name} (password aus ${cnpg}-app)"
+            echo "  ✓ secret ${name} (password from ${cnpg}-app)"
           else
-            echo "  ⚠ ${cnpg}-app (noch) nicht da — ${name} übersprungen"
+            echo "  ⚠ ${cnpg}-app not there (yet) — ${name} skipped"
           fi
         else
           args=""
-          # literals: feste Dev-Werte (lokale Convenience, z. B. admin/admin — KEINE
-          # echten Secrets; Werte dürfen keine Leerzeichen enthalten).
+          # literals: fixed dev values (local convenience, e.g. admin/admin — NO
+          # real secrets; values must not contain spaces).
           for kv in $(yq -r ".secrets[$i].literals // {} | to_entries[] | .key + \"=\" + .value" "$spec" 2>/dev/null); do
             args="$args --from-literal=${kv}"
           done
-          # generate: Zufallswerte pro Key. head liest /dev/urandom direkt (endlich)
-          # → kein SIGPIPE; danach base64/tr/cut.
+          # generate: random values per key. head reads /dev/urandom directly (finite)
+          # → no SIGPIPE; then base64/tr/cut.
           for key in $(yq -r ".secrets[$i].generate[]?" "$spec"); do
             val=$(head -c 18 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | cut -c1-24)
             args="$args --from-literal=${key}=${val}"
           done
           $KC -n "$ns" create secret generic "$name" $args >/dev/null
-          echo "  ✓ Secret ${name} (literals + generiert)"
+          echo "  ✓ secret ${name} (literals + generated)"
         fi
         i=$((i+1))
       done
 
   local:remove:
-    desc: 'Alle Argo-Apps eines Sub-Layers entfernen: task local:remove -- <sub-layer>'
+    desc: 'Remove all Argo apps of a sub-layer: task local:remove -- <sub-layer>'
     cmd: |
       set -- {{.CLI_ARGS}}
       sub_layer="${1:?usage: task local:remove -- <sub-layer>}"
@@ -4663,101 +4663,101 @@ tasks:
         --wait=true || true
 
   local:status:
-    desc: 'Überblick: Cluster + Argo + Applications'
+    desc: 'Overview: cluster + Argo + applications'
     cmd: |
-      echo "=== Talos-Cluster ==="
-      talosctl cluster show --name talos-platform-apps 2>/dev/null || echo "  (nicht da)"
+      echo "=== Talos cluster ==="
+      talosctl cluster show --name talos-platform-apps 2>/dev/null || echo "  (not there)"
       echo ""
-      echo "=== Lokale Registry ==="
+      echo "=== Local registry ==="
       docker ps --filter name=kind-registry --format 'table {{`{{.Names}}\t{{.Status}}\t{{.Ports}}`}}'
       echo ""
-      echo "=== Argo-Status ==="
-      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd get pods 2>/dev/null || echo "  (ArgoCD nicht installiert)"
+      echo "=== Argo status ==="
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd get pods 2>/dev/null || echo "  (ArgoCD not installed)"
       echo ""
-      echo "=== Lokale Argo-Applications ==="
+      echo "=== Local Argo applications ==="
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n argocd get applications -l platform.devoba.de/local-test=true 2>/dev/null || true
 
-  # --- Crossplane-Composition-Test (Pendant zum Argo/Helm-Loop) ---
+  # --- Crossplane composition test (counterpart to the Argo/Helm loop) ---
 
   crossplane:render:
-    desc: 'Composition OFFLINE rendern (composed Resources, ohne Cluster/Provisionierung): task crossplane:render'
+    desc: 'Render the composition OFFLINE (composed resources, no cluster/provisioning): task crossplane:render'
     summary: |
-      `crossplane render` fährt die Composition-Function-Pipeline lokal in Docker
-      und zeigt die composed Resources (z. B. den opentofu-Workspace) — das
-      Crossplane-Pendant zu `task render` (Helm). Schnell, kein Cluster, kein tofu.
-      Default: XCluster-Composition + Test-XR. Override: XR=<file> COMP=<file>.
-      functions.yaml-Versionen müssen zu sub-layers/lifecycle/.../providers passen.
+      `crossplane render` runs the composition function pipeline locally in Docker
+      and shows the composed resources (e.g. the opentofu workspace) — the
+      Crossplane counterpart to `task render` (Helm). Fast, no cluster, no tofu.
+      Default: XCluster composition + test XR. Override: XR=<file> COMP=<file>.
+      functions.yaml versions must match sub-layers/lifecycle/.../providers.
     cmd: |
       xr="${XR:-local/crossplane/examples/xcluster-test.yaml}"
       comp="${COMP:-sub-layers/lifecycle/components/compositions/manifests/composition-xcluster.yaml}"
       crossplane render "$xr" "$comp" local/crossplane/functions.yaml
 
   crossplane:dev:
-    desc: 'Skaffold-artiger Offline-Loop: rendert die Composition bei jedem Save neu'
+    desc: 'Skaffold-style offline loop: re-renders the composition on every save'
     summary: |
-      Beobachtet die Composition/XRD-Manifeste + local/crossplane/ und re-rendert
-      bei jeder Änderung (offline, Docker-Functions). Strg-C beendet. Der schnelle
-      Iterier-Loop für Composition-Logik — ohne Cluster, ohne Provisionierung.
+      Watches the composition/XRD manifests + local/crossplane/ and re-renders
+      on every change (offline, Docker functions). Ctrl-C ends it. The fast
+      iteration loop for composition logic — no cluster, no provisioning.
     cmd: |
-      echo "Initial-Render…"
+      echo "Initial render…"
       task crossplane:render || true
       echo ""
-      echo "👀 Watching compositions/ + local/crossplane/ — Speichern → re-render. Strg-C beendet."
+      echo "👀 Watching compositions/ + local/crossplane/ — saving → re-render. Ctrl-C ends it."
       watchexec --watch sub-layers/lifecycle/components/compositions/manifests \
         --watch local/crossplane --ignore '**/rendered/**' --debounce 500ms --postpone \
         -- task crossplane:render
 
   crossplane:apply:
-    desc: 'XRD+Composition+Provider+Test-XR ins lokale Cluster; Reconcile bis zur Provider-Grenze'
+    desc: 'XRD+Composition+Provider+test XR into the local cluster; reconcile up to the provider boundary'
     summary: |
-      Deployt den lifecycle-Crossplane-Stack (crossplane, providers, compositions)
-      ins lokale Talos-Cluster (via local:dev:sync) und appliert den Test-XR. Bis
-      zur PROVIDER-GRENZE: XRD/Composition installiert, XCluster accepted, der
-      opentofu-Workspace wird erzeugt — der echte tofu-apply schlägt lokal
-      erwartbar fehl (keine Hardware/kein Backend). Testet die In-Cluster-Verdrahtung.
+      Deploys the lifecycle Crossplane stack (crossplane, providers, compositions)
+      into the local Talos cluster (via local:dev:sync) and applies the test XR. Up
+      to the PROVIDER BOUNDARY: XRD/composition installed, XCluster accepted, the
+      opentofu workspace is created — the real tofu-apply fails locally as
+      expected (no hardware/no backend). Tests the in-cluster wiring.
     cmd: |
-      kubectl --context {{.LOCAL_KUBE_CONTEXT}} get ns argocd >/dev/null 2>&1 || { echo "ERROR: Cluster/ArgoCD nicht da — erst 'task local:up'"; exit 1; }
+      kubectl --context {{.LOCAL_KUBE_CONTEXT}} get ns argocd >/dev/null 2>&1 || { echo "ERROR: cluster/ArgoCD not there — run 'task local:up' first"; exit 1; }
       for c in lifecycle/crossplane lifecycle/providers lifecycle/compositions; do
-        echo "→ ${c} deployen…"
+        echo "→ deploying ${c}…"
         task local:dev:sync -- "$c"
       done
-      echo "warte auf XCluster-CRD (Established)…"
+      echo "waiting for the XCluster CRD (Established)…"
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} wait --for=condition=Established crd/xclusters.platform.devoba.de --timeout=120s || true
-      # ClusterProviderConfig ZUERST (consumer-eigen, lokaler Dummy) — sonst kann
-      # provider-opentofu sie beim Workspace-Reconcile nicht auflösen ("not found").
-      echo "→ ClusterProviderConfig (lokaler Dummy) applien"
+      # ClusterProviderConfig FIRST (consumer-owned, local dummy) — otherwise
+      # provider-opentofu cannot resolve it during the workspace reconcile ("not found").
+      echo "→ applying ClusterProviderConfig (local dummy)"
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/crossplane/examples/clusterproviderconfig.yaml
-      echo "→ Test-XR applien"
+      echo "→ applying the test XR"
       kubectl --context {{.LOCAL_KUBE_CONTEXT}} apply -f local/crossplane/examples/xcluster-test.yaml
       echo ""
-      echo "✓ Beobachten (tofu-apply scheitert lokal erwartbar — Provider-Grenze):"
+      echo "✓ Observe (tofu-apply fails locally as expected — provider boundary):"
       echo "  kubectl --context {{.LOCAL_KUBE_CONTEXT}} get xcluster xcluster-test"
       echo "  kubectl --context {{.LOCAL_KUBE_CONTEXT}} get workspace.opentofu.m.upbound.io"
       echo "  crossplane beta trace xcluster.platform.devoba.de/xcluster-test"
 
   local:harbor:proxy:
-    desc: 'harbor Pull-Through-Proxy auf ghcr.io anlegen (z. B. für das Talos-Installer-Image): task local:harbor:proxy'
+    desc: 'Create a harbor pull-through proxy to ghcr.io (e.g. for the Talos installer image): task local:harbor:proxy'
     summary: |
-      Legt (idempotent) einen harbor Registry-Endpoint + ein Proxy-Cache-Project
-      `ghcr` → https://ghcr.io an (ADR-0012 harbor-as-registry-proxy). Danach cacht
-      harbor Pulls von ghcr.io beim ersten Zugriff, z. B.:
+      Creates (idempotent) a harbor registry endpoint + a proxy-cache project
+      `ghcr` → https://ghcr.io (ADR-0012 harbor-as-registry-proxy). After that harbor
+      caches pulls from ghcr.io on first access, e.g.:
         harbor.localhost.direct/ghcr/siderolabs/installer:v1.13.3
-      Voraussetzung: harbor läuft (task local:dev -- registry/harbor) + ist Healthy.
+      Prerequisite: harbor is running (task local:dev -- registry/harbor) + is Healthy.
     cmd: |
       H="https://harbor.localhost.direct"
       pw=$(kubectl --context {{.LOCAL_KUBE_CONTEXT}} -n harbor get secret harbor-runtime-secret -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d)
-      [ -n "$pw" ] || { echo "ERROR: harbor-runtime-secret nicht da — erst harbor hochziehen (task local:dev -- registry/harbor)"; exit 1; }
+      [ -n "$pw" ] || { echo "ERROR: harbor-runtime-secret not there — bring up harbor first (task local:dev -- registry/harbor)"; exit 1; }
       A="admin:${pw}"
       if [ "$(curl -sf -u "$A" "$H/api/v2.0/registries?name=ghcr" | jq 'length')" = "0" ]; then
         curl -sS -u "$A" -X POST "$H/api/v2.0/registries" -H 'Content-Type: application/json' \
           -d '{"name":"ghcr","type":"docker-registry","url":"https://ghcr.io","insecure":false}' >/dev/null
-        echo "✓ Registry-Endpoint ghcr (→ https://ghcr.io) angelegt"
-      else echo "✓ Registry-Endpoint ghcr existiert"; fi
+        echo "✓ Registry endpoint ghcr (→ https://ghcr.io) created"
+      else echo "✓ Registry endpoint ghcr exists"; fi
       rid=$(curl -sf -u "$A" "$H/api/v2.0/registries?name=ghcr" | jq -r '.[0].id')
       if [ "$(curl -sf -u "$A" "$H/api/v2.0/projects?name=ghcr" | jq 'length')" = "0" ]; then
         curl -sS -u "$A" -X POST "$H/api/v2.0/projects" -H 'Content-Type: application/json' \
           -d "{\"project_name\":\"ghcr\",\"registry_id\":${rid},\"metadata\":{\"public\":\"true\"}}" >/dev/null
-        echo "✓ Proxy-Project ghcr angelegt"
-      else echo "✓ Proxy-Project ghcr existiert"; fi
-      echo "✓ Talos-Installer via harbor: harbor.localhost.direct/ghcr/siderolabs/installer:<tag>"
+        echo "✓ Proxy project ghcr created"
+      else echo "✓ Proxy project ghcr exists"; fi
+      echo "✓ Talos installer via harbor: harbor.localhost.direct/ghcr/siderolabs/installer:<tag>"
       echo "  Test:  curl -su admin:<pw> https://harbor.localhost.direct/v2/ghcr/siderolabs/installer/manifests/v1.13.3"

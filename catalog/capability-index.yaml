@@ -1,33 +1,33 @@
-# Capability-Index — der zentrale Capability-Katalog von talos-platform-apps.
+# Capability index — the central capability catalog of talos-platform-apps.
 #
-# Modell: talos-platform-docs ADR-0021 (Capability-Layer-Modell).
-#   Capability = stabile Schnittstelle · Tool = austauschbare Implementierung.
-#   swap_class quantifiziert die Austausch-Kosten:
-#     drop-in           — gleicher Vertrag, kein Datenumzug
-#     label-move        — Tausch = Label-Verschiebung am Producer-Pod
-#     data-migration    — Tausch erfordert Datenumzug
-#     rewrite-required  — tool-spezifische CRs müssen neu geschrieben werden
-#     consumer-change   — Consumer muss seine Referenz anpassen
+# Model: talos-platform-docs ADR-0021 (capability-layer model).
+#   Capability = stable interface · Tool = swappable implementation.
+#   swap_class quantifies the swap cost:
+#     drop-in           — same contract, no data migration
+#     label-move        — swap = label move on the producer pod
+#     data-migration    — swap requires data migration
+#     rewrite-required  — tool-specific CRs must be rewritten
+#     consumer-change   — consumer must adjust its reference
 #
-# Layer A dieses dreischichtigen Modells. Layer B (PNI Network-Trust) lebt als
-# Spec in talos-platform-base AGENTS §PNI + Enforcement docs#65; Layer C
-# (Hardware-Features) bleibt im base-Substrat.
+# Layer A of this three-layer model. Layer B (PNI network-trust) lives as a
+# spec in talos-platform-base AGENTS §PNI + enforcement docs#65; Layer C
+# (hardware features) stays in the base substrate.
 #
-# Diese Registry hält den vollständigen Layer-A-Tool-Capability-Satz der
-# Plattform (30 von 36 base-Index-Einträgen). NICHT enthalten und bewusst
-# in base verbleibend: gitops-engine (argocd) + csr-approval (cert-approver)
-# = Substrat; internet-egress, controlplane-egress, gateway-backend,
-# external-gateway-routes = Layer-B-network-primitive (kein Tool-Swap-Katalog).
-# Implementierungen sind teils apps-Komponenten, teils consumer-/hardware-
-# deployt — die DEFINITION lebt zentral hier, das Tool deployt der jeweilige
-# Owner. Transitions-Hinweis: bis zur base-Phase-3-Ablation (Step 3) bleibt
-# talos-platform-base/docs/platform-capability-index.yaml die Upstream-Quelle;
-# danach ist diese Datei autoritativ für Layer A.
+# This registry holds the platform's complete Layer-A tool-capability set
+# (30 of 36 base-index entries). NOT included and deliberately
+# remaining in base: gitops-engine (argocd) + csr-approval (cert-approver)
+# = substrate; internet-egress, controlplane-egress, gateway-backend,
+# external-gateway-routes = Layer-B network primitive (not a tool-swap catalog).
+# Implementations are partly apps components, partly consumer-/hardware-
+# deployed — the DEFINITION lives centrally here, the tool is deployed by its
+# respective owner. Transition note: until the base phase-3 ablation (step 3),
+# talos-platform-base/docs/platform-capability-index.yaml stays the upstream source;
+# after that this file is authoritative for Layer A.
 #
-# Schema + Nutzung in compatibility.yaml: siehe catalog/README.md.
+# Schema + usage in compatibility.yaml: see catalog/README.md.
 
 capabilities:
-  # — Datenbanken —————————————————————————————————————————————
+  # — Databases ———————————————————————————————————————————————
   - id: cnpg-postgres
     name: Managed-PostgreSQL (instanced)
     domain: databases
@@ -37,9 +37,9 @@ capabilities:
       - {name: stackgres, status: considered, swap_class: data-migration}
       - {name: zalando-pg, status: considered, swap_class: data-migration}
 
-  # — Object-Store ————————————————————————————————————————————
+  # — Object store ————————————————————————————————————————————
   - id: s3-object
-    name: S3-kompatibler Object-Store (instanced)
+    name: S3-compatible object store (instanced)
     domain: storage-objects
     instanced: true
     implementations:
@@ -55,7 +55,7 @@ capabilities:
       - {name: grafana-alloy, status: active, swap_class: drop-in}
       - {name: victoria-metrics-agent, status: considered, swap_class: drop-in}
   - id: metrics-storage
-    name: Zeitreihen-Speicher für Metrics
+    name: Time-series store for metrics
     domain: observability
     implementations:
       - {name: mimir, status: active, swap_class: data-migration}
@@ -77,7 +77,7 @@ capabilities:
       - {name: fluent-bit, status: considered, swap_class: label-move}
       - {name: vector, status: considered, swap_class: label-move}
   - id: logs-storage
-    name: Log-Speicher
+    name: Log store
     domain: observability
     implementations:
       - {name: loki, status: active, swap_class: data-migration}
@@ -115,7 +115,7 @@ capabilities:
       - {name: alloy, status: active, swap_class: label-move}
       - {name: otelcol, status: considered, swap_class: label-move}
   - id: traces-storage
-    name: Trace-Speicher
+    name: Trace store
     domain: observability
     implementations:
       - {name: tempo, status: active, swap_class: data-migration}
@@ -129,7 +129,7 @@ capabilities:
 
   # — Observability: Dashboards + Alerting ————————————————————
   - id: dashboards
-    name: Dashboard-/Visualisierungs-Frontend
+    name: Dashboard / visualization frontend
     domain: observability
     implementations:
       - {name: grafana, status: active, swap_class: label-move}
@@ -151,13 +151,13 @@ capabilities:
 
   # — Secrets / PKI ———————————————————————————————————————————
   - id: secret-sync
-    name: External-Secret-Sync in den Cluster
+    name: External-secret sync into the cluster
     domain: secrets
     implementations:
       - {name: external-secrets, status: active, swap_class: rewrite-required}
       - {name: sealed-secrets, status: considered, swap_class: rewrite-required}
   - id: tls-issuance
-    name: TLS-Zertifikats-Ausstellung
+    name: TLS certificate issuance
     domain: secrets
     implementations:
       - {name: cert-manager, status: active, swap_class: label-move}  # via ca-clusterissuer
@@ -165,28 +165,28 @@ capabilities:
 
   # — Lifecycle ———————————————————————————————————————————————
   - id: cluster-provisioning
-    name: Deklaratives Cluster-Provisioning
+    name: Declarative cluster provisioning
     domain: lifecycle
     implementations:
       - {name: crossplane, status: active, swap_class: rewrite-required}  # + compositions (XCluster)
 
-  # — Proposed: kein base-Äquivalent, Vertrag noch zu definieren ——
-  # Diese Capabilities haben heute kein Pendant im base-Index. Sie werden
-  # benötigt, damit die übrigen apps-Komponenten capability-first werden.
-  # Status proposed = Vertrag (Schnittstelle, Provider/Consumer-Semantik,
-  # swap_class) ist noch zu definieren, NICHT erraten. Je ein Folge-Issue.
+  # — Proposed: no base equivalent, contract still to be defined ——
+  # These capabilities have no counterpart in the base index today. They are
+  # needed so the remaining apps components become capability-first.
+  # Status proposed = the contract (interface, provider/consumer semantics,
+  # swap_class) is still to be defined, NOT guessed. One follow-up issue each.
   - id: oci-registry
-    name: In-Cluster-OCI-/Container-Registry
+    name: In-cluster OCI / container registry
     domain: registry
     status: proposed
     implementations:
-      - {name: harbor, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+      - {name: harbor, status: active, swap_class: rewrite-required}  # provisional; contract open
   - id: backup
-    name: Cluster-/Volume-Backup
+    name: Cluster / volume backup
     domain: automation
     status: proposed
     implementations:
-      - {name: velero, status: active, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+      - {name: velero, status: active, swap_class: rewrite-required}  # provisional; contract open
   - id: dependency-automation
     name: Dependency-Update-Automation
     domain: automation
@@ -215,28 +215,28 @@ capabilities:
     # the PXE path (Design B hybrid, ADR-0005), not swap alternatives for each
     # other — both are deployed together; `role` distinguishes them.
     implementations:
-      - {name: ipxe, status: active, role: http-assets, swap_class: rewrite-required}  # vorläufig; Vertrag offen
+      - {name: ipxe, status: active, role: http-assets, swap_class: rewrite-required}  # provisional; contract open
       - {name: booter, status: active, role: proxydhcp, swap_class: rewrite-required}
 
   # ═══════════════════════════════════════════════════════════════════
-  # Capabilities, deren Implementierungen NICHT von apps deployt werden,
-  # sondern von Consumer-Cluster-Repos bzw. hardware-abhängig sind. Die
-  # DEFINITION (stabile Schnittstelle) lebt hier im zentralen Katalog,
-  # damit Consumer daraus wählen; das Tool selbst deployt der Consumer.
-  # requires_hardware_features verweist auf Layer C (talos-platform-base,
-  # bleibt Substrat). single_impl: true = base markiert ehrlich
-  # alt_impls_exist=false (eine reife Implementierung, kein echter Swap).
-  # Migriert aus talos-platform-base/docs/platform-capability-index.yaml.
-  # NICHT migriert (bleiben base): gitops-engine (argocd), csr-approval
-  # (cert-approver) = Substrat; internet-/controlplane-egress,
-  # gateway-backend, external-gateway-routes = Layer-B-network-primitive.
+  # Capabilities whose implementations are NOT deployed by apps,
+  # but by consumer cluster repos or are hardware-dependent. The
+  # DEFINITION (stable interface) lives here in the central catalog,
+  # so consumers can choose from it; the tool itself is deployed by the consumer.
+  # requires_hardware_features points to Layer C (talos-platform-base,
+  # stays substrate). single_impl: true = base honestly marks
+  # alt_impls_exist=false (one mature implementation, no real swap).
+  # Migrated from talos-platform-base/docs/platform-capability-index.yaml.
+  # NOT migrated (stay base): gitops-engine (argocd), csr-approval
+  # (cert-approver) = substrate; internet-/controlplane-egress,
+  # gateway-backend, external-gateway-routes = Layer-B network primitive.
   # ═══════════════════════════════════════════════════════════════════
 
-  # — Compute (hardware-abhängig) —————————————————————————————
+  # — Compute (hardware-dependent) ————————————————————————————
   - id: gpu-runtime
-    name: NVIDIA-GPU-Scheduling + Telemetrie
+    name: NVIDIA GPU scheduling + telemetry
     domain: compute
-    single_impl: true   # NVIDIA-gepinnt; AMD/Intel wären Geschwister-Capabilities
+    single_impl: true   # NVIDIA-pinned; AMD/Intel would be sibling capabilities
     requires_hardware_features: [nvidia-gpu, iommu-enabled]   # Layer C (base)
     implementations:
       # nvidia-stack = nvidia-device-plugin + nvidia-dcgm-exporter. The capability
@@ -254,9 +254,9 @@ capabilities:
     implementations:
       - {name: kubevirt, status: active, swap_class: rewrite-required}  # kubevirt + kubevirt-cdi
 
-  # — Block-Storage (hardware-abhängig) ——————————————————————
+  # — Block storage (hardware-dependent) —————————————————————
   - id: block-storage-replicated
-    name: Knoten-übergreifend replizierter Block-Storage
+    name: Cross-node replicated block storage
     domain: storage-block
     requires_hardware_features: [drbd-kernel-module]   # Layer C (base)
     implementations:
@@ -265,7 +265,7 @@ capabilities:
       - {name: longhorn, status: considered, swap_class: rewrite-required}
       - {name: openebs-mayastor, status: considered, swap_class: rewrite-required}
   - id: block-storage-local
-    name: Knoten-lokaler Block-Storage
+    name: Node-local block storage
     domain: storage-block
     requires_hardware_features: [local-nvme-block-device]   # Layer C (base)
     implementations:
@@ -288,9 +288,9 @@ capabilities:
       - {name: democratic-csi, status: active, swap_class: data-migration}   # ZFS/TrueNAS (+ Synology) over iSCSI
       - {name: synology-csi, status: active, swap_class: data-migration}      # Synology DSM iSCSI LUNs (ADR-0026)
 
-  # — Netzwerk —————————————————————————————————————————————————
+  # — Network ——————————————————————————————————————————————————
   - id: secondary-network-attachment
-    name: Sekundäre Pod-Netzwerk-Interfaces
+    name: Secondary pod network interfaces
     domain: network
     single_impl: true   # Multus de-facto solo; alpha
     requires_hardware_features: [ebpf-capable-kernel]   # Layer C (base)
@@ -311,7 +311,7 @@ capabilities:
       - {name: ntpd, status: considered, swap_class: consumer-change}
       - {name: openntpd, status: considered, swap_class: consumer-change}
 
-  # — Daten-Services (instanced) ——————————————————————————————
+  # — Data services (instanced) ———————————————————————————————
   - id: redis-managed
     name: Redis (managed)
     domain: databases
@@ -333,7 +333,7 @@ capabilities:
       - {name: strimzi, status: considered, swap_class: data-migration}
       - {name: redpanda-operator, status: considered, swap_class: data-migration}
 
-  # — Identität / Secrets ——————————————————————————————————————
+  # — Identity / Secrets ———————————————————————————————————————
   - id: identity-oidc
     name: OIDC-Identity-Provider
     domain: identity
@@ -342,7 +342,7 @@ capabilities:
       - {name: keycloak, status: considered, swap_class: label-move}
       - {name: authelia, status: considered, swap_class: label-move}
   - id: vault-secrets
-    name: KV-Secret-Zugriff (instanced)
+    name: KV secret access (instanced)
     domain: secrets
     instanced: true
     implementations:
@@ -350,9 +350,9 @@ capabilities:
       - {name: openbao, status: considered, swap_class: drop-in}
       - {name: infisical, status: considered, swap_class: rewrite-required}
   - id: secret-config-declarative
-    name: Deklarative Vault-Konfiguration
+    name: Declarative Vault configuration
     domain: secrets
-    single_impl: true   # eng an vault-operator gekoppelt
+    single_impl: true   # tightly coupled to vault-operator
     implementations:
       - {name: vault-config-operator, status: active, swap_class: rewrite-required}
   - id: hpa-metrics

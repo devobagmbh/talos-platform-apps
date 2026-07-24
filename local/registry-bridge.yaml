@@ -1,13 +1,13 @@
-# Bridge: importiert den kind-registry-Docker-Container ins Cluster.
-# Der Docker-Container 'kind-registry' (siehe task local:registry:up) ist
-# als externer Endpoint hier abgebildet. Service-DNS ist
+# Bridge: imports the kind-registry Docker container into the cluster.
+# The Docker container 'kind-registry' (see task local:registry:up) is
+# mapped here as an external endpoint. Service DNS is
 # kind-registry.registry.svc.cluster.local:5000.
-# (Name 'kind-registry' ist historisch — es ist ein plain registry:2-Container,
-# nicht an die kind-Binary gebunden; bleibt für stabile Cert-SANs/Service-DNS.)
+# (The name 'kind-registry' is historic — it is a plain registry:2 container,
+# not bound to the kind binary; kept for stable cert SANs/service DNS.)
 #
-# Die IP-Platzhalter ${KIND_REGISTRY_IP} werden vom Taskfile
-# (task local:registry:bridge) per envsubst ersetzt — IP des Containers im
-# talos-platform-apps-Docker-Netz, ermittelt via 'docker container inspect'.
+# The IP placeholder ${KIND_REGISTRY_IP} is replaced by the Taskfile
+# (task local:registry:bridge) via envsubst — the container's IP in the
+# talos-platform-apps Docker network, determined via 'docker container inspect'.
 
 ---
 apiVersion: v1
@@ -29,7 +29,7 @@ spec:
       targetPort: 5000
       protocol: TCP
 ---
-# Manuelle Endpoints (kein Selector → keine Pod-Discovery, nur statischer Eintrag)
+# Manual endpoints (no selector → no pod discovery, just a static entry)
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
 metadata:

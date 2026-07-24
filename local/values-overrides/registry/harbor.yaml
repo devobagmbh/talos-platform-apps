@@ -1,17 +1,17 @@
-# Lokaler Helm-Values-Overlay für Harbor — NUR lokale Test-Umgebung.
-# Wird von local:dev / local:publish via EXTRA_VALUES an `task render:one`
-# gegeben (späteres --values gewinnt). CI/prod rendert OHNE diesen Overlay und
-# behält den Platzhalter externalURL aus helm/harbor.yaml (in prod patcht der
-# Konsument die echte Cluster-URL, ADR-0023/0024 Shape b).
+# Local Helm values overlay for Harbor — LOCAL TEST ENVIRONMENT ONLY.
+# Passed by local:dev / local:publish via EXTRA_VALUES to `task render:one`
+# (a later --values wins). CI/prod renders WITHOUT this overlay and
+# keeps the externalURL placeholder from helm/harbor.yaml (in prod the
+# consumer patches the real cluster URL, ADR-0023/0024 shape b).
 #
-# externalURL bäckt Harbor als EXT_ENDPOINT in die core-ConfigMap → generierte
-# Links / docker-push-Befehle / OIDC-Redirects zeigen lokal auf den Gateway-Host.
+# externalURL bakes Harbor into the core ConfigMap as EXT_ENDPOINT → generated
+# links / docker push commands / OIDC redirects point locally to the Gateway host.
 externalURL: https://harbor.localhost.direct
 
-# DB-Passwort lokal direkt aus CNPGs LEBENDEM harbor-pg-app lesen statt aus einer
-# Kopie (harbor-db) — sonst veraltet die Kopie, sobald die CNPG-Instanz neu
-# entsteht (vgl. crossview). harbor-pg-app hat key `password` (= Chart-Erwartung).
-# Nur lokal: in prod liefert der Konsument harbor-db (Shape c, ADR-0023/0024).
+# Locally read the DB password directly from CNPG's LIVE harbor-pg-app instead of a
+# copy (harbor-db) — otherwise the copy goes stale as soon as the CNPG instance is
+# recreated (cf. crossview). harbor-pg-app has key `password` (= chart expectation).
+# Local only: in prod the consumer provides harbor-db (shape c, ADR-0023/0024).
 database:
   external:
     existingSecret: harbor-pg-app
