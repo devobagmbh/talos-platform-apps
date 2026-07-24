@@ -151,6 +151,57 @@ task local:argo:ui
 
 Argo pulls the native OCI artifact over the Service DNS (no Gateway round-trip) and applies the pre-rendered `manifest.yaml` through the artifact's trivial Kustomize base (`sourceType=Kustomize`, `path: .`, `resources: [manifest.yaml]` — no patches by default, identical output) — no Helm rendering step at reconcile time. The Kustomize base is what lets a consumer overlay per-cluster fields via `source.kustomize.patches` (ADR-0024 calibrated-friction).
 
+## Observability object-store E2E (`task local:s3-backend`)
+
+The observability LGTM components (`loki`, `loki-distributed`, `mimir`, `tempo`) resolve
+their S3 connection at runtime from a consumer-supplied ConfigMap + Secret. With only
+placeholder refs the pods start but never touch an object store. `task local:s3-backend`
+brings up the catalog's own `storage-objects/garage` as that backend and wires one
+observability component against it end-to-end, so a pushed log line actually lands in
+garage and is retrievable through the query path.
+
+```bash
+# Bring up garage, provision layout + buckets + an access key, seed the target's
+# runtime ConfigMap, and mint its credential Secret inline (generated at apply time).
+task local:s3-backend -- observability/loki-distributed 0.0.0-dev
+
+# Publish + sync the component itself; Argo now syncs against a real S3 endpoint.
+task local:publish -- observability/loki-distributed 0.0.0-dev
+task local:apply   -- observability 0.0.0-dev
+
+# Push a log line to the distributor, flush an ingester, then read it back through
+# the query-frontend — it now round-trips through garage.
+
+# Tear the component's Argo apps down (garage + its fixtures survive; local:down resets).
+task local:remove -- observability
+```
+
+`local:s3-backend` is idempotent and re-run-safe:
+
+- A **steady-state re-run** on a healthy stack is a no-op — it does NOT rollout-restart a
+  healthy component (nothing is re-minted).
+- **garage runs on ephemeral `emptyDir`** (catalog default `persistence.enabled: false`),
+  so a garage pod restart wipes the layout, buckets and keys. Re-running `local:s3-backend`
+  re-mints the access key and rollout-restarts the target so it picks up the new credential
+  — otherwise the running component keeps the stale key and 403s silently.
+- **Force re-mint (recovery):** after an interrupted/straddled run the garage key and the
+  target Secret can diverge (a silent 403 a plain re-run will not heal). Set
+  `LOCAL_S3_REMINT=1 task local:s3-backend -- observability/loki-distributed 0.0.0-dev`
+  (or delete the target Secret first) for a clean re-mint.
+
+Standalone `task local:fixtures -- observability/loki-distributed` (and `task local:dev`)
+now applies **only** the runtime-config ConfigMap and exits 0 — it no longer errors on the
+missing credential. But the credential Secret comes exclusively from `local:s3-backend`, so
+a bare `local:dev`/`local:fixtures` leaves loki without S3 credentials; run
+`local:s3-backend` for the object-store credential.
+
+**Credentials are generated at apply time and never committed** — the fixture ships only a
+`generateHex` directive for garage's cluster RPC secret, and the component's
+`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` are minted from the garage access key that
+`local:s3-backend` provisions. Every `kubectl`/`exec` in the task pins
+`--context admin@talos-platform-apps`; pin the same on any manual `kubectl` against the
+local cluster (§ *Wrong kube-context* under Troubleshooting).
+
 ## Live dev loop (`task local:dev`) — Skaffold-style
 
 For active development on **one** component, skip the manual publish/apply round-trip:

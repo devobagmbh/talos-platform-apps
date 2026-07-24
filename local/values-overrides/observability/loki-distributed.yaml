@@ -1,0 +1,42 @@
+# LOCAL-ONLY single-node override for the one-node local Talos test cluster.
+#
+# loki-distributed ships production HA values: loki.commonConfig.replication_factor
+# is 3 and the read/write roles run 2-3 replicas each. The chart's HARD
+# requiredDuringScheduling pod anti-affinity on topologyKey kubernetes.io/hostname
+# means only ONE replica per role can ever schedule on the single local node, so
+# with the default HA ring the object-store round-trip is permanently unreachable
+# there (observed live, issue #736):
+#   - write path: distributor rejects the push with HTTP 500
+#       "at least 2 live replicas required, could only find 1"
+#   - read path : querier returns "too many unhealthy instances in the ring"
+#
+# Collapsing every active role to a single replica AND replication_factor to 1
+# makes the ring healthy with exactly one member, so a pushed log line flushes to
+# garage and is retrievable through the query path — which is what `task
+# local:s3-backend` verifies. Production consumers run >=3 nodes and use the
+# component's default HA values unchanged; this file is a local-test-only overlay
+# passed as EXTRA_VALUES at render time (task local:publish) and is NEVER part of
+# the published catalog artifact.
+#
+# Only `replicas` and `replication_factor` are overridden: the component's
+# per-role `maxUnavailable` values are left intact (the chart's PDB template only
+# `fail`s at replicas > 1 without maxUnavailable, so replicas: 1 is safe), and
+# compactor already ships replicas: 1.
+loki:
+  commonConfig:
+    replication_factor: 1
+
+ingester:
+  replicas: 1
+distributor:
+  replicas: 1
+querier:
+  replicas: 1
+queryFrontend:
+  replicas: 1
+queryScheduler:
+  replicas: 1
+indexGateway:
+  replicas: 1
+ruler:
+  replicas: 1
