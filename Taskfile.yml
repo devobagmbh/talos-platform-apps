@@ -4586,6 +4586,132 @@ tasks:
       if [ "$fail" -eq 0 ]; then echo "test:trivy-extract OK — extractor matches AC6-extraction (9 found / 5 dropped)"; fi
       exit "$fail"
 
+  test:context-prune:
+    desc: 'Hermetic red-green test for the local:context:prune predicate (in task ci)'
+    summary: |
+      Binding acceptance test for local:context:prune. Network-free and cluster-free:
+      it writes a fixture talosconfig into a temp dir, points TALOSCONFIG at it, runs
+      the task, and asserts the exact surviving context set plus the resulting current
+      context. The oracle reads the talosconfig keys with yq — deliberately NOT the
+      task's own awk parse, so a mangled name cannot be compared against an equally
+      mangled expectation. Routable fixture endpoints use the RFC5737 documentation
+      range (192.0.2.0/24), never a real address.
+
+      Red-green, one fixture context per guard in the predicate:
+        - talos-platform-apps (loopback, CURRENT) removed → binds the switch-away
+          step; talosctl declines to remove the current context, so dropping that
+          step leaves this one behind.
+        - talos-platform-apps-3 / -12 (loopback) removed → binds both numeric arms.
+        - talos-platform-apps-1 on a ROUTABLE address SURVIVES → binds the
+          loopback-endpoint guard. Dropping it deletes a real, numerically-named
+          cluster's context; this is the assertion that matters most.
+        - talos-platform-apps-123 (three digits) and talos-platform-apps-prod
+          survive → bind the name pattern.
+        - "talos-platform-apps-9 x" (whitespace in the name) survives → binds
+          fail-closed parsing: the column split mis-attributes the name, and the
+          endpoint test must then reject rather than guess.
+        - talos-platform-apps-2 with a MIXED endpoint list (loopback + routable)
+          survives → binds loopback-ONLY-ness. A real cluster additionally reachable
+          through a port-forward must not be pruned just because its first endpoint
+          is loopback.
+        - the current context is switched away from the pruned bare name → binds
+          keeper selection. Asserted order-independently: talosctl's listing order
+          is not a documented contract, so the test fixes only that the switch
+          happened and landed on a survivor, not WHICH survivor.
+
+      An isolation pre-flight runs before the first mutation: it asserts talosctl
+      actually resolved the fixture talosconfig and aborts otherwise. A TALOSCONFIG
+      talosctl cannot open falls back silently to the operator's real
+      ~/.talos/config, and this test is wired into `task ci`, which every maintainer
+      runs locally — so the sandbox failing must stop the test, not redirect the
+      writes.
+    cmd: |
+      set -eu
+      work="$(mktemp -d)"
+      trap 'rm -rf "$work"' EXIT
+      cfg="$work/talosconfig"
+      cat > "$cfg" <<'YAML'
+      context: talos-platform-apps
+      contexts:
+        real-cluster:
+          endpoints:
+            - 192.0.2.10:6443
+        talos-platform-apps:
+          endpoints:
+            - 127.0.0.1:40001
+        talos-platform-apps-3:
+          endpoints:
+            - 127.0.0.1:40002
+        talos-platform-apps-12:
+          endpoints:
+            - 127.0.0.1:40003
+        talos-platform-apps-1:
+          endpoints:
+            - 192.0.2.11:6443
+        talos-platform-apps-123:
+          endpoints:
+            - 127.0.0.1:40004
+        talos-platform-apps-prod:
+          endpoints:
+            - 127.0.0.1:40005
+        "talos-platform-apps-9 x":
+          endpoints:
+            - 127.0.0.1:40006
+        talos-platform-apps-2:
+          endpoints:
+            - 127.0.0.1:40007
+            - 192.0.2.12:6443
+      YAML
+      fail=0
+      # ISOLATION PRE-FLIGHT — refuse to run before confirming talosctl actually
+      # resolved the fixture. `local:context:prune` MUTATES the talosconfig, and a
+      # TALOSCONFIG that talosctl cannot open falls back SILENTLY to the operator's
+      # real ~/.talos/config — so "the sandbox failed" must abort here, before the
+      # first write, rather than degrade into pruning a maintainer's real contexts
+      # on a routine `task ci`.
+      seen="$(TALOSCONFIG="$cfg" talosctl config contexts | awk 'NR > 1 { if ($1 == "*") print $2; else print $1 }' | LC_ALL=C sort | tr '\n' ',')"
+      expected='real-cluster,talos-platform-apps,talos-platform-apps-1,talos-platform-apps-12,talos-platform-apps-123,talos-platform-apps-2,talos-platform-apps-3,talos-platform-apps-9,talos-platform-apps-prod,'
+      if [ "$seen" != "$expected" ]; then
+        echo "FAIL (refusing to run): TALOSCONFIG did not resolve to the fixture — talosctl sees a DIFFERENT talosconfig." >&2
+        echo "  expected: $expected" >&2
+        echo "  saw:      $seen" >&2
+        exit 1
+      fi
+      TALOSCONFIG="$cfg" task local:context:prune > "$work/out" 2>&1 || {
+        echo "FAIL: local:context:prune exited non-zero — it must never fail its caller"
+        fail=1
+      }
+      got="$(yq -r '.contexts | keys[]' "$cfg" | LC_ALL=C sort | tr '\n' ',')"
+      want='real-cluster,talos-platform-apps-1,talos-platform-apps-123,talos-platform-apps-2,talos-platform-apps-9 x,talos-platform-apps-prod,'
+      if [ "$got" != "$want" ]; then
+        echo "FAIL: surviving context set mismatch"
+        echo "  want: $want"
+        echo "  got:  $got"
+        fail=1
+      fi
+      # Order-independent: the keeper is "first non-prunable in listing order", and
+      # talosctl's ordering is not a documented contract. What must hold is that the
+      # switch HAPPENED — the previously-current prunable context is no longer it.
+      current="$(yq -r '.context' "$cfg")"
+      case "$current" in
+        talos-platform-apps)
+          echo "FAIL: current context was not switched away from the pruned 'talos-platform-apps'"
+          fail=1
+          ;;
+        real-cluster|talos-platform-apps-1|talos-platform-apps-123|talos-platform-apps-2|talos-platform-apps-prod|'talos-platform-apps-9 x') ;;
+        *)
+          echo "FAIL: current context '$current' is not one of the surviving contexts"
+          fail=1
+          ;;
+      esac
+      if [ "$fail" -ne 0 ]; then
+        echo "--- local:context:prune output ---"
+        cat "$work/out"
+      else
+        echo "test:context-prune OK — 3 loopback orphans removed, 6 contexts preserved, current context switched"
+      fi
+      exit "$fail"
+
   # --- Publish-Targets ---
 
   package:
@@ -5350,6 +5476,13 @@ tasks:
       # lint:kustomize-base (path join, printf schema, exit propagation) is caught here,
       # not only when a real component render trips it post-publish.
       - task: test:kustomize-base
+      # Hermetic red-green guard for local:context:prune (fast, no network, no
+      # cluster — a fixture talosconfig in a temp dir). The task mutates the
+      # operator's talosctl credential store, so the loopback-endpoint guard that
+      # keeps a real, numerically-named cluster's context alive is bound here rather
+      # than left to a manual run. Local-dev tooling, so it is deliberately NOT in
+      # ci:artifact (the publish hot path).
+      - task: test:context-prune
       # OKF knowledge/ bundle gate (PR-scoped, repo-wide doc gate — like
       # validate:release-config, NOT artifact validation, so here and NOT in
       # ci:artifact). okf:install is the documented carve-out to CI convention 1
@@ -5957,8 +6090,158 @@ tasks:
   local:down:
     desc: 'Tear everything down: cluster + registry + mkcert data'
     cmds:
-      - talosctl cluster destroy --name talos-platform-apps || true
+      # --force also drops the cluster state dir when destroy hits errors — the
+      # common case being a node container that is already gone because the
+      # Docker/Podman VM was recreated. Without it the orphaned state dir makes
+      # the next local:cluster:up skip create and then fail on `docker port`.
+      - talosctl cluster destroy --name talos-platform-apps --force || true
+      - task: local:context:prune
       - task: local:registry:down
+
+  local:context:prune:
+    desc: 'Remove orphaned talosctl contexts of the local test cluster (MAY switch the current context)'
+    summary: |
+      `talosctl cluster destroy` leaves the talosconfig context that
+      `cluster create` wrote behind (observed: contexts accumulating as
+      talos-platform-apps, -1 … -6, each pointing at a dead 127.0.0.1:<port>
+      endpoint; whether destroy skips the context by design or only when it errors
+      out on a missing container is not established).
+
+      Two consequences this task prevents. Cosmetically the contexts pile up once
+      per up/down cycle. Functionally the next `cluster create` falls back to a
+      SUFFIXED context name when the bare one is already taken, and
+      local:cluster:up pins the BARE name in its `talosctl --context
+      talos-platform-apps kubeconfig` self-heal — which would then read a stale,
+      dead context.
+
+      A context is pruned only when BOTH hold: its name is `talos-platform-apps`
+      or `talos-platform-apps-<N>` (N = one or two digits), AND its endpoint list
+      is loopback-only (127.0.0.1, optionally with a port). The name alone is NOT
+      a safe discriminator — a numeric suffix is a common real-cluster naming
+      convention, and a real `talos-platform-apps-1` reachable over a routable
+      address MUST survive. The endpoint condition also makes a malformed listing
+      fail CLOSED: if the column parse mis-splits (a context name containing
+      whitespace is the realistic case), the endpoint field no longer looks like
+      loopback and nothing is removed.
+
+      SIDE EFFECT, announced on stderr: talosctl refuses to remove the CURRENT
+      context, and `cluster create` leaves its own context selected — so the bare
+      talos-platform-apps context is exactly the one that could otherwise never be
+      pruned. This task therefore switches the current context to the first
+      non-prunable one, WHICH MAY BE A PRODUCTION CLUSTER; a later `talosctl` call
+      without `--context` would target it. Every `local:*` task pins its own
+      context explicitly, so only manual commands are affected.
+
+      Residuals. (1) When the talosconfig holds no non-prunable context at all
+      (every context is a local orphan — not merely the one-context case), there is
+      nothing to switch to; that current context is warned about and stays, which
+      degrades to the previous behavior — including the suffix fallback on the next
+      create. A three-digit suffix is likewise out of the name pattern and stays.
+      (2) As a local:down step this runs after a `cluster destroy` whose failure is
+      swallowed by `|| true`, so if the destroy failed with the node container still
+      running, the prune removes that LIVE cluster's context: reaching it with
+      talosctl then needs the context re-added, and removing the container needs
+      `docker rm`. (3) The fixture cluster name is a literal here, as it is in the
+      destroy / create / state-dir call sites — renaming the local cluster means
+      updating this pattern and the test fixture together.
+
+      Idempotent: on a clean talosconfig this is a no-op. It never fails its
+      caller — it runs as a local:down step and must not strand the registry
+      teardown.
+    cmd: |
+      set -eu
+      # Fail LOUD, not open: an empty listing from a broken talosctl (shadowed
+      # binary, unreadable talosconfig) is indistinguishable from a clean config,
+      # so probe the command before trusting its output.
+      if ! talosctl config contexts >/dev/null 2>&1; then
+        echo "  WARN: 'talosctl config contexts' failed — skipping the context prune" >&2
+        exit 0
+      fi
+      # `talosctl config contexts` prints CURRENT | NAME | ENDPOINTS | NODES, the
+      # active row marked with a literal '*' in column 1. Emit "<endpoints> <name>"
+      # per row: endpoint lists never contain spaces, so putting them first keeps
+      # the pair splittable, and a mis-split name lands in the name field where the
+      # loopback test below rejects it.
+      list_contexts() {
+        talosctl config contexts 2>/dev/null \
+          | awk 'NR > 1 { if ($1 == "*") print $3, $2; else print $2, $1 }'
+      }
+      # $1 = endpoint list, $2 = context name. The endpoint test is loopback-ONLY:
+      # a bare 127.0.0.1, or 127.0.0.1 followed by a purely numeric port. Anything
+      # else — a comma-joined list whose FIRST member is loopback (a real cluster
+      # additionally reachable through a port-forward), an empty port, a non-numeric
+      # tail — is rejected, so "loopback-only" holds as written.
+      is_prunable() {
+        case "$1" in
+          127.0.0.1) ;;
+          127.0.0.1:*)
+            _port="${1#127.0.0.1:}"
+            case "$_port" in
+              ''|*[!0-9]*) return 1 ;;
+            esac
+            ;;
+          *) return 1 ;;
+        esac
+        case "$2" in
+          talos-platform-apps|talos-platform-apps-[0-9]|talos-platform-apps-[0-9][0-9]) return 0 ;;
+          *) return 1 ;;
+        esac
+      }
+      contexts="$(list_contexts)"
+      current="$(talosctl config contexts 2>/dev/null | awk '$1 == "*" { print $3, $2 }')"
+      current_ep="${current%% *}"
+      current_name="${current#* }"
+      if [ -n "$current" ] && is_prunable "$current_ep" "$current_name"; then
+        keeper=""
+        while IFS=' ' read -r ep name _rest; do
+          [ -n "$name" ] || continue
+          if ! is_prunable "$ep" "$name"; then
+            keeper="$name"
+            break
+          fi
+        done <<CONTEXTS
+      $contexts
+      CONTEXTS
+        if [ -z "$keeper" ]; then
+          echo "  WARN: '$current_name' is the current talosctl context and no non-prunable context exists to switch to — it stays" >&2
+        else
+          talosctl config context "$keeper" >/dev/null 2>&1 || true
+          # Verify the switch by re-reading, not by exit code — the same epistemics
+          # the removal below uses, since talosctl reports success for a decline.
+          if [ "$(talosctl config contexts 2>/dev/null | awk '$1 == "*" { print $2 }')" = "$keeper" ]; then
+            echo "WARNING: talosctl current context switched from '$current_name' to '$keeper' — a later 'talosctl' call without --context now targets '$keeper'" >&2
+          else
+            echo "  WARN: could not switch the current talosctl context away from '$current_name' — it stays" >&2
+          fi
+        fi
+      fi
+      matched=0
+      while IFS=' ' read -r ep name _rest; do
+        [ -n "$name" ] || continue
+        is_prunable "$ep" "$name" || continue
+        matched=$((matched + 1))
+        # Tolerant on purpose: one unremovable context must not strand the rest of
+        # the teardown (registry removal) when this runs as a local:down step.
+        talosctl config remove "$name" -y >/dev/null 2>&1 || true
+        # Verify against the re-read config rather than the exit code: `config
+        # remove` declines the current context and still exits 0. An EMPTY re-read
+        # is treated as "cannot verify", never as "everything went away" — a talosctl
+        # that starts failing mid-loop would otherwise turn every remaining
+        # iteration into a false success.
+        remaining="$(list_contexts)"
+        if [ -z "$remaining" ]; then
+          echo "  WARN: could not re-read the talosconfig — removal of '$name' unverified" >&2
+        elif printf '%s\n' "$remaining" | grep -Fx -- "$ep $name" >/dev/null; then
+          echo "  WARN: talosctl context '$name' could not be removed (skip)" >&2
+        else
+          echo "✓ removed orphaned talosctl context '$name'"
+        fi
+      done <<CONTEXTS
+      $contexts
+      CONTEXTS
+      if [ "$matched" -eq 0 ]; then
+        echo "  no orphaned talosctl contexts (skip)"
+      fi
 
   local:stop:
     desc: 'Pause cluster + registry (stop containers, state is kept)'
@@ -6140,23 +6423,33 @@ tasks:
           fi
           echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create; ${have} worker container(s))"
         else
-          # NAME COLLISION in the talosconfig. A context called talos-platform-apps already
-          # exists while this cluster does not — usually a cluster destroyed without pruning
-          # the client config, but it could equally be a context someone else's tooling owns.
-          # Either way `talosctl cluster create` does NOT overwrite it: it files the NEW
-          # context as talos-platform-apps-1 and leaves the pre-existing one under the plain
-          # name, which is the name every later step asks for. kubeconfig generation then
-          # addresses the OTHER cluster and local:up dies minutes later with an opaque
-          # `error copying: rpc error … connection refused`. Refuse before creating anything
-          # and let the operator decide whether the context is stale — this check proves the
-          # collision, never that the other context is dead.
-          # Membership test via `case`, not `grep -q` over a pipe: a -q that closes the pipe
-          # early raises SIGPIPE under pipefail (see the validate:release-config comment).
+          # No state dir means no cluster, so a loopback-endpoint
+          # talos-platform-apps* context left in the talosconfig is orphaned. Left
+          # in place, the create below falls back to a suffixed context name and the
+          # bare-name kubeconfig self-heal in the next step would read the stale one.
+          # local:down prunes on the teardown path; this covers the states it cannot
+          # reach — a hand-removed state dir, or a previous prune that had to leave
+          # its one unremovable current context behind. NOT reached when the VM was
+          # wiped without a teardown: the state dir lives on the host and survives
+          # that, so create is skipped and the run fails at `docker port` below.
+          task local:context:prune
+          # A talos-platform-apps context that SURVIVES the prune is not a loopback
+          # orphan (prune removes only loopback-only ones) — it is a real or foreign
+          # cluster the prune deliberately left, i.e. a genuine NAME COLLISION.
+          # `talosctl cluster create` does NOT overwrite it: it files the NEW context
+          # as talos-platform-apps-1 and leaves the pre-existing one under the plain
+          # name, which is the name every later step asks for. kubeconfig generation
+          # then addresses the OTHER cluster and local:up dies minutes later with an
+          # opaque `error copying: rpc error … connection refused`. Refuse before
+          # creating anything and let the operator decide whether the context is stale.
+          # Membership test via `case`, not `grep -q` over a pipe: a -q that closes the
+          # pipe early raises SIGPIPE under pipefail (see the validate:release-config comment).
           ctx_list=$(talosctl config contexts 2>/dev/null | awk 'NR>1 {print ($1 == "*") ? $2 : $1}' | tr '\n' ' ')
           case " ${ctx_list}" in
             *" talos-platform-apps "*)
               echo "ERROR: a talosconfig context named 'talos-platform-apps' already exists while this"
-              echo "       cluster does not. talosctl would file the new context as"
+              echo "       cluster does not, and it survived the prune (so it is not a loopback orphan)."
+              echo "       talosctl would file the new context as"
               echo "       'talos-platform-apps-1' and every later step would keep addressing the other one."
               echo "       Check what that context points at first:"
               echo "         talosctl config info --context talos-platform-apps"
