@@ -49,6 +49,17 @@ Subagents run in isolated contexts and do **not** load these `.claude/rules/`
 files — so this discipline (and the boundaries below) must be written into each
 agent body, not relied upon from here.
 
+`check:primitives` (f) enforces the presence of that inline discipline, and (g)
+the evidence discipline below in every verdict-bearing agent. Both match the
+**directive**, not a heading, so each agent phrases the rule for its own input
+class (fetched pages, diff + spec, issue body). The directive vocabulary the gate
+recognizes is a closed set held in `check:agent-discipline` — phrase a new
+agent's hardening in one of those families, or extend the set there in the same
+PR (a one-line add, the same convention `check:primitives` (d)/(e) use for their
+canonical floors). A wording that is semantically correct but outside the set
+fails the gate; that is a deliberate trade for a check that cannot be satisfied
+by an empty section.
+
 ## judge ≠ builder
 
 The agent that builds is never the agent that verifies or reviews. Reviewers and
