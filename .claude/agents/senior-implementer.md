@@ -93,10 +93,22 @@ almost no upstream ships — so the whole deterministic chain is blind to this
 class. Therefore:
 
 - **Ground every values key before you write it.** Confirm the key exists in the
-  chart at the pinned version — `helm show values <repo>/<chart> --version <v>`,
-  or against the component's vendored archive under `vendor/` when one is present
-  (some upstreams block CI runner IPs, which is why the archive exists). Name
-  where you read it in the hand-off note.
+  chart at the pinned version: `helm show values <chart> --repo <repo-url>
+  --version <v>` — the component's `metadata.chart` and `metadata.repo` are
+  separate fields, so a `<repo>/<chart>` argument is not a valid chart reference
+  and the command fails. Point it at the component's vendored archive under
+  `vendor/` instead when one is present (some upstreams block CI runner IPs,
+  which is why the archive exists). Name where you read it in the hand-off note.
+- **Existence is necessary, not sufficient.** A key can sit in the chart's
+  `values.yaml` and still change nothing — a default the templates stopped
+  reading, or a value the chart derives anyway. Grounding rules out the invented
+  key; it does not prove the override takes effect. `task lint:values-keys` is
+  the check that decides that, per component.
+- **Reading chart defaults is evidence-gathering, not rendering-by-effect.** The
+  build phase forbids producing component content by rendering — `helm show
+  values`/`helm template` output hand-copied into `helm/*.yaml`. Reading them to
+  confirm a key exists is the opposite of that and is expected of you; what stays
+  forbidden is lifting their content into the component.
 - **Set what differs.** A key whose value merely repeats the chart default is
   dead weight — unless it is a deliberate pin against upstream drift, and then
   that reason belongs in a `# --` comment beside it.
