@@ -1,0 +1,61 @@
+# Argo Application for storage-objects/garage-operator (local test environment).
+# Strict-B WORKLOAD half (ADR-0028) of the operator pair: the controller Deployment,
+# its RBAC, the cert-manager Issuer/Certificate and the admission + conversion webhook
+# configurations. Synced at sync-wave 1 — after the garage-operator-crds artifact
+# (wave -1) so the CRDs are Established, and after cert-manager (wave 0) so the
+# webhook Certificate can be issued and its CA injected.
+# The workload ships its own `garage-operator` Namespace (manifests/00-namespace.yaml)
+# with the PSA enforce label, so CreateNamespace=false (the shipped manifest is the
+# source of truth, not Argo managedNamespaceMetadata).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage-objects-garage-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-operator
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/storage-objects/garage-operator
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: garage-operator
+
+  # cert-manager's cainjector writes the CA into both webhook configurations at
+  # runtime from the inject-ca-from annotation; the shipped artifact carries an
+  # empty caBundle. Without this stanza the Application never reaches Synced AND
+  # selfHeal blanks the injected CA on every reconcile — the same failure mode the
+  # -crds half's conversion webhook has, here for the admission webhooks.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+
+  syncPolicy:
+    # The workload IS prunable (unlike the -crds half): removing the artifact should
+    # garbage-collect the controller, its RBAC and the webhook configurations.
+    # CR-cascade protection lives on the -crds Application (Prune=false), not here.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The artifact ships its own `garage-operator` Namespace manifest; do not let
+      # Argo create it via managedNamespaceMetadata (the shipped manifest wins).
+      - CreateNamespace=false
+      # ServerSideApply for consistency with the strict-B -crds half.
+      - ServerSideApply=true

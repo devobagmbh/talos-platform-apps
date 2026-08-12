@@ -1,0 +1,20 @@
+# An S3 access key scoped to the `e2e-data` bucket only. The operator mints the
+# credentials and writes them into a Secret in this namespace; the E2E reads that
+# Secret and uses it to prove both halves of the permission model: a put/get on
+# `e2e-data` succeeds, and the same key on `e2e-denied` is refused.
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageKey
+metadata:
+  name: e2e-app
+  namespace: garage-e2e
+spec:
+  clusterRef:
+    name: e2e
+  bucketPermissions:
+    - bucketRef: e2e-data
+      read: true
+      write: true
+      owner: false
+  secretTemplate:
+    name: e2e-app-s3
+    includeEndpoint: true
