@@ -43,9 +43,36 @@ capabilities:
     domain: storage-objects
     instanced: true
     implementations:
+      # Deployment mechanism is migrating to storage-objects/garage-operator
+      # (operator-owned GarageCluster, #763/#35) — the capability id and its
+      # standard-S3 interface are unaffected by that migration.
       - {name: garage, status: active, swap_class: drop-in}
       - {name: minio-operator, status: considered, swap_class: drop-in}
       - {name: external-s3, status: considered, swap_class: drop-in}
+  - id: s3-bucket-provisioning
+    name: Declarative S3 bucket/key provisioning
+    domain: storage-objects
+    # Stable interface: declare a bucket, an access key and its per-bucket
+    # permissions as Kubernetes objects and receive the credentials as a Secret in
+    # the consuming namespace — the provisioning (control-plane) counterpart to
+    # s3-object's data path, not a second object store.
+    #
+    # Deliberately NOT `instanced: true`, and dependents MUST NOT reference this id
+    # in `requires:`: the interface is realized by TOOL-SPECIFIC CRs, not a standard
+    # API, so referencing the capability would claim a swap-freedom that does not
+    # exist (catalog/README.md §capability-in-requires rule). A dependent pins
+    # storage-objects/garage-operator concretely instead.
+    #
+    # storage-objects/garage-buckets (#35) overlaps this capability but is a CR
+    # bundle rather than a tool, so it is recorded here as a comment and never as an
+    # implementations row; its retirement is a #763 follow-up.
+    implementations:
+      # status: active — the operator's management-handle mode (a GarageCluster with
+      # spec.connectTo) provisions against an already-deployed Garage, so the
+      # capability is satisfiable as soon as the component ships.
+      - {name: garage-operator, status: active, swap_class: rewrite-required}
+      # COSI (kubernetes-sigs) is the standard-interface alternative, revisited once
+      # upstream reaches beta — pre-alpha v1alpha2 today, no Garage driver.
 
   # — Observability: Metrics ——————————————————————————————————
   - id: metrics-scrape
