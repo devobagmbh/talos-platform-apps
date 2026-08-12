@@ -1,0 +1,42 @@
+# Workload half of the ADR-0028 strict-B pair for the garage-operator. Ships the
+# controller Deployment, its RBAC, the cert-manager Issuer/Certificate, the webhook
+# Service and the two webhook configurations — and 0 CustomResourceDefinitions. The
+# CRD half is `storage-objects/garage-operator-crds` (sync-wave -1), which carries
+# the `crd-bearing: true` marker; deliberately absent here, and
+# `task validate:crd-split` asserts the 0-CRD count on this half.
+
+requires:
+  # Strict-B CRD half (ADR-0028): the six garage.rajsingh.info CRDs must be
+  # Established (sync-wave -1) before this controller starts, or every reconcile
+  # loop fails on an unknown kind.
+  storage-objects/garage-operator-crds: ">=v0.1.0"
+  # Webhook TLS: webhooks.certManager.enabled renders an Issuer + Certificate, and
+  # cert-manager's cainjector is what writes the caBundle into both webhook
+  # configurations AND into the -crds half's garageclusters conversion stanza.
+  # cert-manager (sync-wave 0) must be Healthy before this component applies —
+  # hence sync-wave 1.
+  secrets/cert-manager: ">=v0.1.0"
+  # No storage-objects/garage entry: this operator does not consume that
+  # component. It is an alternative deployment mechanism for Garage clusters
+  # (#763 shape B, #35 migration pending), not a dependent of the existing
+  # StatefulSet component.
+
+provides:
+  - name: garage-operator
+    version:
+      sot: app
+      app: v0.7.3     # operator image tag (chart appVersion 0.7.3)
+      chart: "0.7.3"  # Helm chart packaging version
+    # The garage.rajsingh.info API surface belongs to the CRD half, which declares
+    # every served version there. This artifact serves those types but publishes no
+    # API surface of its own.
+    api_surface: []
+    capabilities:
+      # Declarative S3 bucket/key provisioning via garage.rajsingh.info CRs. The
+      # interface is tool-specific (not a standard API), so swapping the
+      # implementation means rewriting every CR — swap_class MUST stay in parity
+      # with catalog/capability-index.yaml. Dependents pin this component
+      # concretely; they do NOT put the capability id in their requires:
+      # (the index entry is deliberately not `instanced`).
+      - id: s3-bucket-provisioning
+        swap_class: rewrite-required

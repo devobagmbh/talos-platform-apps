@@ -1,0 +1,118 @@
+metadata:
+  chart: garage-operator
+  # Source reference only. The chart is published OCI-only, and this component
+  # renders from the committed archive vendor/garage-operator-0.7.3.tgz (which
+  # task render:one prefers); the HTTP `--repo` fallback cannot resolve an
+  # oci:// ref. See README.md § Supply chain for the digest + cosign identity.
+  repo: oci://ghcr.io/rajsinghtech/charts
+  version: "0.7.3"
+  # Baked contract, NOT an incidental default: the release name (from this file's
+  # basename) and this namespace are compiled into the webhook clientConfig, the
+  # cert-manager.io/inject-ca-from annotations, and the garageclusters conversion
+  # stanza shipped by storage-objects/garage-operator-crds. A consumer MUST NOT
+  # re-namespace or rename either half — see README.md § Namespace contract.
+  namespace: garage-operator
+values:
+  # -- (bool) do NOT install the chart's CRDs with the workload. ADR-0028 strict-B:
+  # the six garage.rajsingh.info CRDs ship as the separate artifact
+  # storage-objects/garage-operator-crds at sync-wave -1. Load-bearing — flipping
+  # this to the chart default (true) makes `task validate:crd-split` fail (the
+  # workload half must render 0 CustomResourceDefinitions) and makes two Argo
+  # Applications fight over the same cluster-scoped objects.
+  crds:
+    install: false
+
+  image:
+    # -- (string) operator image tag. Equals the chart's appVersion default and is
+    # pinned so a chart-local appVersion change cannot silently move the running
+    # workload; the pin is the version parity oracle for `task lint:version`
+    # (compatibility.yaml provides[].version.app).
+    tag: v0.7.3
+
+  # -- (string) operand default: the Garage image the operator gives every
+  # GarageCluster/GarageNode CR that omits spec.image. Catalog-owned and pinned to
+  # the same Garage version storage-objects/garage ships, so both deployment paths
+  # run one Garage version; it moves together with that component. A consumer
+  # overrides it per CR via spec.image. Chart default is "" (operator falls back to
+  # its own built-in default). NOTE: this ref reaches the cluster as a controller
+  # flag, not as a Kubernetes `image:` key, so the publish-time image-CVE scan does
+  # NOT see it — recorded residual, see README.md § Security posture.
+  defaultGarageImage: dxflrs/garage:v2.3.0
+
+  # -- (object) pod-level security context. Equals the chart defaults and is pinned
+  # so upstream drift cannot regress the namespace's PSA `enforce: restricted`
+  # (manifests/00-namespace.yaml), which both keys are required for.
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  # -- (object) manager container security context. Equals the chart defaults and is
+  # pinned for the same PSA reason as podSecurityContext above.
+  # readOnlyRootFilesystem is upstream's own default: the only path the container
+  # writes is the webhook serving-cert mount, which the chart mounts read-only from
+  # a Secret, so no writable emptyDir is required.
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  # -- (object) manager container resources. Equals the chart defaults, pinned
+  # because conftest base.required_resource_limits requires requests.cpu,
+  # requests.memory and limits.memory to be present in the signed artifact. Upstream
+  # documents 256Mi as the stable floor — lower limits risk OOM during certificate
+  # generation and while managing many CRs — so do NOT trim the memory limit.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # -- (object) admission + conversion webhooks. Equals the chart defaults and is
+  # pinned because the values are a consumer-visible contract, not a preference:
+  # the conversion webhook is what makes GarageCluster v1beta1 <-> v1beta2 readable
+  # (the -crds half ships the matching conversion stanza), and nodeLocalPools plus
+  # admission-protected storage deletion depend on the admission half.
+  # failurePolicy: Fail means a dead operator or a missing CA blocks writes to
+  # garage.rajsingh.info CRs — deliberately fail-closed, blast radius bounded to
+  # that API group (README.md § Failure modes).
+  # certManager.enabled renders the Issuer + Certificate that supply the serving
+  # cert and the inject-ca-from annotations, hence this component's sync-wave 1
+  # (secrets/cert-manager is wave 0) and its cert-manager entry in requires:.
+  webhooks:
+    enabled: true
+    failurePolicy: Fail
+    certManager:
+      enabled: true
+
+  # -- (object) ServiceMonitor stays off in the catalog artifact: it needs a
+  # Prometheus Operator that the catalog does not require here. A consumer with an
+  # observability stack enables it in its own overlay.
+  serviceMonitor:
+    enabled: false
+
+  # -- (object) PrometheusRule alerting rules stay off for the same reason as
+  # serviceMonitor: they require prometheus-operator CRDs to be present.
+  prometheusRules:
+    enabled: false
+
+  # -- (object) the Grafana dashboard ConfigMap stays off. Dashboards are
+  # consumer-owned in this platform; the catalog ships the operator, not dashboards.
+  grafanaDashboard:
+    enabled: false
+
+  # -- (object) the chart's metrics NetworkPolicy stays off. Network policy is
+  # capability-selector-based and consumer-composed (PNI v2); a chart-local policy
+  # keyed on tool-name labels would conflict with it.
+  networkPolicy:
+    enabled: false
+
+  # -- (object) the COSI driver stays off: the Container Object Storage Interface
+  # is still alpha upstream and needs COSI CRDs and a sidecar the catalog does not
+  # ship. Revisit when COSI reaches beta.
+  cosi:
+    enabled: false

@@ -1,0 +1,34 @@
+# The operator's own namespace. garage-operator is the sole occupant (dedicated
+# namespace), so this component ships the Namespace object — a shipped manifest
+# takes precedence over Argo `managedNamespaceMetadata`, making the PSA posture
+# authoritative and self-contained (see the build skill's CONVENTIONS.md
+# § Namespace & PSA). The strict-B `-crds` half ships no Namespace object: only
+# one source ever declares it.
+#
+# enforce: restricted — the rendered operator pod satisfies every restricted
+# control: runAsNonRoot + seccompProfile RuntimeDefault at pod level;
+# allowPrivilegeEscalation: false + capabilities.drop [ALL] +
+# readOnlyRootFilesystem on the manager container; no hostPath, no host
+# namespaces, no host ports. Do not relax.
+#
+# This level governs the OPERATOR pods only. Workloads the operator creates from
+# GarageCluster CRs land in the consumer's own namespaces, whose PSA level the
+# consumer owns — and a CR using nodeLocalPools makes the operator create a
+# hostPath DaemonSet, which needs `enforce: privileged` in THAT namespace
+# (README.md § Security posture).
+#
+# The name is a baked contract, not a default: the webhook clientConfig and the
+# cert-manager.io/inject-ca-from annotations in both halves of the pair reference
+# `garage-operator` literally. A consumer MUST NOT re-namespace this pair.
+#
+# The consumer adds — per ADR-0027 — the PNI labels and the
+# pod-security.kubernetes.io/enforce-version pin (its cluster minor) in its Argo
+# overlay; the catalog ships neither (they are consumer-composition concerns).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garage-operator
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-operator
