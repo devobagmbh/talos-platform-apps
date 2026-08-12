@@ -3,7 +3,7 @@ type: glossary
 title: Glossary
 description: Core terms of the talos-platform-apps catalog - component, sub-layer, capability, swap-class, freeze-line, strict-B, and the platform-layer terms.
 tags: [glossary, terminology]
-timestamp: 2026-07-23
+timestamp: 2026-08-12
 sources:
   - AGENTS.md
   - catalog/README.md
