@@ -1,0 +1,23 @@
+# Two buckets on the fixture cluster. `e2e-data` is the bucket the fixture key is
+# granted; `e2e-denied` exists only so the E2E can assert that a key WITHOUT a
+# permission entry is actually refused — a put/get that succeeds everywhere proves
+# nothing about the permission model.
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageBucket
+metadata:
+  name: e2e-data
+  namespace: garage-e2e
+spec:
+  clusterRef:
+    name: e2e
+  globalAlias: e2e-data
+---
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageBucket
+metadata:
+  name: e2e-denied
+  namespace: garage-e2e
+spec:
+  clusterRef:
+    name: e2e
+  globalAlias: e2e-denied

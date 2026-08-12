@@ -1,0 +1,44 @@
+# Customization Contract v2 (ADR-0024). Workload half of the ADR-0028 strict-B pair
+# for the garage-operator. The component is cluster-agnostic: the operator reads no
+# consumer-supplied ConfigMap or Secret and assembles no consumer-labelled CRs, so
+# every provided/required shape is empty. Its webhook serving certificate comes from
+# cert-manager in-cluster, not from a consumer-authored Secret.
+#
+# The consumer input surface of this component is NOT the four config shapes — it is
+# the garage.rajsingh.info CRs a consumer authors against the CRD half (shape B:
+# operator-owns-workload). Those CRs are consumer-owned objects in consumer
+# namespaces, outside this artifact and outside the signed freeze-line; see
+# README.md § Consumer obligations.
+#
+# The one non-negotiable contract that this schema cannot express lives in
+# README.md § Namespace contract: the `garage-operator` namespace and release name
+# are baked into the webhook clientConfig and the cert-manager inject-ca-from
+# annotations of BOTH halves, so a consumer MUST NOT re-namespace or rename them.
+freeze_line:
+  # The controller Deployment, its RBAC, the cert-manager Issuer/Certificate, the
+  # webhook Service + the two webhook configurations, and the Namespace — published
+  # as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml via
+  # `task package`). The image digest is the hard consumer-admission anchor;
+  # per-cluster fields (replicas, nodeSelector, tolerations, resources) are
+  # consumer-overlayable per ADR-0024 calibrated-friction. Two fields a consumer
+  # MUST leave alone: the webhook `failurePolicy: Fail` (relaxing it to Ignore
+  # silently disables the conversion and validation guarantees the -crds half's
+  # schema depends on) and every occurrence of the `garage-operator` name/namespace
+  # (see the namespace contract above).
+  workload: rendered/manifest.yaml
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "1"
+# Both are genuine sync-ordering preconditions, unlike the -crds half (whose
+# cert-manager dependency is runtime-only): the CRDs must be Established before the
+# controller's caches start, and cert-manager must be reconciling before the
+# Certificate this artifact ships can produce the webhook serving Secret the
+# operator pod mounts.
+external_dependencies:
+  - storage-objects/garage-operator-crds
+  - secrets/cert-manager
