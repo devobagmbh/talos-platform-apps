@@ -647,26 +647,33 @@ order; no consumer-cluster name or RFC1918 IP in the diff or the posted review.
 note above, the reviewer agent's own copy is the authoritative form of this list; keep the
 two in step when either changes. Its own class,
 because once merged the gate reports green and nothing downstream surfaces it again — so a
-green rollup is *not* evidence against it. Read the **added/changed** lines for: `|| true`
-where a non-zero exit means "the check failed" rather than "no match found" (the latter is
-the legitimate extraction case the Taskfile shell's group-abort requires — `lint:version`
-is the precedent); a new `continue-on-error:` (the E5 trivy step in `oci-publish.yml`
+green rollup is *not* evidence against it. Read the **added/changed** lines, by where the
+suppression hides. **In a task:** `|| true` where a non-zero exit means "the check failed"
+rather than "no match found" (the latter is the legitimate extraction case the Taskfile
+shell's group-abort requires — `lint:version` is the precedent); a validation target
+dropped from `task ci` **or `task ci:artifact`** (both are thin task callers, and
+`ci:artifact` carries the publish-path checks), or kept in the list but hollowed out.
+**In a workflow:** a new `continue-on-error:` (the E5 trivy step in `oci-publish.yml`
 carries one deliberately, `AGENTS.md` §ADR-Abdeckung — sanctioned, not a finding); a
-job-level `if:` on a **required** check, which really does turn it green without running
-it, since GitHub accepts a `skipped` job as satisfying a required context — while the
-opposite mechanism, a trigger-level `paths`/`paths-ignore` filter on a required workflow,
-makes it never report and **stalls** the merge instead (both are findings, different
-failure modes); a validation target dropped from `task ci`'s `cmds:` (the required `ci`
-check is a thin `task ci` caller, so the gate passes with the sub-check gone); a
-branch-protection/ruleset edit removing a required context, adding a bypass actor, or
-relaxing `required_signatures`; `kubeconform -ignore-missing-schemas` without a stated
-reason, or any new kubeconform/conftest ignore pragma; a conftest `exception[_]` rule or
-`--namespace` exclusion dropping a policy from the pre-publish set; a broadened gitleaks
-allowlist — a narrow `targetRules` + `regexes` entry against a known placeholder is the
-sanctioned false-positive fix, a `paths:` block over live `sub-layers/` content or a
-`.gitleaksignore` fingerprint file is suppression; `--no-verify`; a `.trivyignore.yaml`
-entry without `expired_at:`. A real exception lives in config — scoped, justified,
-diffable, expiring. Inline suppression is none of those.
+job-level `if:` on a **required** check, which really does turn it green unrun since
+GitHub accepts a `skipped` job as satisfying a required context; a **step-level** `if:` on
+— or deletion of — the step doing the actual work inside a required job, the same false
+green with the job still reporting success; and the inverse class, a trigger-level
+`paths`/`paths-ignore` filter or a dropped `merge_group:` trigger on a required workflow,
+which makes it never report and **stalls** the merge (all findings, different failure
+modes). **In branch protection:** a removed required context, an added bypass actor, or a
+relaxed `required_signatures` / conversation-resolution / strict / force-push / deletion
+guard. **In a policy or waiver:** `kubeconform -ignore-missing-schemas` without a stated
+reason or any new kubeconform/conftest ignore pragma; a conftest `exception[_]` rule, a
+`--namespace` exclusion, or a narrowed/deleted Rego `deny` rule; a `.trivyignore.yaml`
+entry failing what `task validate:trivyignore` already requires (bounded `expired_at:`,
+non-empty `statement:`, narrow `paths:`/`purls:` scope). **In a secret scanner:**
+`useDefault = false` in `.gitleaks.toml` (that disables the default ruleset outright, not
+an allowlist question), a `paths:` allowlist over live `sub-layers/` content, or a
+`.gitleaksignore` fingerprint file — a narrow `targetRules` + `regexes` entry against a
+known placeholder stays the sanctioned false-positive fix. **In the commit hooks:**
+`--no-verify`, or a removed/weakened `lefthook.yml` job. A real exception lives in config —
+scoped, justified, diffable, expiring. Inline suppression is none of those.
 
 ## LLM failure modes this skill eliminates
 
