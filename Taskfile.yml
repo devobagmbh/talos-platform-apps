@@ -245,9 +245,11 @@ tasks:
       which is a hint, not the answer: a chart that derives a value (an image tag
       from `.Chart.AppVersion`, a key name from the release) shows a pin as differing
       from the declared default while it is still a pin. The component README and
-      `git blame` settle it. Measured on the catalog: every current NO-EFFECT key is
-      a deliberate pin — this is a low-frequency, high-value signal, not a cleanup
-      backlog.
+      `git blame` settle it. Measured on the catalog at introduction: 172 keys, of
+      which 163 literally equal the chart's declared default (so none of those can be
+      a typo — a mistyped path would carry no default to equal) and 9 differ; the
+      sampled ones among those 9 were deliberate pins reproducing a derived default.
+      Expect a low-frequency signal to judge, not a cleanup backlog.
 
       ADVISORY, and deliberately NOT wired into `task ci`: findings exit 0. One
       `helm template` per key is far too slow for the PR gate, and the intended
