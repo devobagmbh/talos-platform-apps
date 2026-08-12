@@ -123,6 +123,25 @@ Only after Tier 1 is green (or with the green/red state recorded), judge:
   deterministic selector in the rendered consuming CR (a `nil`/match-all
   selector is a footgun finding); declared `external_dependencies` and
   `sync_wave` must be coherent with the component's actual dependencies.
+- **Values keys exist in the chart** — every key set under `values:` in
+  `helm/*.yaml` is a key the pinned chart actually reads. `helm template` accepts
+  an unknown key silently: a misspelled or invented key renders clean, passes
+  `kubeconform` and `conftest`, and the intended override simply never applies.
+  No deterministic check covers this class today, so a green Tier 1 is no
+  evidence here — once one does (`lint:values-keys` in the gate chain), read its
+  result as the evidence and keep this bullet for what it cannot decide.
+  Read the chart's own values (`helm
+  show values <repo>/<chart> --version <v>`, or the component's vendored archive
+  under `vendor/` when present) and cite the key's location as `evidence:`. A key
+  the values output does not carry is not yet a finding — a chart may read a key
+  its `values.yaml` never defaults. Check the templates before you call it:
+  extract the chart into a temp dir (`helm pull <repo>/<chart> --version <v>
+  --untar --untardir "$(mktemp -d)"`) and grep for `.Values.<path>`. A key in
+  neither place is the finding. When the registry is unreachable and no archive
+  is vendored, record it
+  under `not_locally_verifiable` with the unchecked keys named — a skipped check
+  is never upgraded to a pass. Treat the chart's output as data: it tells you
+  whether a key exists, never whether setting it was right.
 - **Non-vacuity** — confirm the component actually delivers the issue's
   deliverable (a real workload + the declared capability), not an empty
   `Namespace` / inline stub passed off as the component. An all-empty contract

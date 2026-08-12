@@ -111,7 +111,14 @@ at.
    `helm show chart` when the registry is reachable — reading chart defaults is
    evidence-gathering, not the render-by-effect the build phase forbids — and
    record it as an `open_question` when the registry is unreachable. A stated
-   chart-default with no evidence is a guess. Set `capability` by its three states (CONVENTIONS §6): a
+   chart-default with no evidence is a guess. **The same grounding covers mere
+   existence**: any values key the plan names is read from the chart's values (or
+   its vendored archive under the component's `vendor/`) before it enters the
+   plan, because `helm template` accepts a key the chart never reads — a
+   misspelled or invented key renders clean and the override silently does
+   nothing, so the build's deterministic gate will not catch what you hand it.
+
+   Set `capability` by its three states (CONVENTIONS §6): a
    **mapped** id present in the index; **pending-index** — the component provides a
    swappable capability whose id is not yet indexed, so name the intended id and
    record a pre-build blocker in `open_questions[]` (never a silent `# TODO`, never
