@@ -9,6 +9,7 @@ OCI distribution per component (ADR-0009).
 | Component | sync-wave | Source | OCI |
 |---|---|---|---|
 | [`garage-crds`](components/garage-crds/) | -1 | `GarageNode` CRD (strict-B CRD half, ADR-0028) | `oci://.../storage-objects/garage-crds:vX.Y.Z` |
+| [`garage-operator-crds`](components/garage-operator-crds/) | -1 | 6 `garage.rajsingh.info` CRDs from Helm `garage-operator` 0.7.3 (strict-B CRD half, ADR-0028) | `oci://.../storage-objects/garage-operator-crds:X.Y.Z` |
 | [`garage`](components/garage/) | 0 | Helm `garage` 0.9.3 (vendored, appVersion v2.3.0) | `oci://.../storage-objects/garage:vX.Y.Z` |
 | [`garage-buckets`](components/garage-buckets/) | 10 | Bucket CRs + ESO access-key sync | `oci://.../storage-objects/garage-buckets:vX.Y.Z` |
 
