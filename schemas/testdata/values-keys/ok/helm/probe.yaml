@@ -13,3 +13,7 @@ metadata:
 values:
   used: setByTheComponent
   neverRead: setByTheComponent
+  # A key whose NAME contains a dot, and which the chart reads: it must NOT be
+  # reported. Guards the path round-trip.
+  extraArgs:
+    config.expand-env: "setByTheComponent"
