@@ -32,10 +32,14 @@ cap (`/babysit-prs 3`).
 
 Six load-bearing invariants:
 
-1. **Never merges, never touches branches.** It only reviews — invokes pr-gate
-   **without ever asking it to merge** (pr-gate's headless-never-merge holds), and
-   never rebases / updates / force-pushes. The `BEHIND` backlog is solved by the
-   merge queue, not here.
+1. **Never merges, never touches branches.** It only reviews — it dispatches
+   `pr-gate`, which ends at its posted verdict and carries no merge path at all, and
+   it **never dispatches `pr-enqueue`**. That second half is the load-bearing one:
+   enqueueing is operator-only, authorized by a human answering a confirmation
+   *after* seeing the facts, so an unattended pass has no route to it — not by
+   dispatch, and not by an approved PR "flowing on" to a merge. It never rebases /
+   updates / force-pushes either. The `BEHIND` backlog is solved by the merge queue,
+   not here.
 2. **Auto-approval is gated on a committed governance record.** An unattended
    `--approve` under a code-owner's identity satisfies `require_code_owner_reviews`
    mechanically while the audit trail reads as human-authored — a deliberate
