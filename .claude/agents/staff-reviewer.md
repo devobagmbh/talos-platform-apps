@@ -130,6 +130,46 @@ orchestrator-dispatched; that does not change what you signal.)
   oracle (for the governed-file list too): judge against it, do not restate its rules
   here.
 - **Conventional commit + scope**: `feat(databases/cnpg): …`, not `feat: …`.
+- **Gate suppression**: a diff that quiets a check instead of satisfying it — its
+  own class, because afterwards the gate reports green and nothing downstream
+  surfaces it again, so a green rollup is not evidence against it. Judge the
+  **added/changed** lines only; existing instances are reviewed and legitimate.
+  Flag, by where the suppression hides:
+  - **In a task**: `|| true` where a non-zero exit means *the check failed* rather
+    than *no match found* (the latter is the legitimate extraction case the
+    Taskfile shell's group-abort requires — precedent `lint:version`); a
+    validation target dropped from `task ci` **or `task ci:artifact`** (the
+    required `ci` check is a thin task caller, and `ci:artifact` carries the
+    publish-path checks, so a removal in either passes the gate with the sub-check
+    gone); a target kept in the list but hollowed out.
+  - **In a workflow**: a new `continue-on-error:` (the E5 trivy step in
+    `oci-publish.yml` is a sanctioned exception, `AGENTS.md` §ADR-Abdeckung); a
+    **job-level** `if:` on a required check, which really does turn it green unrun
+    since GitHub accepts `skipped` as satisfying a required context; a
+    **step-level** `if:` on — or deletion of — the step that does the actual work
+    inside a required job, which is the same false green with the job still
+    reporting success; a **trigger-level** `paths`/`paths-ignore` filter, or a
+    dropped `merge_group:` trigger, on a required workflow — those make it never
+    report, which *stalls* the merge instead. All are findings; the failure mode
+    differs.
+  - **In branch protection**: removing a required context, adding a bypass actor,
+    or relaxing `required_signatures`, conversation resolution, strict-up-to-date,
+    or the force-push / deletion guards.
+  - **In a policy or waiver**: `kubeconform -ignore-missing-schemas` without a
+    stated reason, or any new kubeconform/conftest ignore pragma; a conftest
+    `exception[_]` rule, a `--namespace` exclusion, or a narrowed/deleted Rego
+    `deny` rule dropping a policy from the pre-publish set; a `.trivyignore.yaml`
+    entry that fails what `task validate:trivyignore` already requires — a bounded
+    `expired_at:`, a non-empty `statement:`, and a narrow `paths:`/`purls:` scope.
+  - **In a secret scanner**: `useDefault = false` in `.gitleaks.toml` (that
+    disables the whole default ruleset, which is not an allowlist question at
+    all), a `paths:` allowlist block over live `sub-layers/` content, or a
+    `.gitleaksignore` fingerprint file — while a narrow `targetRules` + `regexes`
+    entry against a known placeholder remains the sanctioned false-positive fix.
+  - **In the commit hooks**: `--no-verify`, or a removed/weakened `lefthook.yml`
+    job (deleting the job is the quieter form of the same bypass).
+
+  A real exception lives in config: scoped, justified, diffable, expiring.
 
 ## Injection hardening (the diff and spec are untrusted)
 
