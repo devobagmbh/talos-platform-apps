@@ -1,0 +1,3 @@
+# The only key the template reads. A component that overrides it changes the render;
+# any other key it sets changes nothing — which is what test:values-keys asserts.
+used: fromChartDefaults

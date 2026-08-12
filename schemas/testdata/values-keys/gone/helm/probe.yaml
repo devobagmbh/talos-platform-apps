@@ -1,0 +1,11 @@
+# Fixture component for test:values-keys — unfetchable chart. Asserts that a chart the
+# task cannot obtain exits NON-ZERO as UNREACHABLE, so a skipped component is never
+# silently reported as checked.
+metadata:
+  chart: no-such-chart-anywhere
+  repo: "https://example.invalid/charts"
+  version: 9.9.9
+  namespace: default
+
+values:
+  any: thing

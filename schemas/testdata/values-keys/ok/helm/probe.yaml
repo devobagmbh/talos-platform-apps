@@ -1,0 +1,15 @@
+# Fixture component for test:values-keys — reachable chart (packaged into a vendored
+# archive at test time, so no registry is contacted).
+#
+# `used` is read by the fixture chart's template and is overridden here, so removing it
+# changes the render: the oracle must NOT report it.
+# `neverRead` is read by nothing, so removing it changes nothing: the oracle MUST report it.
+metadata:
+  chart: probe
+  repo: ""
+  version: 0.1.0
+  namespace: default
+
+values:
+  used: setByTheComponent
+  neverRead: setByTheComponent
