@@ -1,0 +1,46 @@
+# Strict-B CRDs artifact (ADR-0028) for the garage-operator. Ships ONLY the six
+# CustomResourceDefinitions of API group `garage.rajsingh.info`, extracted verbatim
+# from chart `garage-operator` 0.7.3. The workload counterpart of this strict-B pair
+# is `storage-objects/garage-operator` (sync-wave 1), which carries 0 CRDs.
+#
+# crd-bearing: true marks this as THE CRD-bearing half of the pair. The build gate
+# (task validate:crd-split) keys on this line-anchored marker to assert
+# `kind: CustomResourceDefinition` count > 0 here (and == 0 in the workload half).
+crd-bearing: true
+
+requires:
+  # A CRD bundle with a FUNCTIONAL dependency — unusual, and deliberate. The
+  # `garageclusters.garage.rajsingh.info` CRD carries a `spec.conversion` webhook
+  # stanza (strategy: Webhook) plus the metadata annotation
+  # `cert-manager.io/inject-ca-from: garage-operator/garage-operator-webhook-cert`.
+  # The webhook clientConfig ships WITHOUT a caBundle: cert-manager's cainjector is
+  # what writes it. Without cert-manager present, the CRD is still Established and
+  # single-version reads work, but v1beta1 <-> v1beta2 conversion cannot work — the
+  # API server has no CA to trust the conversion endpoint with. This is a runtime
+  # capability dependency, not a sync-ordering one (see customization.yaml
+  # external_dependencies and README.md § Ordering).
+  secrets/cert-manager: ">=v0.1.0"
+
+# api-surface-only, NO capability — `capabilities: []` is PERMANENT here, not a
+# deferral, so there is deliberately no `# TODO:`. The garage.rajsingh.info group is
+# provider-exclusive: the CRDs are the API surface (schema) of one specific operator
+# and no alternative implementation of them exists, so there is nothing swappable to
+# name a capability id for (precedent: lifecycle/providers, api-surface-only).
+provides:
+  - name: garage-operator-crds
+    version:
+      sot: crd-schema
+      crd_schema: v0.7.3   # chart/appVersion the CRD schemas were extracted from
+    # Every SERVED version of each CRD, group-qualified. task lint:version maps
+    # <group>/<Kind>@<version> to <group>/<version> and requires each to exist in the
+    # rendered CRDs' .spec.group + .spec.versions[].name.
+    api_surface:
+      - garage.rajsingh.info/GarageCluster@v1beta1
+      - garage.rajsingh.info/GarageCluster@v1beta2
+      - garage.rajsingh.info/GarageBucket@v1alpha1
+      - garage.rajsingh.info/GarageBucket@v1beta1
+      - garage.rajsingh.info/GarageKey@v1beta1
+      - garage.rajsingh.info/GarageNode@v1beta1
+      - garage.rajsingh.info/GarageAdminToken@v1beta1
+      - garage.rajsingh.info/GarageReferenceGrant@v1beta1
+    capabilities: []
