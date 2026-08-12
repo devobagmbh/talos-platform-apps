@@ -72,7 +72,10 @@ MUST plan for:
 - During a **coupled pair bump** (§ Regeneration) there is a short **conversion
   window** between the new CRD schema landing at wave -1 and the new operator
   becoming Ready at wave 1. Reads and writes of `GarageCluster` may fail in that
-  window.
+  window. The window closes when the wave-1 operator Deployment reports Ready and
+  cert-manager's cainjector has written the `caBundle`; both are asynchronous, so a
+  consumer SHOULD pause automation that creates, reads or patches `GarageCluster` CRs
+  for the duration of a coupled bump rather than assuming a fixed duration.
 - The **blast radius is bounded to `garage.rajsingh.info` CRs**. Nothing else in the
   cluster depends on this conversion webhook, and the other five CRDs declare no
   conversion at all, so they are unaffected.
@@ -141,9 +144,11 @@ are baked into the shipped CRD bytes:
 
 A consumer **MUST NOT** re-namespace or rename this pair via a Kustomize overlay. A
 `namespace:` transformer or a name prefix applied to either half desynchronizes these
-references: the API server then resolves the conversion endpoint to a Service that
-does not exist, and every `GarageCluster` read **and** write fails — including the
-operator's own reconcile loop. This is the one place where ADR-0024's
+references, and the blast radius is a **complete `GarageCluster` API outage**: the API
+server resolves the conversion endpoint to a Service that does not exist, so every
+`GarageCluster` read **and** write fails — including the operator's own reconcile loop,
+which then stops provisioning buckets and keys. Nothing in the artifact format catches
+this; no schema validation rejects a namespace transformer. This is the one place where ADR-0024's
 consumer-overlayable baseline has a hard boundary, and it is not mechanically
 enforced by the artifact format; it is enforced by this contract.
 
@@ -172,6 +177,21 @@ consumer SHOULD treat this component's `api_surface` (`compatibility.yaml`) as t
 authoritative served set per version and re-read it on every bump, rather than
 assuming continuity of the served set.
 
+**Removing a served version is a breaking change.** Dropping any entry from
+`api_surface` — `GarageCluster@v1beta1` is the nearest candidate, already
+`deprecated: true` upstream — breaks every consumer that authors CRs against that
+version, whose requests the API server then rejects. Deprecated upstream is **not** a
+licence to treat the removal as a feature bump: the catalog commit MUST carry a
+`BREAKING CHANGE:` footer, the component tag MUST advance a major version, and the
+`CHANGELOG.md` entry MUST name the removed version plus the authoring target to migrate
+to (see `AGENTS.md` § Commits & Pull Requests).
+
+**Migrating `garagebuckets` off `v1alpha1`.** Because that CRD ships no conversion
+webhook, there is no automated path. Re-create each `v1alpha1` object as `v1beta1`
+**before** a bump that stops serving `v1alpha1`: read it through a served endpoint,
+re-author it against the `v1beta1` schema, apply it, then delete the original. A
+consumer that authors `v1beta1` only (as this component requires) never needs this.
+
 ## GarageNode coexistence
 
 The catalog also ships `storage-objects/garage-crds`, which carries
@@ -193,6 +213,70 @@ same cluster:
 The two also serve different purposes: the `deuxfleurs.fr` CR is written by Garage's
 own runtime peer discovery, whereas the `garage.rajsingh.info` one is an
 operator-managed node-layout assignment.
+
+## Troubleshooting
+
+Three failure modes of this artifact present as something else. Each entry gives the
+fingerprint that distinguishes it, the causal chain, and the recovery.
+
+### `GarageCluster` conversion keeps failing and it looks like a cert-manager fault
+
+**Fingerprint:** the `-crds` Argo Application never reaches `Synced` and its diff is on
+`.spec.conversion.webhook.clientConfig.caBundle`, **while** the cert-manager
+`Certificate` `garage-operator/garage-operator-webhook-cert` reports Ready. The operator
+log and the API-server errors point at TLS, which sends an operator investigating
+cert-manager first.
+
+**Cause:** the `ignoreDifferences` stanza (§ Consumer wiring) is missing from the
+Application. The desired state ships no `caBundle`, so `selfHeal` blanks the CA that
+cainjector wrote; cainjector re-injects it; `selfHeal` blanks it again. Conversion fails
+for as long as the loop runs, and cert-manager is innocent throughout.
+
+**Recovery:** add the `ignoreDifferences` stanza to the `-crds` Application, sync it,
+and confirm it reaches `Synced` **and** `Healthy` with a non-empty `caBundle` on
+`garageclusters.garage.rajsingh.info`.
+
+### Conversion errors in the first moments after a deploy or a `-crds` bump
+
+**Fingerprint:** the same TLS / webhook-unavailable errors, but the `-crds` Application
+IS `Synced` and the errors stop on their own.
+
+**Cause:** cainjector writes the `caBundle` asynchronously after cert-manager (wave 0)
+is Ready, and the operator (wave 1) may begin reconciling before it lands.
+
+**Recovery:** none — this is expected and self-resolving. Treat it as benign unless it
+persists after the wave-1 operator Deployment reports Ready and the `caBundle` on the
+CRD is non-empty; past that point it is the loop above, not this.
+
+### The CRDs were pruned and the CRs are gone
+
+**Fingerprint:** `GarageCluster`, `GarageBucket`, `GarageKey`, `GarageNode`,
+`GarageAdminToken` and `GarageReferenceGrant` objects have all disappeared at once,
+across namespaces.
+
+**Cause:** the `-crds` Application ran with pruning enabled (`Prune=false` absent, § Consumer
+wiring) and the source stopped containing a CRD. Deleting a CRD deletes every CR of that
+type; whether the workloads the operator created from those CRs — and their PVCs —
+survive depends on the `ownerReference`s it set, so a consumer MUST NOT count on them
+surviving. Treat a CRD prune as a **potential data-loss event**, not a
+recoverable-by-resync one.
+
+**Prevention (do this before every `-crds` bump):** snapshot the declared state —
+
+```sh
+kubectl get -A -o yaml \
+  garageclusters.garage.rajsingh.info garagebuckets.garage.rajsingh.info \
+  garagekeys.garage.rajsingh.info garagenodes.garage.rajsingh.info \
+  garageadmintokens.garage.rajsingh.info garagereferencegrants.garage.rajsingh.info \
+  > garage-crs-backup.yaml
+```
+
+**Recovery:** disable the Application's automated sync, re-apply this artifact with
+`Prune=false` + `ServerSideApply=true` to re-establish the CRD schemas, wait for the
+operator to be Ready, then re-apply the snapshot (strip `metadata.resourceVersion` and
+`metadata.uid`). Re-applied `GarageCluster` objects make the operator reconcile the
+workload again; any object storage whose PVC was garbage-collected is **not** recovered
+by this path and needs the consumer's own volume backup.
 
 ## Regeneration
 
