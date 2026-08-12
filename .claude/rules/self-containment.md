@@ -49,10 +49,12 @@ agent/skill body, or in a repo-local `.claude/rules/` file like this one.
 
 `task check:primitives` is the mechanical enforcer. It fail-closed-checks the
 **executable** primitives (`.claude/agents`, `.claude/skills`, `.claude/workflows`,
-`.claude/hooks`) for (a) self-containment, (b) A1 no-peer-names, and (c)
-verdict-schema consistency. It runs standalone and inside `task ci` (so the GHA
-pipeline catches a drift/self-containment break on every PR). Run it before
-committing any `.claude/` edit.
+`.claude/hooks`); its `summary:` block is the single source for the current
+sub-check list and each check's honest limits — read it there rather than
+re-listing them here, so this file cannot drift behind the gate. It runs
+standalone and inside `task ci` (so the GHA pipeline catches a
+drift/self-containment break on every PR). Run it before committing any
+`.claude/` edit.
 
 These `.claude/rules/` docs are deliberately **outside** the (a) scan: a teaching
 doc must be able to name the forbidden patterns above to teach them. Their
