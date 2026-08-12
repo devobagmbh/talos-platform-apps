@@ -36,7 +36,7 @@ values:
   # overrides it per CR via spec.image. Chart default is "" (operator falls back to
   # its own built-in default). NOTE: this ref reaches the cluster as a controller
   # flag, not as a Kubernetes `image:` key, so the publish-time image-CVE scan does
-  # NOT see it — recorded residual, see README.md § Security posture.
+  # NOT see it — recorded residual, see README.md § Supply chain.
   defaultGarageImage: dxflrs/garage:v2.3.0
 
   # -- (object) pod-level security context. Equals the chart defaults and is pinned

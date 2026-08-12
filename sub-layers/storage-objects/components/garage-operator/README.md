@@ -93,31 +93,52 @@ an `slsa.dev/provenance/v1` predicate for each):
 ```sh
 cosign verify ghcr.io/rajsinghtech/charts/garage-operator:0.7.3 \
   --certificate-identity-regexp \
-    '^https://github.com/rajsinghtech/garage-operator/\.github/workflows/helm\.yml@refs/' \
+    '^https://github.com/rajsinghtech/garage-operator/\.github/workflows/helm\.yml@refs/tags/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 cosign verify ghcr.io/rajsinghtech/garage-operator:v0.7.3 \
   --certificate-identity-regexp \
-    '^https://github.com/rajsinghtech/garage-operator/\.github/workflows/docker\.yml@refs/' \
+    '^https://github.com/rajsinghtech/garage-operator/\.github/workflows/docker\.yml@refs/tags/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+Both identity regexps end at `@refs/tags/` on purpose: an `@refs/`-terminated
+pattern would also accept a signature produced by a branch build.
 
 Chart digest at pin time:
 `sha256:9d2df42772f2ab5d31ce2126795b7ed0b7763ab406b023efe8ff7b666a7c674b`; tarball
 sha256 `d282cb89ee5d54e5ac7dbf2cd5cfc96e9ad5af31febcbbf7a896afb902937708`.
+
+Neither `shasum -c` nor `cosign verify` proves that the committed tarball **is** the
+layer of the pinned chart artifact. Close that loop by reading the layer digest out
+of the OCI manifest and comparing it to the sidecar hash above:
+
+```sh
+oras manifest fetch \
+  ghcr.io/rajsinghtech/charts/garage-operator@sha256:9d2df42772f2ab5d31ce2126795b7ed0b7763ab406b023efe8ff7b666a7c674b \
+  | jq -r '.layers[].digest'
+# -> sha256:d282cb89ee5d54e5ac7dbf2cd5cfc96e9ad5af31febcbbf7a896afb902937708
+```
 
 Residuals a consumer should know:
 
 - **Bus factor 1, `v0.x`, roughly weekly releases.** The pin is deliberate and a bump
   is a reviewed, **coupled** act with the `-crds` half (both halves must come from
   one chart version). An automated chart-version bump MUST NOT be set to automerge
-  for this source.
+  for this source. If such a bump drops a served API version, the breaking-change
+  contract for that lives in the
+  [`garage-operator-crds` README](../garage-operator-crds/README.md).
 - **`defaultGarageImage` is outside the image-CVE gate.** It reaches the cluster as
   the controller flag `--default-garage-image=…`, not as a Kubernetes `image:` key,
   so the catalog's publish-time image scan (`task scan:trivy-images-of`, whose
   extraction is `[Ii]mage:`-keyed) never sees it. The operand image is covered where
   it *is* an `image:` key — in `storage-objects/garage` — and on the consumer cluster
   by the live-cluster scanning layer.
+- **The operand image is unsigned.** `cosign verify docker.io/dxflrs/garage:v2.3.0`
+  returns `no signatures found` even with a wildcard identity and issuer, so there is
+  deliberately no verify command for it above. Chart and operator image are signed;
+  the Garage image the operator runs is not, and its provenance rests on the digest
+  pin alone. Accepted gap.
 - **Operator-created workloads are outside the signed freeze-line.** The
   StatefulSets, DaemonSets, Services and PVCs the operator generates from
   `GarageCluster` CRs are produced at runtime; the catalog signs only this controller
@@ -163,6 +184,20 @@ into a cluster; the grants below are verifiable in the rendered
   the consumer cluster: restrict `create` on `garageclusters.garage.rajsingh.info` to
   trusted principals, and use the consumer-side admission policy layer (ADR-0018
   Kyverno safe-defaults) to fence hostPath workloads.
+- **`GarageKey.spec.secretTemplate` is the same escalation shape.** Its `name` field
+  chooses the Secret the operator writes the minted S3 credentials into. There is no
+  `namespace` field, so the write stays in the CR's own namespace — but the name is
+  unconstrained, so **any principal who can create a `GarageKey` in namespace N can
+  aim the operator's cluster-wide Secret write at an arbitrary Secret name in N** and
+  overwrite an unrelated Secret there, without holding Secret-write RBAC themselves.
+  Mitigate the same way: restrict `create` on `garagekeys.garage.rajsingh.info` to
+  trusted principals.
+- **The manager holds `servicemonitors` cluster-wide regardless of
+  `serviceMonitor.enabled: false`.** The `create`/`delete`/`get`/`list`/`patch`/
+  `update`/`watch` grant on `monitoring.coreos.com` `servicemonitors` is
+  upstream-generated into the manager `ClusterRole` and no chart value removes it, so
+  it is present even though this artifact ships no `ServiceMonitor`. Accepted
+  residual: the operator can write ServiceMonitors it never creates in practice.
 - **The operator pod itself is hardened.** `runAsNonRoot` + `seccompProfile:
   RuntimeDefault` at pod level; `allowPrivilegeEscalation: false`,
   `capabilities.drop: [ALL]` and `readOnlyRootFilesystem: true` on the container; no
@@ -187,7 +222,7 @@ cainjector must write the `caBundle` into both webhook configurations (and into 
 `-crds` half's `garageclusters` conversion stanza), and the operator pod must become
 Ready. All three are asynchronous. At bootstrap this is benign — no CRs exist yet. It
 is only a real outage during a **coupled pair bump**, when CRs already exist; see
-§ Failure modes.
+§ Failure modes → *CR writes are rejected*.
 
 ## Consumer obligations
 
@@ -198,12 +233,38 @@ A consumer MUST:
   `GarageReferenceGrant` object. CRs are cluster-specific composition and live in the
   consumer repo, in consumer-owned namespaces.
 - **Wire two Argo `Application`s**, `-crds` at wave -1 and this one at wave 1, and
-  carry the `ignoreDifferences` stanza on the `-crds` app for
-  `.spec.conversion.webhook.clientConfig.caBundle` — without it `selfHeal` blanks the
-  CA cert-manager injected, and `GarageCluster` conversion fails in a loop that looks
-  like a cert-manager fault. Exact stanza:
+  carry an `ignoreDifferences` stanza on **both**. On the `-crds` app it covers
+  `.spec.conversion.webhook.clientConfig.caBundle` — exact stanza:
   [`garage-operator-crds` README § Consumer wiring](../garage-operator-crds/README.md).
+  On **this** app it covers the two webhook configurations: cert-manager's cainjector
+  writes the CA into their `clientConfig.caBundle` as well, while the shipped artifact
+  leaves that field empty, so the same failure applies here — `selfHeal` blanks the
+  injected CA on every reconcile, and admission for `garage.rajsingh.info` CRs breaks
+  in a loop that looks like a cert-manager fault:
+
+  ```yaml
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+  ```
+
 - **Not re-namespace or rename the pair.** See § Namespace contract below.
+- **Pre-create the bootstrap admin `Secret` and reference it from every
+  `GarageCluster`** as `spec.admin.adminTokenSecretRef: {name: <secret>, key: <key>}`.
+  The operator needs a bearer token to reach Garage's Admin API and apply the cluster
+  layout; a `GarageCluster` without that reference **never leaves `phase: Pending`**,
+  with the condition `StorageTopologyReady=False (WaitingForLayoutSync)` and the
+  message `Auto-mode storage membership exists, but Garage layout convergence cannot
+  be verified: creating Garage Admin API client: admin token not configured on
+  cluster`. This is a genuine chicken-and-egg and not an oversight in the CR surface:
+  `GarageAdminToken` CRs mint *further* tokens **through that same Admin API**, so the
+  first token cannot come from a CR — it MUST be a `Secret` the consumer supplies.
 - **Pin `spec.image` per `GarageCluster`.** The catalog sets a
   `defaultGarageImage` (`dxflrs/garage:v2.3.0`) so a CR that omits the image still
   gets a pinned, known version — but that default is a catalog-owned convenience, not
@@ -214,13 +275,18 @@ A consumer MUST:
   definitions and the `storageClass` are per-cluster decisions the catalog cannot
   make. A `GarageCluster` without deliberate storage sizing is an object store whose
   capacity and durability nobody chose.
+- **Back up the PVCs the operator generates.** They are created at runtime from
+  `GarageCluster` CRs, so they sit outside the signed artifact and outside git-based
+  recovery: re-applying the manifests after a cluster loss re-creates the cluster
+  structure with **empty volumes**. Object data and Garage metadata are the consumer's
+  backup responsibility, on the consumer's own backup path.
 - **Set a PSA level on the namespaces its CRs deploy into.** The operator's own
   namespace is `restricted`; the workload namespaces are consumer-owned, and a CR
   using `nodeLocalPools` requires `enforce: privileged` there (§ Security posture).
 
-A consumer SHOULD additionally restrict who may create `GarageCluster` objects
-(§ Security posture) and enable the `ServiceMonitor` in its own overlay when it runs
-a Prometheus stack.
+A consumer SHOULD additionally restrict who may create `GarageCluster` and
+`GarageKey` objects (§ Security posture) and enable the `ServiceMonitor` in its own
+overlay when it runs a Prometheus stack.
 
 ### Namespace contract
 
@@ -286,6 +352,23 @@ it.
 **Recovery:** confirm the `caBundle` on `garageclusters.garage.rajsingh.info` is
 non-empty and that the `-crds` app carries the `ignoreDifferences` stanza; then
 restore the operator.
+
+### A `GarageCluster` edit reconciles, but the running pods keep the old config
+
+**Fingerprint:** a changed `GarageCluster` field has no effect. The operator reports
+the change as applied and the StatefulSet it generated shows a new `updateRevision`
+that differs from `currentRevision`, yet the running pod still serves the previous
+configuration and the cluster stays in its old phase.
+
+**Cause:** the StatefulSets the operator generates carry `updateStrategy: type:
+OnDelete`. The operator writes a new config ConfigMap and updates the StatefulSet, but
+Kubernetes does **not** roll the pods — the pod picks up the new config only when it
+is recreated.
+
+**Recovery:** delete the affected pods (`kubectl -n <cr-namespace> delete pod
+<garage-pod>`) and let the StatefulSet recreate them at the new revision. Plan for
+this: every `GarageCluster` config change is a two-step operation, and a consumer
+automating CR edits MUST budget the pod deletion into that automation.
 
 ### A coupled bump left the CRD schemas and the controller on different versions
 
