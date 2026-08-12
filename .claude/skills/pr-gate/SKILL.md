@@ -643,6 +643,31 @@ helm-docs); commit signing (an unsigned commit makes the PR `BLOCKED`); `pr-issu
 (the PR closes an issue or carries the `no-issue` label); strict-B stacked-PR merge
 order; no consumer-cluster name or RFC1918 IP in the diff or the posted review.
 
+**Gate suppression (the diff weakens a check instead of satisfying it)** — per the floor
+note above, the reviewer agent's own copy is the authoritative form of this list; keep the
+two in step when either changes. Its own class,
+because once merged the gate reports green and nothing downstream surfaces it again — so a
+green rollup is *not* evidence against it. Read the **added/changed** lines for: `|| true`
+where a non-zero exit means "the check failed" rather than "no match found" (the latter is
+the legitimate extraction case the Taskfile shell's group-abort requires — `lint:version`
+is the precedent); a new `continue-on-error:` (the E5 trivy step in `oci-publish.yml`
+carries one deliberately, `AGENTS.md` §ADR-Abdeckung — sanctioned, not a finding); a
+job-level `if:` on a **required** check, which really does turn it green without running
+it, since GitHub accepts a `skipped` job as satisfying a required context — while the
+opposite mechanism, a trigger-level `paths`/`paths-ignore` filter on a required workflow,
+makes it never report and **stalls** the merge instead (both are findings, different
+failure modes); a validation target dropped from `task ci`'s `cmds:` (the required `ci`
+check is a thin `task ci` caller, so the gate passes with the sub-check gone); a
+branch-protection/ruleset edit removing a required context, adding a bypass actor, or
+relaxing `required_signatures`; `kubeconform -ignore-missing-schemas` without a stated
+reason, or any new kubeconform/conftest ignore pragma; a conftest `exception[_]` rule or
+`--namespace` exclusion dropping a policy from the pre-publish set; a broadened gitleaks
+allowlist — a narrow `targetRules` + `regexes` entry against a known placeholder is the
+sanctioned false-positive fix, a `paths:` block over live `sub-layers/` content or a
+`.gitleaksignore` fingerprint file is suppression; `--no-verify`; a `.trivyignore.yaml`
+entry without `expired_at:`. A real exception lives in config — scoped, justified,
+diffable, expiring. Inline suppression is none of those.
+
 ## LLM failure modes this skill eliminates
 
 - **Premature completion / fabricated pass-claim** — declare `approved` only after the
