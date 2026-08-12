@@ -291,6 +291,14 @@ helm pull oci://ghcr.io/rajsinghtech/charts/garage-operator --version 0.7.3
 echo "d282cb89ee5d54e5ac7dbf2cd5cfc96e9ad5af31febcbbf7a896afb902937708  garage-operator-0.7.3.tgz" \
   | shasum -a 256 -c -
 
+# 2b. Verify that a legitimate upstream GHA workflow produced the chart. The digest
+#     above proves integrity, this proves provenance — expect two attestations, a
+#     cosign signature and a slsa.dev/provenance/v1 predicate.
+cosign verify ghcr.io/rajsinghtech/charts/garage-operator:0.7.3 \
+  --certificate-identity-regexp \
+    '^https://github.com/rajsinghtech/garage-operator/\.github/workflows/helm\.yml@refs/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
 # 3. Re-run the extraction (yq here is python-yq — the -y flag is MANDATORY,
 #    without it the output is JSON)
 helm template garage-operator garage-operator-0.7.3.tgz \
@@ -315,6 +323,13 @@ chart bump MUST re-vendor this file **and** bump this component — and it MUST 
 one chart version, and a version skew between the halves is exactly what produces the
 conversion failures in § Ordering).
 
+Because the coupled bump needs a human to re-vendor the extract and open both halves
+together, an automated chart-version update **MUST NOT** be set to automerge for this
+source. Upstream releases roughly twice a week, so an automerging bot would reliably
+produce a version-skewed CRD/controller pair. Today no bot watches it: this repo's
+`.github/dependabot.yml` covers only `github-actions`, and there is no Renovate
+configuration — so adding OCI-chart coverage is what would introduce the risk.
+
 ## crd-bearing pairing
 
 This artifact carries `crd-bearing: true` in `compatibility.yaml` — the strict-B
@@ -333,6 +348,10 @@ serving workload, not by a CRD schema.
 
 ## Related ADRs
 
-- [ADR-0028 — CRD management (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management.md)
+- [ADR-0028 — CRD management strategy (strict B)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0028-crd-management-strategy.md)
 - [ADR-0024 — Workload/Config Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
 - [ADR-0009 — Platform-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0009-platform-layer-model.md)
+- [ADR-0026 — Central Harbor / NAS block storage](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0026-central-harbor-nas-block-storage.md)
+  — mirroring this upstream is **deliberately declined**: it publishes keyless cosign
+  signatures plus SLSA provenance for both the chart and the operator image, which the
+  § Regeneration recipe re-verifies. Full decision thread: issue #763.
