@@ -209,6 +209,309 @@ tasks:
       # emphasis-as-heading style trips MD036. Do not edit vendored upstream to our rules.
       - git ls-files -z '*.md' ':!:*CHANGELOG.md' ':!:knowledge/SPEC.md' | xargs -0 -r markdownlint --config .markdownlint.yaml
 
+  lint:values-keys:
+    desc: 'ADVISORY: report values keys that do not change the render. Optional arg <sub-layer>/<component>; no arg = all.'
+    summary: |
+      Reports keys set under `values:` in a component's `helm/*.yaml` whose presence
+      does not change the rendered output — the class the whole deterministic chain
+      is blind to. Scope of "keys": every scalar, plus explicit nulls and empty
+      containers (a `local: null` merge-delete of a chart default is one of the most
+      consequential overrides a component can carry), each identified by its JSON
+      path so a key whose NAME contains a dot is handled correctly. Not covered:
+      fields BELOW a list index — the list is the unit under test there, so a typo
+      inside one element of a list whose other elements are effective goes
+      unreported.
+
+      WHY IT EXISTS: `helm template` accepts a values key the chart never reads. A
+      misspelled or invented key renders clean, clears kubeconform and conftest,
+      and the override simply never applies. Only a chart `values.schema.json` with
+      `additionalProperties: false` would reject it, and almost no upstream ships
+      that. So a green `task ci` is no evidence about this class.
+
+      THE ORACLE IS A RENDER DIFF, not a schema comparison. For each key: delete it
+      from the values, re-render, diff against the baseline. Identical output means
+      the key had no effect. This tests the actual property instead of approximating
+      it — which matters, because a chart's `values.yaml` is a set of DEFAULTS, not
+      a schema: `resources: {}`, a partially-populated `securityContext:`, and a
+      user-keyed `config.modules:` are all legitimately extended by keys that appear
+      nowhere in the defaults. The schema-shaped oracle (key present in the default
+      values, or `.Values.<path>` grepped from the templates) was built and measured
+      first: 76 flags across 32 components, every one a false positive, zero true
+      positives. It is not viable; recorded here so it is not re-attempted.
+
+      ONE REPORT CLASS — NO-EFFECT: this key changes no rendered output. Whether
+      that is a defect is a JUDGMENT the task deliberately does not make, because
+      two very different things produce it:
+        - dead weight or a typo — the chart never reads the key. Removing it is a
+          `fix`; it was never in effect, so nothing a consumer could observe changes.
+        - a deliberate pin — the key reproduces today's effective value on purpose,
+          so a chart bump cannot move it silently. Removing THAT is a
+          consumer-visible behaviour change, not a cleanup.
+      The report annotates whether the value repeats the chart's *declared* default,
+      which is a hint, not the answer: a chart that derives a value (an image tag
+      from `.Chart.AppVersion`, a key name from the release) shows a pin as differing
+      from the declared default while it is still a pin. The component README and
+      `git blame` settle it. Measured on the catalog at introduction: 247 NO-EFFECT
+      keys, 27 RENDER-REQUIRED, 1 INDETERMINATE component. Of the NO-EFFECT keys the
+      large majority literally equal the chart's declared default, and none of those
+      can be a typo — a mistyped path carries no default to equal. Expect a signal to
+      judge, not a cleanup backlog.
+
+      THREE NON-FINDING OUTCOMES, each loud rather than silent, because every one of
+      them would otherwise read as a clean bill of health:
+        RENDER-REQUIRED — deleting the key makes the chart fail to render. That
+                          proves the chart DEMANDS the key, which is not the same as
+                          the key reaching the manifest (a `required` guard can
+                          consume it and emit nothing), so it is reported, not folded
+                          into "effective".
+        INDETERMINATE   — the chart does not render byte-stably. The oracle compares
+                          two separate executions, so a chart generating secrets or
+                          timestamps (harbor's `randAlphaNum` + TLS keypair is the
+                          live case) would otherwise make every key look effective —
+                          a silent all-clear for the whole component. Exits non-zero.
+        UNREACHABLE     — the chart could not be fetched or the baseline would not
+                          render. Exits non-zero. A glob matching nothing exits
+                          non-zero too, so a typo'd component argument cannot look
+                          like a passed check.
+
+      ADVISORY, and deliberately NOT wired into `task ci`: findings exit 0. One
+      `helm template` per key is far too slow for the PR gate, and the intended
+      callers are the component evaluator and a reviewer, per component.
+
+      Honest limits: a key that only takes effect together with another value, or
+      under a condition the default values do not trigger, reads as NO-EFFECT —
+      judge before removing. Two keys guarding the same branch (`if or .Values.a
+      .Values.b`) each read as NO-EFFECT although dropping both would change
+      behaviour. The declared-default annotation compares against `helm show values`,
+      which exposes the parent chart's values — a value matching a SUBCHART default
+      is annotated "not the declared default" though it is one. The chart source is
+      trusted exactly as far as `render:one` already trusts it (repo `index.yaml`
+      over HTTPS, or the vendored archive); this task verifies it no further.
+      Extraction runs in a `mktemp -d` removed on exit, so nothing lands in the work
+      tree.
+    cmd: |
+      set -uo pipefail
+      shopt -s nullglob
+      arg="{{.COMPONENT_ID | default .CLI_ARGS}}"
+      # VALUES_GLOB lets `test:values-keys` point the same code at hermetic fixture
+      # components, so the oracle is exercised without a network chart.
+      globs="{{.VALUES_GLOB}}"
+      if [ -z "$globs" ]; then
+        if [ -n "$arg" ]; then
+          globs="sub-layers/${arg%/*}/components/${arg#*/}/helm/*.yaml"
+        else
+          globs="sub-layers/*/components/*/helm/*.yaml"
+        fi
+      fi
+      unreachable=0
+      differs=0
+      echoed=0
+      required=0
+      seen=0
+      for vfile in $globs; do
+        seen=$((seen + 1))
+        root="${vfile%/helm/*}"
+        cid="${root#sub-layers/}"
+        cid="${cid%/components/*}/${root##*/}"
+        if [ "$(yq -r '.metadata.inline // false' "$vfile")" = "true" ]; then continue; fi
+        chart=$(yq -r '.metadata.chart // ""' "$vfile")
+        repo=$(yq -r '.metadata.repo // ""' "$vfile")
+        version=$(yq -r '.metadata.version // ""' "$vfile")
+        namespace=$(yq -r '.metadata.namespace // "default"' "$vfile")
+        if [ -z "$chart" ]; then continue; fi
+
+        tmp=$(mktemp -d)
+        # Same source precedence as render:one — the vendored archive exists because
+        # some upstreams 403 CI-runner IPs, so preferring it is not an optimization.
+        archive="${root}/vendor/${chart}-${version}.tgz"
+        src=""
+        if [ -f "$archive" ]; then
+          src="$archive"
+        elif helm pull "$chart" ${repo:+--repo "$repo"} --version "$version" --untar --untardir "$tmp" >/dev/null 2>&1; then
+          # helm untars to <untardir>/<chart-basename>. An OCI ref
+          # (oci://host/path/name, repo empty) must be reduced to its last segment,
+          # or the path is nonsense and every OCI component reads as UNREACHABLE.
+          src="$tmp/$(basename "$chart")"
+        fi
+        if [ -z "$src" ]; then
+          echo "UNREACHABLE  $cid ($(basename "$vfile")) — chart $chart@$version could not be fetched; NOT a pass"
+          unreachable=1
+          rm -rf "$tmp"
+          continue
+        fi
+        helm show values "$src" > "$tmp/defaults.yaml" 2>/dev/null || : > "$tmp/defaults.yaml"
+        yq -y '.values // {}' "$vfile" > "$tmp/base.yaml"
+        if ! helm template t "$src" --namespace "$namespace" --skip-tests --values "$tmp/base.yaml" > "$tmp/render-base.yaml" 2>"$tmp/err"; then
+          echo "UNREACHABLE  $cid ($(basename "$vfile")) — baseline render failed; NOT a pass"
+          sed 's/^/    /' "$tmp/err" | head -5
+          unreachable=1
+          rm -rf "$tmp"
+          continue
+        fi
+
+        # Determinism control: the oracle compares two SEPARATE helm executions, so a
+        # chart using randAlphaNum / uuidv4 / now would differ on every probe and read
+        # as "every key is effective" — a silent all-clear. Render the baseline twice
+        # and refuse the component if it is not byte-stable.
+        if ! helm template t "$src" --namespace "$namespace" --skip-tests --values "$tmp/base.yaml" > "$tmp/render-base2.yaml" 2>/dev/null \
+           || ! cmp -s "$tmp/render-base.yaml" "$tmp/render-base2.yaml"; then
+          echo "INDETERMINATE  $cid ($(basename "$vfile")) — the chart does not render byte-stably (random/time-dependent output); the diff oracle cannot judge it; NOT a pass"
+          unreachable=1
+          rm -rf "$tmp"
+          continue
+        fi
+
+        # Paths are carried as JSON ARRAYS, never as a dotted string: a YAML key may
+        # itself contain a dot (`extraArgs: {config.expand-env: "true"}` is live in the
+        # catalog), and a join(".")/split(".") round-trip silently retargets it at a
+        # path that does not exist — deleting nothing, rendering identically, and
+        # reporting an effective key as NO-EFFECT.
+        # Selected: every scalar, plus null and empty containers — `local: null` is a
+        # load-bearing merge-delete of a chart default, and skipping it would leave the
+        # most consequential overrides untested.
+        # Truncated at the first list index: an element cannot be dropped without
+        # renumbering its siblings, so the list is the unit under test there.
+        yq -r 'def tw: if length == 0 then [] elif (.[0]|type) == "number" then [] else [.[0]] + (.[1:]|tw) end;
+               .values // {}
+               | [paths as $p | select(getpath($p) | type as $t | (($t != "object" and $t != "array") or length == 0)) | ($p|tw)]
+               | map(select(length > 0)) | unique
+               | .[] | @json + "\t" + (map(if test("\\.") then "\"" + . + "\"" else . end) | join("."))' \
+          "$vfile" 2>/dev/null > "$tmp/keys"
+
+        while IFS="$(printf '\t')" read -r pj disp; do
+          [ -z "$pj" ] && continue
+          yq -y --arg p "$pj" 'delpaths([$p | fromjson])' "$tmp/base.yaml" > "$tmp/probe.yaml" 2>/dev/null || continue
+          if ! helm template t "$src" --namespace "$namespace" --skip-tests --values "$tmp/probe.yaml" > "$tmp/render-probe.yaml" 2>/dev/null; then
+            # Removing the key breaks the render outright. That proves the chart DEMANDS
+            # the key, which is not the same as the key reaching the manifest — a
+            # `required` guard can consume it and emit nothing. Reported separately
+            # rather than folded into "effective", so the distinction stays visible.
+            echo "RENDER-REQUIRED  $cid  $disp  — removing it makes the chart fail to render; the chart demands the key, which is not proof it reaches the manifest"
+            required=$((required+1))
+            continue
+          fi
+          if ! cmp -s "$tmp/render-base.yaml" "$tmp/render-probe.yaml"; then continue; fi
+          ours=$(yq -r --arg p "$pj" 'getpath($p | fromjson) | tojson' "$tmp/base.yaml" 2>/dev/null)
+          theirs=$(yq -r --arg p "$pj" 'getpath($p | fromjson) | tojson' "$tmp/defaults.yaml" 2>/dev/null)
+          if [ -n "$ours" ] && [ "$ours" = "$theirs" ]; then
+            note="repeats the chart's declared default"
+            echoed=$((echoed+1))
+          else
+            note="not the chart's declared default — the chart derives this value anyway, reads it from a subchart default, or never reads the key"
+            differs=$((differs+1))
+          fi
+          echo "NO-EFFECT  $cid  $disp = $ours  ($note)"
+        done < "$tmp/keys"
+        rm -rf "$tmp"
+      done
+      echo ""
+      # nullglob makes a typo'd component expand to nothing, which would otherwise
+      # print a clean zero-finding report and exit 0 — a mis-spelled argument must
+      # never look like a passed check.
+      if [ "$seen" = 0 ]; then
+        echo "lint:values-keys: no helm/*.yaml matched — nothing was checked. Argument or glob wrong?"
+        exit 1
+      fi
+      echo "lint:values-keys (advisory): $((echoed + differs)) key(s) change no rendered output — ${echoed} repeat the declared default, ${differs} do not; ${required} more are required for the render to succeed."
+      echo "  Judge each: a key the chart never reads is dead weight, and removing it is a fix (it was never in effect)."
+      echo "  A key that pins today's effective value on purpose is NOT dead weight — removing it lets the next chart"
+      echo "  bump move the value, which IS a consumer-visible change. This task cannot tell the two apart; the"
+      echo "  component README and git blame can."
+      if [ "$unreachable" != 0 ]; then
+        echo "lint:values-keys: at least one component was UNREACHABLE or INDETERMINATE — it was NOT checked, and that is not a pass"
+        exit 1
+      fi
+      exit 0
+
+  test:values-keys:
+    desc: 'Red-green binding for lint:values-keys: an unread key IS reported, a read key is NOT, unreachable fails.'
+    summary: |
+      Hermetic: builds a throwaway chart with `helm package` and points
+      `lint:values-keys` at fixture components via VALUES_GLOB. No network, so the
+      proof reproduces identically on a workstation and in CI (AGENTS.md §CI
+      conventions rule 2) — a live chart pull would make the red-green claim
+      depend on registry reachability, which is exactly what the task's own
+      UNREACHABLE arm exists to refuse.
+
+      Three assertions, covering both directions plus the fail-closed arm:
+        1. a key the chart's template READS is NOT reported (no false positive —
+           the oracle must not flag effective configuration);
+        2. a key the chart never reads IS reported as NO-EFFECT (no false negative
+           — this is the class the whole deterministic chain misses);
+        3. an unfetchable chart exits NON-ZERO with UNREACHABLE (a skip is never
+           silently a pass).
+    cmd: |
+      set -uo pipefail
+      tmp=$(mktemp -d)
+      trap 'rm -rf "$tmp"' EXIT
+      errors=0
+
+      # The fixture chart and both fixture components are COMMITTED under
+      # schemas/testdata/values-keys/ (the repo's testdata pattern). Building them here
+      # with shell heredocs would put the fixture's own correctness at the mercy of the
+      # task interpreter — and a fixture that is silently wrong turns a red-green proof
+      # into a green nothing. Only the packaging and the layout are assembled here.
+      fx=schemas/testdata/values-keys
+      mkdir -p "$tmp/ok/helm" "$tmp/ok/vendor" "$tmp/gone/helm"
+      cp "$fx/ok/helm/probe.yaml" "$tmp/ok/helm/probe.yaml"
+      cp "$fx/gone/helm/probe.yaml" "$tmp/gone/helm/probe.yaml"
+      helm package "$fx/chart/probe" --destination "$tmp/ok/vendor" >/dev/null 2>&1 || {
+        echo "✗ test: helm package failed — cannot build the fixture chart"; exit 1; }
+
+      # Guard the fixture itself: if the packaged chart lost its default values, the
+      # effective-key assertion below would pass for the wrong reason.
+      helm show values "$tmp/ok/vendor/probe-0.1.0.tgz" > "$tmp/fixture-defaults.yaml" 2>/dev/null || : > "$tmp/fixture-defaults.yaml"
+      if ! grep -q 'fromChartDefaults' "$tmp/fixture-defaults.yaml"; then
+        echo "✗ test: the packaged fixture chart carries no default values — fixture is broken, not the oracle"
+        exit 1
+      fi
+
+      # Output goes to a FILE and every match is a file-grep. AGENTS.md forbids
+      # `grep -q` over a pipe: an early match closes the pipe and the producer takes a
+      # SIGPIPE under pipefail, so the condition can read false despite a match.
+      if task lint:values-keys VALUES_GLOB="$tmp/ok/helm/*.yaml" > "$tmp/out-ok" 2>&1; then
+        if grep -q 'NO-EFFECT.*used = ' "$tmp/out-ok"; then
+          echo "✗ test: a key the template READS was reported (false positive):"; cat "$tmp/out-ok"; errors=1
+        else
+          echo "✓ test: a key the chart reads is not reported"
+        fi
+        if grep -q 'NO-EFFECT.*neverRead' "$tmp/out-ok"; then
+          echo "✓ test: a key the chart never reads is reported"
+        else
+          echo "✗ test: an unread key was NOT reported (false negative — the oracle is blind):"; cat "$tmp/out-ok"; errors=1
+        fi
+        # Regression guard: a key whose NAME contains a dot is read by the chart, so it
+        # must not be reported. A path round-tripped through join(".")/split(".")
+        # retargets it at a nonexistent path, deletes nothing, and reports it.
+        if grep -q 'expand-env' "$tmp/out-ok"; then
+          echo "✗ test: a dot-containing key name was reported — the path round-trip is lossy again:"; cat "$tmp/out-ok"; errors=1
+        else
+          echo "✓ test: a key whose name contains a dot is handled without corruption"
+        fi
+      else
+        echo "✗ test: the reachable fixture did not exit 0 (findings must stay advisory):"; cat "$tmp/out-ok"; errors=1
+      fi
+
+      if task lint:values-keys VALUES_GLOB="$tmp/gone/helm/*.yaml" > "$tmp/out-gone" 2>&1; then
+        echo "✗ test: an unfetchable chart exited 0 — a skip was silently treated as a pass:"; cat "$tmp/out-gone"; errors=1
+      elif grep -q 'UNREACHABLE' "$tmp/out-gone"; then
+        echo "✓ test: an unfetchable chart exits non-zero as UNREACHABLE"
+      else
+        echo "✗ test: the unreachable fixture failed for the wrong reason:"; cat "$tmp/out-gone"; errors=1
+      fi
+
+      # A glob matching nothing must fail, not report a clean zero-finding run.
+      if task lint:values-keys VALUES_GLOB="$tmp/nothing-here/*.yaml" > "$tmp/out-empty" 2>&1; then
+        echo "✗ test: an empty glob exited 0 — a typo'd component looks like a passed check:"; cat "$tmp/out-empty"; errors=1
+      elif grep -q 'nothing was checked' "$tmp/out-empty"; then
+        echo "✓ test: a glob matching nothing fails closed"
+      else
+        echo "✗ test: the empty-glob fixture failed for the wrong reason:"; cat "$tmp/out-empty"; errors=1
+      fi
+
+      if [ "$errors" = 0 ]; then echo "test:values-keys PASSED"; else echo "test:values-keys FAILED"; fi
+      exit "$errors"
+
   lint:rendered:
     desc: kubeconform against all component rendered/manifest.yaml
     # Only the rendered raw manifest, not the packaged rendered/chart/

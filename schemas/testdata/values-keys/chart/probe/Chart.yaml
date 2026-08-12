@@ -1,0 +1,6 @@
+apiVersion: v2
+name: probe
+description: Fixture chart for test:values-keys. Its template reads exactly one value.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

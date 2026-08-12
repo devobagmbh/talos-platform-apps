@@ -61,6 +61,8 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 |---|---|
 | `task lint` | YAML lint over `sub-layers/`, `.github/`, `Taskfile.yml`; Markdown lint over **all tracked `.md`** (`git ls-files '*.md'`, excluding `CHANGELOG.md`) |
 | `task lint:rendered` | `kubeconform` over all components' `rendered/` outputs |
+| `task lint:values-keys [-- <sub-layer>/<component>]` | **Advisory**, not a `task ci` gate: reports values keys whose removal changes no rendered output — the class `helm template` accepts silently (an unknown key renders clean and the override never applies). One render per key, so it is far too slow for the PR gate; run it per component. A finding is not automatically a defect: a key may be a deliberate pin against upstream drift, whose removal IS consumer-visible. An unreachable chart exits non-zero — a skip is never a pass. |
+| `task test:values-keys` | Red-green binding for `lint:values-keys` against the hermetic fixtures in `schemas/testdata/values-keys/`. Outside `task ci` because the target it binds is advisory. |
 | `task render:one -- <sub-layer>/<component>` | `helm template` for one component |
 | `task render:sublayer -- <sub-layer>` | renders all components of one sub-layer |
 | `task render` | render of all components of all sub-layers (matrix) |

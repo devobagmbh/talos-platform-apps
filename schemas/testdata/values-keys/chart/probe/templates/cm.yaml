@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: probe
+data:
+  used: {{ .Values.used | quote }}
+  # Reads a key whose NAME contains a dot. Binds the regression where a path was
+  # round-tripped through join(".")/split("."), which retargets such a key at a
+  # path that does not exist — deleting nothing and reporting it as NO-EFFECT.
+  dotted: {{ index .Values.extraArgs "config.expand-env" | quote }}
