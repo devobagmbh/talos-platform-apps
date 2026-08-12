@@ -60,6 +60,21 @@ canonical floors). A wording that is semantically correct but outside the set
 fails the gate; that is a deliberate trade for a check that cannot be satisfied
 by an empty section.
 
+## Chart grounding
+
+An agent that writes, plans, or accepts Helm values carries the chart-grounding
+discipline **inline**: a values key is read from the pinned chart (or its
+vendored archive) before it is written, and recall is never the source. The
+reason is mechanical, not stylistic — `helm template` accepts a key the chart
+never reads, so a misspelled or invented key renders clean, clears `kubeconform`
+and `conftest`, and the override silently does nothing. No deterministic gate in
+this repo sees that class today; when `lint:values-keys` joins the gate chain,
+amend the bodies that cite its absence rather than leaving the claim standing.
+Phrase it for the agent's own role (writing a
+key, naming one in a plan, accepting one), and keep the chart's output classed as
+untrusted data: it answers whether a key *exists*, never whether setting it was
+correct.
+
 ## judge ≠ builder
 
 The agent that builds is never the agent that verifies or reviews. Reviewers and
