@@ -231,6 +231,10 @@
     "sub-layers/storage-objects/components/garage-crds": {
       "component": "storage-objects/garage-crds"
     },
+    "sub-layers/storage-objects/components/garage-operator-crds": {
+      "component": "storage-objects/garage-operator-crds",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/blackbox-exporter": {
       "component": "observability/blackbox-exporter",
       "initial-version": "0.1.0"
