@@ -96,28 +96,14 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-  conftest:
-    name: conftest (Rego policies)
-    # Not a required check — skip on merge_group (already ran on the PR; conftest is also
-    # part of `task ci`, which the required `ci` job re-runs in the queue).
-    if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
-
-      - name: Devbox setup
-        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
-        with:
-          enable-cache: true
-
-      - name: Render all sub-layers
-        run: devbox run -- task render
-
-      - name: Conftest test
-        run: devbox run -- task scan:conftest
-
-      - name: Conftest verify (policy self-tests)
-        run: devbox run -- task scan:conftest-verify
+  # Note: there is DELIBERATELY no `conftest` job here. `scan:conftest` and
+  # `scan:conftest-verify` are part of `ci:artifact`, so the required `ci` job in
+  # oci-publish.yml already runs both — on the PR and again on the merge_group head.
+  # A separate job would re-render the whole catalog a second time to execute the
+  # identical two tasks, which is the dominant source of per-PR Helm-chart fetches
+  # (each an unretried third-party download, the documented CI flake class). Policy
+  # coverage is unchanged; a violation surfaces as a red `ci` instead of a red
+  # `conftest`. Do not re-add it — scope the work in `task ci` instead.
 
   # Advisory image-CVE early-warning on PRs (E2). NOT a required check — its diff-
   # scope/extraction edge cases must never block a merge; the HARD block is the E5
