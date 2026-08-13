@@ -86,6 +86,20 @@ jobs:
             okf-${{ runner.os }}-
 
       - name: Reproduce local CI pipeline
+        # CI_SCOPE_RANGE narrows `render` (and the gates that read its output) to the
+        # components this PR touches, plus their strict-B siblings — see task
+        # scope:components. A one-component PR otherwise renders all 62, fetching one
+        # third-party Helm chart each with no retry; that volume is the measured cause
+        # of the intermittent 5xx failures (#790).
+        #
+        # Set ONLY for pull_request. merge_group carries no PR diff context (and GitHub
+        # applies no `paths` filtering to it at all), so the queue re-validates the
+        # projected merge with the FULL catalog — the backstop for anything a scoped PR
+        # run could not see. An unset or unresolvable range makes scope:components widen
+        # to ALL, so a mis-set value degrades to today's behaviour rather than skipping
+        # checks. fetch-depth: 0 above resolves the three-dot merge-base diff.
+        env:
+          CI_SCOPE_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '' }}
         run: devbox run -- task ci
 
   # --------------------------------------------------------------------
