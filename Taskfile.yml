@@ -117,16 +117,23 @@ tasks:
       }
 
       full=no
+      # Parse strictly. `${range%%..*}` / `${range##*..}` take the FIRST and LAST segment,
+      # so a malformed 'a..b..c' would silently degrade to 'a...c' — dropping b and
+      # producing a NARROW scope from input the contract says must widen. Requiring
+      # base..head to reconstruct the input exactly rejects that, and the -n tests reject
+      # a missing half ('..head', 'base..').
+      rbase="${range%%..*}"
+      rhead="${range##*..}"
       if [ -z "$range" ]; then
         full=yes
-      elif [ "${range%%..*}" = "$range" ] \
-        || ! git -C "$repo" rev-parse -q --verify "${range%%..*}^{commit}" >/dev/null 2>&1 \
-        || ! git -C "$repo" rev-parse -q --verify "${range##*..}^{commit}" >/dev/null 2>&1 \
-        || ! git -C "$repo" merge-base "${range%%..*}" "${range##*..}" >/dev/null 2>&1; then
+      elif [ "${rbase}..${rhead}" != "$range" ] || [ -z "$rbase" ] || [ -z "$rhead" ] \
+        || ! git -C "$repo" rev-parse -q --verify "${rbase}^{commit}" >/dev/null 2>&1 \
+        || ! git -C "$repo" rev-parse -q --verify "${rhead}^{commit}" >/dev/null 2>&1 \
+        || ! git -C "$repo" merge-base "${rbase}" "${rhead}" >/dev/null 2>&1; then
         echo "scope:components: range '${range}' unresolvable — full catalog" >&2
         full=yes
       else
-        changed="$(git -C "$repo" -c core.quotePath=false diff --no-renames --name-only "${range%%..*}...${range##*..}" 2>/dev/null)" || full=yes
+        changed="$(git -C "$repo" -c core.quotePath=false diff --no-renames --name-only "${rbase}...${rhead}" 2>/dev/null)" || full=yes
       fi
 
       if [ "$full" = no ]; then
@@ -157,6 +164,14 @@ tasks:
 
       # Pull in the strict-B sibling in both directions (see summary).
       for c in $comps; do
+        # A component the range DELETED (or renamed away from — --no-renames reports the
+        # old path too) is still in the diff, but there is nothing left to render, and
+        # render:one hard-fails on a missing directory. Emitting it would turn the
+        # required `ci` check red on a perfectly valid deletion/rename PR. Dropping it is
+        # not a coverage hole: what has to hold for a deletion is catalog-wide consistency
+        # (validate:release-config, validate:compatibility, validate:topology-groups), and
+        # those gates are never scoped.
+        [ -d "$repo/sub-layers/${c%/*}/components/${c#*/}" ] || continue
         echo "$c"
         case "$c" in
           *-crds) sibling="${c%-crds}" ;;
@@ -204,7 +219,12 @@ tasks:
       base="$(g rev-parse HEAD)"
 
       scope_of() {
-        task --silent -d "$root" scope:components SCOPE_REPO="$tmp" SCOPE_RANGE="$1" 2>/dev/null | tr '\n' ' '
+        # Capture first, THEN pipe. `resolver | tr` would report tr's status, so a resolver
+        # that died without output would satisfy an expected-empty assertion for the wrong
+        # reason. Here a non-zero resolver fails the test loudly instead.
+        out="$(task --silent -d "$root" scope:components SCOPE_REPO="$tmp" SCOPE_RANGE="$1" 2>/dev/null)" \
+          || { echo "✗ test:ci-scope: scope:components exited non-zero for range '$1'" >&2; exit 1; }
+        printf '%s' "$out" | tr '\n' ' '
       }
       expect() {
         # $1 = label, $2 = actual, $3 = expected (space-normalised)
@@ -220,6 +240,12 @@ tasks:
 
       expect "no range → ALL"           "$(scope_of '')"          "ALL"
       expect "unresolvable range → ALL" "$(scope_of 'nonsense')"  "ALL"
+      # A malformed multi-segment range must widen, not silently drop the middle segment
+      # and scope against first...last (which would produce a NARROW scope from input the
+      # contract says is unparseable).
+      expect "malformed a..b..c → ALL"  "$(scope_of "${base}..junk..${base}")" "ALL"
+      expect "missing base '..head' → ALL" "$(scope_of "..${base}")" "ALL"
+      expect "missing head 'base..' → ALL" "$(scope_of "${base}..")" "ALL"
 
       printf 'changed\n' >> "$tmp/sub-layers/t/components/alpha/compatibility.yaml"
       g add -A && g commit -qm alpha
@@ -249,6 +275,66 @@ tasks:
       printf 'changed\n' >> "$tmp/README.md"
       g add -A && g commit -qm docs
       expect "docs-only → empty scope" "$(scope_of "${prev}..HEAD")" ""
+
+      # A deleted component must NOT reach render:one, which hard-fails on a missing
+      # directory — that would turn the required `ci` check red on a valid deletion PR.
+      prev="$(g rev-parse HEAD)"
+      rm -rf "$tmp/sub-layers/t/components/beta"
+      g add -A && g commit -qm "delete beta"
+      expect "deleted component → not in scope" "$(scope_of "${prev}..HEAD")" ""
+
+      # Deleting one half of a pair must not drag the surviving half's dead sibling in.
+      prev="$(g rev-parse HEAD)"
+      rm -rf "$tmp/sub-layers/t/components/alpha-crds"
+      g add -A && g commit -qm "delete alpha-crds"
+      expect "deleted -crds half → not in scope, workload not resurrected" "$(scope_of "${prev}..HEAD")" ""
+
+      # And the surviving workload alone no longer emits the deleted sibling.
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/sub-layers/t/components/alpha/compatibility.yaml"
+      g add -A && g commit -qm "touch alpha after sibling deletion"
+      expect "workload whose sibling is gone → itself only" "$(scope_of "${prev}..HEAD")" "t/alpha"
+
+      # INTEGRATION, not just oracle strings: run the production sequence
+      # `render -> validate:crd-split` against the real catalog with a scope that touches
+      # ONE component. String-level tests alone stayed green while every scoped PR failed
+      # the required `ci` gate, because validate:crd-split is catalog-wide and treats a
+      # missing rendered/ for a strict-B half as an error. This binds that interaction.
+      probe_range=""
+      for sha in $(git -C "$root" log --format=%h -60 2>/dev/null); do
+        f="$(git -C "$root" show --name-only --format="" "$sha" 2>/dev/null)"
+        o="$(printf '%s\n' "$f" | grep -vE '(^$|\.md$)' | grep -vE '^sub-layers/[^/]+/components/[^/]+/' || true)"
+        if [ -z "$(printf '%s' "$o" | tr -d '[:space:]')" ] \
+           && printf '%s\n' "$f" | grep -qE '^sub-layers/[^/]+/components/'; then
+          probe_range="${sha}~1..${sha}"; break
+        fi
+      done
+      if [ -z "$probe_range" ]; then
+        echo "✗ test:ci-scope: no component-only commit found in the last 60 — cannot bind the render/crd-split integration" >&2
+        exit 1
+      fi
+      scoped_n="$(task --silent -d "$root" scope:components SCOPE_RANGE="$probe_range" | grep -c . || true)"
+      if [ "$scoped_n" = "0" ] || [ "$(task --silent -d "$root" scope:components SCOPE_RANGE="$probe_range")" = "ALL" ]; then
+        echo "✗ test:ci-scope: probe range '$probe_range' did not produce a narrow scope" >&2; exit 1
+      fi
+      saved="$(mktemp -d)"; trap 'rm -rf "$tmp" "$saved"' EXIT
+      # Preserve whatever the caller had rendered; a test must not destroy local state.
+      (cd "$root" && find sub-layers -path '*/components/*/rendered' -type d 2>/dev/null | while read -r d; do
+        mkdir -p "$saved/$d" && cp -R "$d/." "$saved/$d/" 2>/dev/null || true
+      done)
+      (cd "$root" && rm -rf sub-layers/*/components/*/rendered)
+      CI_SCOPE_RANGE="$probe_range" task -d "$root" render >/dev/null 2>&1 \
+        || { echo "✗ test:ci-scope: scoped render failed for '$probe_range'" >&2; exit 1; }
+      if task -d "$root" validate:crd-split >/dev/null 2>&1; then
+        echo "✓ scoped render + validate:crd-split (catalog-wide gate tolerates an out-of-scope pair)"
+      else
+        echo "✗ test:ci-scope: validate:crd-split FAILED after a scoped render — every scoped PR would fail required ci" >&2
+        exit 1
+      fi
+      (cd "$root" && rm -rf sub-layers/*/components/*/rendered)
+      (cd "$saved" && find . -path '*/rendered' -type d 2>/dev/null | while read -r d; do
+        mkdir -p "$root/${d#./}" && cp -R "$d/." "$root/${d#./}/" 2>/dev/null || true
+      done)
 
       echo "test:ci-scope OK"
 
@@ -938,6 +1024,23 @@ tasks:
       set -eu
       root="$(git rev-parse --show-toplevel)"
       fail=0
+      # Scoped renders (CI_SCOPE_RANGE, see scope:components) produce rendered/ for only
+      # SOME components, so "no manifest" stops being proof of a forgotten render. The
+      # render-dependent arms below therefore skip a strict-B pair when NEITHER half was
+      # rendered — that is the pair being out of scope, and scope:components guarantees a
+      # pair is always in or out TOGETHER (the sibling rule). One half missing while the
+      # other is present is still a hard failure: that is either a real split defect or a
+      # scope bug, and both must be loud. The static marker checks are render-independent
+      # and always run.
+      #
+      # The forgotten-render protection this weakens is restored globally right here: if
+      # NOTHING at all was rendered, fail closed rather than skip every pair and report a
+      # vacuous green.
+      rendered_total="$(find "$root/sub-layers" -path '*/components/*/rendered/manifest.yaml' 2>/dev/null | wc -l | tr -d ' ')"
+      if [ "$rendered_total" -eq 0 ]; then
+        echo "crd-split: no rendered/manifest.yaml anywhere - run 'task render' first (refusing to pass vacuously)" >&2
+        exit 1
+      fi
       for compat in "$root"/sub-layers/*/components/*/compatibility.yaml; do
         [ -f "$compat" ] || continue
         comp_dir="$(dirname "$compat")"
@@ -961,7 +1064,10 @@ tasks:
         case "$comp" in
           *-crds)
             [ "$has_marker" = yes ] || { echo "crd-split: ${id} is a -crds artifact but its compatibility.yaml has no line-anchored 'crd-bearing: true' (marker missing or typo)" >&2; fail=1; }
-            if [ ! -f "$manifest" ]; then
+            other="${root}/sub-layers/${sl}/components/${comp%-crds}/rendered/manifest.yaml"
+            if [ ! -f "$manifest" ] && [ ! -f "$other" ]; then
+              : # pair out of scope for this render — see the note above
+            elif [ ! -f "$manifest" ]; then
               echo "crd-split: ${id} (-crds) has no rendered/manifest.yaml - run 'task render' first" >&2; fail=1
             elif [ "$crd_count" -eq 0 ]; then
               echo "crd-split: ${id} is a -crds artifact but renders 0 CustomResourceDefinition (mislabeled empty crds half)" >&2; fail=1
@@ -972,7 +1078,10 @@ tasks:
             # carrying it is a misplaced marker (the co-build oracle keys on it).
             [ "$has_marker" = no ] || { echo "crd-split: ${id} carries 'crd-bearing: true' but is not a -crds artifact - the marker belongs ONLY on the -crds half" >&2; fail=1; }
             if [ -d "${root}/sub-layers/${sl}/components/${comp}-crds" ]; then
-              if [ ! -f "$manifest" ]; then
+              other="${root}/sub-layers/${sl}/components/${comp}-crds/rendered/manifest.yaml"
+              if [ ! -f "$manifest" ] && [ ! -f "$other" ]; then
+                : # pair out of scope for this render — see the note above
+              elif [ ! -f "$manifest" ]; then
                 echo "crd-split: ${id} (workload half) has no rendered/manifest.yaml - run 'task render' first" >&2; fail=1
               elif [ "$crd_count" -ne 0 ]; then
                 echo "crd-split: ${id} is the workload half of a strict-B pair but renders ${crd_count} CustomResourceDefinition(s) - CRDs belong in ${comp}-crds (crds.create:false / strip inline CRDs)" >&2; fail=1
