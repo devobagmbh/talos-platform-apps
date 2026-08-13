@@ -96,14 +96,39 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-  # Note: there is DELIBERATELY no `conftest` job here. `scan:conftest` and
-  # `scan:conftest-verify` are part of `ci:artifact`, so the required `ci` job in
-  # oci-publish.yml already runs both — on the PR and again on the merge_group head.
-  # A separate job would re-render the whole catalog a second time to execute the
-  # identical two tasks, which is the dominant source of per-PR Helm-chart fetches
-  # (each an unretried third-party download, the documented CI flake class). Policy
-  # coverage is unchanged; a violation surfaces as a red `ci` instead of a red
-  # `conftest`. Do not re-add it — scope the work in `task ci` instead.
+  conftest:
+    name: conftest (Rego policies)
+    # Scoped to the events `ci` does NOT cover, instead of running everywhere.
+    #
+    # `scan:conftest` + `scan:conftest-verify` are part of `ci:artifact`, so the required
+    # `ci` job in oci-publish.yml already runs both on pull_request and on the merge_group
+    # head. Running this job there too re-rendered the entire catalog a second time for
+    # the identical two tasks — one full extra set of unretried third-party Helm-chart
+    # fetches per PR, the dominant source of the intermittent 5xx CI failures (#790).
+    #
+    # But oci-publish.yml triggers ONLY on pull_request, merge_group and tag pushes, and
+    # its `ci` job is further gated to pull_request/merge_group — so on `push:[main]` and
+    # on the weekly `schedule` (both of which THIS workflow has) nothing else runs the
+    # policy gate. Deleting the job outright would silently drop post-merge and scheduled
+    # policy coverage. Hence: skip exactly where `ci` covers us, keep it everywhere else.
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+
+      - name: Devbox setup
+        uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7  # v0.15.0
+        with:
+          enable-cache: true
+
+      - name: Render all sub-layers
+        run: devbox run -- task render
+
+      - name: Conftest test
+        run: devbox run -- task scan:conftest
+
+      - name: Conftest verify (policy self-tests)
+        run: devbox run -- task scan:conftest-verify
 
   # Advisory image-CVE early-warning on PRs (E2). NOT a required check — its diff-
   # scope/extraction edge cases must never block a merge; the HARD block is the E5
