@@ -1,0 +1,165 @@
+# Golden RBAC baseline of ClusterRole/garage-operator-manager-role — the grant a
+# consumer binds when it narrows this artifact to namespace scope (README.md
+# § Security posture -> Namespace-scoped operation). Gated by
+# `task validate:rbac-narrowing`, declared by `compatibility.yaml rbac_policy`.
+#
+# One normalized `<apiGroup>|<resource>|<verb>` triple per line, `LC_ALL=C sort -u`
+# order; the core API group is the empty string, hence a leading `|`. Comment and
+# blank lines are ignored by the gate.
+#
+# WHY a golden and not just a schema: a consumer's per-namespace RoleBinding
+# references this ClusterRole BY NAME, so any upstream rule the chart adds on a bump
+# silently widens every narrowed consumer's grant. A diff against this file is the
+# only place that change becomes visible before publish. Authored from the chart
+# source (`vendor/garage-operator-0.7.3.tgz` templates/clusterrole.yaml), not from
+# the gate's own output.
+#
+# Updating it is deliberate: re-derive from the chart, review the delta as a grant
+# change, and re-check the README's cost statement and `inert_when_namespaced`.
+apps|daemonsets|create
+apps|daemonsets|delete
+apps|daemonsets|get
+apps|daemonsets|list
+apps|daemonsets|patch
+apps|daemonsets|update
+apps|daemonsets|watch
+apps|deployments|create
+apps|deployments|delete
+apps|deployments|get
+apps|deployments|list
+apps|deployments|patch
+apps|deployments|update
+apps|deployments|watch
+apps|replicasets|get
+apps|replicasets|list
+apps|replicasets|watch
+apps|statefulsets|create
+apps|statefulsets|delete
+apps|statefulsets|get
+apps|statefulsets|list
+apps|statefulsets|patch
+apps|statefulsets|update
+apps|statefulsets|watch
+garage.rajsingh.info|garageadmintokens/finalizers|update
+garage.rajsingh.info|garageadmintokens/status|get
+garage.rajsingh.info|garageadmintokens/status|patch
+garage.rajsingh.info|garageadmintokens/status|update
+garage.rajsingh.info|garageadmintokens|create
+garage.rajsingh.info|garageadmintokens|delete
+garage.rajsingh.info|garageadmintokens|get
+garage.rajsingh.info|garageadmintokens|list
+garage.rajsingh.info|garageadmintokens|patch
+garage.rajsingh.info|garageadmintokens|update
+garage.rajsingh.info|garageadmintokens|watch
+garage.rajsingh.info|garagebuckets/finalizers|update
+garage.rajsingh.info|garagebuckets/status|get
+garage.rajsingh.info|garagebuckets/status|patch
+garage.rajsingh.info|garagebuckets/status|update
+garage.rajsingh.info|garagebuckets|create
+garage.rajsingh.info|garagebuckets|delete
+garage.rajsingh.info|garagebuckets|get
+garage.rajsingh.info|garagebuckets|list
+garage.rajsingh.info|garagebuckets|patch
+garage.rajsingh.info|garagebuckets|update
+garage.rajsingh.info|garagebuckets|watch
+garage.rajsingh.info|garageclusters/finalizers|update
+garage.rajsingh.info|garageclusters/status|get
+garage.rajsingh.info|garageclusters/status|patch
+garage.rajsingh.info|garageclusters/status|update
+garage.rajsingh.info|garageclusters|create
+garage.rajsingh.info|garageclusters|delete
+garage.rajsingh.info|garageclusters|get
+garage.rajsingh.info|garageclusters|list
+garage.rajsingh.info|garageclusters|patch
+garage.rajsingh.info|garageclusters|update
+garage.rajsingh.info|garageclusters|watch
+garage.rajsingh.info|garagekeys/finalizers|update
+garage.rajsingh.info|garagekeys/status|get
+garage.rajsingh.info|garagekeys/status|patch
+garage.rajsingh.info|garagekeys/status|update
+garage.rajsingh.info|garagekeys|create
+garage.rajsingh.info|garagekeys|delete
+garage.rajsingh.info|garagekeys|get
+garage.rajsingh.info|garagekeys|list
+garage.rajsingh.info|garagekeys|patch
+garage.rajsingh.info|garagekeys|update
+garage.rajsingh.info|garagekeys|watch
+garage.rajsingh.info|garagenodes/finalizers|update
+garage.rajsingh.info|garagenodes/status|get
+garage.rajsingh.info|garagenodes/status|patch
+garage.rajsingh.info|garagenodes/status|update
+garage.rajsingh.info|garagenodes|create
+garage.rajsingh.info|garagenodes|delete
+garage.rajsingh.info|garagenodes|get
+garage.rajsingh.info|garagenodes|list
+garage.rajsingh.info|garagenodes|patch
+garage.rajsingh.info|garagenodes|update
+garage.rajsingh.info|garagenodes|watch
+garage.rajsingh.info|garagereferencegrants/status|get
+garage.rajsingh.info|garagereferencegrants/status|patch
+garage.rajsingh.info|garagereferencegrants/status|update
+garage.rajsingh.info|garagereferencegrants|create
+garage.rajsingh.info|garagereferencegrants|delete
+garage.rajsingh.info|garagereferencegrants|get
+garage.rajsingh.info|garagereferencegrants|list
+garage.rajsingh.info|garagereferencegrants|patch
+garage.rajsingh.info|garagereferencegrants|update
+garage.rajsingh.info|garagereferencegrants|watch
+monitoring.coreos.com|servicemonitors|create
+monitoring.coreos.com|servicemonitors|delete
+monitoring.coreos.com|servicemonitors|get
+monitoring.coreos.com|servicemonitors|list
+monitoring.coreos.com|servicemonitors|patch
+monitoring.coreos.com|servicemonitors|update
+monitoring.coreos.com|servicemonitors|watch
+policy|poddisruptionbudgets|create
+policy|poddisruptionbudgets|delete
+policy|poddisruptionbudgets|get
+policy|poddisruptionbudgets|list
+policy|poddisruptionbudgets|patch
+policy|poddisruptionbudgets|update
+policy|poddisruptionbudgets|watch
+storage.k8s.io|storageclasses|get
+storage.k8s.io|storageclasses|list
+storage.k8s.io|storageclasses|watch
+|configmaps|create
+|configmaps|delete
+|configmaps|get
+|configmaps|list
+|configmaps|patch
+|configmaps|update
+|configmaps|watch
+|events|create
+|events|patch
+|nodes|get
+|nodes|list
+|nodes|patch
+|nodes|update
+|nodes|watch
+|persistentvolumeclaims|create
+|persistentvolumeclaims|delete
+|persistentvolumeclaims|get
+|persistentvolumeclaims|list
+|persistentvolumeclaims|patch
+|persistentvolumeclaims|update
+|persistentvolumeclaims|watch
+|pods|create
+|pods|delete
+|pods|get
+|pods|list
+|pods|patch
+|pods|watch
+|secrets|create
+|secrets|delete
+|secrets|get
+|secrets|list
+|secrets|patch
+|secrets|update
+|secrets|watch
+|services|create
+|services|delete
+|services|get
+|services|list
+|services|patch
+|services|update
+|services|watch

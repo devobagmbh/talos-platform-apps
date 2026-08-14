@@ -1730,6 +1730,481 @@ tasks:
       if [ "$fail" -eq 0 ]; then echo "test:topology-groups OK — 1 positive accepted, 8 negatives rejected (single-reason)"; fi
       exit "$fail"
 
+  validate:rbac-narrowing:
+    desc: 'RBAC-narrowing contract: the grant a namespace-scoped consumer binds is pinned against a golden, and its declared cost matches the role (#795)'
+    summary: |
+      Gates every component that declares `rbac_policy.class: narrowable` in
+      compatibility.yaml — i.e. whose README documents narrowing the cluster-wide manager
+      ClusterRoleBinding to namespace scope as a SUPPORTED consumer overlay (ADR-0024
+      calibrated friction names RBAC consumer-overlayable). Components without the marker
+      are skipped: no sanction is documented, so there is nothing to keep honest.
+
+      WHY a gate and not documentation alone: a narrowing consumer keeps the SHIPPED
+      ClusterRole and binds it per namespace BY NAME. Every rule an upstream chart bump
+      adds therefore widens that consumer's grant silently, and every CLUSTER-SCOPED rule
+      it adds silently invalidates the component README's cost statement — neither is
+      visible in an ordinary render-diff review. Three artifacts must agree:
+        rendered/manifest.yaml   — what the catalog actually publishes and signs
+        <rbac_policy.baseline>   — the golden: the grant that was reviewed and accepted
+        rbac_policy.inert_…      — the cost the README promises a consumer
+
+      Checks per gated component, in order, first failure wins for that component:
+        1. inputs exist         — manifest / golden / README / scope map (a missing render
+                                  is a failure, not a skip; assumes `task render` ran,
+                                  same contract as validate:crd-split)
+        2. role extractable     — the declared ClusterRole is present and yields >0 rules
+        3. judgeable shape      — no aggregationRule, no resourceNames, no nonResourceURLs,
+                                  no '*' in apiGroups/resources/verbs, and every extracted
+                                  triple well-formed. The oracle compares
+                                  `<apiGroup>|<resource>|<verb>` triples; a rule shape it
+                                  cannot reduce to triples is NOT a pass.
+        4. golden parity        — render == golden, in BOTH directions (a removed rule is a
+                                  behaviour change too)
+        5. cost parity          — the role's cluster-scoped subset, derived from
+                                  catalog/rbac-resource-scope.yaml, equals
+                                  inert_when_namespaced. Fails closed on a resource the
+                                  scope map does not classify, and on a scope value other
+                                  than cluster|namespaced — never guesses.
+        6. README parity        — the README's `### Namespace-scoped operation` section
+                                  exists and names the ClusterRole plus every resource the
+                                  declaration calls inert.
+      Fails closed when NOTHING was checked (precedent: lint:version) — an empty run is
+      never a pass. Consequence to know: if the last narrowable component is ever removed,
+      this task must be removed from `task ci` in the same change, deliberately.
+
+      Deliberate limits (recorded in knowledge/decisions/DR-0004): README parity is
+      PRESENCE-only in one direction. It cannot judge an over-claim, because the section
+      legitimately names retained resources too (the residual-risk paragraph), and prose
+      is not a machine-readable set. The gate pins the grant and the declared cost; the
+      section's other claims are reviewer-judged.
+
+      Seams (used by task test:rbac-narrowing to drive THIS code path over fixtures):
+      RBAC_COMPONENT_DIRS (space-separated component dirs, default sub-layers/*/components/*/)
+      and RBAC_SCOPE_MAP. Optional per-component scope:
+      `task validate:rbac-narrowing -- <sub-layer>/<component>`.
+    cmd: |
+      # NOTE: no `set -e` / no `set -o pipefail` and no `grep -q` over a pipe — go-task's
+      # embedded mvdan/sh aborts a { } group on the first non-zero member under set -e and
+      # dies on the SIGPIPE `grep -q` raises under pipefail (cf. validate:topology-groups,
+      # lint:version). Every match below is a FILE grep whose exit code is checked, or an
+      # emptiness test on a file: a no-match grep exits 1, which must never be mistaken for
+      # a gate verdict. The repo `yq` is python-yq (a jq wrapper), so all filters are jq.
+      set -u
+      scope_map="${RBAC_SCOPE_MAP:-catalog/rbac-resource-scope.yaml}"
+      tmp="$(mktemp -d)" || { echo "✗ validate:rbac-narrowing: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      if [ ! -f "$scope_map" ]; then
+        echo "✗ SCOPE MAP MISSING: $scope_map" >&2
+        exit 2
+      fi
+      yq -r '.resources | to_entries[] | "\(.key)\t\(.value)"' "$scope_map" > "$tmp/scope.tsv" 2>/dev/null
+      if [ ! -s "$tmp/scope.tsv" ]; then
+        echo "✗ SCOPE MAP UNREADABLE or empty (expected a non-empty .resources map): $scope_map" >&2
+        exit 2
+      fi
+
+      scope="{{.CLI_ARGS}}"
+      if [ -n "${RBAC_COMPONENT_DIRS:-}" ]; then
+        set -- $RBAC_COMPONENT_DIRS
+      elif [ -n "$scope" ]; then
+        set -- "sub-layers/${scope%/*}/components/${scope#*/}/"
+      else
+        set -- sub-layers/*/components/*/
+      fi
+
+      checked=0
+      declared=0
+      fail=0
+
+      # Does the extracted README section name $1 as a whole token? A bare substring match
+      # is unsound in both directions that matter here: the ClusterRole name
+      # `<x>-manager-role` is a PREFIX of the ClusterRoleBinding name
+      # `<x>-manager-rolebinding` the same section documents deleting, and the resource
+      # `nodes` is a substring of the CRD resource `garagenodes` in the same role. Either
+      # would satisfy the check without the fact a consumer needs being present.
+      section_names() {
+        needle="$(printf '%s' "$1" | sed 's/[^A-Za-z0-9_-]/\\&/g')"
+        grep -E "(^|[^A-Za-z0-9_-])${needle}([^A-Za-z0-9_-]|\$)" "$tmp/section" >/dev/null 2>&1
+      }
+
+      # Returns 1 on the first failure for the current component. Reads the globals
+      # comp_id / decl / manifest / readme / golden / role, set by the loop below.
+      check_component() {
+        if [ ! -f "$manifest" ]; then
+          echo "✗ ${comp_id}: MANIFEST MISSING — ${manifest} (run \`task render:one -- ${comp_id}\`)"
+          return 1
+        fi
+        if [ ! -f "$golden" ]; then
+          echo "✗ ${comp_id}: BASELINE MISSING — rbac_policy.baseline points at ${golden}"
+          return 1
+        fi
+        if [ ! -f "$readme" ]; then
+          echo "✗ ${comp_id}: README MISSING — ${readme} (the sanction has to be documented somewhere)"
+          return 1
+        fi
+
+        # (1) extract the declared ClusterRole. Cardinality is asserted, not assumed: the
+        # render concatenates the helm output with manifests/*.yaml, so two documents can
+        # carry the same name — taking `.[0]` would then pin a rule set that is not the
+        # grant the API server assembles.
+        yq -s -r --arg n "$role" 'map(select(.kind=="ClusterRole" and .metadata.name==$n)) | length' \
+          "$manifest" > "$tmp/role.count" 2>/dev/null
+        rcount="$(cat "$tmp/role.count" 2>/dev/null)"
+        if [ "${rcount:-0}" = "0" ]; then
+          echo "✗ ${comp_id}: CLUSTERROLE NOT FOUND — no ClusterRole/${role} in ${manifest}"
+          return 1
+        fi
+        if [ "${rcount}" != "1" ]; then
+          echo "✗ ${comp_id}: DUPLICATE CLUSTERROLE — ${rcount} documents named ClusterRole/${role}"
+          echo "    in ${manifest}. The effective grant is not any single one of them, so the"
+          echo "    triple oracle cannot pin it. Not a pass."
+          return 1
+        fi
+        yq -s -r --arg n "$role" 'map(select(.kind=="ClusterRole" and .metadata.name==$n)) | .[0]' \
+          "$manifest" > "$tmp/role.json" 2>/dev/null
+
+        # (2) judgeable shape. A rule the triple oracle cannot reduce is not a pass:
+        # resourceNames/nonResourceURLs narrow or widen outside the triple space, and a
+        # wildcard makes set comparison meaningless. aggregationRule means the effective
+        # rules are assembled by the API server at runtime, so the rendered set is not the
+        # grant at all. Each of the four shapes reports its OWN discriminator, so a test arm
+        # cannot be satisfied by a sibling branch (a shared token would let three of the four
+        # terms be deleted with every arm still green — and nonResourceURLs/aggregationRule
+        # contribute no triples, so nothing downstream would catch their loss).
+        jq -r 'select(.aggregationRule != null) | "aggregationRule: \(.aggregationRule|tojson)"' \
+          "$tmp/role.json" > "$tmp/u-agg" 2>/dev/null
+        jq -r '.rules[]? | select(.resourceNames != null) | tojson' "$tmp/role.json" > "$tmp/u-names" 2>/dev/null
+        jq -r '.rules[]? | select(.nonResourceURLs != null) | tojson' "$tmp/role.json" > "$tmp/u-urls" 2>/dev/null
+        jq -r '.rules[]? | select(((.apiGroups // []) + (.resources // []) + (.verbs // []))
+               | index("*") != null) | tojson' "$tmp/role.json" > "$tmp/u-star" 2>/dev/null
+        for shape in aggregationRule:u-agg resourceNames:u-names nonResourceURLs:u-urls wildcard:u-star; do
+          sname="${shape%%:*}"
+          sfile="$tmp/${shape#*:}"
+          if [ -s "$sfile" ]; then
+            echo "✗ ${comp_id}: UNJUDGEABLE RULE SHAPE (${sname}) in ClusterRole/${role} — this gate"
+            echo "    compares <apiGroup>|<resource>|<verb> triples and cannot judge ${sname}."
+            echo "    Not a pass:"
+            sed 's/^/    /' "$sfile"
+            return 1
+          fi
+        done
+
+        # (3) normalize the render into triples. The core API group is the empty string,
+        # hence a leading '|'.
+        jq -r '.rules[]? | .apiGroups[] as $g | .resources[] as $r | .verbs[] as $v
+               | "\($g)|\($r)|\($v)"' "$tmp/role.json" 2>/dev/null | LC_ALL=C sort -u > "$tmp/render"
+        if [ ! -s "$tmp/render" ]; then
+          echo "✗ ${comp_id}: ClusterRole/${role} yielded ZERO triples — extraction is blind, not clean"
+          return 1
+        fi
+        # Structural self-check on the extraction (generic, not resource-specific): every
+        # line must be exactly group|resource|verb. Catches a filter that silently changed
+        # shape — e.g. emitting objects or nulls — which would otherwise compare as data.
+        grep -v -E '^[^|]*\|[^|]+\|[^|]+$' "$tmp/render" > "$tmp/malformed" 2>/dev/null
+        if [ -s "$tmp/malformed" ]; then
+          echo "✗ ${comp_id}: MALFORMED TRIPLE from ClusterRole/${role} — extraction is unsound:"
+          sed 's/^/    /' "$tmp/malformed"
+          return 1
+        fi
+
+        # (4) golden parity. Comment and blank lines in the golden are ignored.
+        sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$golden" | LC_ALL=C sort -u > "$tmp/golden"
+        if [ ! -s "$tmp/golden" ]; then
+          echo "✗ ${comp_id}: EMPTY BASELINE — ${golden} carries no triples (a golden that asserts nothing)"
+          return 1
+        fi
+        if ! diff -u "$tmp/golden" "$tmp/render" > "$tmp/gdiff" 2>&1; then
+          echo "✗ ${comp_id}: GOLDEN DRIFT — ClusterRole/${role} no longer matches ${golden}"
+          echo "    Every '+' line is a grant a narrowing consumer's RoleBinding now confers;"
+          echo "    every '-' line is one it loses. Review it as a grant change, then update"
+          echo "    ${golden} deliberately (re-derive from the chart source, not from this output)"
+          echo "    and re-check README.md § Security posture -> Namespace-scoped operation."
+          sed -n '3,40p' "$tmp/gdiff" | sed 's/^/    /'
+          return 1
+        fi
+
+        # (5) cost parity: the role's cluster-scoped subset IS what a RoleBinding cannot
+        # confer, so it must equal what the component declares (and the README promises).
+        cut -d'|' -f1,2 "$tmp/render" | LC_ALL=C sort -u > "$tmp/pairs"
+        : > "$tmp/unclassified"
+        : > "$tmp/badscope"
+        : > "$tmp/clusterpairs"
+        while IFS= read -r p; do
+          v="$(awk -F'\t' -v k="$p" '$1==k {print $2; exit}' "$tmp/scope.tsv")"
+          if [ -z "$v" ]; then
+            printf '%s\n' "$p" >> "$tmp/unclassified"
+          elif [ "$v" = "cluster" ]; then
+            printf '%s\n' "$p" >> "$tmp/clusterpairs"
+          elif [ "$v" != "namespaced" ]; then
+            printf '%s -> %s\n' "$p" "$v" >> "$tmp/badscope"
+          fi
+        done < "$tmp/pairs"
+        if [ -s "$tmp/badscope" ]; then
+          echo "✗ ${comp_id}: INVALID SCOPE VALUE in ${scope_map} (expected cluster|namespaced):"
+          sed 's/^/    /' "$tmp/badscope"
+          return 1
+        fi
+        if [ -s "$tmp/unclassified" ]; then
+          echo "✗ ${comp_id}: UNCLASSIFIED RESOURCE — ${scope_map} does not classify:"
+          sed 's/^/    /' "$tmp/unclassified"
+          echo "    Add each as cluster|namespaced (from the CRD's spec.scope, or"
+          echo "    \`kubectl api-resources --namespaced=false\` for built-ins). The gate"
+          echo "    does not guess a scope."
+          return 1
+        fi
+        : > "$tmp/derived"
+        while IFS= read -r p; do
+          awk -F'|' -v g="${p%%|*}" -v r="${p#*|}" '$1==g && $2==r' "$tmp/render" >> "$tmp/derived"
+        done < "$tmp/clusterpairs"
+        LC_ALL=C sort -u "$tmp/derived" -o "$tmp/derived"
+        yq -r '.rbac_policy.inert_when_namespaced[] | .apiGroups[] as $g | .resources[] as $r
+               | .verbs[] as $v | "\($g)|\($r)|\($v)"' "$decl" 2>/dev/null \
+          | LC_ALL=C sort -u > "$tmp/declared"
+        if ! diff -u "$tmp/declared" "$tmp/derived" > "$tmp/idiff" 2>&1; then
+          echo "✗ ${comp_id}: INERT SET MISMATCH — rbac_policy.inert_when_namespaced is not the"
+          echo "    cluster-scoped subset of ClusterRole/${role} ('+' = missing from the"
+          echo "    declaration, '-' = declared but not cluster-scoped). A '+' line means the"
+          echo "    component README's cost statement is now WRONG for a narrowing consumer."
+          sed -n '3,40p' "$tmp/idiff" | sed 's/^/    /'
+          return 1
+        fi
+
+        # (6) README parity — presence-only, see the summary's stated limit.
+        awk '/^### Namespace-scoped operation/{f=1;next} f && (/^## /||/^### /){exit} f' \
+          "$readme" > "$tmp/section" 2>/dev/null
+        if [ ! -s "$tmp/section" ]; then
+          echo "✗ ${comp_id}: README PARITY — no non-empty '### Namespace-scoped operation'"
+          echo "    section in ${readme}. A narrowable component documents the overlay there."
+          return 1
+        fi
+        miss=""
+        if ! section_names "$role"; then
+          miss="${miss} ClusterRole/${role}"
+        fi
+        cut -d'|' -f2 "$tmp/declared" | LC_ALL=C sort -u > "$tmp/inertres"
+        while IFS= read -r r; do
+          if ! section_names "$r"; then
+            miss="${miss} ${r}"
+          fi
+        done < "$tmp/inertres"
+        if [ -n "$miss" ]; then
+          echo "✗ ${comp_id}: README PARITY — the '### Namespace-scoped operation' section does"
+          echo "    not name:${miss}"
+          echo "    A consumer reads that section to learn what the narrowing costs; anything"
+          echo "    declared inert has to appear there."
+          return 1
+        fi
+
+        echo "✓ ${comp_id}: ClusterRole/${role} == ${golden} ($(wc -l < "$tmp/render" | tr -d ' ') triples), inert set + README in parity"
+        return 0
+      }
+
+      for cdir in "$@"; do
+        [ -d "$cdir" ] || continue
+        case "$cdir" in */) ;; *) cdir="${cdir}/" ;; esac
+        decl="${cdir}compatibility.yaml"
+        [ -f "$decl" ] || continue
+        class="$(yq -r '.rbac_policy.class // "absent"' "$decl" 2>/dev/null)"
+        [ "$class" = "absent" ] && continue
+        comp_id="$(echo "$cdir" | sed 's|sub-layers/||; s|/components/|/|; s|/$||')"
+        # A component that carries an rbac_policy block at all was READ and honoured, so the
+        # run is not a no-op even if nothing was narrowable — that distinction is what keeps
+        # a scoped run against a deliberately `fixed` component from failing closed.
+        declared=$((declared+1))
+        if [ "$class" = "fixed" ]; then
+          echo "· ${comp_id}: rbac_policy.class=fixed — narrowing is deliberately not sanctioned, nothing to gate"
+          continue
+        fi
+        if [ "$class" != "narrowable" ]; then
+          # Unreachable through the schema (enum), reachable through a hand-run or a
+          # future schema edit. An unknown class is never treated as "skip".
+          echo "✗ ${comp_id}: BAD CLASS — rbac_policy.class='${class}' (expected narrowable|fixed)"
+          fail=1
+          continue
+        fi
+        role="$(yq -r '.rbac_policy.cluster_role // ""' "$decl" 2>/dev/null)"
+        bname="$(yq -r '.rbac_policy.baseline // ""' "$decl" 2>/dev/null)"
+        if [ -z "$role" ] || [ -z "$bname" ]; then
+          echo "✗ ${comp_id}: INCOMPLETE DECLARATION — rbac_policy needs cluster_role + baseline"
+          fail=1
+          continue
+        fi
+        # RBAC_MANIFEST_REL is a TEST seam only: the fixture component dirs cannot carry a
+        # `rendered/` directory, because .gitignore excludes `**/rendered/` globally and the
+        # lefthook no-rendered pre-commit job blocks it — so committed fixtures put the
+        # manifest at a different relative path. Never set it for a real run.
+        manifest="${cdir}${RBAC_MANIFEST_REL:-rendered/manifest.yaml}"
+        readme="${cdir}README.md"
+        golden="${cdir}${bname}"
+        checked=$((checked+1))
+        if ! check_component; then
+          fail=1
+        fi
+      done
+
+      if [ "$declared" -eq 0 ]; then
+        echo "✗ NOTHING CHECKED — no component in the selected scope carries an rbac_policy" >&2
+        echo "    block at all. An empty run is not a pass: either the selector is wrong, or the" >&2
+        echo "    last component declaring one is gone and this task must leave \`task ci\` in the" >&2
+        echo "    same, deliberate change. (A component declaring class: fixed DOES count — the" >&2
+        echo "    declaration was read and honoured.)" >&2
+        exit 1
+      fi
+      if [ "$fail" -eq 0 ]; then
+        echo "→ rbac-narrowing OK: ${checked} narrowable component(s) in parity (render == golden == declared cost == README), ${declared} declaring rbac_policy"
+      fi
+      exit "$fail"
+
+  test:rbac-narrowing:
+    desc: 'Red-green binding for validate:rbac-narrowing (2 positives + 16 single-reason negatives, each asserted on its OWN message) (#795)'
+    summary: |
+      Hermetic, network-free red-green test. Drives validate:rbac-narrowing — the whole
+      task, not an inner comparator — over the committed fixture component directories
+      under schemas/testdata/rbac-narrowing/ via the RBAC_COMPONENT_DIRS seam (parity with
+      test:topology-groups' TOPOLOGY_GROUPS_FILE and test:release-config's RP_CONFIG).
+
+      Each fixture directory has the shape of a real component (compatibility.yaml,
+      README.md, rendered/manifest.yaml, rbac-baseline.triples), so the gate takes exactly
+      the code path it takes in CI. Every negative is otherwise-fully-valid and differs
+      from the positive in ONE respect, so reverting the single assertion it targets makes
+      it pass — that is the red-green binding.
+
+      Each negative asserts its OWN failure token, not merely a non-zero exit: a fixture
+      that fails for the wrong reason proves nothing about the check it is named after.
+      Fixtures deliberately carry both a core-group rule (empty apiGroup -> the leading-'|'
+      triple form) and a non-core rule, because those are two different code paths in the
+      normalization and the awk join.
+    cmd: |
+      # Same mvdan/sh discipline as the gate: no set -e / pipefail, file greps only.
+      set -u
+      fx=schemas/testdata/rbac-narrowing
+      tmp="$(mktemp -d)" || { echo "test:rbac-narrowing: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      fail=0
+
+      # Guard the positive fixture itself: a fixture whose golden or inert set is empty
+      # would make the accept-arm pass for the wrong reason (and the gate's own empty
+      # checks would be the thing under test instead).
+      gsz="$(sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$fx/valid/rbac-baseline.triples" | wc -l | tr -d ' ')"
+      isz="$(yq -r '.rbac_policy.inert_when_namespaced | length' "$fx/valid/compatibility.yaml" 2>/dev/null)"
+      if [ "${gsz:-0}" -lt 2 ] || [ "${isz:-0}" -lt 1 ]; then
+        echo "✗ test: the positive fixture is broken (golden lines=${gsz}, inert rules=${isz}) — fixture, not oracle"
+        exit 1
+      fi
+
+      # Every gate invocation goes through an `if`: go-task runs `cmd:` under errexit, so a
+      # bare failing command — and a rejecting gate is exactly that — would kill this task
+      # instead of being measured. (Inside a function called from an `if` condition errexit
+      # is suppressed, which is why the gate itself may use bare file greps.)
+      run_gate() {
+        # $1 = fixture component dir; the gate's output lands in $tmp/out, its verdict in rc
+        rc=0
+        if RBAC_COMPONENT_DIRS="$1" RBAC_MANIFEST_REL=manifest.yaml \
+             RBAC_SCOPE_MAP="$fx/scope.yaml" \
+             task validate:rbac-narrowing > "$tmp/out" 2>&1; then
+          rc=0
+        else
+          rc=1
+        fi
+        printf '%s\n' "$rc" > "$tmp/rc"
+      }
+      pass_case() {
+        run_gate "$fx/$1"
+        if [ "$(cat "$tmp/rc")" = "0" ]; then
+          echo "✓ $1 accepted"
+        else
+          echo "✗ FAIL: $1 must be ACCEPTED but the gate rejected it:"
+          sed 's/^/    /' "$tmp/out"
+          fail=1
+        fi
+      }
+      pass_case_token() {
+        # $1 = fixture dir, $2 = the message this arm is named after. An accepting arm
+        # whose branch emits a line must assert that line: exit 0 alone cannot tell the
+        # skip branch apart from a component the gate never saw.
+        run_gate "$fx/$1"
+        if [ "$(cat "$tmp/rc")" != "0" ]; then
+          echo "✗ FAIL: $1 must be ACCEPTED but the gate rejected it:"
+          sed 's/^/    /' "$tmp/out"
+          fail=1
+        elif grep -F -e "$2" "$tmp/out" >/dev/null 2>&1; then
+          echo "✓ $1 accepted on '$2'"
+        else
+          echo "✗ FAIL: $1 was accepted WITHOUT the expected line '$2':"
+          sed 's/^/    /' "$tmp/out"
+          fail=1
+        fi
+      }
+      reject_case() {
+        # $1 = fixture dir, $2 = the failure token this arm is named after
+        run_gate "$fx/$1"
+        if [ "$(cat "$tmp/rc")" = "0" ]; then
+          echo "✗ FAIL: $1 must be REJECTED but the gate accepted it"
+          fail=1
+        elif grep -F -e "$2" "$tmp/out" >/dev/null 2>&1; then
+          echo "✓ $1 rejected on '$2'"
+        else
+          echo "✗ FAIL: $1 was rejected for the WRONG reason (expected '$2'):"
+          sed 's/^/    /' "$tmp/out"
+          fail=1
+        fi
+      }
+
+      pass_case   valid
+      reject_case widened            'GOLDEN DRIFT'
+      reject_case narrowed           'GOLDEN DRIFT'
+      reject_case cluster-scoped-add 'INERT SET MISMATCH'
+      reject_case unclassified       'UNCLASSIFIED RESOURCE'
+      reject_case no-manifest        'MANIFEST MISSING'
+      reject_case wrong-role-name    'CLUSTERROLE NOT FOUND'
+      reject_case duplicate-role     'DUPLICATE CLUSTERROLE'
+      reject_case readme-stale       'README PARITY'
+      reject_case readme-no-role     'README PARITY'
+      reject_case bad-class          'BAD CLASS'
+      # One arm per unjudgeable shape, each asserted on its OWN discriminator. A single
+      # shared token would let three of the four terms be deleted with every arm still
+      # green — and the aggregationRule / nonResourceURLs shapes contribute no triples, so
+      # golden parity cannot catch them either: that combination is a silent ACCEPT of a
+      # widened grant, not a wrong message.
+      reject_case resource-names     'UNJUDGEABLE RULE SHAPE (resourceNames)'
+      reject_case aggregation-rule   'UNJUDGEABLE RULE SHAPE (aggregationRule)'
+      reject_case non-resource-urls  'UNJUDGEABLE RULE SHAPE (nonResourceURLs)'
+      reject_case wildcard-verb      'UNJUDGEABLE RULE SHAPE (wildcard)'
+      # class: fixed is accepted AND reported — a declaration the gate read and honoured.
+      pass_case_token fixed          'rbac_policy.class=fixed'
+
+      # An invalid scope VALUE is a property of the shared map, so this arm overrides
+      # RBAC_SCOPE_MAP instead of the component dir.
+      rc=0
+      if RBAC_COMPONENT_DIRS="$fx/valid" RBAC_MANIFEST_REL=manifest.yaml \
+           RBAC_SCOPE_MAP="$fx/scope-bad-value.yaml" \
+           task validate:rbac-narrowing > "$tmp/out" 2>&1; then rc=0; else rc=1; fi
+      if [ "$rc" = "0" ]; then
+        echo "✗ FAIL: scope-bad-value must be REJECTED but the gate accepted it"; fail=1
+      elif grep -F -e 'INVALID SCOPE VALUE' "$tmp/out" >/dev/null 2>&1; then
+        echo "✓ scope-bad-value rejected on 'INVALID SCOPE VALUE'"
+      else
+        echo "✗ FAIL: scope-bad-value was rejected for the WRONG reason:"; sed 's/^/    /' "$tmp/out"; fail=1
+      fi
+
+      # Fail-closed on an empty run: a component selector that matches nothing must be red,
+      # never a silent pass. Uses the CLI scope path (not the dirs seam) on purpose.
+      rc=0
+      if RBAC_SCOPE_MAP="$fx/scope.yaml" task validate:rbac-narrowing -- no-such/component \
+           > "$tmp/out" 2>&1; then rc=0; else rc=1; fi
+      if [ "$rc" = "0" ]; then
+        echo "✗ FAIL: an unmatched component scope must be REJECTED (empty run)"; fail=1
+      elif grep -F -e 'NOTHING CHECKED' "$tmp/out" >/dev/null 2>&1; then
+        echo "✓ unmatched scope rejected on 'NOTHING CHECKED'"
+      else
+        echo "✗ FAIL: unmatched scope was rejected for the WRONG reason:"; sed 's/^/    /' "$tmp/out"; fail=1
+      fi
+
+      if [ "$fail" -eq 0 ]; then
+        echo "test:rbac-narrowing OK — 2 positives accepted, 16 negatives rejected on their own message"
+      fi
+      exit "$fail"
+
   validate:trivyignore:
     desc: 'Guard: .trivyignore.yaml entry shape — bounded expired_at (≤ N=90 days out), non-empty statement, paths/purls scope (#478)'
     summary: |
@@ -4149,6 +4624,17 @@ tasks:
       # poisoned GHA cache is exploited. Fast, no network (drives okf:install in verify-only mode).
       - task: test:okf-install
       - task: ci:artifact
+      # RBAC-narrowing contract (#795) — AFTER ci:artifact on purpose, twice over:
+      # it reads rendered/manifest.yaml (produced by ci:artifact's `render`, same
+      # assumption as validate:crd-split), and it is DELIBERATELY not inside
+      # ci:artifact, because neither the component README nor its rbac_policy
+      # declaration ships in the published artifact (`task package` puts only
+      # kustomization.yaml + manifest.yaml in the tarball) — a publish-time run could
+      # not protect anything a tag push emits, so this is a PR-time invariant.
+      - task: validate:rbac-narrowing
+      # Hermetic red-green guard for it (2 positives + 16 single-reason negatives, no
+      # network, own fixture component dirs), mirroring test:topology-groups' placement.
+      - task: test:rbac-narrowing
 
   ci:artifact:
     desc: Artifact validation shared by the PR `ci` gate and the publish job (no catalog-wide release-coverage gates)
@@ -4266,7 +4752,15 @@ tasks:
                   schemas/testdata/compatibility-resource-policy-star-not-sole.yaml \
                   schemas/testdata/compatibility-resource-policy-missing-kind.yaml \
                   schemas/testdata/compatibility-resource-policy-bad-kind-enum.yaml \
-                  schemas/testdata/compatibility-resource-policy-empty-workload.yaml; do
+                  schemas/testdata/compatibility-resource-policy-empty-workload.yaml \
+                  schemas/testdata/compatibility-rbac-policy-narrowable-incomplete.yaml \
+                  schemas/testdata/compatibility-rbac-policy-fixed-with-details.yaml \
+                  schemas/testdata/compatibility-rbac-policy-bad-class-enum.yaml \
+                  schemas/testdata/compatibility-rbac-policy-baseline-traversal.yaml \
+                  schemas/testdata/compatibility-rbac-policy-unknown-key.yaml \
+                  schemas/testdata/compatibility-rbac-policy-empty-inert.yaml \
+                  schemas/testdata/compatibility-rbac-policy-rule-missing-verbs.yaml \
+                  schemas/testdata/compatibility-rbac-policy-bad-cluster-role.yaml; do
           if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
             echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
             fail=1
@@ -4277,7 +4771,9 @@ tasks:
         # Positive-fixture guard: the schema MUST accept a valid resource_policy
         # block; a fixture that FAILS means the accept-side (ADR-0024 Resource-Sizing)
         # regressed. Together with the negatives this binds red-green on schema revert.
-        for pf in schemas/testdata/compatibility-resource-policy-valid.yaml; do
+        for pf in schemas/testdata/compatibility-resource-policy-valid.yaml \
+                  schemas/testdata/compatibility-rbac-policy-valid.yaml \
+                  schemas/testdata/compatibility-rbac-policy-fixed-valid.yaml; do
           if check-jsonschema --schemafile "$schema" "$pf" >/dev/null 2>&1; then
             echo "✓ positive fixture correctly accepted: $(basename "$pf")"
           else

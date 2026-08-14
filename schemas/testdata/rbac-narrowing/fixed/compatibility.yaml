@@ -1,0 +1,10 @@
+---
+# Fixture component for `task test:rbac-narrowing`: records that narrowing is
+# deliberately NOT sanctioned. Nothing to gate, but the declaration WAS read — so the
+# run is not an empty one, which is what the fail-closed check must distinguish.
+requires: {}
+provides:
+  - name: fixture
+    api_surface: []
+rbac_policy:
+  class: fixed

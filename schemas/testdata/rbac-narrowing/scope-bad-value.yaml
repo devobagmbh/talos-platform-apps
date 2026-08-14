@@ -1,0 +1,8 @@
+# Fixture scope map for `task test:rbac-narrowing`: identical to the real
+# catalog/rbac-resource-scope.yaml for the fixture's resources, except `|nodes`
+# carries a value outside the cluster|namespaced enum. The gate MUST refuse it
+# rather than fall through to "not cluster-scoped".
+resources:
+  "|nodes": clusterwide
+  "|secrets": namespaced
+  "storage.k8s.io|storageclasses": cluster

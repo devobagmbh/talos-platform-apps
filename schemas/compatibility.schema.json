@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://devoba.de/schemas/compatibility.schema.json",
   "title": "Component Compatibility Contract",
-  "description": "Declares the dependency surface and API/capability surface of a catalog component. Lives as compatibility.yaml next to helm/ + manifests/ and ships with the OCI artifact.\n\nSchema-contract-parity decisions (rules/schema-contract-parity.md):\n1. Closed-vs-open: closed via additionalProperties:false on provides[] items — hygiene and the explicit reject-apis threat-model (a legacy 'apis' key under provides[] fails validation).\n2. Duplicate-key behavior: duplicate top-level keys are a YAML authoring error; readers treat the file as corrupt and surface it, not silently last-wins.\n3. No schema version field — evolution tracked via git history under harness-evolution review (rules/review-rigor.md 2-round R2 minimum).\n4. compatibility.yaml is repo-internal trusted data — no untrusted-data sentinel applies.\n5. Per-field mutability: 'requires' and 'provides' are mutable-in-place (version bumps, new capabilities). 'crd-bearing' is mutable-in-place. 'resource_policy' is mutable-in-place (consumer-tunability classification, ADR-0024 Resource-Sizing / docs#159).\n\nNote: structural typing only. sot<->payload consistency (e.g. sot:app requires app: to be set) and render-parity are owned by task lint:version, not this schema.",
+  "description": "Declares the dependency surface and API/capability surface of a catalog component. Lives as compatibility.yaml next to helm/ + manifests/. Read by the repo's CI gates, NOT packaged into the OCI artifact — task package puts only kustomization.yaml + manifest.yaml in the tarball, so no consumer parses this file.\n\nSchema-contract-parity decisions (rules/schema-contract-parity.md):\n1. Closed-vs-open: closed via additionalProperties:false on provides[] items — hygiene and the explicit reject-apis threat-model (a legacy 'apis' key under provides[] fails validation).\n2. Duplicate-key behavior: duplicate top-level keys are a YAML authoring error; readers treat the file as corrupt and surface it, not silently last-wins.\n3. No schema version field — evolution tracked via git history under harness-evolution review (rules/review-rigor.md 2-round R2 minimum).\n4. compatibility.yaml is repo-internal trusted data — no untrusted-data sentinel applies.\n5. Per-field mutability: 'requires' and 'provides' are mutable-in-place (version bumps, new capabilities). 'crd-bearing' is mutable-in-place. 'resource_policy' is mutable-in-place (consumer-tunability classification, ADR-0024 Resource-Sizing / docs#159). 'rbac_policy' is mutable-in-place, but NOT silently: its 'baseline' names a committed golden and its 'inert_when_namespaced' mirrors a documented consumer cost, so an edit is a grant change under CODEOWNERS review — task validate:rbac-narrowing turns any drift between the three (render, golden, declaration) red rather than accepting last-write-wins.\n\nNote: structural typing only. sot<->payload consistency (e.g. sot:app requires app: to be set) and render-parity are owned by task lint:version, not this schema.",
   "type": "object",
   "additionalProperties": false,
   "required": ["requires", "provides"],
@@ -10,6 +10,80 @@
     "crd-bearing": {
       "type": "boolean",
       "description": "Marks the CRD-bearing half of a strict-B pair (ADR-0028). When true, the validate:crd-split gate asserts kind:CustomResourceDefinition count > 0 in the rendered artifact."
+    },
+    "rbac_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class"],
+      "description": "Declares whether narrowing this component's cluster-wide manager ClusterRoleBinding to namespace scope is a SUPPORTED consumer overlay (ADR-0024 calibrated friction names RBAC consumer-overlayable). Absent = not narrowable: no sanction is documented and task validate:rbac-narrowing skips the component — the safe default, since an undeclared component is simply ungated rather than falsely asserted. Structural typing only; that the named ClusterRole renders, that the golden matches, and that inert_when_namespaced equals the role's cluster-scoped subset are owned by task validate:rbac-narrowing, not this schema.",
+      "properties": {
+        "class": {
+          "type": "string",
+          "enum": ["narrowable", "fixed"],
+          "description": "'narrowable' = the component README documents a supported namespace-scoped overlay, and the gate pins the grant a consumer binds. 'fixed' = deliberately NOT narrowable, recorded explicitly (distinct from an absent block, which records nothing)."
+        },
+        "cluster_role": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$",
+          "description": "metadata.name of the ClusterRole a narrowing consumer keeps and binds per namespace. The gate extracts this object from rendered/manifest.yaml; the name pattern is a DNS-subdomain subset so the value stays safe to use as a literal in the gate's extraction."
+        },
+        "baseline": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "description": "Component-local file holding the golden '<apiGroup>|<resource>|<verb>' triples of cluster_role (conventionally rbac-baseline.triples). Basename only — no path separators, so a declaration cannot point the gate outside its own component directory."
+        },
+        "inert_when_namespaced": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The rules that stop working under the namespace-scoped overlay, because a RoleBinding to a ClusterRole grants nothing on cluster-scoped resources. This is the component README's cost statement in machine-readable form: the gate derives the role's cluster-scoped subset from catalog/rbac-resource-scope.yaml and asserts equality, so an upstream bump adding a cluster-scoped resource fails CI instead of silently invalidating the README.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["apiGroups", "resources", "verbs"],
+            "description": "One PolicyRule in the same shape rbac.authorization.k8s.io uses, so it can be compared to the rendered role without translation.",
+            "properties": {
+              "apiGroups": {
+                "type": "array",
+                "minItems": 1,
+                "description": "API groups, with the empty string for the core group (as in a PolicyRule). No minLength on the items for exactly that reason.",
+                "items": { "type": "string" }
+              },
+              "resources": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "verbs": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "description": "Coherence: a 'narrowable' policy MUST name the role, the golden and the cost — the gate cannot check a sanction that declares none of them, and a README-only sanction is the staleness class this block exists to kill.",
+          "if": { "properties": { "class": { "const": "narrowable" } } },
+          "then": { "required": ["cluster_role", "baseline", "inert_when_namespaced"] }
+        },
+        {
+          "description": "Coherence: a 'fixed' policy MUST NOT carry narrowing details (they would describe an overlay the component does not sanction).",
+          "if": { "properties": { "class": { "const": "fixed" } } },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "required": ["cluster_role"] },
+                { "required": ["baseline"] },
+                { "required": ["inert_when_namespaced"] }
+              ]
+            }
+          }
+        }
+      ]
     },
     "resource_policy": {
       "type": "object",

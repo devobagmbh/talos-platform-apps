@@ -1,0 +1,16 @@
+---
+# Negative fixture: unknown key inside rbac_policy (closed field set, parity
+# decision 1) — catches a renamed/legacy key rather than ignoring it.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowable
+  cluster_role: test-manager-role
+  baseline: rbac-baseline.triples
+  inert_when_namespaces: []
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]
+      verbs: [get]

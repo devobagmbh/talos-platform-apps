@@ -1,0 +1,14 @@
+---
+# Negative fixture: an inert rule without verbs is not a PolicyRule and cannot be
+# compared to the rendered role.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowable
+  cluster_role: test-manager-role
+  baseline: rbac-baseline.triples
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]

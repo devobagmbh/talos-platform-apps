@@ -1,0 +1,15 @@
+---
+# Negative fixture: class outside the enum. Only narrowable|fixed exist; a typo MUST
+# NOT silently read as "not narrowable" (absence already means that).
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowed
+  cluster_role: test-manager-role
+  baseline: rbac-baseline.triples
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]
+      verbs: [get]

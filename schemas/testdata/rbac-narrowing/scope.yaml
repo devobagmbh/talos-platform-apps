@@ -1,0 +1,10 @@
+# Fixture scope map for `task test:rbac-narrowing` — the hermetic stand-in for
+# catalog/rbac-resource-scope.yaml. It classifies exactly the resources the fixture
+# roles name, and DELIBERATELY omits `batch|cronjobs`, which is the entire oracle of
+# the `unclassified` arm: keying that arm on the production file would make an
+# unrelated PR (which may legitimately add cronjobs there) flip this test.
+resources:
+  "|nodes": cluster
+  "|secrets": namespaced
+  "|events": namespaced
+  "storage.k8s.io|storageclasses": cluster

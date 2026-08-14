@@ -1,0 +1,9 @@
+# Fixture golden for `task test:rbac-narrowing`: the accepted grant of
+# ClusterRole/fixture-manager-role. One core-group rule (leading `|`) and one
+# non-core rule, so both normalization paths are exercised.
+|nodes|get
+|nodes|list
+|secrets|get
+|secrets|list
+storage.k8s.io|storageclasses|get
+batch|cronjobs|get

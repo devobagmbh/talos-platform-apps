@@ -1,0 +1,16 @@
+---
+# Negative fixture: cluster_role outside the DNS-subdomain subset pattern. The gate uses
+# this value as a literal when extracting the ClusterRole from the render, so a value
+# carrying whitespace or shell/regex metacharacters must not validate.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowable
+  cluster_role: "Test Manager Role"
+  baseline: rbac-baseline.triples
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]
+      verbs: [get]

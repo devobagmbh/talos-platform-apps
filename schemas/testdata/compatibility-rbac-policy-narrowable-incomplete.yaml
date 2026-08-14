@@ -1,0 +1,10 @@
+---
+# Negative fixture: class:narrowable without cluster_role/baseline/
+# inert_when_namespaced. The gate cannot check a sanction that names nothing, and a
+# README-only sanction is the staleness class the block exists to kill.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowable

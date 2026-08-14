@@ -40,3 +40,26 @@ provides:
       # (the index entry is deliberately not `instanced`).
       - id: s3-bucket-provisioning
         swap_class: rewrite-required
+
+# Narrowing the cluster-wide manager binding to namespace scope is a SUPPORTED
+# consumer overlay (README.md § Security posture -> Namespace-scoped operation);
+# ADR-0024 calibrated friction names RBAC consumer-overlayable. A narrowing consumer
+# drops the ClusterRoleBinding and binds the ClusterRole below per namespace, so the
+# grant it binds is upstream-owned and moves on every chart bump — hence the golden.
+# `task validate:rbac-narrowing` pins all three against each other: the rendered role,
+# the golden, and the cost this block declares.
+rbac_policy:
+  class: narrowable
+  cluster_role: garage-operator-manager-role
+  baseline: rbac-baseline.triples
+  # The role's cluster-scoped rules — inert under a RoleBinding, which is exactly what
+  # the README's cost statement claims. Derived from catalog/rbac-resource-scope.yaml
+  # by the gate and asserted equal, so an upstream bump that adds a cluster-scoped
+  # resource fails CI instead of silently invalidating the README.
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]
+      verbs: [get, list, patch, update, watch]
+    - apiGroups: ["storage.k8s.io"]
+      resources: [storageclasses]
+      verbs: [get, list, watch]

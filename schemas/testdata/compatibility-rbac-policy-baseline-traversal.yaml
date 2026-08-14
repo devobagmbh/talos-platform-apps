@@ -1,0 +1,15 @@
+---
+# Negative fixture: baseline escaping the component directory. The basename pattern
+# keeps a declaration from pointing the gate at an arbitrary file.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowable
+  cluster_role: test-manager-role
+  baseline: ../../../etc/passwd
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]
+      verbs: [get]

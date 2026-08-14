@@ -1,0 +1,10 @@
+---
+# Negative fixture: class:fixed carrying narrowing details is incoherent — they
+# describe an overlay the component does not sanction.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: fixed
+  cluster_role: test-manager-role

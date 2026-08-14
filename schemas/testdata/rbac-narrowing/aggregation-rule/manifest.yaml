@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fixture
+---
+# Decoy: a second ClusterRole in the same document stream. If the gate's selection
+# broke, its `configmaps` rule would leak into the triples and fail golden parity.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fixture-other-role
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fixture-manager-role
+# The rules below are unchanged: an aggregated role's EFFECTIVE grant is assembled by
+# the API server from labelled roles, so the rendered set is not the grant at all and
+# contributes no triple difference. Nothing downstream can catch this.
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        rbac.example/aggregate-to-fixture: "true"
+rules:
+  - apiGroups: [""]
+    resources: [secrets, nodes]
+    verbs: [get, list]
+  - apiGroups: ["storage.k8s.io"]
+    resources: [storageclasses]
+    verbs: [get]

@@ -1,0 +1,9 @@
+---
+# Positive fixture: class:fixed alone is a complete, coherent declaration — a
+# component that deliberately records "not narrowable". MUST pass validation.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: fixed

@@ -158,11 +158,9 @@ into a cluster; the grants below are verifiable in the rendered
   escalate further. The operator needs write access to *some* Secrets because it
   mints S3 credentials into a Secret per `GarageKey` (`spec.secretTemplate`); the
   cluster-wide *read* scope is what upstream's generated RBAC grants on top of that
-  need. A consumer that considers this unacceptable can scope the operator down: the
-  chart's `watchNamespaces` switch makes it use namespace-scoped `Role`s instead of
-  `ClusterRole`s. That is a **consumer overlay decision with a functional cost** —
-  namespace-scoped installs cannot use `nodeLocalPools`, because node labelling is
-  inherently cluster-scoped — and the catalog ships the cluster-scoped default.
+  need. A consumer that considers this unacceptable **MAY** narrow the grant to
+  namespace scope — a supported overlay with a documented functional cost, spelled out
+  in § Namespace-scoped operation below. The catalog ships the cluster-scoped default.
 - **`nodes` `get`/`list`/`patch`/`update`/`watch`.** The operator writes
   operator-owned activation labels and HostPath claims onto Node objects to make
   node-local pool membership drain-safe, and reads node labels to resolve
@@ -208,6 +206,120 @@ into a cluster; the grants below are verifiable in the rendered
   `SubjectAccessReview`). The chart's own `NetworkPolicy` is off in this artifact
   because network policy in this platform is capability-selector-based and
   consumer-composed (PNI v2), not tool-name-keyed.
+
+### Namespace-scoped operation (supported consumer overlay)
+
+A consumer that will not grant the cluster-wide manager binding **MAY** run this
+artifact namespace-scoped, watching an explicit list of namespaces instead. This is a
+**supported** overlay of the signed baseline — ADR-0024 calibrated friction names RBAC
+consumer-overlayable — not a fork and not a catalog PR. The catalog default stays
+cluster-wide, because that is the shape catalog CI renders, publishes and signs.
+
+Three surfaces change, and they do not all live in the same place:
+
+- **`ClusterRoleBinding/garage-operator-manager-rolebinding` — removed** from the base,
+  via a `$patch: delete` in the Application's `kustomize.patches`. Dropping the binding
+  while keeping the `ClusterRole` *is* the mechanism: a `RoleBinding` that references a
+  `ClusterRole` grants that rule set **only inside its own namespace**. It has to be the
+  patch, not a `kubectl delete` — the binding is part of the synced artifact, so
+  `selfHeal` puts it straight back.
+- **`--watch-namespaces=garage-operator,<watched-ns>[,…]` — appended** to the `manager`
+  container's args, by a JSON6902 patch in the same list. Without it the informers keep
+  watching cluster-wide and every reconcile fails `forbidden`. Include the operator's
+  own namespace, as the chart does.
+- **One `RoleBinding` per watched namespace — consumer-authored objects, not patches.**
+  `roleRef` the shipped `ClusterRole/garage-operator-manager-role`; the subject is
+  `ServiceAccount/garage-operator` in namespace `garage-operator`. These are *additional*
+  objects, and `kustomize.patches` mutates only what the base already contains — it
+  cannot add resources. They therefore live in the consumer's own manifests, not in this
+  Application's patch list (ADR-0024 § Consumer-Overlay distinguishes additive artifacts
+  from field-scoped overlays).
+
+The two patch targets:
+
+```yaml
+kustomize:
+  patches:
+    # 1 — drop the cluster-wide manager binding
+    - target:
+        group: rbac.authorization.k8s.io
+        kind: ClusterRoleBinding
+        name: garage-operator-manager-rolebinding
+      patch: |
+        $patch: delete
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: garage-operator-manager-rolebinding
+    # 2 — scope the informers to the namespaces the RoleBindings cover
+    - target:
+        kind: Deployment
+        name: garage-operator
+      patch: |
+        - op: add
+          path: /spec/template/spec/containers/0/args/-
+          value: --watch-namespaces=garage-operator,<watched-ns>
+```
+
+`$patch: delete` is the mechanism to use. Emptying `subjects: []` instead keeps the
+binding object in place, and under `ServerSideApply` with `selfHeal` an empty list
+serializes as an absent field — that produces a permanently `OutOfSync` self-heal loop
+rather than a narrowing.
+
+**What the narrowing costs.** A `RoleBinding` to a `ClusterRole` grants nothing on
+cluster-scoped resources, so the manager role's two cluster-scoped resources become
+inaccessible: `nodes` (`get`/`list`/`patch`/`update`/`watch`) and `storageclasses`
+(`get`/`list`/`watch`). Dependent CR paths — **not a closed list**:
+`spec.storage.nodeLocalPools` (the operator-owned node activation labels and HostPath
+claims) and `spec.zoneFrom.nodeLabel`; any other path that reads Node or StorageClass
+objects degrades the same way. The loss is an **RBAC fact, not always an observable
+one**: a `GarageCluster` that omits `storageClassName` still provisions, because the
+cluster's default `StorageClass` is applied by admission rather than read by the
+operator — so that scenario shows no difference between the narrowed and the
+cluster-wide shape. Do not read that as "no effect"; it bounds what was observed.
+Node-local pools, by contrast, need cluster-scoped node access: **feature or grant, not
+a free recovery**. Re-granting `nodes` cluster-wide is
+not a smaller decision than it looks either — `patch`/`update` on Node objects carries
+taints and `spec.unschedulable`, so it is a fleet-level primitive even though it is a
+smaller rule count than the full manager binding.
+
+**What the narrowing does NOT buy.** Full `secrets` CRUD survives in **every watched
+namespace** — including `garage-operator` itself, which holds the cert-manager-issued
+webhook serving Secret — and both escalation paths above stay intact: a `GarageCluster`
+with `nodeLocalPools` still induces a hostPath DaemonSet, and a `GarageKey`'s
+`spec.secretTemplate.name` still aims the operator's Secret write at any name in its own
+namespace. Consumer CRs consequently do not belong in the operator's namespace. The
+narrowing is a **blast-radius reduction, not a Secret-exfiltration mitigation**.
+
+**Upstream ownership cuts both ways.** Binding the *shipped* `ClusterRole` keeps the
+rule set upstream-owned, so it tracks upstream fixes **and** upstream widenings — a bump
+that adds a rule widens every narrowed consumer's grant silently, because the binding
+references the role by name. The catalog side of that risk is gated
+(`task validate:rbac-narrowing` pins the manager role's whole rule set against a
+committed golden). A consumer that wants a rule set frozen against upstream copies the
+`ClusterRole` into its own manifests instead, and accepts re-reviewing it on every bump.
+
+**Metrics keep working.** The artifact **keeps** its `metrics-auth` `ClusterRole` and
+`ClusterRoleBinding` under this overlay, so the authenticated `:8443` endpoint is
+unaffected — unlike a namespace-scoped *chart* render, which gates that RBAC on the same
+condition and drops it. A consumer that also removes it **SHOULD** restore the
+equivalent authority (`create` on `tokenreviews` and `subjectaccessreviews`, e.g. by
+binding the built-in `system:auth-delegator`), or authenticated scrapes fail: the
+endpoint answers `500 Authentication failed` and the manager logs
+`tokenreviews.authentication.k8s.io is forbidden: … cannot create resource
+"tokenreviews" … at the cluster scope`. Note that under the narrowing this is the
+**only** `ClusterRoleBinding` the
+operator's ServiceAccount still holds — everything else it can do cluster-wide comes
+from the built-in `system:basic-user`/`system:discovery` grants every authenticated
+principal has.
+
+**Honest caveat.** This shape is not what catalog CI renders; what CI guarantees is the
+*grant* the overlay binds (above). Both patches, the per-namespace bindings, the retained
+metrics path and the two silent failure modes below were verified end-to-end once on the
+local test cluster at chart 0.7.3 (2026-08-14, single-node Talos, ArgoCD
+`ServerSideApply` + `selfHeal`); a consumer's own cluster is not covered by that.
+§ Namespace contract is unaffected — the overlay changes RBAC and one arg, never the
+name or namespace.
 
 ## Ordering and sync-wave 1
 
@@ -287,6 +399,10 @@ A consumer MUST:
 A consumer SHOULD additionally restrict who may create `GarageCluster` and
 `GarageKey` objects (§ Security posture) and enable the `ServiceMonitor` in its own
 overlay when it runs a Prometheus stack.
+
+A consumer that will not grant the cluster-wide manager binding **MAY** narrow it to
+namespace scope: § Security posture → *Namespace-scoped operation* names the exact
+objects and args that change, and what the narrowing costs.
 
 ### Namespace contract
 
@@ -382,6 +498,65 @@ that serves them come from a single chart version.
 bump both in one coordinated change; never automerge a bot's chart bump for this
 source.
 
+### Every reconcile fails `forbidden` after narrowing the RBAC
+
+**Fingerprint:** the operator pod is Ready, admission works, but the manager log fills
+with `… is forbidden: User "system:serviceaccount:garage-operator:garage-operator"
+cannot list resource …` and no CR reaches a terminal phase.
+
+**Cause:** a half-applied § Namespace-scoped operation overlay. Either the
+`ClusterRoleBinding` was dropped without the per-namespace `RoleBinding`s (the authority
+now exists nowhere), or the bindings were created without the
+`--watch-namespaces` arg (the informers still watch cluster-wide, which the namespaced
+bindings do not cover) — or the arg lists a namespace no `RoleBinding` covers.
+
+**Blast radius:** all reconciliation, cluster-wide. Data-plane traffic to
+already-running Garage clusters continues; nothing new converges.
+
+**Recovery:** make the three surfaces agree — every namespace in
+`--watch-namespaces` has a `RoleBinding` to `garage-operator-manager-role`, the
+operator's own namespace included, and the pod has restarted since.
+
+### A CR in an unwatched namespace is accepted and never reconciled
+
+**Fingerprint:** `kubectl apply` of a `garage.rajsingh.info` object succeeds, the object
+is stored, and then nothing happens: no status, no conditions, no events, no error
+anywhere. Identical CRs in a watched namespace converge normally.
+
+**Cause:** under the namespace-scoped overlay the informers only watch
+`--watch-namespaces`, while the two webhook configurations carry **no**
+`namespaceSelector` — so admission still validates and mutates objects the controller
+will never see. This mode is silent by construction; there is no component that could
+report it.
+
+**Blast radius:** bounded to CRs in unwatched namespaces, but unbounded in time — the
+object looks accepted indefinitely.
+
+**Recovery:** onboarding a namespace is three coordinated changes: a `RoleBinding` in it,
+the namespace added to `--watch-namespaces`, and a pod restart to rebuild the informers.
+Until all three land, the CR stays inert.
+
+### The manager binding was removed while CRs still exist
+
+**Fingerprint:** deleting a `garage.rajsingh.info` object hangs with a
+`deletionTimestamp` set and finalizers still present; its namespace hangs in
+`Terminating`.
+
+**Cause:** the operator's finalizers cannot complete without authority over the objects
+they clean up — the same condition § Teardown ordering warns about, reached here by
+narrowing rather than by deleting the operator.
+
+**Blast radius:** the affected CRs and their namespaces; the workloads the operator
+created are left behind.
+
+**Recovery:** add a `RoleBinding` in each stranded namespace plus that namespace in
+`--watch-namespaces`, and let the finalizers run. Re-applying the original
+cluster-wide `ClusterRoleBinding` also unblocks them, but it re-grants cluster-wide
+`secrets` CRUD — the sharpest edge the narrowing was chosen to remove — so treat it as a
+**temporary** measure only when a stranded namespace cannot be enumerated in time, and
+remove it again once the `Terminating` state clears. Prevention: narrow **before** CRs
+exist, or drain the namespaces you are dropping first.
+
 ## Garage feature limits
 
 The CRs are a control-plane interface over Garage's admin and S3 APIs, so they expose
@@ -412,14 +587,23 @@ documentation; this component does not restate it.
 
 ## Freeze-line (ADR-0024)
 
-The workload is the signed, pre-rendered baseline; the image digest is the hard
-consumer-admission anchor and per-cluster fields (replicas, `nodeSelector`,
-tolerations, resources) are consumer-overlayable without a catalog PR. There is **no**
-consumer config shape (a), (b), (c) or (d): the component reads no consumer ConfigMap
-or Secret and assembles no consumer-labelled CRs — its webhook certificate comes from
-cert-manager in-cluster. Two things a consumer MUST NOT overlay: the webhook
+The workload is the signed, pre-rendered baseline. The **image digest is the hard
+consumer-admission anchor**; every other baseline field is consumer-overlayable
+per-cluster at risk-calibrated friction, RBAC included — the catalog enumerates no
+closed set of open fields. Replicas, `nodeSelector`, tolerations and resources are the
+routine cases; the one overlay with a documented functional cost is narrowing the
+manager `ClusterRoleBinding` (§ Security posture → *Namespace-scoped operation*). There
+is **no** consumer config shape (a), (b), (c) or (d): the component reads no consumer
+ConfigMap or Secret and assembles no consumer-labelled CRs — its webhook certificate
+comes from cert-manager in-cluster. Two things a consumer MUST NOT overlay: the webhook
 `failurePolicy: Fail`, and any occurrence of the `garage-operator` name or namespace
 (§ Namespace contract).
+
+The hardening § Security posture asserts — the container `securityContext` and the
+`enforce: restricted` label on the shipped namespace — describes the **baseline**, not a
+ceiling: hardening further is free, and relaxing it is the cluster owner's decision under
+ADR-0024, but it voids those statements and is exactly what the consumer-side
+Kyverno/PSA layer (ADR-0018) is there to fence.
 
 ## Capability
 

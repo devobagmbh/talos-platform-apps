@@ -1,0 +1,52 @@
+# Catalog-wide classification of Kubernetes resources as `cluster` or `namespaced`.
+#
+# Consumed by `task validate:rbac-narrowing`, which needs the scope of every resource
+# a narrowable component's ClusterRole names: a RoleBinding that references a
+# ClusterRole grants nothing on cluster-scoped resources, so the cluster-scoped subset
+# of the role IS what a namespace-scoped consumer loses. The gate derives that subset
+# from this file and asserts it equals the component's declared
+# `rbac_policy.inert_when_namespaced` — an upstream bump that adds a cluster-scoped
+# resource therefore fails CI instead of silently invalidating a component README.
+#
+# Keys are the normalized `<apiGroup>|<resource>` form the gate uses; the core API
+# group is the empty string, hence a leading `|`. Subresources (`.../status`,
+# `.../finalizers`) are listed separately and take their parent's scope. Values MUST be
+# exactly `cluster` or `namespaced` — the gate rejects anything else and fails on any
+# resource it cannot find here, rather than guessing.
+#
+# Scope is a property of the API type, not of this catalog: take it from the resource's
+# CRD (`spec.scope`) or from `kubectl api-resources --namespaced=false` for built-ins.
+# Only resources that a narrowable component's role actually names need an entry;
+# the file grows as such components are added.
+resources:
+  "apps|daemonsets": namespaced
+  "apps|deployments": namespaced
+  "apps|replicasets": namespaced
+  "apps|statefulsets": namespaced
+  "garage.rajsingh.info|garageadmintokens": namespaced
+  "garage.rajsingh.info|garageadmintokens/finalizers": namespaced
+  "garage.rajsingh.info|garageadmintokens/status": namespaced
+  "garage.rajsingh.info|garagebuckets": namespaced
+  "garage.rajsingh.info|garagebuckets/finalizers": namespaced
+  "garage.rajsingh.info|garagebuckets/status": namespaced
+  "garage.rajsingh.info|garageclusters": namespaced
+  "garage.rajsingh.info|garageclusters/finalizers": namespaced
+  "garage.rajsingh.info|garageclusters/status": namespaced
+  "garage.rajsingh.info|garagekeys": namespaced
+  "garage.rajsingh.info|garagekeys/finalizers": namespaced
+  "garage.rajsingh.info|garagekeys/status": namespaced
+  "garage.rajsingh.info|garagenodes": namespaced
+  "garage.rajsingh.info|garagenodes/finalizers": namespaced
+  "garage.rajsingh.info|garagenodes/status": namespaced
+  "garage.rajsingh.info|garagereferencegrants": namespaced
+  "garage.rajsingh.info|garagereferencegrants/status": namespaced
+  "monitoring.coreos.com|servicemonitors": namespaced
+  "policy|poddisruptionbudgets": namespaced
+  "storage.k8s.io|storageclasses": cluster
+  "|configmaps": namespaced
+  "|events": namespaced
+  "|nodes": cluster
+  "|persistentvolumeclaims": namespaced
+  "|pods": namespaced
+  "|secrets": namespaced
+  "|services": namespaced

@@ -1,0 +1,12 @@
+---
+# Negative fixture: an empty inert_when_namespaced advertises a narrowing with no
+# declared cost, which the gate would then compare against a non-empty derived set.
+requires: {}
+provides:
+  - name: test
+    api_surface: []
+rbac_policy:
+  class: narrowable
+  cluster_role: test-manager-role
+  baseline: rbac-baseline.triples
+  inert_when_namespaced: []

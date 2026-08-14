@@ -1,0 +1,19 @@
+---
+# Fixture component for `task test:rbac-narrowing`. Not a real catalog component:
+# it never renders, publishes or ships — it exists to drive validate:rbac-narrowing
+# over a known input. Mirrors the shape of a narrowable component's declaration.
+requires: {}
+provides:
+  - name: fixture
+    api_surface: []
+rbac_policy:
+  class: narrowable
+  cluster_role: fixture-manager-role
+  baseline: rbac-baseline.triples
+  inert_when_namespaced:
+    - apiGroups: [""]
+      resources: [nodes]
+      verbs: [get, list]
+    - apiGroups: ["storage.k8s.io"]
+      resources: [storageclasses]
+      verbs: [get]

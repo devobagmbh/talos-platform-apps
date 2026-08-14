@@ -3,7 +3,7 @@ type: reference
 title: Component contract
 description: The two per-component contract files - compatibility.yaml (dependency + capability surface) and customization.yaml (the freeze-line).
 tags: [reference, contract, freeze-line, compatibility]
-timestamp: 2026-07-23
+timestamp: 2026-08-14
 sources:
   - schemas/compatibility.schema.json
   - schemas/customization.schema.json
@@ -24,6 +24,8 @@ Declares what the component needs and what it offers:
 - `requires` - catalog-internal component dependencies (`<sub-layer>/<component>: ">=vX.Y.Z"`) **and** capability ids (bare id from `catalog/capability-index.yaml`). No `talos-platform-base` line (apps does not depend on base).
 - `provides[]` - each entry names what it ships (`name:`, mandatory) and additively lists `capabilities[]` (`{id, swap_class}`) and `api_surface[]` (CRD/API groups exposed).
 - `crd-bearing` - the marker that drives the strict-B split (see [CRD management](../architecture/crd-management-strict-b.md)).
+- `resource_policy` - optional: whether a consumer may override container resources (ADR-0024 Resource-Sizing), with a strict `tunable_targets` allowlist.
+- `rbac_policy` - optional: whether narrowing a cluster-wide manager `ClusterRoleBinding` to namespace scope is a **supported** consumer overlay. `class: narrowable` names the `cluster_role`, a component-local golden `baseline` of its `<apiGroup>|<resource>|<verb>` triples, and `inert_when_namespaced` (the rules a `RoleBinding` cannot confer - the documented cost). Absent = not narrowable, and nothing is gated. `task validate:rbac-narrowing` holds the render, the golden, the declared cost and the component README in parity, so an upstream chart bump cannot widen a narrowed consumer's grant unreviewed (see [DR-0004](../decisions/DR-0004-rbac-narrowing-overlay-sanction.md)).
 
 Validated for structural shape by `task validate:compatibility`; `provides[]`
 items are a closed set (`additionalProperties: false`) - a legacy `apis` key
