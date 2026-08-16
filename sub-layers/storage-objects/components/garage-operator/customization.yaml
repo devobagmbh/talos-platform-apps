@@ -18,9 +18,12 @@ freeze_line:
   # The controller Deployment, its RBAC, the cert-manager Issuer/Certificate, the
   # webhook Service + the two webhook configurations, and the Namespace — published
   # as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml via
-  # `task package`). The image digest is the hard consumer-admission anchor;
-  # per-cluster fields (replicas, nodeSelector, tolerations, resources) are
-  # consumer-overlayable per ADR-0024 calibrated-friction. Two fields a consumer
+  # `task package`). The image digest is the hard consumer-admission anchor; every
+  # other baseline field is consumer-overlayable per-cluster at risk-calibrated
+  # friction (ADR-0024) — replicas, nodeSelector, tolerations and resources are the
+  # routine cases. The RBAC is namespace-scoped by design (the operator watches only
+  # its own namespace as published); a consumer grants operand namespaces additively,
+  # see README.md § Watching additional namespaces. Two fields a consumer
   # MUST leave alone: the webhook `failurePolicy: Fail` (relaxing it to Ignore
   # silently disables the conversion and validation guarantees the -crds half's
   # schema depends on) and every occurrence of the `garage-operator` name/namespace
