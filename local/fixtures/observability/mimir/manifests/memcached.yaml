@@ -1,0 +1,78 @@
+# Local memcached fixture for the mimir query-path cache tests.
+#
+# The catalog ships NO memcached: mimir's four cache blocks name an address the
+# CONSUMER supplies, and the component's four *-cache chart subcharts stay disabled.
+# Without this fixture the "cache actually serves hits" test is unexecutable locally,
+# so it lives here rather than in the artifact.
+#
+# Image tag matches the one the mimir-distributed 5.8.0 chart pins for its own
+# memcached subcharts, so the local fixture and the upstream default do not drift.
+#
+# The mimir namespace enforces Pod Security `restricted`, so the pod carries the full
+# restricted set (runAsNonRoot, no privilege escalation, all capabilities dropped,
+# RuntimeDefault seccomp). memcached 11 is the image's own unprivileged uid.
+#
+# max-item-size (-I) is raised to 5m because mimir's index and results caches default
+# to a 5 MiB max_item_size; leaving memcached at its 1 MiB default would make those
+# two caches silently drop every larger item.
+apiVersion: v1
+kind: Service
+metadata:
+  name: memcached
+  namespace: mimir
+  labels:
+    app.kubernetes.io/name: memcached
+    platform.devoba.de/local-test: "true"
+spec:
+  clusterIP: None
+  ports:
+    - name: memcached
+      port: 11211
+      targetPort: memcached
+  selector:
+    app.kubernetes.io/name: memcached
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: memcached
+  namespace: mimir
+  labels:
+    app.kubernetes.io/name: memcached
+    platform.devoba.de/local-test: "true"
+spec:
+  serviceName: memcached
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memcached
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 11
+        runAsGroup: 11
+        fsGroup: 11
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: memcached
+          image: memcached:1.6.38-alpine
+          args: ["-m", "256", "-I", "5m", "-v"]
+          ports:
+            - name: memcached
+              containerPort: 11211
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 320Mi
+            limits:
+              memory: 320Mi
