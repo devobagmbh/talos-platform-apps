@@ -1,0 +1,21 @@
+# SEMANTIC NEGATIVE: MANDATORY_ENDPOINT is declared both as required and as
+# optional. Schema-valid, so this fixture must PASS check-jsonschema and FAIL the
+# semantic check: a key either has a working default or it does not.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: MANDATORY_ENDPOINT
+      description: Drives the endpoint the workload talks to.
+      default: ""
+sync_wave: "10"
+external_dependencies: []

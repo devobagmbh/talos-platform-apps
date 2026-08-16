@@ -1,0 +1,28 @@
+# POSITIVE fixture for schemas/customization.schema.json (#794 PR A).
+# A minimal, fully valid contract that exercises the additive `optional` block:
+# both env_keys entries, one with a group, one without. Asserted ACCEPTED by
+# check-jsonschema AND by the semantic checks in `task validate:contract`.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      description: >-
+        Drives ingester.ring.replication_factor. Raise only after the replica
+        count is at least as high.
+      default: "1"
+    - name: CACHE_BACKEND
+      description: Drives the query-path cache backend; empty selects no cache.
+      default: ""
+      group: cache
+sync_wave: "10"
+external_dependencies: []

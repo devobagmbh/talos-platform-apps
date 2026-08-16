@@ -1,0 +1,24 @@
+# SEMANTIC NEGATIVE: two entries share a `name`. Schema-valid (JSON Schema cannot
+# express uniqueness over an object field), so this fixture must PASS
+# check-jsonschema and FAIL the semantic check in `task validate:contract`.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      description: Drives ingester.ring.replication_factor.
+      default: "1"
+    - name: REPLICATION_FACTOR
+      description: Drives store_gateway.sharding_ring.replication_factor.
+      default: "1"
+sync_wave: "10"
+external_dependencies: []

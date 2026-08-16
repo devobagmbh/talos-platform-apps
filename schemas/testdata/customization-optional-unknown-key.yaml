@@ -1,0 +1,23 @@
+# NEGATIVE: unknown key inside `optional` (additionalProperties:false at the
+# block level). Only `env_keys` exists today; a second shape is added to the
+# schema deliberately, never smuggled in by a component.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      description: Drives ingester.ring.replication_factor.
+      default: "1"
+  secret_keys:
+    - OPTIONAL_TOKEN
+sync_wave: "10"
+external_dependencies: []

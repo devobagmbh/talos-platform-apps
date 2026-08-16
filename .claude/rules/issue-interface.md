@@ -82,7 +82,11 @@ contract** (ADR-0024) — which declares both the signed workload baseline (imag
 hard-anchored at consumer admission; other fields consumer-overlayable per-cluster, bar
 platform-set ones like sync_wave that stay catalog-owned)
 **and** the config the consumer **must supply** (the `required` env / secret keys, config
-files, and selector CRs), not merely what it *may* override.
+files, and selector CRs). Where a component exposes a knob that is *not* mandatory — an env
+key the artifact carries a working baked default for, which a consumer sets only to change
+behaviour — the issue names it under the contract's additive `optional.env_keys` channel
+(DR-0004), never under `required`: the two channels are disjoint, and `required` means the
+workload does not function without it.
 
 ## Lifecycle
 

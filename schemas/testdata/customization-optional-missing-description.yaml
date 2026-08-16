@@ -1,0 +1,19 @@
+# NEGATIVE: env_keys item without `description` — an undocumented knob is not a
+# contract; the consumer cannot tell what the key drives.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      default: "1"
+sync_wave: "10"
+external_dependencies: []
