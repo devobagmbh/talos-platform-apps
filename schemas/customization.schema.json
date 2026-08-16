@@ -71,7 +71,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["env_keys", "config_files", "secret_keys", "selector_crs"],
-      "description": "What the consumer MUST supply, per shape. Empty lists = nothing (cluster-agnostic).",
+      "description": "What the consumer MUST supply, per shape — without it the workload does not function. Empty lists = nothing (cluster-agnostic). Keys that carry a working baked default and are supplied only to CHANGE behaviour belong under `optional`, never here; the two channels are disjoint.",
       "properties": {
         "env_keys": {
           "type": "array",
@@ -115,6 +115,43 @@
                 "minProperties": 1,
                 "additionalProperties": { "type": "string" },
                 "description": "Label set the CR must carry to match the rendered workload selector."
+              }
+            }
+          }
+        }
+      }
+    },
+    "optional": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the consumer MAY supply to change behaviour, per shape — the counterpart to `required`. `required` = the consumer MUST set it or the workload does not function; `optional` = the artifact carries a working baked default and the component runs unset. This is the ADR-0024 calibrated-friction surface in its ergonomic form: a knob a consumer turns per-cluster without a catalog PR and without replacing the signed config. Additive and absent by default — only a component that actually exposes such a knob carries this block. Only the env shape (a) is modelled today; a config-file / secret-key / selector optional channel is added when a component needs one (an unused shape would be unexercised semantics). Two rules JSON Schema cannot express are enforced by `task validate:contract` over the real component files: a key MUST NOT appear in both `required.env_keys` and `optional.env_keys[].name`, and `optional.env_keys[].name` MUST be unique. Schema-contract-parity for this new surface: (1) closed field set (additionalProperties:false at both levels); (2) duplicate keys are file corruption — YAML resolves them last-wins silently, so name uniqueness is asserted by the task rather than left to the parser; (3) version skew — there is no version field, and the root is additionalProperties:false, so a consumer holding a VENDORED COPY of the pre-`optional` schema REJECTS a customization.yaml carrying this key; it does not ignore it. That is the standard cost of a closed schema: consumers update their copy, and the schema $id plus ADR-0024 are the migration signal; (4) this schema is a repo-SOT trusted-data file changed only by reviewed PR, so no untrusted-data sentinel applies; (5) entries are mutable-in-place by the component author, EXCEPT that renaming or removing a shipped key is a BREAKING change — env expansion falls back to the baked default silently, so a consumer who had set the old name loses their setting with no error signal.",
+      "properties": {
+        "env_keys": {
+          "type": "array",
+          "default": [],
+          "description": "Shape (a): scalar keys the consumer MAY set in the env ConfigMap (provided_refs.env) to override a baked default. Each entry documents one placeholder that actually exists in the rendered config. Note the residual: no gate compares a declared key against the render, so a declared key with no matching placeholder is a knob that silently does nothing.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description", "default"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "description": "Env variable name exactly as it appears in the rendered config placeholder (e.g. INGESTER_REPLICATION_FACTOR for ${INGESTER_REPLICATION_FACTOR:1}). Unique within optional.env_keys and never also present in required.env_keys."
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What the key does: the config path(s) it drives and the effect of changing it. Required — an undocumented knob is not a contract."
+              },
+              "default": {
+                "type": "string",
+                "description": "The value that applies when the consumer leaves the key unset, as a string, exactly as baked into the artifact. An empty string means the expanded value is empty — which may itself select an upstream default; say so in `description` when it does."
+              },
+              "group": {
+                "type": "string",
+                "description": "Optional grouping label for keys that only make sense set together (e.g. a cache's backend plus its addresses). DESCRIPTIVE ONLY: nothing validates that a consumer set every member of a group — it records the co-requirement for the reader."
               }
             }
           }
