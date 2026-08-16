@@ -1,0 +1,60 @@
+# Argo Application for storage-objects/garage-operator-crds (local test environment).
+# Strict-B CRDs half (ADR-0028): the 6 garage.rajsingh.info CRDs ship as their own OCI
+# artifact, synced at sync-wave -1 ahead of the garage-operator controller (wave 1).
+# Template placeholders (envsubst via task local:apply / local:dev):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: storage-objects-garage-operator-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-operator-crds
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/storage-objects/garage-operator-crds
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    # The garage.rajsingh.info CRD objects are cluster-scoped; the destination
+    # namespace is nominal. garage-operator is where the controller lands — shipped by
+    # the workload half, which also declares the Namespace object, so this Application
+    # never creates or manages it (CreateNamespace=false below).
+    namespace: garage-operator
+
+  # The garageclusters CRD ships WITHOUT a caBundle: cert-manager's cainjector writes
+  # it at runtime from the inject-ca-from annotation. Without this stanza the desired
+  # state (empty) permanently differs from the live state, so the Application never
+  # reaches Synced AND selfHeal blanks the injected CA on every reconcile — breaking
+  # GarageCluster conversion in a loop that presents as a cert-manager fault. This
+  # mirrors the mandatory consumer-side stanza the component README documents.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jqPathExpressions:
+        - .spec.conversion.webhook.clientConfig.caBundle
+
+  syncPolicy:
+    # Strict-B (ADR-0028) CR-cascade protection: the CRDs are never pruned on a
+    # source-delete, so removing the artifact does not garbage-collect live
+    # GarageCluster/GarageBucket/GarageKey CRs (a data-loss event).
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      # Prune=false is the ADR-0028 *authoritative* CR-cascade protection: unlike
+      # automated.prune:false above (which only suppresses automated cycles), this
+      # syncOption blocks pruning on BOTH automated and manual sync-with-prune, so a
+      # UI "Sync + Prune" cannot garbage-collect the live CRs.
+      - Prune=false
+      # ServerSideApply clears the 262 KB client-side annotation limit — load-bearing
+      # here: the committed CRD extract is ~28.7k lines.
+      - ServerSideApply=true

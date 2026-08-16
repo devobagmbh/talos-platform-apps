@@ -3,7 +3,7 @@ type: architecture
 title: Capability-layer model
 description: Capability as the stable interface a consumer composes against, tool as the swappable implementation, with swap-class quantifying swap cost.
 tags: [architecture, capability, swap-class]
-timestamp: 2026-07-23
+timestamp: 2026-08-12
 sources:
   - catalog/capability-index.yaml
   - catalog/README.md
@@ -36,7 +36,7 @@ central registry: each entry has a stable `id`, a `domain`, and one or more
 
 In a component's `compatibility.yaml` (see [Component contract](../reference/component-contract.md)):
 
-- `requires` names catalog-internal component dependencies **and** capability ids (bare id from the index).
+- `requires` names catalog-internal component dependencies **and** capability ids (bare id from the index). The bare id is admissible **only** for an `instanced: true` capability consumed through its standard, swappable interface; a capability whose interface is tool-specific (provider-exclusive CRs, e.g. `s3-bucket-provisioning`) is not instanced, and dependents pin the component concretely instead — otherwise the id claims a swap-freedom that does not exist (`catalog/README.md`).
 - `provides[].capabilities[]` additively lists the capabilities a component implements, each `{id, swap_class}`; every `id` must exist in the index.
 - A component with no matching capability carries `capabilities: []`; a `-crds` strict-B half carries `[]` permanently.
 

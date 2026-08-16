@@ -1,0 +1,39 @@
+# Minimal single-node Garage cluster, authored at the DEPRECATED v1beta1 version.
+#
+# v1beta1 is deliberate: the conversion webhook is only exercised when the stored
+# version (v1beta2) differs from the authored one. v1beta1 carries `spec.replicas`
+# at the top level, v1beta2 carries `spec.storage.replicas` — so a read-back at
+# v1beta2 proves the webhook actually transformed the object rather than passing it
+# through. Consumers author v1beta2; this fixture is a conversion test.
+#
+# `spec.image` is intentionally omitted so the cluster picks up the operator's
+# --default-garage-image flag (the catalog-owned `defaultGarageImage` value).
+apiVersion: garage.rajsingh.info/v1beta1
+kind: GarageCluster
+metadata:
+  name: e2e
+  namespace: garage-e2e
+spec:
+  replicas: 1
+  admin:
+    # The operator reaches Garage's Admin API with this token to stage and apply the
+    # cluster layout. Without it the cluster never leaves Pending
+    # (StorageTopologyReady=WaitingForLayoutSync, "admin token not configured") — the
+    # bootstrap token is a chicken-and-egg: GarageAdminToken CRs mint FURTHER tokens
+    # through that same API, so the first one must be a pre-created Secret.
+    # Created by the operator's consumer, never by the catalog. See README.md next to
+    # this directory for the generate-at-apply-time command.
+    adminTokenSecretRef:
+      name: e2e-admin-token
+      key: admin-token
+  # Single-node local test cluster — factor 1, since the chart default (3) can
+  # never reach quorum here.
+  replication:
+    factor: 1
+  storage:
+    data:
+      size: 1Gi
+      storageClassName: local-path
+    metadata:
+      size: 512Mi
+      storageClassName: local-path
