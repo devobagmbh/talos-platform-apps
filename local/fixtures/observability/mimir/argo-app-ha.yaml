@@ -1,0 +1,126 @@
+# Argo Application for observability/mimir in the HA shape (local test, three nodes).
+#
+# This is the consumer-side overlay the component README documents, expressed as a
+# local fixture so the multi-node E2E exercises the real mechanism rather than a
+# hand-edited cluster. Two halves, deliberately kept apart:
+#
+#   1. REPLICAS come from `source.kustomize.patches` below (a consumer overlay on the
+#      signed base — ADR-0024 calibrated friction).
+#   2. The REPLICATION FACTORS do NOT live here. They are env keys in the consumer's
+#      mimir-runtime-config ConfigMap, resolved by -config.expand-env=true at container
+#      start. Set them there:
+#        kubectl -n mimir patch cm mimir-runtime-config --type merge -p \
+#          '{"data":{"INGESTER_REPLICATION_FACTOR":"3","STORE_GATEWAY_REPLICATION_FACTOR":"3"}}'
+#      and bump `config-generation` below in the SAME step, so the pods actually re-read it.
+#
+# Order matters: raise replicas FIRST (sync 1), wait until every ingester is ACTIVE in the
+# ring, and only THEN raise the replication factor (sync 2). The reverse makes quorum
+# unreachable — the state issue #379 fixed.
+#
+# manual sync ON PURPOSE (no `automated:` block): the test controls when each of those two
+# steps lands. A self-healing Application would also revert `kubectl rollout restart`'s
+# pod-template annotation, which is why the config-generation annotation below — a real
+# field of the desired state — is the documented restart mechanism instead.
+#
+# Requires three schedulable nodes (LOCAL_WORKERS=2 task local:up). With fewer, the third
+# ingester stays Pending — which is the CORRECT signal from the hard anti-affinity, not a
+# defect.
+#
+# The replication-factor keys are only settable from PR C onwards (issue #794); against an
+# earlier mimir artifact this fixture still raises the replicas, and the factors stay at
+# the value baked into the config.
+#
+# Apply by hand (see argo-app.yaml for the full prerequisite sequence):
+#   TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platform-apps \
+#     envsubst < local/fixtures/observability/mimir/argo-app-ha.yaml | \
+#     kubectl --context admin@talos-platform-apps apply -f -
+#   argocd app sync observability-mimir-ha    # or: kubectl -n argocd annotate ...
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-mimir-ha
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: mimir
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/mimir
+    targetRevision: ${TAG}
+    path: .
+    kustomize:
+      patches:
+        # --- stateful roles: 3 replicas, one per node (hard anti-affinity) ---
+        - target: {kind: StatefulSet, name: mimir-ingester}
+          patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 3
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        - target: {kind: StatefulSet, name: mimir-store-gateway}
+          patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 3
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        # --- stateless roles: 2 replicas each ---
+        - target: {kind: Deployment, name: mimir-distributor}
+          patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 2
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        - target: {kind: Deployment, name: mimir-querier}
+          patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 2
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        - target: {kind: Deployment, name: mimir-query-frontend}
+          patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 2
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        - target: {kind: Deployment, name: mimir-query-scheduler}
+          patch: |
+            - op: replace
+              path: /spec/replicas
+              value: 2
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        # compactor and ruler stay at 1 replica — singletons by design in this shape,
+        # but they still read the config, so they carry the annotation too.
+        - target: {kind: StatefulSet, name: mimir-compactor}
+          patch: |
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+        - target: {kind: Deployment, name: mimir-ruler}
+          patch: |
+            - op: add
+              path: /spec/template/metadata/annotations/config-generation
+              value: "1"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mimir
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true

@@ -1,0 +1,51 @@
+# Argo Application for observability/mimir in its SHIPPED default shape (local test).
+#
+# Deliberately NOT under local/argo-apps/observability/: `task local:apply -- observability`
+# fans out every file in that directory, so putting mimir there would add eight workloads —
+# including an ingester with a 4 GiB memory RESERVATION — to every unrelated observability
+# E2E on an 8 GiB node. Apply this one by hand instead:
+#
+#   task local:s3-backend -- observability/mimir 0.0.0-dev   # garage + buckets + credential + ConfigMap
+#   task local:publish    -- observability/mimir 0.0.0-dev
+#   TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platform-apps \
+#     envsubst < local/fixtures/observability/mimir/argo-app.yaml | \
+#     kubectl --context admin@talos-platform-apps apply -f -
+#
+# Prerequisites (the workload is NOT cluster-agnostic — ADR-0024 Shapes a + c): the
+# ConfigMap mimir-runtime-config and the Secret mimir-runtime-secret MUST exist in the
+# destination namespace before this app syncs, or every pod stalls in
+# CreateContainerConfigError. `task local:s3-backend` creates both.
+#
+# Template placeholders (envsubst):
+#   ${TAG}       — chart version (e.g. 0.0.0-dev)
+#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-mimir
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: mimir
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/mimir
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mimir
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The artifact ships its own labelled Namespace (sole-claimant rule); Argo applies
+      # Namespaces before namespaced resources, so the PSA label lands before any pod.
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
