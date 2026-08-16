@@ -1,0 +1,37 @@
+# Customization Contract v2 (ADR-0024). Strict-B CRDs artifact (ADR-0028): the
+# rendered workload is purely the six Namespaced CustomResourceDefinitions of API
+# group `garage.rajsingh.info`. A CRD schema has NO consumer config surface — no env,
+# no config files, no secrets, no selector CRs — so every provided/required shape is
+# empty and the component is cluster-agnostic. Its ONE non-negotiable contract is not
+# expressible in this schema and lives in README.md § Namespace contract: the
+# `garage-operator` namespace + release name are baked into the garageclusters
+# conversion webhook clientConfig and the cert-manager inject-ca-from annotation, so
+# a consumer MUST NOT re-namespace this pair via overlay.
+freeze_line:
+  # The six CRDs, published as a native-OCI Kustomize base (kustomization.yaml +
+  # manifest.yaml via `task package`), so the consumer wires the -crds Argo
+  # Application as an oci:// source (sourceType=Kustomize) at sync-wave -1 with
+  # Prune=false (ADR-0028 strict-B). A CRD schema has no consumer config surface, so
+  # there is nothing to overlay — the base is consumed as-is. The one field a
+  # consumer MUST leave alone at runtime is
+  # .spec.conversion.webhook.clientConfig.caBundle on garageclusters: cert-manager's
+  # cainjector writes it in-cluster, so the consumer app needs the ignoreDifferences
+  # stanza in README.md § Consumer wiring or selfHeal blanks it.
+  workload: rendered/manifest.yaml
+provided_refs: {}
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+sync_wave: "-1"
+# Deliberately empty: CRD ESTABLISHMENT needs no ordering dependency of its own — the
+# apiextensions API server registers these six types standalone. The functional
+# dependency this component does carry (secrets/cert-manager, see compatibility.yaml
+# requires) is a RUNTIME capability, not a sync-ordering precondition: the conversion
+# functionality only becomes reachable once cert-manager (wave 0) has injected the CA
+# and the wave-1 operator serves /convert. Listing cert-manager here would assert a
+# wave -1 ordering constraint that does not exist and cannot be satisfied. See
+# README.md § Ordering.
+external_dependencies: []

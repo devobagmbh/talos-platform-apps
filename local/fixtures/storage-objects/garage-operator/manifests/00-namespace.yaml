@@ -1,0 +1,18 @@
+# Local E2E workload namespace for the garage-operator fixtures.
+#
+# Deliberately NOT the `garage-operator` namespace: that one is the operator's own
+# (shipped by the workload artifact, PSA-restricted) and is part of the artifact's
+# namespace contract. Operator-managed Garage workloads are consumer-owned and live
+# wherever the consumer puts their CRs — here, a dedicated fixture namespace.
+#
+# No pod-security enforce label: the Garage StatefulSet the operator generates is
+# outside the catalog's signed freeze-line, so its security context is upstream's,
+# not this repo's. Pinning a PSA level here would test the operator's generated pod
+# spec rather than this component — a consumer-side admission decision (see the
+# component README, Consumer obligations).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: garage-e2e
+  labels:
+    platform.devoba.de/local-test: "true"

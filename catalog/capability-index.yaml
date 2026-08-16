@@ -43,9 +43,20 @@ capabilities:
     domain: storage-objects
     instanced: true
     implementations:
-      - {name: garage, status: active, swap_class: drop-in}
+      - {name: garage, status: active, swap_class: drop-in}  # deployment mechanism migrating to storage-objects/garage-operator (#763/#35); interface unaffected
       - {name: minio-operator, status: considered, swap_class: drop-in}
       - {name: external-s3, status: considered, swap_class: drop-in}
+  - id: s3-bucket-provisioning
+    name: Declarative S3 bucket/key provisioning
+    domain: storage-objects
+    # Control-plane counterpart to s3-object's data path: buckets, access keys and
+    # per-bucket permissions as Kubernetes objects, credentials landing as a Secret.
+    # Realized by tool-specific CRs, not a standard API — hence NOT instanced, and
+    # dependents pin storage-objects/garage-operator concretely rather than requiring
+    # this id (catalog/README.md §requires). garage-buckets (#35) overlaps but is a CR
+    # bundle, not a tool; retirement pending. COSI: revisit once it reaches beta.
+    implementations:
+      - {name: garage-operator, status: active, swap_class: rewrite-required}
 
   # — Observability: Metrics ——————————————————————————————————
   - id: metrics-scrape
