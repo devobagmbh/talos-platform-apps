@@ -2203,9 +2203,12 @@ tasks:
             either carries a working baked default (optional) or the consumer
             MUST supply it (required); declaring both makes the contract
             self-contradictory and the consumer cannot tell which holds.
-        S2  optional.env_keys[].name is UNIQUE — YAML resolves duplicates
-            last-wins silently, so a second entry with the same name replaces
-            the first entry's documentation without any diagnostic.
+        S2  optional.env_keys[].name is UNIQUE — two entries for one key are a
+            contradiction the schema cannot see (they are distinct array items,
+            so `uniqueItems` does not apply once their descriptions differ): they
+            may declare different defaults and different descriptions, and
+            nothing decides which one holds. Left unchecked, a consumer reading
+            the contract gets whichever entry they happened to read first.
 
       Components WITHOUT customization.yaml are reported (not yet under contract).
 
@@ -2231,6 +2234,13 @@ tasks:
       # on violation. Called for real components AND for the semantic fixtures,
       # so the fixtures bind THIS code path, not a copy of it.
       # jq set intersection: A - (A - B).
+      # Every yq status is captured EXPLICITLY into rc on the next line. The function
+      # is called from an `if` condition, and POSIX suppresses errexit inside a
+      # condition — so a yq that fails (unreadable file, malformed YAML, a broken
+      # filter after an edit) would otherwise leave the output variable empty, take
+      # the "no violation" branch and report the component as clean. Empty output
+      # from a SUCCESSFUL yq means "no violation"; empty output from a FAILED yq
+      # means "not checked", and the two must not collapse into one.
       semantic_check() {
         sfile="$1"
         slabel="$2"
@@ -2238,6 +2248,11 @@ tasks:
         both=$(yq -r '(.required.env_keys // []) as $r
                       | [ (.optional.env_keys // [])[].name ] as $o
                       | ($r - ($r - $o)) | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "✗ ${slabel}: could not evaluate the required/optional disjointness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 1
+        fi
         if [ -n "$both" ]; then
           echo "✗ ${slabel}: key(s) declared in BOTH required.env_keys and optional.env_keys: ${both}"
           echo "    A key either has a working baked default (optional) or the consumer must supply it (required)."
@@ -2245,9 +2260,14 @@ tasks:
         fi
         dupes=$(yq -r '[ (.optional.env_keys // [])[].name ]
                       | group_by(.) | map(select(length > 1) | .[0]) | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "✗ ${slabel}: could not evaluate the optional-name uniqueness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 1
+        fi
         if [ -n "$dupes" ]; then
           echo "✗ ${slabel}: duplicate optional.env_keys[].name: ${dupes}"
-          echo "    YAML resolves duplicates last-wins silently — the earlier entry's documentation is lost."
+          echo "    Two entries for one key contradict each other: they carry different descriptions and may carry different defaults, and nothing decides which one the consumer should read."
           src=1
         fi
         return $src
@@ -2305,6 +2325,15 @@ tasks:
                   "$td/customization-optional-missing-default.yaml" \
                   "$td/customization-optional-bad-name.yaml" \
                   "$td/customization-optional-default-not-string.yaml"; do
+          # A missing/unreadable fixture also makes check-jsonschema exit non-zero,
+          # which the rejection branch below would happily read as "correctly
+          # rejected" — a deleted or renamed fixture would silently stop testing
+          # anything. Assert the file exists first.
+          if [ ! -f "$nf" ]; then
+            echo "✗ NEGATIVE FIXTURE MISSING (the reject-side is no longer tested): $nf" >&2
+            fail=1
+            continue
+          fi
           if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
             echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
             fail=1
@@ -2316,6 +2345,11 @@ tasks:
         # they isolate the layer the schema cannot cover), semantic-INVALID.
         for sf in "$td/customization-optional-duplicate-name.yaml" \
                   "$td/customization-optional-both-channels.yaml"; do
+          if [ ! -f "$sf" ]; then
+            echo "✗ SEMANTIC FIXTURE MISSING (S1/S2 are no longer tested): $sf" >&2
+            fail=1
+            continue
+          fi
           if ! check-jsonschema --schemafile "$schema" "$sf" >/dev/null 2>&1; then
             echo "✗ SEMANTIC FIXTURE REJECTED BY SCHEMA — it no longer isolates the semantic layer: $sf" >&2
             fail=1
