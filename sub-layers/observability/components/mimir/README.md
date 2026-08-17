@@ -318,8 +318,14 @@ discussion is tracked in #442 / #455 / #458.
 The consumer supplies, in its own cluster repo / Argo overlay — the catalog ships none
 of these:
 
-- **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit S3
-  endpoint URL, e.g. `https://garage.<cluster>:3900`), `S3_REGION` (S3 region; the
+- **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` — **`HOST:PORT`, not a
+  URL**, e.g. `garage.<namespace>.svc.cluster.local:3900`. Mimir's S3 client is
+  `thanos-io/objstore`, which rejects a scheme outright (`Endpoint url cannot have fully
+  qualified paths`); the affected Mimir processes then fail to start on the usage-stats
+  bucket client. `http` vs `https` is selected by `S3_INSECURE`, never by this value. Do not copy
+  the form from a sibling component: `loki` takes a URL under the same key name (verified),
+  `tempo` was not tested — check each component's endpoint form rather than assuming the
+  catalog is uniform here. Further: `S3_REGION` (S3 region; the
   Garage impl uses `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` —
   the S3 endpoint TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure);
   `"true"` = plain HTTP, for a TLS-less S3 endpoint (e.g. an internal NAS).

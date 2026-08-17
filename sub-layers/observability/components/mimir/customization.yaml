@@ -34,7 +34,14 @@ provided_refs:
 provided_selectors: {} # no operator-assembled config / consumer-labeled CRs
 required:
   env_keys: # Shape (a) — set in the mimir-runtime-config ConfigMap; expanded into the mimir config at runtime
-    - S3_ENDPOINT # explicit S3 endpoint URL (e.g. https://garage.<cluster>:3900)
+    # HOST:PORT, NOT a URL — mimir's S3 client is thanos-io/objstore, which rejects a
+    # scheme outright ("Endpoint url cannot have fully qualified paths"), and the affected
+    # mimir processes then fail to start on the usage-stats bucket client. http vs https is
+    # selected by S3_INSECURE below, never by this value. Do NOT copy the form from a
+    # sibling component: loki takes a URL under the same key name (verified — its local
+    # fixture carries an http:// prefix and works). Whether tempo does was not tested;
+    # treat each component's endpoint form as its own until you have checked it.
+    - S3_ENDPOINT # e.g. garage.<namespace>.svc.cluster.local:3900
     - S3_REGION # S3 region (the platform's Garage impl uses `garage`)
     - S3_BUCKET_BLOCKS # bucket for Mimir TSDB blocks
     - S3_BUCKET_RULER # bucket for the Mimir ruler
