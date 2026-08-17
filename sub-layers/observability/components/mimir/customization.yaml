@@ -44,5 +44,88 @@ required:
     - S3_ACCESS_KEY_ID # S3 access key id
     - S3_SECRET_ACCESS_KEY # S3 secret access key
   selector_crs: []
+# Consumer-settable knobs that are NOT mandatory: the rendered config carries a working
+# default for each, so a consumer who sets nothing gets the shipped single-node behaviour
+# unchanged (#794). All of them resolve through the SAME mimir-runtime-config ConfigMap as
+# required.env_keys above, via -config.expand-env=true. Every key here corresponds to a
+# ${KEY:default} placeholder in helm/mimir.yaml; the README documents the invariants and
+# the ordering rules that the contract cannot express.
+optional:
+  env_keys:
+    # --- ring replication (see README § Scaling out) ---
+    - name: INGESTER_REPLICATION_FACTOR
+      description: >-
+        ingester.ring.replication_factor. Raise ONLY after the ingester replica count is
+        at least as high — the reverse makes ring quorum unreachable. Use 1 or 3; an even
+        factor raises the quorum without adding failure tolerance. Not retroactive: only
+        newly written series get the higher factor.
+      default: "1"
+    - name: STORE_GATEWAY_REPLICATION_FACTOR
+      description: >-
+        store_gateway.sharding_ring.replication_factor. Same ordering rule as the ingester
+        factor; never scale the store-gateway below this value.
+      default: "1"
+    # --- query-path caches: the catalog ships no memcached, the consumer brings one ---
+    - name: CHUNKS_CACHE_BACKEND
+      description: >-
+        blocks_storage.bucket_store.chunks_cache.backend. Empty means no chunks cache.
+        Set to `memcached` together with CHUNKS_CACHE_ADDRESSES.
+      default: ""
+      group: chunks-cache
+    - name: CHUNKS_CACHE_ADDRESSES
+      description: >-
+        blocks_storage.bucket_store.chunks_cache.memcached.addresses (dns+host:port).
+        A memcached backend with an empty address list fails loudly at startup; a wrong
+        but resolvable address degrades silently.
+      default: ""
+      group: chunks-cache
+    - name: INDEX_CACHE_BACKEND
+      description: >-
+        blocks_storage.bucket_store.index_cache.backend. Mimir's own default is `inmemory`,
+        NOT empty — and because the fallback also fires on an empty value, setting this to
+        "" yields `inmemory` again. Disabling the index cache is not reachable through
+        this knob.
+      default: inmemory
+      group: index-cache
+    - name: INDEX_CACHE_ADDRESSES
+      description: >-
+        blocks_storage.bucket_store.index_cache.memcached.addresses. Only consulted when
+        INDEX_CACHE_BACKEND is memcached.
+      default: ""
+      group: index-cache
+    - name: METADATA_CACHE_BACKEND
+      description: >-
+        blocks_storage.bucket_store.metadata_cache.backend. Empty means no metadata cache.
+      default: ""
+      group: metadata-cache
+    - name: METADATA_CACHE_ADDRESSES
+      description: >-
+        blocks_storage.bucket_store.metadata_cache.memcached.addresses.
+      default: ""
+      group: metadata-cache
+    - name: RESULTS_CACHE_BACKEND
+      description: >-
+        frontend.results_cache.backend. Empty means no results cache.
+      default: ""
+      group: results-cache
+    - name: RESULTS_CACHE_ADDRESSES
+      description: >-
+        frontend.results_cache.memcached.addresses.
+      default: ""
+      group: results-cache
+    - name: RESULTS_CACHE_ENABLED
+      description: >-
+        frontend.cache_results. A separate switch from the backend: setting only backend
+        and addresses yields a configured but INERT results cache with no error, which is
+        why all three keys form one group. Boolean as a string ("true"/"false").
+      default: "false"
+      group: results-cache
+    # --- ruler notification target ---
+    - name: RULER_ALERTMANAGER_URL
+      description: >-
+        ruler.alertmanager_url — the consumer's standalone Alertmanager (the bundled one is
+        disabled). Unset means the ruler evaluates rules but notifies nobody, which is a
+        valid state, so this is optional rather than required (see #448).
+      default: ""
 sync_wave: "10" # needs the cluster's S3 endpoint + buckets to exist first (s3-object capability)
 external_dependencies: [] # the S3 object store is a deploy-time dep (compatibility.yaml `requires: s3-object`), not a build dep
