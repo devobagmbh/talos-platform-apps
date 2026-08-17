@@ -77,7 +77,7 @@ a future author who reaches for it hits a red gate and reads this record.
 JSON Schema cannot express either of these, and both are silent failures:
 
 - **S1 — cross-channel disjointness.** A key in both channels is self-contradictory: the consumer cannot tell whether omitting it is legal.
-- **S2 — name uniqueness.** YAML resolves duplicate mapping entries last-wins without a diagnostic, so a duplicated `name` silently discards the first entry's documentation. (`uniqueItems` does not help: the items are objects that differ in `description`.)
+- **S2 — name uniqueness.** Two entries naming the same key contradict each other — they may carry different defaults and different descriptions, and nothing decides which holds; a consumer reads whichever they happen to see first. `uniqueItems` does not catch it: the entries are distinct array items the moment any field differs. (A duplicate mapping key *within* one entry is a different thing, and the YAML loader rejects that before the check runs.)
 
 Both are asserted by `task validate:contract` **over the real component files**, not only over fixtures — a gate that is green over a fixture corpus while the rule goes unenforced on the catalog is the failure mode this explicitly avoids. `validate:contract` is a required status check (`contract-validate.yml`), so the enforcement point is PR merge.
 
@@ -92,10 +92,10 @@ The semantic fixtures call the same shell function the component loop calls, so 
 Documented inline in the schema's `optional` description, summarised here:
 
 1. **Closed field set** — `additionalProperties: false` at the block and item level.
-2. **Duplicate keys** — file corruption, surfaced by S2 rather than left to the parser's silent last-wins.
-3. **Version skew** — there is no version field, and the root is `additionalProperties: false`. A consumer holding a **vendored copy of the pre-`optional` schema REJECTS** a `customization.yaml` carrying the new key; it does not ignore it. That is the standard cost of a closed schema. Migration signal: the schema `$id` plus ADR-0024.
+2. **Duplicate names** — a contradiction the schema cannot see (distinct array items), surfaced by S2.
+3. **Version skew** — there is no version field, and the root is `additionalProperties: false`. A consumer holding a **vendored copy of the pre-`optional` schema REJECTS** a `customization.yaml` carrying the new key; it does not ignore it. That is the standard cost of a closed schema. **`$id` is unchanged and is therefore NOT a staleness signal** — the only in-band signal a consumer gets is the validation error naming the unknown `optional` property; out of band it is this record plus ADR-0024. Bumping `$id` was considered and rejected: it would break every consumer's schema reference to buy a marker they only see after the rejection has already told them.
 4. **Untrusted-data marker** — not applicable; this is a repo-SOT trusted-data file changed only by reviewed PR.
-5. **Per-field mutability** — entries are mutable in place by the component author, **except** that renaming or removing a shipped key is a **breaking** change: env expansion falls back to the baked default silently, so a consumer who had set the old name loses their setting with no error signal.
+5. **Per-field mutability** — entries are mutable in place by the component author, with **two exceptions, both breaking and both silent**: renaming or removing a shipped key (env expansion falls back to the baked default, so a consumer who had set the old name loses their setting with no error signal), and **changing a shipped `default`** (it changes runtime behaviour for every consumer who left the key unset — the majority — with nothing in their cluster changing to signal it). Raising mimir's replication-factor default from `"1"` to `"3"` is schema-valid, semantics-valid, and would break every single-ingester deployment on next sync. Both classes are major-version changes with a migration note.
 
 ## Named residuals
 
