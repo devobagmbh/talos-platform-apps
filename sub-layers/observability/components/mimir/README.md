@@ -322,10 +322,10 @@ of these:
   URL**, e.g. `garage.<namespace>.svc.cluster.local:3900`. Mimir's S3 client is
   `thanos-io/objstore`, which rejects a scheme outright (`Endpoint url cannot have fully
   qualified paths`); the affected Mimir processes then fail to start on the usage-stats
-  bucket client. `http` vs `https` is selected by `S3_INSECURE`, never by this value. Do not copy
-  the form from a sibling component: `loki` takes a URL under the same key name (verified),
-  `tempo` was not tested — check each component's endpoint form rather than assuming the
-  catalog is uniform here. Further: `S3_REGION` (S3 region; the
+  bucket client. `http` vs `https` is selected by `S3_INSECURE`, never by this value. The form
+  is **not uniform across the catalog** and must not be copied between components: deployed
+  against a local S3 backend, `loki-distributed` comes up with an `http://` prefix, while
+  `tempo-distributed` fails exactly as Mimir does. Further: `S3_REGION` (S3 region; the
   Garage impl uses `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` —
   the S3 endpoint TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure);
   `"true"` = plain HTTP, for a TLS-less S3 endpoint (e.g. an internal NAS).

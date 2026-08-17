@@ -37,10 +37,13 @@ required:
     # HOST:PORT, NOT a URL — mimir's S3 client is thanos-io/objstore, which rejects a
     # scheme outright ("Endpoint url cannot have fully qualified paths"), and the affected
     # mimir processes then fail to start on the usage-stats bucket client. http vs https is
-    # selected by S3_INSECURE below, never by this value. Do NOT copy the form from a
-    # sibling component: loki takes a URL under the same key name (verified — its local
-    # fixture carries an http:// prefix and works). Whether tempo does was not tested;
-    # treat each component's endpoint form as its own until you have checked it.
+    # selected by S3_INSECURE below, never by this value. The form is NOT uniform across
+    # the catalog and must not be copied between components — all three were deployed
+    # against a local S3 backend to establish this: loki-distributed comes up with an
+    # `http://` prefix (its client accepts a URL), tempo-distributed fails exactly as mimir
+    # does ("failed to create minio client: Endpoint url cannot have fully qualified
+    # paths"). The tempo components still document the URL form and are wrong; correcting
+    # them is their own change, since a PR touches one component.
     - S3_ENDPOINT # e.g. garage.<namespace>.svc.cluster.local:3900
     - S3_REGION # S3 region (the platform's Garage impl uses `garage`)
     - S3_BUCKET_BLOCKS # bucket for Mimir TSDB blocks
