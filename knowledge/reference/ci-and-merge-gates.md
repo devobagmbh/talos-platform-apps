@@ -32,7 +32,10 @@ CLI is installed in CI from a pinned release asset. See
 
 All must be green, with `strict` on (the PR branch must be up to date with main):
 
-- `ci` - `task ci` (render + kubeconform + conftest + `validate:contract` + `validate:crd-split` + `validate:release-config`).
+- `ci` - `task ci` (render + kubeconform + conftest + `validate:crd-split` + `validate:release-config`).
+  It does **not** run `validate:contract`: the customization contract rolls out per component
+  (ADR-0024), so coupling the render/lint pipeline to it would let one broken contract block
+  every component. That check is the separate `validate-contract` context below.
 - `validate-contract` - component-contract schema conformance.
 - `require-issue-link` - the PR links an issue or carries the `no-issue` label.
 - `gitleaks (secret-scan)` - no secret leaks in the PR's changed range.
