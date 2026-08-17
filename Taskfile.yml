@@ -82,15 +82,26 @@ tasks:
         manifests/*.yaml — raw manifests, concatenated 1:1
       Output:
         sub-layers/<sub-layer>/components/<component>/rendered/manifest.yaml
+    vars:
+      # Root of the component tree. Overridable ONLY so test:render-one can drive this
+      # task against throwaway fixtures without mutating the real catalog — the same
+      # seam pattern as lint:kustomize-base's KLINT_GLOB. Production callers
+      # (render, render:sublayer, publish) never set it.
+      RENDER_SUBLAYERS_ROOT: '{{.RENDER_SUBLAYERS_ROOT | default "sub-layers"}}'
     cmd: |
       component_id="{{.COMPONENT_ID | default .CLI_ARGS}}"
-      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ]; then
-        echo "usage: task render:one -- <sub-layer>/<component>"
-        exit 1
-      fi
       sub_layer="${component_id%/*}"
       component="${component_id#*/}"
-      root="sub-layers/${sub_layer}/components/${component}"
+      # Reject a missing slash AND an empty half (#704). `<sub-layer>/` used to pass the
+      # slash test, leaving component="" so root resolved to the components/ directory
+      # itself — which EXISTS, so the -d check below let it through and render wrote a
+      # stray components/rendered/manifest.yaml outside any component.
+      if [ -z "$component_id" ] || [ "${component_id#*/}" = "$component_id" ] \
+        || [ -z "$sub_layer" ] || [ -z "$component" ]; then
+        echo "usage: task render:one -- <sub-layer>/<component>" >&2
+        exit 1
+      fi
+      root="{{.RENDER_SUBLAYERS_ROOT}}/${sub_layer}/components/${component}"
       out="${root}/rendered/manifest.yaml"
 
       if [ ! -d "$root" ]; then
@@ -150,28 +161,117 @@ tasks:
         # GitOps manifest — Argo would apply the test Pod as a regular resource, and such
         # hooks often use unpinned images (e.g. busybox).
         archive="${root}/vendor/${chart}-${version}.tgz"
+        # Render into a temp file and CHECK helm's exit code before appending (#704).
+        # go-task DOES abort the cmd block on a failing `helm template`, so the task
+        # itself already exited non-zero — but it left the `$out` it had truncated at
+        # the start of this run behind: empty when the first chart fails, PARTIAL when
+        # an earlier values file in the same component rendered fine. Whoever reads that
+        # file next treats it as a render result. That matters wherever render and scan
+        # are separate steps (the weekly trivy-cve-all job renders and scans separately
+        # by design), and conftest counts a partial manifest's documents as the whole
+        # component. So: keep the non-zero exit, and delete the manifest rather than
+        # leaving a truncated one that looks like output.
+        render_tmp=$(mktemp)
+        # `|| helm_rc=$?` (not a bare call + `$?`) is load-bearing: go-task aborts the
+        # cmd block on the first non-zero command, so a plain `helm template …` followed
+        # by `helm_rc=$?` never reaches the assignment — the task dies mid-render and
+        # leaves the truncated $out behind. As the right-hand side of `||` the failure is
+        # handled, so control reaches the cleanup below.
+        helm_rc=0
         if [ -f "$archive" ]; then
           echo "  ↳ Helm-Render   $name (chart=$chart version=$version, vendored)"
           helm template "$name" "$archive" \
             --namespace "$namespace" --skip-tests \
-            --values "$vals_tmp" $extra_vals >> "$out"
+            --values "$vals_tmp" $extra_vals > "$render_tmp" || helm_rc=$?
         else
           echo "  ↳ Helm-Render   $name (chart=$chart version=$version, repo=$repo)"
           helm template "$name" "$chart" \
             --repo "$repo" --version "$version" \
             --namespace "$namespace" --skip-tests \
-            --values "$vals_tmp" $extra_vals >> "$out"
+            --values "$vals_tmp" $extra_vals > "$render_tmp" || helm_rc=$?
         fi
+        if [ "$helm_rc" -ne 0 ]; then
+          echo "ERROR: helm template failed for ${component_id} (values=${name}, chart=${chart}, version=${version}, rc=${helm_rc}) — removing the partial manifest so no downstream gate reads it as a successful render" >&2
+          rm -f "$vals_tmp" "$render_tmp" "$out"
+          exit 1
+        fi
+        cat "$render_tmp" >> "$out"
         echo "---" >> "$out"
-        rm -f "$vals_tmp"
+        rm -f "$vals_tmp" "$render_tmp"
       done
 
       for mfile in "$root"/manifests/*.yaml; do
         echo "  ↳ Raw-Manifest  $(basename "$mfile")"
-        cat "$mfile" >> "$out"
+        # Same failure class as the helm branch above (#704): an unreadable manifest must
+        # not be skipped silently into a short manifest that still exits 0.
+        if ! cat "$mfile" >> "$out"; then
+          echo "ERROR: cannot read raw manifest ${mfile} for ${component_id} — removing the partial manifest" >&2
+          rm -f "$out"
+          exit 1
+        fi
         echo "---" >> "$out"
       done
       echo "  → $(wc -l < "$out") Zeilen → ${out}"
+
+  test:render-one:
+    desc: 'Test of render:one (#704): a failed helm template exits non-zero and leaves no manifest; an empty component half is rejected. Red-green bound to the gate via the RENDER_SUBLAYERS_ROOT seam.'
+    summary: |
+      Hermetic red-green test for the render:one failure propagation (wired into `task ci`).
+      Writes throwaway fixture components (no network; the real catalog is never mutated)
+      and drives render:one through its RENDER_SUBLAYERS_ROOT seam. Scenarios:
+        green  inline-stub component            → exits 0, manifest.yaml carries the Namespace
+        red    vendored archive that is not a
+               valid chart → helm template fails → non-zero AND no manifest.yaml left behind
+        red    '<sub-layer>/' (empty component
+               half)                            → non-zero AND no stray components/rendered/
+      The red-helm case uses a VENDORED archive on purpose: `[ -f "$archive" ]` short-circuits
+      the HTTP repo path, so helm fails locally and the test stays network-free.
+      What each assertion binds, measured against the pre-fix behaviour: the task already
+      exited non-zero there (go-task aborts the block on a failing command), but it LEFT the
+      truncated manifest behind — so the "no manifest" assertion is the one that is red
+      without the fix, and the exit assertion guards against a future `|| true` re-swallowing
+      the failure. Reverting the empty-half guard turns the red-arg case green.
+    cmd: |
+      set -eu
+      root="$(git rev-parse --show-toplevel)"
+      tmp="$(mktemp -d)" || { echo "test:render-one: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      sl="$tmp/sub-layers"
+      mkdir -p "$sl/t/components/greenc/helm" "$sl/t/components/redc/helm" "$sl/t/components/redc/vendor"
+      # GREEN fixture: the inline-stub path needs neither helm nor network.
+      printf 'metadata:\n  inline: true\n  namespace: probe-ns\n' \
+        > "$sl/t/components/greenc/helm/stub.yaml"
+      # RED fixture: a vendored "archive" that is not a valid chart → helm template fails.
+      printf 'metadata:\n  chart: brokenchart\n  repo: https://example.invalid\n  version: 9.9.9\n  namespace: probe-ns\nvalues: {}\n' \
+        > "$sl/t/components/redc/helm/broken.yaml"
+      printf 'not a gzip tarball\n' > "$sl/t/components/redc/vendor/brokenchart-9.9.9.tgz"
+
+      if task -d "$root" render:one COMPONENT_ID="t/greenc" RENDER_SUBLAYERS_ROOT="$sl" >/dev/null 2>&1; then
+        if grep -q 'name: probe-ns' "$sl/t/components/greenc/rendered/manifest.yaml"; then
+          echo "✓ green fixture renders and exits 0"
+        else
+          echo "✗ test:render-one: green fixture rendered no Namespace" >&2; exit 1
+        fi
+      else
+        echo "✗ test:render-one: green fixture unexpectedly FAILED to render" >&2; exit 1
+      fi
+
+      if task -d "$root" render:one COMPONENT_ID="t/redc" RENDER_SUBLAYERS_ROOT="$sl" >/dev/null 2>&1; then
+        echo "✗ test:render-one: failed helm template unexpectedly exited 0 (#704 regression)" >&2; exit 1
+      fi
+      if [ -e "$sl/t/components/redc/rendered/manifest.yaml" ]; then
+        echo "✗ test:render-one: failed render left a manifest behind — downstream gates would read it as success (#704 regression)" >&2; exit 1
+      fi
+      echo "✓ failed helm template exits non-zero and leaves no manifest"
+
+      if task -d "$root" render:one COMPONENT_ID="t/" RENDER_SUBLAYERS_ROOT="$sl" >/dev/null 2>&1; then
+        echo "✗ test:render-one: empty component half unexpectedly accepted" >&2; exit 1
+      fi
+      if [ -e "$sl/t/components/rendered" ]; then
+        echo "✗ test:render-one: empty component half created a stray components/rendered/ (#704 regression)" >&2; exit 1
+      fi
+      echo "✓ empty component half rejected, no stray rendered/ created"
+      echo "test:render-one OK"
 
   render:sublayer:
     desc: 'Render all components of a sub-layer: task render:sublayer -- <sub-layer>'
@@ -4170,6 +4270,10 @@ tasks:
       - task: test:validate-trivyignore
       # Also in ci:artifact so a direct/backfill tag push red-greens the kustomize-build gate.
       - task: test:kustomize-base
+      # Red-greens render:one's failure propagation (#704) BEFORE `render` runs below, so a
+      # regression that lets a failed chart render leave a truncated manifest behind is
+      # caught by this hermetic fixture rather than by whatever gate later reads that file.
+      - task: test:render-one
       - task: lint
       - task: validate:compatibility
       - task: render
