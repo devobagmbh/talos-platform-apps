@@ -1,0 +1,85 @@
+# Metrics authentication RBAC — re-shipped by the catalog because the chart drops it
+# for the wrong reason.
+#
+# The chart gates templates/metrics-rbac.yaml on `not isNamespaceScoped`, so setting
+# helm/garage-operator.yaml `watchNamespaces` (which is what removes the cluster-wide
+# manager grant) also removes the TokenReview/SubjectAccessReview permission the
+# manager needs to AUTHENTICATE scrapes of its own :8443 metrics endpoint. The two
+# concerns are unrelated upstream: delegated authn is about who may read metrics, not
+# about which namespaces the controller reconciles. Without these objects an
+# authenticated scrape returns `500 Authentication failed` and the manager logs a
+# `tokenreviews.authentication.k8s.io ... is forbidden` line.
+#
+# These are the only cluster-scoped grants this artifact ships. Both are the standard
+# kubebuilder delegated-authn rules — effect-identical to the built-in
+# system:auth-delegator ClusterRole: they let the manager ASK the API server to verify
+# a bearer token and authorize the caller. They confer no read or write access to any
+# cluster data — deleting them breaks metrics scraping and nothing else.
+#
+# Objects and names are byte-identical to what the chart rendered before the switch,
+# so a consumer's ServiceMonitor / scrape config keeps working unchanged. The Helm
+# provenance labels (`helm.sh/chart`, `app.kubernetes.io/managed-by: Helm`) are
+# deliberately omitted: these objects are catalog-authored, and a version-carrying
+# label here would be a second pin to bump on every chart bump.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: garage-operator-metrics-auth-role
+  labels:
+    app.kubernetes.io/name: garage-operator
+    app.kubernetes.io/instance: garage-operator
+    control-plane: controller-manager
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-operator
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: garage-operator-metrics-auth-rolebinding
+  labels:
+    app.kubernetes.io/name: garage-operator
+    app.kubernetes.io/instance: garage-operator
+    control-plane: controller-manager
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: garage-operator-metrics-auth-role
+subjects:
+  - kind: ServiceAccount
+    name: garage-operator
+    namespace: garage-operator
+---
+# Unbound by design: this role grants `get` on the /metrics HTTP path and exists so a
+# consumer's scraper ServiceAccount has a shipped role to bind. It is attached to no
+# subject in this artifact and therefore grants nothing until a consumer binds it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: garage-operator-metrics-reader
+  labels:
+    app.kubernetes.io/name: garage-operator
+    app.kubernetes.io/instance: garage-operator
+    control-plane: controller-manager
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-operator
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get

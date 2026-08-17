@@ -39,6 +39,28 @@ values:
   # NOT see it — recorded residual, see README.md § Supply chain.
   defaultGarageImage: dxflrs/garage:v2.3.0
 
+  # -- (list) namespaces the operator watches. Load-bearing security setting, NOT a
+  # preference: a non-empty list flips the chart to its namespace-scoped mode
+  # (`garage-operator.isNamespaceScoped`), which renders a Role + RoleBinding per
+  # listed namespace INSTEAD of the manager ClusterRole + ClusterRoleBinding. The
+  # cluster-wide default this replaces granted the operator's ServiceAccount
+  # get/list/watch on every Secret in the cluster (a List response carries the
+  # Secret contents) plus create on Pods and workload kinds in every namespace —
+  # and permission to create workloads implicitly confers the API access of any
+  # ServiceAccount in the target namespace, so cluster-wide that grant composes to
+  # cluster-admin. Kubernetes RBAC good practices: assign permissions at the
+  # namespace level where possible, RoleBindings over ClusterRoleBindings.
+  #
+  # The chart helper always prepends the release namespace, so this minimal list
+  # yields exactly `--watch-namespaces=garage-operator` and no cluster-scoped
+  # manager grant at all. Operand namespaces are consumer-owned (see
+  # manifests/00-namespace.yaml), so the catalog watches none of them by default;
+  # a consumer grants a namespace additively — README.md § Watching additional
+  # namespaces. Consequence to accept before changing this: an unwatched namespace
+  # is silent, not loud (admission succeeds, nothing reconciles).
+  watchNamespaces:
+    - garage-operator
+
   # -- (object) pod-level security context. Equals the chart defaults and is pinned
   # so upstream drift cannot regress the namespace's PSA `enforce: restricted`
   # (manifests/00-namespace.yaml), which both keys are required for.
