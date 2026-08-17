@@ -4519,9 +4519,11 @@ tasks:
     # list left every worker running on stop and, worse, brought a multi-node
     # cluster back as one node on start — while the cluster still claimed its
     # worker count, so every placement assertion would have "passed" against a
-    # single node.
+    # single node. The filter is an ANCHORED regex: docker/podman `name=` matches
+    # any part of a container name, so a bare substring would stop unrelated
+    # containers that merely contain this cluster's name.
     cmd: |
-      workers=$(docker ps -a --filter "name=talos-platform-apps-worker-" --format '{{`{{.Names}}`}}' | sort)
+      workers=$(docker ps -a --filter 'name=^talos-platform-apps-worker-[0-9]+$' --format '{{`{{.Names}}`}}' | sort)
       for c in talos-platform-apps-controlplane-1 $workers kind-registry; do
         if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c" 2>/dev/null)" = "true" ]; then
           docker stop "$c" >/dev/null
@@ -4537,8 +4539,8 @@ tasks:
     # containers. Waits until the K8s API responds so that follow-up tasks
     # (kubectl, helm) do not run into race conditions.
     cmd: |
-      # Workers discovered, not hardcoded — see the note on local:stop.
-      workers=$(docker ps -a --filter "name=talos-platform-apps-worker-" --format '{{`{{.Names}}`}}' | sort)
+      # Workers discovered, not hardcoded, anchored regex — see the note on local:stop.
+      workers=$(docker ps -a --filter 'name=^talos-platform-apps-worker-[0-9]+$' --format '{{`{{.Names}}`}}' | sort)
       for c in kind-registry talos-platform-apps-controlplane-1 $workers; do
         if ! docker inspect "$c" >/dev/null 2>&1; then
           echo "ERROR: container '$c' does not exist — task local:up?"
@@ -4631,27 +4633,65 @@ tasks:
         # talosctl create is NOT idempotent (it refuses if the state dir exists).
         # NOTE: `talosctl cluster show` is NOT a reliable existence probe — it exits
         # 0 with empty output even when nothing exists. Gate on the state dir.
+        # LOCAL_WORKERS: distinguish UNSET (accept whatever exists) from SET (assert it).
+        # `${VAR:-}` would collapse the two, so `LOCAL_WORKERS= task local:up` would
+        # silently skip the assertion the operator just asked for. Validate the value
+        # here rather than handing a non-numeric string to talosctl.
+        if [ -n "${LOCAL_WORKERS+set}" ]; then
+          case "${LOCAL_WORKERS}" in
+            ''|*[!0-9]*)
+              echo "ERROR: LOCAL_WORKERS must be a non-negative integer; got '${LOCAL_WORKERS}'."
+              exit 1
+              ;;
+          esac
+          workers_req="${LOCAL_WORKERS}"
+          workers_explicit=1
+        else
+          workers_req=0
+          workers_explicit=0
+        fi
+        # Anchored regex, NOT a bare substring: docker/podman `name=` matches any part
+        # of the name, so an unrelated container such as backup-talos-platform-apps-worker-1
+        # would be counted as a cluster node (and stopped/started by local:stop/start).
+        worker_filter='name=^talos-platform-apps-worker-[0-9]+$'
         state_dir="${HOME}/.talos/clusters/talos-platform-apps"
         if [ -d "$state_dir" ]; then
+          have=$(docker ps -aq --filter "$worker_filter" | wc -l | tr -d ' ')
+          cp_have=$(docker ps -aq --filter 'name=^talos-platform-apps-controlplane-[0-9]+$' | wc -l | tr -d ' ')
+          # A crashed create leaves the state directory behind with no state.yaml.
+          # `talosctl cluster destroy` cannot clean that (it needs the state file) and
+          # create keeps skipping while the directory exists — so `task local:down`
+          # is NOT the fix here, and saying so would send the operator in circles.
+          # Detect it by the absence of a control-plane container: state dir without a
+          # node is a leftover, not a cluster.
+          if [ "$cp_have" = "0" ]; then
+            echo "ERROR: the state directory exists but there is no control-plane container —"
+            echo "       a previous create failed, or the containers were removed outside talosctl."
+            echo "       talosctl cluster destroy cannot clean this (it needs state.yaml)."
+            echo "       Remove the leftover state directory by hand, then re-run:"
+            echo "         rm -rf \"\$HOME/.talos/clusters/talos-platform-apps\""
+            echo "       See local/README.md § Troubleshooting."
+            exit 1
+          fi
           # talosctl cannot resize an existing cluster, and the skip path silently
           # ignored every flag — so `LOCAL_WORKERS=2 task local:up` against a
           # one-node cluster used to print "already exists" and hand back a cluster
           # that cannot satisfy the run. Compare against OBSERVED state (the worker
           # containers), not a recorded intent: no marker file to drift, and a
-          # destroyed/recreated cluster cannot lie. Fires only when LOCAL_WORKERS is
-          # explicitly set, so an ordinary `task local:up` after an HA run still works.
-          have=$(docker ps -aq --filter "name=talos-platform-apps-worker-" | wc -l | tr -d ' ')
-          if [ -n "${LOCAL_WORKERS:-}" ] && [ "${LOCAL_WORKERS}" != "$have" ]; then
-            echo "ERROR: LOCAL_WORKERS=${LOCAL_WORKERS} requested, but the existing cluster has ${have} worker(s)."
+          # destroyed/recreated cluster cannot lie. This counts CONTAINERS, not Ready
+          # nodes — a worker that exists but never joined still passes here; the node
+          # count you actually run against is what `kubectl get nodes` reports.
+          if [ "$workers_explicit" = "1" ] && [ "${workers_req}" != "$have" ]; then
+            echo "ERROR: LOCAL_WORKERS=${workers_req} requested, but the existing cluster has ${have} worker(s)."
             echo "       talosctl cannot resize a cluster. Recreate it:"
-            echo "         task local:down && LOCAL_WORKERS=${LOCAL_WORKERS} task local:up"
+            echo "         task local:down && LOCAL_WORKERS=${workers_req} task local:up"
             exit 1
           fi
-          echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create; ${have} worker(s))"
+          echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create; ${have} worker container(s))"
         else
           talosctl cluster create docker \
             --name talos-platform-apps \
-            --workers "${LOCAL_WORKERS:-0}" \
+            --workers "${workers_req}" \
             --memory-controlplanes "${LOCAL_NODE_MEMORY:-8GiB}" \
             --cpus-controlplanes "${LOCAL_NODE_CPUS:-6}" \
             --memory-workers "${LOCAL_WORKER_MEMORY:-8GiB}" \

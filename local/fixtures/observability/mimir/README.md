@@ -1,7 +1,19 @@
 # Local mimir fixtures
 
-Everything the local Talos test cluster needs to run `observability/mimir` end to end —
-in its shipped single-node default **and** in the HA shape a three-node consumer runs.
+What the local Talos test cluster needs to run `observability/mimir` — in its shipped
+single-node default, and the scaffolding for the HA shape a three-node consumer runs.
+
+> **The HA half is not usable until the #794 component change lands.** The current mimir
+> artifact bakes `replication_factor: 1` as a literal and ships no hard pod anti-affinity.
+> Until that changes, `argo-app-ha.yaml` raises **replica counts only**: patching the
+> replication-factor keys into the ConfigMap has no effect, and the chart's soft
+> `topologySpreadConstraints` permit two ingesters on one node. Every command below is
+> written for the finished state; the two steps that depend on the component change are
+> marked. Do not read a green run as evidence of RF 3 or of one-pod-per-node before then.
+
+Every command pins `--context admin@talos-platform-apps`. The workstation kubeconfig also
+holds real clusters, and a context-less `kubectl apply` there is the one mistake in this
+directory that reaches production.
 
 ## Why this is a fixture directory, not `local/argo-apps/`
 
@@ -15,7 +27,7 @@ are applied by hand instead.
 | File | Applied by | What it is |
 |---|---|---|
 | `manifests/runtime-config.yaml` | `task local:fixtures` / `task local:s3-backend` | the consumer-owned non-secret S3 scalars (`mimir-runtime-config`) |
-| `manifests/memcached.yaml` | same | a single memcached the query-path cache tests point at — the catalog ships none |
+| `manifests/memcached.yaml` | same | a single memcached for the query-path cache tests — the catalog ships none. **Idle until #794**: mimir's cache blocks are disabled in the current artifact, so nothing points at it yet |
 | `argo-app.yaml` | manual | mimir in its **shipped default** shape (auto-sync) |
 | `argo-app-ha.yaml` | manual | mimir in the **HA** shape (manual sync, replica patches) |
 
@@ -30,7 +42,8 @@ task local:up
 task local:s3-backend -- observability/mimir 0.0.0-dev
 task local:publish    -- observability/mimir 0.0.0-dev
 TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platform-apps \
-  envsubst < local/fixtures/observability/mimir/argo-app.yaml | kubectl apply -f -
+  envsubst < local/fixtures/observability/mimir/argo-app.yaml \
+  | kubectl --context admin@talos-platform-apps apply -f -
 ```
 
 ## Three-node run (the HA shape)
@@ -44,17 +57,28 @@ LOCAL_WORKERS=2 task local:up          # control plane + 2 workers = 3 schedulab
 task local:s3-backend -- observability/mimir 0.0.0-dev
 task local:publish    -- observability/mimir 0.0.0-dev
 TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platform-apps \
-  envsubst < local/fixtures/observability/mimir/argo-app-ha.yaml | kubectl apply -f -
+  envsubst < local/fixtures/observability/mimir/argo-app-ha.yaml \
+  | kubectl --context admin@talos-platform-apps apply -f -
 argocd app sync observability-mimir-ha
 ```
 
-Then, and only after every ingester reports `ACTIVE` in the ring, raise the replication
-factors and bump the pod-template annotation in the same step:
+Then — **this step is inert until the #794 component change lands** — and only after every
+ingester reports `ACTIVE` in the ring, raise the replication factors and bump the
+pod-template annotation in the same step:
 
 ```sh
-kubectl -n mimir patch cm mimir-runtime-config --type merge \
+kubectl --context admin@talos-platform-apps -n mimir patch cm mimir-runtime-config \
+  --type merge \
   -p '{"data":{"INGESTER_REPLICATION_FACTOR":"3","STORE_GATEWAY_REPLICATION_FACTOR":"3"}}'
 # bump config-generation in argo-app-ha.yaml (1 -> 2), re-apply, sync again
+```
+
+Confirm it actually took effect rather than trusting the patch — against the current
+artifact both of these still report 1:
+
+```sh
+kubectl --context admin@talos-platform-apps -n mimir exec sts/mimir-ingester -- \
+  wget -qO- localhost:8080/config | grep -A2 replication_factor
 ```
 
 Two syncs, not one: replicas first, factors second. The reverse makes ring quorum
@@ -72,7 +96,11 @@ unreachable — the state issue #379 fixed.
   pod to one node for good, so "add a node" does not free a pod that is `Pending` on
   anti-affinity — its PVC still points at the old node. Delete the PVC, or use a
   network-attached StorageClass, when testing that recovery path.
-- **A third ingester stuck `Pending` on three nodes is correct** when a fourth replica was
-  requested: hard anti-affinity is doing its job. Read `kubectl describe pod` before
-  concluding otherwise — free memory alone does not distinguish anti-affinity from a taint
+- **A pod stuck `Pending` once every node already runs one is correct** — hard
+  anti-affinity is doing its job (from #794 onwards). Read `kubectl describe pod` before
+  concluding otherwise: free memory alone does not distinguish anti-affinity from a taint
   or a PVC node affinity.
+- **A failed `talosctl cluster create` leaves a state directory with no `state.yaml`.**
+  `task local:down` cannot clean it — `talosctl cluster destroy` needs that file — so
+  `local:cluster:up` detects the leftover and tells you to remove the directory by hand.
+  See `local/README.md` § Troubleshooting.

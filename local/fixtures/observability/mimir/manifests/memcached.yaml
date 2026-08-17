@@ -1,9 +1,13 @@
 # Local memcached fixture for the mimir query-path cache tests.
 #
-# The catalog ships NO memcached: mimir's four cache blocks name an address the
-# CONSUMER supplies, and the component's four *-cache chart subcharts stay disabled.
-# Without this fixture the "cache actually serves hits" test is unexecutable locally,
-# so it lives here rather than in the artifact.
+# The catalog ships NO memcached: the component's four *-cache chart subcharts stay
+# disabled, and the cache blocks name an address the CONSUMER supplies. Without this
+# fixture the "cache actually serves hits" test is unexecutable locally, so it lives
+# here rather than in the artifact.
+#
+# IDLE UNTIL #794: the current mimir artifact renders no cache configuration at all, so
+# nothing points at this Service yet. It is deployed ahead of the component change so the
+# cache tests have a target the moment the switchable cache blocks land.
 #
 # Image tag matches the one the mimir-distributed 5.8.0 chart pins for its own
 # memcached subcharts, so the local fixture and the upstream default do not drift.
