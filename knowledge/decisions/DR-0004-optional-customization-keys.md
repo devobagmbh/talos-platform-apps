@@ -3,7 +3,7 @@ type: decision
 title: "DR-0004 — Optional consumer-supplied env keys in the customization contract"
 description: Add an additive top-level `optional` block to the customization contract so a component can declare env keys that carry a working baked default, keeping `required` strictly the must-supply channel; enforce the two rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-08-16
+timestamp: 2026-08-17
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-valid.yaml
@@ -99,7 +99,7 @@ Documented inline in the schema's `optional` description, summarised here:
 
 ## Named residuals
 
-- **No render binding.** Nothing compares a declared key against the rendered config. A declared key with no matching `${KEY}` placeholder passes green, and a one-character mismatch between the contract and `helm/*.yaml` produces a knob that silently does nothing. This is the most likely defect class in any component adopting the block, and it has no detector today. A render-vs-contract placeholder check is the follow-up.
+- **No render binding.** Nothing compares a declared key against the rendered config. A declared key with no matching `${KEY}` placeholder passes green, and a one-character mismatch between the contract and `helm/*.yaml` produces a knob that silently does nothing. This is the most likely defect class in any component adopting the block, and it has no detector today. A render-vs-contract placeholder check is tracked in #802.
 - **`group` is descriptive only.** Nothing validates that a consumer set every member of a group. It records a co-requirement for the reader; a consumer who sets a cache backend without its addresses gets whatever the workload does with that combination (for Mimir: a loud startup failure — but that is the workload's behaviour, not the contract's enforcement).
 - **Version-skew cost is real.** Parity decision 3 means every consumer vendoring the schema must update it before adopting a component that carries `optional`. There is no forward-compatibility escape hatch short of opening the root, which would forfeit the closed-set property the contract relies on.
 - **Channel classification is author-asserted.** No gate can tell whether a key genuinely has a working default; a component author could park a truly mandatory key under `optional` with a plausible-looking default. Review is the control.
@@ -107,7 +107,7 @@ Documented inline in the schema's `optional` description, summarised here:
 ## Action items
 
 - Companion PR amending ADR-0024 in `talos-platform-docs` (the schema is that ADR's implementation), open before this change merges.
-- File the render-vs-contract placeholder-check follow-up issue (number back-filled once filed).
+- ~~File the render-vs-contract placeholder-check follow-up issue.~~ Filed as #802.
 
 ## Consequences
 
