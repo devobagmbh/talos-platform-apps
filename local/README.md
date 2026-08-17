@@ -358,6 +358,23 @@ Check Docker is running and ports 80/443 are free. Inspect the node via the talo
 **`talosctl cluster create` skips creation forever after a crashed run.**
 A failed create can leave a partial state directory under `~/.talos/clusters/<name>/` with no `state.yaml`. `talosctl cluster destroy` cannot clean it (it needs the state file), and create keeps skipping while the directory exists. Remove it manually — `rm -rf ~/.talos/clusters/talos-platform-apps` — then `task local:up`.
 
+**`local:up` dies with `error copying: rpc error … connection refused` minutes into a fresh create.**
+A talosconfig context named `talos-platform-apps` already exists (destroying a cluster does not prune the client config). `talosctl cluster create` will not overwrite it: it files the NEW context as `talos-platform-apps-1` and leaves the pre-existing one under the plain name — which is the name every later step asks for, so kubeconfig generation addresses the other cluster. `local:cluster:up` now refuses before creating anything rather than failing halfway.
+
+The check proves a **name collision**, not that the other context is dead — inspect it before deleting anything:
+
+```bash
+talosctl config info --context talos-platform-apps
+```
+
+If it is stale, remove it. A context cannot remove itself, so select another one first (any context from `talosctl config contexts`):
+
+```bash
+talosctl config context <OTHER-CONTEXT>
+talosctl config remove talos-platform-apps --noconfirm
+kubectl config delete-context admin@talos-platform-apps   # plus delete-cluster / delete-user
+```
+
 **Wrong kube-context — guard before any `local:apply`.**
 `task local:apply` is a `kubectl apply` against the **current** context. When the workstation kubeconfig also holds real (production / consumer) contexts, assert the local one first: `kubectl config current-context` MUST read `admin@talos-platform-apps` before applying. Never run a context-less apply against a shared kubeconfig (tracked in issue #172).
 
