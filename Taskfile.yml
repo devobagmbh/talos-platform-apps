@@ -4689,6 +4689,37 @@ tasks:
           fi
           echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create; ${have} worker container(s))"
         else
+          # NAME COLLISION in the talosconfig. A context called talos-platform-apps already
+          # exists while this cluster does not — usually a cluster destroyed without pruning
+          # the client config, but it could equally be a context someone else's tooling owns.
+          # Either way `talosctl cluster create` does NOT overwrite it: it files the NEW
+          # context as talos-platform-apps-1 and leaves the pre-existing one under the plain
+          # name, which is the name every later step asks for. kubeconfig generation then
+          # addresses the OTHER cluster and local:up dies minutes later with an opaque
+          # `error copying: rpc error … connection refused`. Refuse before creating anything
+          # and let the operator decide whether the context is stale — this check proves the
+          # collision, never that the other context is dead.
+          # Membership test via `case`, not `grep -q` over a pipe: a -q that closes the pipe
+          # early raises SIGPIPE under pipefail (see the validate:release-config comment).
+          ctx_list=$(talosctl config contexts 2>/dev/null | awk 'NR>1 {print ($1 == "*") ? $2 : $1}' | tr '\n' ' ')
+          case " ${ctx_list}" in
+            *" talos-platform-apps "*)
+              echo "ERROR: a talosconfig context named 'talos-platform-apps' already exists while this"
+              echo "       cluster does not. talosctl would file the new context as"
+              echo "       'talos-platform-apps-1' and every later step would keep addressing the other one."
+              echo "       Check what that context points at first:"
+              echo "         talosctl config info --context talos-platform-apps"
+              echo "       If it is stale, remove it and re-run (a context cannot remove itself, so"
+              echo "       select another one first):"
+              echo "         talosctl config context <OTHER-CONTEXT>"
+              echo "         talosctl config remove talos-platform-apps --noconfirm"
+              echo "       Prune the matching kube entries too, if they are stale:"
+              echo "         kubectl config delete-context admin@talos-platform-apps"
+              echo "         kubectl config delete-cluster talos-platform-apps"
+              echo "         kubectl config delete-user    admin@talos-platform-apps"
+              exit 1
+              ;;
+          esac
           talosctl cluster create docker \
             --name talos-platform-apps \
             --workers "${workers_req}" \
@@ -5212,7 +5243,27 @@ tasks:
       fdir="local/fixtures/${sl}/${comp}"
       [ -d "$fdir" ] || { echo "  (no fixtures for ${cid})"; exit 0; }
       KC="kubectl --context {{.LOCAL_KUBE_CONTEXT}}"
-      ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
+      # Namespace from the component's Argo-app template when one exists, else the
+      # component name. NOT every component with fixtures has such a template: one whose
+      # Applications live under local/fixtures/<sl>/<comp>/ on purpose (mimir — local:apply
+      # fans out every file in local/argo-apps/<sl>/, and eight mimir workloads have no
+      # business in an unrelated observability E2E) has none. yq exits 2 on a missing file
+      # and go-task runs each cmd under errexit, so the bare assignment aborted the whole
+      # task — SILENTLY, stderr being discarded: `task local:s3-backend` died with a bare
+      # "exit status 2" and not one line of output. Probe for the file; keep `|| true` so a
+      # malformed template falls back to the component name instead of killing the run.
+      appfile="local/argo-apps/${sl}/${comp}.yaml"
+      ns=""
+      if [ -f "$appfile" ]; then
+        # No `|| true` here: absence is handled by the -f probe, so a non-zero yq now means
+        # the template is UNREADABLE. Falling back silently would pick the component name as
+        # the namespace and apply fixtures — or, in local:s3-backend, mint a credential
+        # Secret — into the wrong one. Fail instead.
+        ns=$(yq -r '.spec.destination.namespace' "$appfile") || {
+          echo "ERROR: cannot read .spec.destination.namespace from ${appfile}"
+          exit 1
+        }
+      fi
       { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
       $KC create namespace "$ns" --dry-run=client -o yaml | $KC apply -f - >/dev/null
 
@@ -5321,7 +5372,17 @@ tasks:
       [ -f "$rc" ] || { echo "ERROR: no runtime-config fixture at ${rc} — ${cid} is not wired for the local S3 backend"; exit 1; }
       # Target namespace from the argo-app template; credential Secret name from the
       # component's freeze-line (provided_refs.secret), fallback <component>-runtime-secret.
-      ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
+      # The -f probe is load-bearing, not defensive: without it a component whose
+      # Applications live under local/fixtures/ (mimir) kills this task before its first
+      # echo. Full rationale at the identical lookup in local:fixtures.
+      appfile="local/argo-apps/${sl}/${comp}.yaml"
+      ns=""
+      if [ -f "$appfile" ]; then
+        ns=$(yq -r '.spec.destination.namespace' "$appfile") || {
+          echo "ERROR: cannot read .spec.destination.namespace from ${appfile}"
+          exit 1
+        }
+      fi
       { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
       sec=$(yq -r '.provided_refs.secret' "sub-layers/${sl}/components/${comp}/customization.yaml" 2>/dev/null)
       { [ -z "$sec" ] || [ "$sec" = "null" ]; } && sec="${comp}-runtime-secret"

@@ -49,7 +49,17 @@ TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platf
 ## Three-node run (the HA shape)
 
 The HA shape needs three schedulable nodes. `talosctl` cannot resize a cluster, so a
-one-node cluster has to go first:
+one-node cluster has to go first.
+
+The ingester's shipped 4Gi request is **not** patched down here. On the tested setup it did
+not need to be: the Talos docker provisioner gave each node container no memory cgroup the
+kubelet reads, so every node reported the whole VM's memory as allocatable and all three
+ingesters scheduled on a VM far smaller than 3 × 4Gi. That is a property of the provisioner,
+not a guarantee — the scheduler still subtracts the requests already placed on a node, so an
+ingester can be `Pending` for memory once **allocatable minus existing requests** drops below
+4Gi. Read `kubectl describe node` and the pod's own `FailedScheduling` event before concluding
+that anti-affinity is what stranded it. And give the VM enough real memory regardless: the
+scheduler's view of it is fiction, the OOM killer's is not.
 
 ```sh
 task local:down
@@ -76,10 +86,27 @@ kubectl --context admin@talos-platform-apps -n mimir patch cm mimir-runtime-conf
 Confirm it actually took effect rather than trusting the patch — against the current
 artifact both of these still report 1:
 
+The mimir image is distroless — it has no `wget`, `curl` or `sh`, so `kubectl exec` into it
+buys you nothing. Port-forward and query from the workstation instead. The subshell + trap
+is not ceremony: the forward needs a moment to bind, and a bare `curl` right after the `&`
+loses the race and prints nothing useful.
+
 ```sh
-kubectl --context admin@talos-platform-apps -n mimir exec sts/mimir-ingester -- \
-  wget -qO- localhost:8080/config | grep -A2 replication_factor
+(
+  kubectl --context admin@talos-platform-apps -n mimir \
+    port-forward pod/mimir-ingester-0 18080:8080 >/dev/null &
+  pf=$!
+  trap 'kill "$pf" 2>/dev/null || true' EXIT INT TERM
+  curl --fail --show-error --silent --retry 10 --retry-connrefused --retry-delay 1 \
+    http://127.0.0.1:18080/config | grep -A2 replication_factor
+)
 ```
+
+`/config` reports the **effective** configuration after env expansion — the integer the
+process actually runs with. Do not read it off a ConfigMap: there are two, and neither shows
+that. `mimir-config` (chart-generated, catalog-owned) holds the literal `${…}` placeholder;
+`mimir-runtime-config` (consumer-owned) holds the value you supplied, which is only a
+*request* until a pod restarts and re-expands it.
 
 Two syncs, not one: replicas first, factors second. The reverse makes ring quorum
 unreachable — the state issue #379 fixed.

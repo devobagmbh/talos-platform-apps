@@ -15,7 +15,13 @@ metadata:
   namespace: mimir
 data:
   # garage S3 API Service (ClusterIP garage:3900 in the garage namespace), plain HTTP.
-  S3_ENDPOINT: "http://garage.garage.svc.cluster.local:3900"
+  # HOST:PORT, no scheme — mimir's S3 client is thanos-io/objstore, which rejects a
+  # fully-qualified URL outright ("Endpoint url cannot have fully qualified paths"). With
+  # an `http://` prefix here all eight mimir workloads crash-looped on the usage-stats
+  # bucket client. The scheme is NOT part of this value: S3_INSECURE selects http vs https.
+  # The loki fixture next door does carry an `http://` prefix and works — Loki's S3 client
+  # accepts a URL. Do not copy that form here.
+  S3_ENDPOINT: "garage.garage.svc.cluster.local:3900"
   S3_REGION: "garage"
   S3_BUCKET_BLOCKS: "mimir-blocks"
   S3_BUCKET_RULER: "mimir-ruler"
