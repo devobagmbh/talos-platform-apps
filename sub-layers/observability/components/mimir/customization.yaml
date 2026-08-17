@@ -56,14 +56,16 @@ optional:
     - name: INGESTER_REPLICATION_FACTOR
       description: >-
         ingester.ring.replication_factor. Raise ONLY after the ingester replica count is
-        at least as high — the reverse makes ring quorum unreachable. Use 1 or 3; an even
-        factor raises the quorum without adding failure tolerance. Not retroactive: only
-        newly written series get the higher factor.
+        at least as high — the reverse leaves fewer live ring instances than the factor
+        demands, and every write and query fails. Use 1 or 3; an even factor raises the
+        quorum without adding failure tolerance. Not retroactive: it applies to samples
+        received from then on, never to data already written.
       default: "1"
     - name: STORE_GATEWAY_REPLICATION_FACTOR
       description: >-
         store_gateway.sharding_ring.replication_factor. Same ordering rule as the ingester
-        factor; never scale the store-gateway below this value.
+        factor, against the store-gateway's OWN ring — wait for those replicas to register
+        before raising it. Never scale the store-gateway below this value.
       default: "1"
     # --- query-path caches: the catalog ships no memcached, the consumer brings one ---
     - name: CHUNKS_CACHE_BACKEND

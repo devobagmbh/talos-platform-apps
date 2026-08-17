@@ -132,20 +132,27 @@ shapes come from the same artifact.
 | ingester | 1, RF 1 | 3, RF 3 |
 | store-gateway | 1, RF 1 | 3, RF 3 |
 | distributor / querier / query-frontend / query-scheduler | 1 | 2 |
-| compactor / ruler | 1 | 1 |
+| compactor / ruler | 1 | 1 — **not** redundant, see below |
 
 ### Scaling out — order matters
 
 1. Raise the replica counts (consumer overlay, `source.kustomize.patches`).
-2. **Wait until every ingester reports `ACTIVE`** in `/ingester/ring`.
+2. **Wait until every ingester reports `ACTIVE`** in `/ingester/ring` **and every
+   store-gateway is registered and healthy** in `/store-gateway/ring`. Both rings, not
+   just the ingester one — each factor has its own ring and its own instance count, and
+   raising the store-gateway factor over a ring that has not caught up fails historical
+   queries exactly the way the ingester case fails writes.
 3. Only then raise `INGESTER_REPLICATION_FACTOR` and `STORE_GATEWAY_REPLICATION_FACTOR`.
 
-The reverse order reproduces the quorum-impossible state of #379: a replication factor
-above the live instance count makes every write and query fail with *"too many unhealthy
-instances in the ring"*.
+The reverse order reproduces the state of #379: a replication factor above the number of
+live ring instances makes every write and query fail with *"too many unhealthy instances in
+the ring"*. Note this is about the **instance count**, not the quorum — RF 3 needs three
+distinct ring members, not merely the two that satisfy its quorum.
 
-Raising the factor is **not retroactive** — only newly written series get the higher
-factor. Existing blocks keep the durability they were written with.
+Raising the factor is **not retroactive**: it applies to samples received from then on
+(including further samples for series that already exist), never to data already written.
+Blocks already in object storage are unaffected — their durability is a property of the
+object store, not of the Mimir ring.
 
 ### Applying a config change
 
@@ -164,8 +171,14 @@ Use **two syncs, not one**:
 
 **Cross-role ordering is not enforceable from a consumer overlay.** Argo places all eight
 controllers in the same wave, and per-resource sync-waves are catalog-owned, so the roles
-roll concurrently, each controller one pod at a time. That is survivable precisely because
-sync 1 already brought every role to ≥2 replicas.
+roll concurrently, each controller one pod at a time.
+
+That is survivable for the roles sync 1 brought to ≥2 replicas. It is **not** for the two
+the HA shape keeps at 1: the compactor StatefulSet has no surge capacity, so compaction
+pauses while its pod is replaced, and the sole ruler stops evaluating rules for the same
+window. Neither loses data — the compactor resumes, and rules are evaluated late rather
+than never — but do not read the table below as "HA in every role". Raise those two
+yourself if the gap matters; the artifact does not stop you.
 
 Both desync directions are anti-patterns: bumping the annotation without a config change is
 a pointless full roll; changing the config without bumping it means the new value never
@@ -205,21 +218,31 @@ Follow [upstream's ingester scale-down procedure][mimir-scale]. What is specific
 - `podManagementPolicy: Parallel` on the ingester means a bulk decrement terminates several
   pods at once. Reduce **one ordinal at a time**.
 - `POST /ingester/shutdown` flushes, ships **and unregisters**, so **no manual ring forget
-  is needed for an ingester**. It *is* needed for a **store-gateway**, which does not
-  unregister on shutdown.
+  is needed for an ingester**. A removed **store-gateway** does not unregister
+  (`unregister_on_shutdown: false`), so its entry lingers: either forget it explicitly, or
+  wait it out — upstream lets the ring drop it after ten heartbeat timeouts. Forgetting is
+  faster; waiting avoids a manual ring mutation.
 - Never take the store-gateway below its replication factor, and at most two at a time.
 
 ### Rolling back to single-node
 
-Reduce one ordinal at a time as above. Lower the replication factor **immediately before
-the final 2 → 1 decrement**, not at the start: from RF 3 the 3 → 2 step is safe at RF 3
-(quorum 2), so lowering the factor early only widens the single-copy window; lowering it
-late is what makes the last step safe.
+**Lower the replication factors first**, while all three replicas are still running, and
+let every pod restart onto the new value. Only then decrement, one ordinal at a time.
+
+The tempting order — shrink first, lower the factor at the end — breaks at the *first*
+step, not the last: `/ingester/shutdown` unregisters the instance, so 3 → 2 at RF 3 leaves
+two ring members for a factor of 3. That is the same "factor above the live instance count"
+condition described under scaling out, and writes and queries fail until the factor comes
+down. RF 3 needs three members; the fact that its quorum is 2 does not help.
+
+Lowering the factor early does widen the single-copy window — that is the cost, and it is
+the smaller one.
 
 ### Caches
 
-The catalog ships no memcached — the consumer brings one and names its address. Eight keys,
-in four groups (`customization.yaml`):
+The catalog ships no memcached — the consumer brings one and names its address. Nine keys,
+in four groups — backend and addresses for each of the three bucket-store caches, and three
+for the results cache (`customization.yaml`):
 
 | Cache | Buys you | Default |
 |---|---|---|
@@ -255,10 +278,15 @@ a truncation) rather than an error. Only some malformations produce a parse erro
 ### Upgrading an existing installation
 
 Any change to this component's config changes the `mimir-config` ConfigMap, hence its
-checksum, hence **all eight workloads roll**. At the shipped default of one replica per role
-that is a simultaneous full outage of every role, with the ingester traversing the WAL-replay
-path (see the memory sizing note in `helm/mimir.yaml`). Check ingester memory headroom
-against your current cardinality first, and sync during a maintenance window.
+checksum, hence **all eight workloads roll**.
+
+At the shipped default of one replica per role, the three StatefulSets — ingester,
+store-gateway, compactor — necessarily have a gap: their single pod is terminated before
+its replacement starts. The five Deployments render `maxUnavailable: 0` with surge, so
+their existing pod stays until the replacement is Ready. The ingester gap is the one that
+costs: it traverses the WAL-replay path (see the memory sizing note in `helm/mimir.yaml`),
+which is the peak-memory moment. Check ingester memory headroom against your current
+cardinality first, and sync during a maintenance window.
 
 **Already scaled past your node count?** The hard anti-affinity is new: surplus ingester or
 store-gateway replicas will go `Pending` on the next sync. With a node-pinned StorageClass,
