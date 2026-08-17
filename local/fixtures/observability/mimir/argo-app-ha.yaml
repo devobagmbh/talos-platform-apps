@@ -1,5 +1,17 @@
 # Argo Application for observability/mimir in the HA shape (local test, three nodes).
 #
+# ┌─ NOT SELF-SUFFICIENT ON THIS BRANCH ────────────────────────────────────────┐
+# │ The mimir artifact does not yet consume INGESTER_REPLICATION_FACTOR or      │
+# │ STORE_GATEWAY_REPLICATION_FACTOR, and carries no hard pod anti-affinity —   │
+# │ both arrive with the component change for issue #794. Against the current   │
+# │ artifact this fixture raises REPLICA COUNTS only: the replication factors   │
+# │ stay at the literal 1 baked into the rendered config no matter what the     │
+# │ ConfigMap says, and placement falls back to the chart's SOFT                │
+# │ topologySpreadConstraints (whenUnsatisfiable: ScheduleAnyway), which permit │
+# │ two ingesters on one node. Do not read a green run here as evidence of      │
+# │ RF 3 or of one-pod-per-node until that change has landed.                   │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
 # This is the consumer-side overlay the component README documents, expressed as a
 # local fixture so the multi-node E2E exercises the real mechanism rather than a
 # hand-edited cluster. Two halves, deliberately kept apart:
@@ -7,10 +19,13 @@
 #   1. REPLICAS come from `source.kustomize.patches` below (a consumer overlay on the
 #      signed base — ADR-0024 calibrated friction).
 #   2. The REPLICATION FACTORS do NOT live here. They are env keys in the consumer's
-#      mimir-runtime-config ConfigMap, resolved by -config.expand-env=true at container
-#      start. Set them there:
-#        kubectl -n mimir patch cm mimir-runtime-config --type merge -p \
-#          '{"data":{"INGESTER_REPLICATION_FACTOR":"3","STORE_GATEWAY_REPLICATION_FACTOR":"3"}}'
+#      mimir-runtime-config ConfigMap. Kubernetes only injects the variable; Mimir
+#      itself expands ${VAR:default} in its config text, and only because every
+#      container runs with -config.expand-env=true. Set them there (effective only
+#      once the artifact renders the placeholders — see the box above):
+#        kubectl --context admin@talos-platform-apps -n mimir patch cm mimir-runtime-config \
+#          --type merge \
+#          -p '{"data":{"INGESTER_REPLICATION_FACTOR":"3","STORE_GATEWAY_REPLICATION_FACTOR":"3"}}'
 #      and bump `config-generation` below in the SAME step, so the pods actually re-read it.
 #
 # Order matters: raise replicas FIRST (sync 1), wait until every ingester is ACTIVE in the
@@ -22,19 +37,17 @@
 # pod-template annotation, which is why the config-generation annotation below — a real
 # field of the desired state — is the documented restart mechanism instead.
 #
-# Requires three schedulable nodes (LOCAL_WORKERS=2 task local:up). With fewer, the third
-# ingester stays Pending — which is the CORRECT signal from the hard anti-affinity, not a
-# defect.
+# Wants three schedulable nodes (LOCAL_WORKERS=2 task local:up). Once the #794 change has
+# landed, a fourth ingester on three nodes stays Pending — which is the CORRECT signal
+# from the hard anti-affinity, not a defect. Before it lands, the soft spread lets them
+# co-locate instead.
 #
-# The replication-factor keys are only settable from PR C onwards (issue #794); against an
-# earlier mimir artifact this fixture still raises the replicas, and the factors stay at
-# the value baked into the config.
-#
-# Apply by hand (see argo-app.yaml for the full prerequisite sequence):
+# Apply by hand (see argo-app.yaml for the full prerequisite sequence). Every command
+# pins the local context — the workstation kubeconfig also holds real clusters:
 #   TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platform-apps \
 #     envsubst < local/fixtures/observability/mimir/argo-app-ha.yaml | \
 #     kubectl --context admin@talos-platform-apps apply -f -
-#   argocd app sync observability-mimir-ha    # or: kubectl -n argocd annotate ...
+#   argocd app sync observability-mimir-ha
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -54,7 +67,9 @@ spec:
     path: .
     kustomize:
       patches:
-        # --- stateful roles: 3 replicas, one per node (hard anti-affinity) ---
+        # --- stateful roles: 3 replicas. One per node ONLY once the #794 change ships
+        #     the hard anti-affinity; against the current artifact the chart's soft
+        #     spread permits co-location. ---
         - target: {kind: StatefulSet, name: mimir-ingester}
           patch: |
             - op: replace
