@@ -137,7 +137,7 @@ The end-to-end issue→PR interface — how an issue becomes a merged, ADR-confo
 
 | Check (context name) | Enforces |
 |---|---|
-| `ci` | `task ci` — render + kubeconform + conftest (ADR-0018) + `validate:contract` + `validate:crd-split` (ADR-0028) + `validate:release-config` |
+| `ci` | `task ci` — render + kubeconform + conftest (ADR-0018) + `validate:crd-split` (ADR-0028) + `validate:release-config`. **Not** `validate:contract` — the customization contract rolls out per component (ADR-0024), so it runs as the separate `validate-contract` check below rather than gating the whole render/lint pipeline on one component's contract. |
 | `validate-contract` | component-contract schema conformance |
 | `require-issue-link` | the PR links an issue (`Closes #N`) **or** carries the `no-issue` label (`pr-issue-link.yml`) |
 | `gitleaks (secret-scan)` | no secret leaks in the PR's changed commit range (`security-scan.yml`) — the context name is the job name `gitleaks (secret-scan)`, **not** bare `gitleaks` |

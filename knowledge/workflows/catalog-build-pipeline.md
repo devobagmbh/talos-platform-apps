@@ -3,7 +3,7 @@ type: workflow
 title: Catalog build pipeline
 description: The plan -> build -> ship pipeline for catalog components, with judge-builder separation and worktree-isolated parallelism.
 tags: [workflow, build, pipeline, judge-builder]
-timestamp: 2026-08-18
+timestamp: 2026-08-19
 sources:
   - CLAUDE.md
   - AGENTS.md
