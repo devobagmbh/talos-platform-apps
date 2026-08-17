@@ -194,6 +194,14 @@ factor; if the single ingester holding them fails before compaction, they are go
 client-visible error. No upstream guarantee that mixed-factor operation is benign was found
 while building this. Keep the window short and avoid it during high write volume.
 
+**The window is bounded during a planned change and unbounded otherwise.** Any unplanned
+restart — an OOM kill, an eviction, a drained node, a rescheduled pod — re-resolves that one
+pod against whatever the ConfigMap currently says, so a single client can sit on a different
+factor indefinitely. Nothing surfaces the disagreement: each pod's `/config` looks
+self-consistent and the ring page shows members, not their factors. Making that observable
+is tracked in #803. Until it is, treat "did every pod restart?" as an operator
+responsibility rather than something the platform will tell you.
+
 ### Rolling updates
 
 The guarantee is the StatefulSet's ordered `RollingUpdate` plus readiness gating (one pod
@@ -250,6 +258,11 @@ for the results cache (`customization.yaml`):
 | index | fewer index-header lookups | **`inmemory`** (Mimir's own default) |
 | metadata | fewer bucket metadata round-trips | off |
 | results | reuses query results across identical queries | off |
+
+These are the **query-path** caches. Mimir's ruler-storage cache is deliberately not exposed:
+it sits on the alerting path, where a redirected cache address means rule evaluation over
+attacker-supplied data rather than a slow dashboard, and rule groups are small enough that
+the cache buys little. Whether to expose it at all is tracked in #805.
 
 Two non-obvious points. The **results cache needs three keys** — backend, addresses and
 `RESULTS_CACHE_ENABLED`; setting only the first two yields a configured but inert cache with
