@@ -1,0 +1,20 @@
+# NEGATIVE: env_keys item without `default`. The default is the whole reason the
+# key is optional rather than required; omitting it hides what happens when the
+# consumer sets nothing.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      description: Drives ingester.ring.replication_factor.
+sync_wave: "10"
+external_dependencies: []

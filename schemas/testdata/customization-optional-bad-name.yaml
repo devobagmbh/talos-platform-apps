@@ -1,0 +1,20 @@
+# NEGATIVE: `name` is not a valid environment-variable identifier (hyphen). It
+# has to be usable verbatim as a ConfigMap key consumed via envFrom.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: replication-factor
+      description: Drives ingester.ring.replication_factor.
+      default: "1"
+sync_wave: "10"
+external_dependencies: []

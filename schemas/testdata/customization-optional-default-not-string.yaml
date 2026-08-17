@@ -1,0 +1,21 @@
+# NEGATIVE: `default` given as a YAML integer. Env values are strings end to end
+# (ConfigMap value -> env var -> textual substitution into the config), so an
+# unquoted number would misrepresent the contract.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      description: Drives ingester.ring.replication_factor.
+      default: 1
+sync_wave: "10"
+external_dependencies: []

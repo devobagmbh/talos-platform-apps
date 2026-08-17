@@ -1,0 +1,19 @@
+# NEGATIVE: env_keys item without `name` — the key a consumer would have to set
+# is exactly what the entry exists to declare.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  env: fixture-runtime-config
+provided_selectors: {}
+required:
+  env_keys:
+    - MANDATORY_ENDPOINT
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  env_keys:
+    - description: Drives ingester.ring.replication_factor.
+      default: "1"
+sync_wave: "10"
+external_dependencies: []
