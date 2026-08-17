@@ -12,6 +12,15 @@
 # Image tag matches the one the mimir-distributed 5.8.0 chart pins for its own
 # memcached subcharts, so the local fixture and the upstream default do not drift.
 #
+# ACCEPTED CVE RISK, deliberate. This Alpine-based tag carries fixable HIGH/CRITICAL
+# CVEs (openssl, c-ares), which the advisory diff-scoped trivy-cve PR check reports.
+# That check is not a required gate by design. Bumping the tag would clear them and
+# break the property this pin exists for -- the fixture would then test against a
+# memcached the chart does not ship, which is the drift the comment above guards. The
+# risk is bounded: this manifest lives under local/fixtures/, is applied only to the
+# local Talos test cluster, is never packaged into an OCI artifact and never reaches a
+# consumer. It follows the chart's pin, so it improves when upstream bumps.
+#
 # The mimir namespace enforces Pod Security `restricted`, so the pod carries the full
 # restricted set (runAsNonRoot, no privilege escalation, all capabilities dropped,
 # RuntimeDefault seccomp). memcached 11 is the image's own unprivileged uid.
