@@ -3,7 +3,7 @@ type: decision
 title: "DR-0004 — Optional consumer-supplied env keys in the customization contract"
 description: Add an additive top-level `optional` block to the customization contract so a component can declare env keys that carry a working baked default, keeping `required` strictly the must-supply channel; enforce the two rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-08-17
+timestamp: 2026-08-18
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-valid.yaml
@@ -14,7 +14,7 @@ sources:
 
 # DR-0004 — Optional consumer-supplied env keys in the customization contract
 
-- **Status:** Accepted
+- **Status:** Accepted for the repo-local scope (this schema + its two task-enforced rules). The platform-wide companion — `talos-platform-docs` ADR-0037 — is still `proposed` and flips to `accepted` once this change is merged; this record does not ratify the platform decision on its behalf, and nothing in the schema or the gate depends on that flip.
 - **Date:** 2026-08-16
 - **Issue:** #794
 - **Record class:** repo-local decision record (`knowledge/decisions/`), distinct from the platform-wide ADR series in `talos-platform-docs/adr/`.
