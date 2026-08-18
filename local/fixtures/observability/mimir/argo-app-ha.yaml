@@ -67,70 +67,116 @@ spec:
     path: .
     kustomize:
       patches:
+        # STRATEGIC-MERGE patches, not JSON6902. A JSON-Patch `add` of
+        # /spec/template/metadata/annotations/config-generation fails outright when the
+        # rendered pod template carries no `annotations` object at all — JSON Patch has no
+        # create-parent semantics and no conditional. Chart 5.8.0 does render one (the
+        # checksum/config annotation), so the JSON6902 form held, but it held by accident of
+        # an upstream detail: a chart bump that drops that annotation would break every
+        # patch here rather than the one it changed. A strategic merge creates the parent if
+        # it is missing and merges into it if it is not, which is what "bump a generation
+        # annotation" means. `replicas` is set in the same document, so one patch per target
+        # instead of two ops (review on #800).
         # --- stateful roles: 3 replicas. One per node ONLY once the #794 change ships
         #     the hard anti-affinity; against the current artifact the chart's soft
         #     spread permits co-location. ---
         - target: {kind: StatefulSet, name: mimir-ingester}
           patch: |
-            - op: replace
-              path: /spec/replicas
-              value: 3
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: StatefulSet
+            metadata:
+              name: mimir-ingester
+            spec:
+              replicas: 3
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         - target: {kind: StatefulSet, name: mimir-store-gateway}
           patch: |
-            - op: replace
-              path: /spec/replicas
-              value: 3
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: StatefulSet
+            metadata:
+              name: mimir-store-gateway
+            spec:
+              replicas: 3
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         # --- stateless roles: 2 replicas each ---
         - target: {kind: Deployment, name: mimir-distributor}
           patch: |
-            - op: replace
-              path: /spec/replicas
-              value: 2
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-distributor
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         - target: {kind: Deployment, name: mimir-querier}
           patch: |
-            - op: replace
-              path: /spec/replicas
-              value: 2
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-querier
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         - target: {kind: Deployment, name: mimir-query-frontend}
           patch: |
-            - op: replace
-              path: /spec/replicas
-              value: 2
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-query-frontend
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         - target: {kind: Deployment, name: mimir-query-scheduler}
           patch: |
-            - op: replace
-              path: /spec/replicas
-              value: 2
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-query-scheduler
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         # compactor and ruler stay at 1 replica — singletons by design in this shape,
         # but they still read the config, so they carry the annotation too.
         - target: {kind: StatefulSet, name: mimir-compactor}
           patch: |
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: StatefulSet
+            metadata:
+              name: mimir-compactor
+            spec:
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
         - target: {kind: Deployment, name: mimir-ruler}
           patch: |
-            - op: add
-              path: /spec/template/metadata/annotations/config-generation
-              value: "1"
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-ruler
+            spec:
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
   destination:
     server: https://kubernetes.default.svc
     namespace: mimir
