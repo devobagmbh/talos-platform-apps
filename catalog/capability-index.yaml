@@ -25,6 +25,15 @@
 # after that this file is authoritative for Layer A.
 #
 # Schema + usage in compatibility.yaml: see catalog/README.md.
+#
+# GOVERNANCE — this file is in the babysit pr:triage governance-withhold set (#752),
+# so a single-file edit here (adding an implementation, changing a swap_class, moving a
+# status considered→active) is forced to a human reviewer, never auto-approvable under a
+# code-owner identity. There is NO sound mechanical oracle for whether a listed tool
+# genuinely implements a capability, nor for swap_class correctness (see
+# knowledge/decisions/DR-0003-topology-variant-contract.md). SCOPE: the withhold covers
+# THIS central index only; the per-component provides[].capabilities[].swap_class copies
+# in each component's compatibility.yaml are a separate surface, not covered here.
 
 capabilities:
   # — Databases ———————————————————————————————————————————————
