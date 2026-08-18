@@ -215,6 +215,13 @@ tasks:
     cmd: |
       set -eu
       root="$(git rev-parse --show-toplevel)"
+      # The string-level phase drives scope:components through SCOPE_RANGE and asserts the
+      # UNSET-range fail-safe with SCOPE_RANGE=''. scope:components falls back to
+      # CI_SCOPE_RANGE when SCOPE_RANGE is empty — and the required `ci` job SETS that
+      # variable — so without this unset the "no range → ALL" case would be satisfied by the
+      # unresolvable-range path instead, and deleting the unset-range fail-safe would keep the
+      # suite green in CI. The integration phase re-exports it deliberately, per case.
+      unset CI_SCOPE_RANGE || true
       tmp="$(mktemp -d)" || { echo "test:ci-scope: mktemp failed" >&2; exit 2; }
       trap 'rm -rf "$tmp"' EXIT
       g() { git -C "$tmp" -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
@@ -330,7 +337,11 @@ tasks:
       probe_n=0
       new_probe() {
         probe_n=$((probe_n + 1))
-        p="$tmp/probe${probe_n}"
+        # $$-unique: two sessions may run `task ci` against ONE clone (the documented
+        # parallelism model), and a shared basename would make a leaked registration
+        # ambiguous. `worktree prune` below only ever removes entries whose directory is
+        # already gone, so it cannot touch a live worktree of another session.
+        p="$tmp/probe-$$-${probe_n}"
         # Self-heal a worktree registration leaked by an earlier interrupted run: the EXIT
         # trap does not fire on SIGINT/SIGTERM under go-task's shell, and a GHA
         # cancel-in-progress is exactly that signal.
@@ -359,8 +370,10 @@ tasks:
       run_logged() { # $1 label, $2 dir, rest: task + args; on failure print the captured log
         _label="$1"; _dir="$2"; shift 2
         if ! (cd "$_dir" && "$@" >"$tmp/${_label}.log" 2>&1); then
-          echo "✗ test:ci-scope: ${_label} failed — captured output:" >&2
-          sed 's/^/    /' "$tmp/${_label}.log" >&2 | tail -40 >&2 || true
+          echo "✗ test:ci-scope: ${_label} failed — last 40 lines of its output:" >&2
+          # tail FIRST, then indent: `sed … >&2 | tail` hands tail an immediately-closed pipe,
+          # so it prints nothing while sed dumps the whole log to stderr unbounded.
+          tail -40 "$tmp/${_label}.log" | sed 's/^/    /' >&2 || true
           return 1
         fi
         return 0
@@ -436,10 +449,11 @@ tasks:
         run_logged "gate-${g}" "$probe" task "$g" \
           || { echo "✗ test:ci-scope: ${g} FAILED after a scoped render — every scoped PR would fail required ci" >&2; exit 1; }
       done
-      if [ "$probe_kind" = pair ]; then
-        echo "✓ scoped render + $(printf '%s' "$RENDER_GATES" | wc -w | tr -d ' ') render-consuming gates (catalog-wide, tolerating out-of-scope pairs)"
+      pairs_total="$(git -C "$probe" ls-files 'sub-layers/*/components/*-crds/compatibility.yaml' | grep -c . || true)"
+      if [ "$probe_kind" = pair ] && [ "${pairs_total:-0}" -gt 1 ]; then
+        echo "✓ scoped render + $(printf '%s' "$RENDER_GATES" | wc -w | tr -d ' ') render-consuming gates (catalog-wide, tolerating the other ${pairs_total} out-of-scope pair(s))"
       else
-        echo "⚠ scoped render + gates OK, but the out-of-scope PAIR tolerance was NOT exercised (no strict-B pair available)"
+        echo "⚠ scoped render + gates OK, but the out-of-scope PAIR tolerance was NOT exercised (pairs available: ${pairs_total:-0})"
       fi
       drop_probe "$probe"
 
@@ -470,6 +484,22 @@ tasks:
       done
       echo "✓ empty scope: render is a no-op and all render-consuming gates stay green"
       drop_probe "$probe2"
+
+      # --- case 3: the escape hatch must stay CLOSED for a NON-empty scope ----------------
+      # Case 2 binds only the skip direction. Without this, an edit that widens the hatch
+      # (dropping the CI_SCOPE_RANGE guard, or inverting the emptiness test) would turn
+      # validate:crd-split into an unconditional exit 0 with every assertion still green.
+      probe3="$(new_probe)"
+      printf '# test:ci-scope fail-closed probe change\n' >> "$probe3/$pf"
+      gp "$probe3" add "$pf" \
+        && gp "$probe3" commit -q --no-verify -m "probe: component-only change (unrendered)" \
+        || { echo "✗ test:ci-scope: could not commit the fail-closed probe change" >&2; exit 1; }
+      if (cd "$probe3" && task validate:crd-split >"$tmp/failclosed.log" 2>&1); then
+        echo "✗ test:ci-scope: validate:crd-split PASSED with a non-empty scope and nothing rendered — the empty-scope hatch is too wide" >&2
+        exit 1
+      fi
+      echo "✓ non-empty scope + nothing rendered → validate:crd-split still refuses"
+      drop_probe "$probe3"
 
       echo "test:ci-scope OK"
 
@@ -1172,19 +1202,40 @@ tasks:
       # NOTHING at all was rendered, fail closed rather than skip every pair and report a
       # vacuous green.
       rendered_total="$(find "$root/sub-layers" -path '*/components/*/rendered/manifest.yaml' 2>/dev/null | wc -l | tr -d ' ')"
+      markers_only=no
       if [ "$rendered_total" -eq 0 ]; then
         # A scoped run whose diff touches NO component renders nothing by design — a
         # docs-only PR is the everyday case — and failing here would turn the required `ci`
         # check red on every one of them. Distinguish the two states by asking the same
-        # oracle `render` asked: an empty scope means "nothing to validate", a full scope
+        # oracle `render` asked: an empty scope means "nothing to render", a full scope
         # (or no range at all) means somebody forgot to render.
-        if [ -n "${CI_SCOPE_RANGE:-}" ] \
-           && [ -z "$(task --silent -d "$root" scope:components | tr -d '[:space:]')" ]; then
-          echo "crd-split: scope is empty for range '${CI_SCOPE_RANGE}' (no component touched) - nothing to validate"
-          exit 0
+        #
+        # Capture the resolver FIRST, then test — `resolver | tr` reports tr's status, so a
+        # resolver that died without output would look exactly like an empty scope and this
+        # gate would fail OPEN on a crash. Its exit status is the guard.
+        empty_scope=no
+        if [ -n "${CI_SCOPE_RANGE:-}" ]; then
+          if scope_out="$(task --silent -d "$root" scope:components)"; then
+            if [ -z "$(printf '%s' "$scope_out" | tr -d '[:space:]')" ]; then
+              empty_scope=yes
+            fi
+          else
+            echo "crd-split: the scope resolver failed - refusing to interpret that as an empty scope" >&2
+            exit 1
+          fi
         fi
-        echo "crd-split: no rendered/manifest.yaml anywhere - run 'task render' first (refusing to pass vacuously)" >&2
-        exit 1
+        if [ "$empty_scope" = yes ]; then
+          # NOT an early exit: the marker checks below are render-INDEPENDENT (a -crds half
+          # must carry the line-anchored marker, a non--crds half must not), and skipping them
+          # would stop the cheap half of the ADR-0028 oracle from running on the everyday PR
+          # shape. Only the CRD-count arms self-skip, which they already do when neither half
+          # of a pair is rendered.
+          echo "crd-split: scope is empty for range '${CI_SCOPE_RANGE}' (no component touched) - running the render-independent marker checks only"
+          markers_only=yes
+        else
+          echo "crd-split: no rendered/manifest.yaml anywhere - run 'task render' first (refusing to pass vacuously)" >&2
+          exit 1
+        fi
       fi
       for compat in "$root"/sub-layers/*/components/*/compatibility.yaml; do
         [ -f "$compat" ] || continue
@@ -1236,6 +1287,10 @@ tasks:
         esac
       done
       [ "$fail" -eq 0 ] || { echo "crd-split: strict-B CRD-count oracle FAILED (see above)" >&2; exit 1; }
+      if [ "$markers_only" = yes ]; then
+        echo "crd-split: OK - marker placement consistent across the catalog (CRD counts not checked: nothing rendered, empty scope)"
+        exit 0
+      fi
       echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
 
   lint:version:

@@ -65,13 +65,15 @@ Prerequisite: Devbox + direnv. After `direnv allow` all tools are on `PATH`.
 | `task test:values-keys` | Red-green binding for `lint:values-keys` against the hermetic fixtures in `schemas/testdata/values-keys/`. Outside `task ci` because the target it binds is advisory. |
 | `task render:one -- <sub-layer>/<component>` | `helm template` for one component |
 | `task render:sublayer -- <sub-layer>` | renders all components of one sub-layer |
-| `task render` | render of all components of all sub-layers (matrix) |
+| `task render` | render of all components of all sub-layers (matrix) — **unless `CI_SCOPE_RANGE` is set**, in which case only the components that diff range touches plus their strict-B siblings (see `task scope:components`) |
+| `task scope:components` | resolve which components a `<base>..<head>` range touches: prints `ALL`, one `<sub-layer>/<component>` per line, or nothing (docs-only). Fail-safe direction is always widen-to-`ALL`; the PR `ci` job sets `CI_SCOPE_RANGE`, `merge_group` and tag pushes set none |
+| `task test:ci-scope` | hermetic red-green test for `scope:components` (in `task ci`): 14 oracle cases plus three integration cases over the real catalog in throwaway worktrees — component-only, docs-only/empty-scope, and the fail-closed direction |
 | `task push -- <sub-layer>/<component> <tag>` | `oras push` to `oci://.../<sub-layer>/<component>:<tag>` (native OCI, single-layer tarball = a Kustomize base: `kustomization.yaml` + `manifest.yaml`, so `sourceType=Kustomize` and consumers overlay via `source.kustomize.patches`) |
 | `task sign -- <sub-layer>/<component> <tag>` | `cosign sign --yes` (local registries → skip) |
 | `task attest -- <sub-layer>/<component> <tag>` | SBOM (syft → CycloneDX → cosign attest) + SLSA provenance — phase 2+ |
 | `task publish -- <sub-layer>/<component> <tag>` | render → package → push → sign in one go |
 | `task publish:sublayer -- <sub-layer> <tag>` | publish of all components of one sub-layer with the same tag |
-| `task ci` | **local reproduction of the GHA pipeline** (all components, lint + render + conftest, no push) |
+| `task ci` | **local reproduction of the GHA pipeline** (lint + render + conftest + the release-coverage gates, no push). Covers all components unless `CI_SCOPE_RANGE` is set in the environment, which narrows the render and the render-consuming gates to that diff range — export it deliberately, never leave it set in a shell you validate from |
 | `task worktree:create -- <sub-layer>/<component>` | create an isolated git worktree (`.claude/worktrees/<slug>`, branch `catalog-build/<slug>`) for parallel independent sessions; cross-session-safe (`mkdir` lock), idempotent, branch = claim; prints the path |
 | `task worktree:remove -- <sub-layer>/<component>` | remove the worktree (the branch is kept) |
 | `task worktree:list` | list active component worktrees |
