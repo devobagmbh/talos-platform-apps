@@ -97,18 +97,255 @@ These map into `common.storage.s3` (credentials/endpoint/region),
 `ruler.alertmanager_url` (`RULER_ALERTMANAGER_URL`) in the rendered config. See
 `customization.yaml`.
 
+Beyond those, the same ConfigMap carries **optional** keys — the artifact ships a working
+default for each, and a consumer sets them only to change behaviour (`optional.env_keys` in
+`customization.yaml`): the two ring replication factors, the eight query-path cache keys,
+and `RULER_ALERTMANAGER_URL`. See [High availability](#high-availability) below.
+
 **`RULER_ALERTMANAGER_URL`** — the built-in alertmanager is disabled (the platform uses a
 standalone one), so the ruler must be pointed at the consumer's Alertmanager (e.g.
 `http://alertmanager-operated.monitoring.svc:9093`). Unset → empty → the ruler evaluates
 rules but does not notify (safe default).
+
+## High availability
+
+The artifact ships a **single-node** shape and reaches an **HA** shape through
+consumer-side overlay only — no catalog PR, no replacement of the signed config. Both
+shapes come from the same artifact.
+
+### Prerequisites — read before scaling
+
+- **A node-independent StorageClass.** The ingester and store-gateway PVCs declare no
+  `storageClassName` and bind the cluster default. With a node-pinned default
+  (`local-path-provisioner` and friends) a lost node takes the un-compacted WAL with it,
+  and a pod whose PVC is bound to that node cannot be rescheduled anywhere else.
+- **Three schedulable nodes, minimum.** Below that, the hard anti-affinity leaves surplus
+  replicas `Pending` — correctly.
+- **A fourth node for maintenance without loss of redundancy.** On exactly three, drain →
+  service → uncordon → wait for the ingester to rejoin → next node works, but the whole
+  window runs at reduced redundancy.
+
+### The two supported shapes
+
+| Role | Single-node (shipped) | HA |
+|---|---|---|
+| ingester | 1, RF 1 | 3, RF 3 |
+| store-gateway | 1, RF 1 | 3, RF 3 |
+| distributor / querier / query-frontend / query-scheduler | 1 | 2 |
+| compactor / ruler | 1 | 1 — **not** redundant, see below |
+
+### Scaling out — order matters
+
+1. Raise the replica counts (consumer overlay, `source.kustomize.patches`).
+2. **Wait until every ingester reports `ACTIVE`** in `/ingester/ring` **and every
+   store-gateway is registered and healthy** in `/store-gateway/ring`. Both rings, not
+   just the ingester one — each factor has its own ring and its own instance count, and
+   raising the store-gateway factor over a ring that has not caught up fails historical
+   queries exactly the way the ingester case fails writes.
+3. Only then raise `INGESTER_REPLICATION_FACTOR` and `STORE_GATEWAY_REPLICATION_FACTOR`.
+
+The reverse order reproduces the state of #379: a replication factor above the number of
+live ring instances makes every write and query fail with *"too many unhealthy instances in
+the ring"*. Note this is about the **instance count**, not the quorum — RF 3 needs three
+distinct ring members, not merely the two that satisfy its quorum.
+
+Raising the factor is **not retroactive**: it applies to samples received from then on
+(including further samples for series that already exist), never to data already written.
+Blocks already in object storage are unaffected — their durability is a property of the
+object store, not of the Mimir ring.
+
+### Applying a config change
+
+The keys arrive via `envFrom`, so **a changed ConfigMap restarts nothing by itself** —
+and Kubernetes will not restart those pods on its own either. Without an explicit trigger
+the old value stays in place indefinitely.
+
+Do **not** use `kubectl rollout restart`: it writes an uncommitted pod-template annotation
+that a self-healing Argo `Application` reverts. Carry a config-generation annotation on the
+pod templates in your overlay and bump it together with the ConfigMap.
+
+Express that annotation as a **strategic-merge** patch, not as a JSON-6902 `add`: JSON Patch
+has no create-parent semantics, so an `add` of
+`/spec/template/metadata/annotations/config-generation` fails outright on any pod template
+that carries no `annotations` object — and it replaces nothing gracefully when the chart's own
+`checksum/config` annotation is there. A merge creates the map when it is missing and adds to
+it when it is not.
+
+Use **two syncs, not one**:
+
+1. sync 1 — replicas only, no config change;
+2. sync 2 — the replication factors plus the annotation bump.
+
+**Cross-role ordering is not enforceable from a consumer overlay.** Argo places all eight
+controllers in the same wave, and per-resource sync-waves are catalog-owned, so the roles
+roll concurrently, each controller one pod at a time.
+
+That is survivable for the roles sync 1 brought to ≥2 replicas. It is **not** for the two
+the HA shape keeps at 1: the compactor StatefulSet has no surge capacity, so compaction
+pauses while its pod is replaced, and the sole ruler stops evaluating rules for the same
+window. Neither loses data — the compactor resumes, and rules are evaluated late rather
+than never — but do not read the table below as "HA in every role". Raise those two
+yourself if the gap matters; the artifact does not stop you.
+
+Both desync directions are anti-patterns: bumping the annotation without a config change is
+a pointless full roll; changing the config without bumping it means the new value never
+takes effect, `/config` keeps reporting the old one, and nothing errors. The mechanically
+coupled alternative — generating the ConfigMap with a content-hash suffix so the reference
+itself changes — removes both, at the cost of a more involved overlay.
+
+### The residual risk, stated plainly
+
+Between the ConfigMap change and the last pod restart, ring clients disagree about the
+replication factor. Samples written through a not-yet-restarted distributor land at the old
+factor; if the single ingester holding them fails before compaction, they are gone, with no
+client-visible error. No upstream guarantee that mixed-factor operation is benign was found
+while building this. Keep the window short and avoid it during high write volume.
+
+**The window is bounded during a planned change and unbounded otherwise.** Any unplanned
+restart — an OOM kill, an eviction, a drained node, a rescheduled pod — re-resolves that one
+pod against whatever the ConfigMap currently says, so a single client can sit on a different
+factor indefinitely. Nothing surfaces the disagreement: each pod's `/config` looks
+self-consistent and the ring page shows members, not their factors. Making that observable
+is tracked in #803. Until it is, treat "did every pod restart?" as an operator
+responsibility rather than something the platform will tell you.
+
+### Rolling updates
+
+The guarantee is the StatefulSet's ordered `RollingUpdate` plus readiness gating (one pod
+replaced at a time, the next only after the previous is Ready), together with
+`unregister_on_shutdown: false`, which lets a restarting ingester keep its ring tokens.
+
+It is **not** the PodDisruptionBudgets. Those gate the **eviction** API — a node drain —
+and a controller-driven rollout does not consult them. Both mechanisms are needed, for
+different events.
+
+Zone-aware replication is the alternative and is deliberately not taken: it requires as many
+real failure domains as the replication factor, changes the rendered shape into per-zone
+StatefulSets, and would break the single-node default. Pseudo-zones on one rack are not
+failure domains.
+
+### Scaling in — the dangerous direction
+
+Follow [upstream's ingester scale-down procedure][mimir-scale]. What is specific here:
+
+- A replica decrement removes the **highest ordinal** — drain *that* instance, not an
+  arbitrary one.
+- `podManagementPolicy: Parallel` on the ingester means a bulk decrement terminates several
+  pods at once. Reduce **one ordinal at a time**.
+- `POST /ingester/shutdown` flushes, ships **and unregisters**, so **no manual ring forget
+  is needed for an ingester**. A removed **store-gateway** does not unregister
+  (`unregister_on_shutdown: false`), so its entry lingers: either forget it explicitly, or
+  wait it out — upstream lets the ring drop it after ten heartbeat timeouts. Forgetting is
+  faster; waiting avoids a manual ring mutation.
+- Never take the store-gateway below its replication factor, and at most two at a time.
+
+### Rolling back to single-node
+
+**Lower the replication factors first**, while all three replicas are still running, and
+let every pod restart onto the new value. Only then decrement, one ordinal at a time.
+
+The tempting order — shrink first, lower the factor at the end — breaks at the *first*
+step, not the last: `/ingester/shutdown` unregisters the instance, so 3 → 2 at RF 3 leaves
+two ring members for a factor of 3. That is the same "factor above the live instance count"
+condition described under scaling out, and writes and queries fail until the factor comes
+down. RF 3 needs three members; the fact that its quorum is 2 does not help.
+
+Lowering the factor early does widen the single-copy window — that is the cost, and it is
+the smaller one.
+
+### Caches
+
+The catalog ships no memcached — the consumer brings one and names its address. Nine keys,
+in four groups — backend and addresses for each of the three bucket-store caches, and three
+for the results cache (`customization.yaml`):
+
+| Cache | Buys you | Default |
+|---|---|---|
+| chunks | fewer object-store reads for recent chunks | off |
+| index | fewer index-header lookups | **`inmemory`** (Mimir's own default) |
+| metadata | fewer bucket metadata round-trips | off |
+| results | reuses query results across identical queries | off |
+
+These are the **query-path** caches. Mimir's ruler-storage cache is deliberately not exposed:
+it sits on the alerting path, where a redirected cache address means rule evaluation over
+attacker-supplied data rather than a slow dashboard, and rule groups are small enough that
+the cache buys little. Whether to expose it at all is tracked in #805.
+
+Two non-obvious points. The **results cache needs three keys** — backend, addresses and
+`RESULTS_CACHE_ENABLED`; setting only the first two yields a configured but inert cache with
+no error. And because the placeholder default fires on an *empty* value too, setting
+`INDEX_CACHE_BACKEND=""` yields `inmemory` again — **disabling the index cache is not
+reachable through this knob**, which is acceptable because `inmemory` is a working default.
+
+**Trust note.** Mimir *consumes responses* from the address you name, and memcached is
+unauthenticated plaintext: a wrong or redirected address can leak queried data and serve
+fabricated results that your alerting rules then evaluate. Keep the endpoint in-cluster and
+constrain egress with a `CiliumNetworkPolicy` in your cluster — the catalog cannot author
+one, because the address is supplied at runtime. Your memcached must also accept at least
+the configured `max_item_size` (1 MiB for chunks and metadata, 5 MiB for index and results),
+or larger items are dropped silently.
+
+A memcached backend with an **empty** address list fails loudly at startup (*"no memcached
+addresses provided"*). A **wrong but resolvable** address does not — it degrades.
+
+### Value hygiene
+
+Placeholder values are substituted **verbatim into the config text** (newlines are stripped)
+and must be plain YAML scalars. Concretely: no leading `|`, `>`, `&`, `!`, `~`, `%` or `*`,
+and no space-then-`#` (which starts a YAML comment) — those produce a **silently** wrong value (an empty scalar, an anchor, a null,
+a truncation) rather than an error. Only some malformations produce a parse error.
+
+### Upgrading an existing installation
+
+Any change to this component's config changes the `mimir-config` ConfigMap, hence its
+checksum, hence **all eight workloads roll**.
+
+At the shipped default of one replica per role, the three StatefulSets — ingester,
+store-gateway, compactor — necessarily have a gap: their single pod is terminated before
+its replacement starts. The five Deployments render `maxUnavailable: 0` with surge, so
+their existing pod stays until the replacement is Ready. The ingester gap is the one that
+costs: it traverses the WAL-replay path (see the memory sizing note in `helm/mimir.yaml`),
+which is the peak-memory moment. Check ingester memory headroom against your current
+cardinality first, and sync during a maintenance window.
+
+**Already scaled past your node count?** The hard anti-affinity is new: surplus ingester or
+store-gateway replicas will go `Pending` on the next sync. With a node-pinned StorageClass,
+adding a node does **not** release them — their PVC still binds them to the old node. The
+remedy is to flush and delete that PVC, or to move to a network-attached StorageClass.
+
+### Resource starting point
+
+Per-pod memory does **not** drop as you scale: with RF 3 across exactly three ingesters,
+every ingester holds every series, so the total roughly triples. Treat upstream's
+`small.yaml` as the 1M-series datapoint and size from your own cardinality. The sizing
+discussion is tracked in #442 / #455 / #458.
+
+### Anti-patterns
+
+- Raising the replication factor before the replicas.
+- A replication factor above the replica count.
+- An even replication factor (RF 2 → quorum 2 → tolerates zero failures).
+- Relying on the stateless roles' soft spread for node-loss tolerance — it permits
+  co-location by design.
+- A bulk ingester decrement, or draining an ordinal other than the highest.
+- Treating pseudo-zones on one rack as failure domains.
+- Either annotation/ConfigMap desync direction.
+
+[mimir-scale]: https://grafana.com/docs/mimir/latest/manage/run-production-environment/scaling-out/
 
 ## Consumer obligations (out of scope here)
 
 The consumer supplies, in its own cluster repo / Argo overlay — the catalog ships none
 of these:
 
-- **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` (the explicit S3
-  endpoint URL, e.g. `https://garage.<cluster>:3900`), `S3_REGION` (S3 region; the
+- **`mimir-runtime-config` `ConfigMap`** with keys `S3_ENDPOINT` — **`HOST:PORT`, not a
+  URL**, e.g. `garage.<namespace>.svc.cluster.local:3900`. Mimir's S3 client is
+  `thanos-io/objstore`, which rejects a scheme outright (`Endpoint url cannot have fully
+  qualified paths`); the affected Mimir processes then fail to start on the usage-stats
+  bucket client. `http` vs `https` is selected by `S3_INSECURE`, never by this value. The form
+  is **not uniform across the catalog** and must not be copied between components: deployed
+  against a local S3 backend, `loki-distributed` comes up with an `http://` prefix, while
+  `tempo-distributed` fails exactly as Mimir does. Further: `S3_REGION` (S3 region; the
   Garage impl uses `garage`), `S3_BUCKET_BLOCKS`, `S3_BUCKET_RULER`, and `S3_INSECURE` —
   the S3 endpoint TLS mode: `"false"` = TLS/HTTPS to the S3 endpoint (default, secure);
   `"true"` = plain HTTP, for a TLS-less S3 endpoint (e.g. an internal NAS).
