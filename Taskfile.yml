@@ -494,11 +494,22 @@ tasks:
       gp "$probe3" add "$pf" \
         && gp "$probe3" commit -q --no-verify -m "probe: component-only change (unrendered)" \
         || { echo "✗ test:ci-scope: could not commit the fail-closed probe change" >&2; exit 1; }
+      # The scope must be NON-empty here, or the case would pass for the wrong reason —
+      # a refusal produced by an unset CI_SCOPE_RANGE, or by a marker failure, is not the
+      # property under test.
+      expect "fail-closed probe range → $probe_expect" \
+        "$(task --silent -d "$root" scope:components SCOPE_REPO="$probe3" SCOPE_RANGE='HEAD~1..HEAD' 2>/dev/null | tr '\n' ' ')" \
+        "$probe_expect"
       if (cd "$probe3" && task validate:crd-split >"$tmp/failclosed.log" 2>&1); then
         echo "✗ test:ci-scope: validate:crd-split PASSED with a non-empty scope and nothing rendered — the empty-scope hatch is too wide" >&2
         exit 1
       fi
-      echo "✓ non-empty scope + nothing rendered → validate:crd-split still refuses"
+      if ! grep -q 'refusing to pass vacuously' "$tmp/failclosed.log"; then
+        echo "✗ test:ci-scope: validate:crd-split refused for the WRONG reason — expected the vacuity refusal, got:" >&2
+        tail -10 "$tmp/failclosed.log" | sed 's/^/    /' >&2
+        exit 1
+      fi
+      echo "✓ non-empty scope + nothing rendered → validate:crd-split still refuses, for the right reason"
       drop_probe "$probe3"
 
       echo "test:ci-scope OK"
