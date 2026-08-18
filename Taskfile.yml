@@ -1475,20 +1475,29 @@ tasks:
         approvedAtHead,                     # approvals whose commit == headSha (push dismisses them)
         latestReviewSha,                    # commit the newest review was submitted against ("" if none)
         reviewCount,                        # TRUSTED review bodies by someone else (see below)
-        outsideReviewCount,                 # review bodies by an account with no write relationship
-        unresolvedThreadCount,              # unresolved threads carrying a comment by someone else
+        outsideReviewCount,                 # review bodies by an account outside the trusted set
+        unresolvedThreadCount,              # unresolved threads carrying a TRUSTED other comment
+        outsideThreadCount,                 # unresolved threads whose only other comments are untrusted
         selfOnlyThreadCount,                # unresolved threads only I wrote in (own notes, not findings)
         reviews[]  {author, association, state, submittedAt, commitSha, body}
         threads[]  {id, path, line, isResolved, isOutdated, comments[{author, body}]}
 
-      AUTHOR TRUST is a field, not an assumption. This repo is PUBLIC, so any GitHub account
-      can submit a review body or open an inline thread on a PR without any write
-      relationship — which would otherwise be enough to flip a PR from "nothing to respond
-      to" into "build a fix". `reviewCount` therefore counts only reviews whose
-      `authorAssociation` is OWNER / MEMBER / COLLABORATOR; everything else lands in
-      `outsideReviewCount`, which the classifier surfaces as a warning and never treats as a
-      reason to start work. Outside findings are not discarded — they stay in `reviews[]` with
-      their association, for a human to read.
+      AUTHOR TRUST is a field, not an assumption, and it covers BOTH channels. This repo is
+      PUBLIC, so any GitHub account can submit a review body or open an inline thread on a PR
+      without any write relationship — either would otherwise be enough to flip a PR from
+      "nothing to respond to" into "build a fix". `reviewCount` and `unresolvedThreadCount`
+      therefore count only content whose `authorAssociation` is OWNER / MEMBER / COLLABORATOR;
+      the rest lands in `outsideReviewCount` / `outsideThreadCount`, which the classifier
+      surfaces as warnings and never treats as a reason to start work. `approvedAtHead` is
+      filtered the same way, since only a trusted account's approval can satisfy branch
+      protection in the first place. Nothing is discarded — outside content stays in
+      `reviews[]` / `threads[]` with its association, for a human to read.
+
+      Honest bound on the word "trusted": GitHub reports COLLABORATOR for any collaborator
+      (read-only included) and MEMBER for any org member, so this set means "has a declared
+      relationship with the repo", not "has write access". It is the strongest signal the
+      review payload carries; a write-permission check would need a second API call per
+      author, which is not made today.
 
       Review THREADS come from GraphQL: the REST pulls/comments endpoint carries no
       `isResolved`, so a REST-only gather cannot tell an already-settled thread from an
@@ -1502,7 +1511,11 @@ tasks:
       # shellQuote, and NO surrounding quotes: go-task renders the template into the
       # script text before mvdan/sh parses it, so an unquoted caller value containing a
       # quote character becomes SYNTAX, not data — the digit guard below is downstream of
-      # that and cannot un-execute it. Same discipline as lint:pr's SUBJECT handling.
+      # that and cannot un-execute it. shellQuote renders the value single-quoted, which
+      # makes it inert. NOT the same mechanism as lint:pr's SUBJECT (which keeps the value
+      # out of the template entirely, via an env var) — that stronger route is unavailable
+      # here because the PR number arrives as a positional CLI argument; the digit guard
+      # below is the second layer.
       pr={{.PR | default .CLI_ARGS | shellQuote}}
       pr="${pr#\#}"
       case "$pr" in ''|*[!0-9]*) echo "usage: task pr:fix:facts -- <PR-number>" >&2; exit 1 ;; esac
@@ -1520,7 +1533,8 @@ tasks:
               reviewThreads(first:100){
                 pageInfo{ hasNextPage }
                 nodes{ id isResolved isOutdated path line
-                       comments(first:50){ pageInfo{ hasNextPage } nodes{ author{login} body } } }
+                       comments(first:50){ pageInfo{ hasNextPage }
+                         nodes{ author{login} authorAssociation body } } }
               }
             }
           }
@@ -1545,8 +1559,11 @@ tasks:
       # `gh pr view --json files` caps at 100 paths. A truncated list would understate the
       # diff, and the skill picks its verification depth from it (a shared path selects the
       # heavier `task ci`), so a cap hit is a refusal, not a warning.
-      if [ "$(printf '%s' "$base" | jq -r '[.files[]?] | length')" -ge 100 ]; then
-        echo "pr:fix:facts: #$pr changes 100+ files — the file list is truncated by the API; refusing a partial fact sheet" >&2
+      if [ "$(printf '%s' "$base" | jq -r '[.files[]?] | length')" -ge 100 ] \
+         && [ "${ALLOW_TRUNCATED_FILES:-0}" != "1" ]; then
+        echo "pr:fix:facts: #$pr reports 100 file(s) — the API caps the list there, so it may be truncated" >&2
+        echo "              and the skill picks its verification depth from it. Re-run with" >&2
+        echo "              ALLOW_TRUNCATED_FILES=1 to proceed after checking the diff by hand." >&2
         exit 1
       fi
 
@@ -1560,6 +1577,9 @@ tasks:
         | [ $other[] | select(.authorAssociation as $a | $trusted | index($a) | not) ] as $outside
         | [ $threads[] | select(.isResolved == false) ] as $open
         | [ $open[] | select(any(.comments.nodes[]?; (.author.login // "") != $me)) ] as $openOther
+        | [ $openOther[] | select(any(.comments.nodes[]?;
+              ((.author.login // "") != $me)
+              and ((.authorAssociation // "") as $a | $trusted | index($a)))) ] as $openTrusted
         | { number: .number,
             authorLogin: (.author.login // ""),
             isCrossRepository: .isCrossRepository,
@@ -1569,12 +1589,14 @@ tasks:
             headSha: $head,
             files: [ .files[]?.path ],
             approvedAtHead: ([ .reviews[]? | select(.state == "APPROVED")
+                               | select(.authorAssociation as $a | $trusted | index($a))
                                | select((.commit.oid // $head) == $head) ] | length),
             latestReviewSha: ( [ .reviews[]? | select((.body // "") | length > 0) ]
                                | sort_by(.submittedAt) | last | (.commit.oid // "") // "" ),
             reviewCount: ($rv | length),
             outsideReviewCount: ($outside | length),
-            unresolvedThreadCount: ($openOther | length),
+            unresolvedThreadCount: ($openTrusted | length),
+            outsideThreadCount: (($openOther | length) - ($openTrusted | length)),
             selfOnlyThreadCount: (($open | length) - ($openOther | length)),
             reviews: [ ($rv + $outside)[] | { author: .author.login,
                                  association: (.authorAssociation // ""), state: .state,
@@ -1594,6 +1616,8 @@ tasks:
       pushing to the wrong branch. Bound red-green by `task test:pr-fix-admit` (in `task ci`).
 
       INPUT (stdin, or a file path in PR_FIX_INPUT): a JSON array of pr:fix:facts objects.
+      Every count the classifier reads is type-guarded, including the warning-only ones —
+      a degraded gather that loses `outsideThreadCount` must not silently drop its warning.
       ENV: ME (required — the operator login, for the authorship test).
 
       CLASS (first match wins — the precedence IS the contract):
@@ -1614,7 +1638,7 @@ tasks:
                        conflicted branch buries the conflict instead of resolving it, and the
                        resolution (rebase/merge) needs its own explicit human authorization.
         no-findings  — no TRUSTED other-authored review body AND no unresolved thread
-                       carrying someone else's comment: nothing to respond to. Distinct from
+                       carrying a TRUSTED other comment: nothing to respond to. Distinct from
                        admissible so a re-run after the work is done reports it instead of
                        inventing findings. A review by an account with no write relationship
                        does NOT lift this class — it raises the `outside-reviews:N` warning
@@ -1631,9 +1655,12 @@ tasks:
         review-behind-head   — the newest review was submitted against an older commit, so
                                some findings may describe code the branch no longer has.
                                Re-verify each finding against the head before fixing it.
-        outside-reviews:N    — N review bodies come from an account with no write
-                               relationship to the repo. Not a reason to refuse and not a
-                               reason to work: a human reads those before anything is fixed.
+        outside-reviews:N    — N review bodies come from an account outside the trusted
+                               association set. Not a reason to refuse and not a reason to
+                               work: a human reads those before anything is fixed.
+        outside-threads:N    — the same for N unresolved inline threads. Excluded from the
+                               finding count for the same reason, and warned about so an
+                               outsider's comment is visible rather than invisible.
         self-only-threads:N  — N unresolved threads contain only my own comments (notes to
                                self, not findings). Excluded from the finding count so they
                                cannot lift `no-findings` on their own.
@@ -1676,7 +1703,14 @@ tasks:
                 or ((.reviewCount | type) != "number")
                 or ((.unresolvedThreadCount | type) != "number")
                 or ((.approvedAtHead | type) != "number")
+                or (((.outsideReviewCount // 0) | type) != "number")
+                or (((.outsideThreadCount // 0) | type) != "number")
+                or (((.selfOnlyThreadCount // 0) | type) != "number")
+                or (((.isDraft // false) | type) != "boolean")
+                or (((.latestReviewSha // "") | type) != "string")
                 then ["incomplete", "malformed or partial fact sheet — refusing"]
+           elif ((.mergeStateStatus // "") == "UNKNOWN")
+                then ["incomplete", "GitHub has not finished computing mergeability — re-gather in a moment"]
            elif (.isCrossRepository == true)
                 then ["fork", "head branch lives in a fork"]
            elif (((.authorLogin // "") | ascii_downcase) != $ME)
@@ -1693,11 +1727,16 @@ tasks:
                 then "review-behind-head" else empty end),
              (if ((.outsideReviewCount // 0) > 0)
                 then "outside-reviews:\(.outsideReviewCount)" else empty end),
+             (if ((.outsideThreadCount // 0) > 0)
+                then "outside-threads:\(.outsideThreadCount)" else empty end),
              (if ((.selfOnlyThreadCount // 0) > 0)
                 then "self-only-threads:\(.selfOnlyThreadCount)" else empty end),
              (if .isDraft == true then "draft" else empty end) ]) as $warn
+        # For an `incomplete` record the warning fields are exactly the ones that cannot
+        # be trusted, so they are suppressed rather than presented as facts.
         | [ (.number | tostring), $verdict[0], $verdict[1],
-            (if ($warn | length) > 0 then ($warn | join(",")) else "-" end) ]
+            (if $verdict[0] != "incomplete" and ($warn | length) > 0
+               then ($warn | join(",")) else "-" end) ]
         | @tsv
       '
 
@@ -1707,11 +1746,14 @@ tasks:
       Binding acceptance test for the classifier that decides whether a session may build a
       fix commit on a PR head branch. Network-free: feeds a fixture fact-sheet array to
       `pr:fix:admit` and asserts every class AND every warning. Red-green — the class
-      precedence, the fail-closed field guards (bad SHA, empty files, non-number counts),
-      the fork/not-author/dirty refusals, the no-findings case, and the three warnings each
-      have a fixture; reverting any single rule in pr:fix:admit turns an assertion red.
-      The warnings are asserted, not just the classes: a dropped approvals-at-risk warning
-      is exactly the regression that costs a standing CODEOWNERS approval silently.
+      precedence, the fail-closed field guards (bad SHA, non-string SHA, empty
+      files, non-number counts — warning-only counts included, a not-yet-computed or
+      out-of-enum mergeStateStatus), the fork/not-author/dirty refusals, the no-findings case
+      for BOTH unauthenticated channels (outside review body, outside inline thread), the
+      over-refusal guard (BEHIND and BLOCKED stay admissible), and every warning each have a
+      fixture; reverting any single rule in pr:fix:admit turns an assertion red. The warnings
+      are asserted, not just the classes: a dropped approvals-at-risk warning is exactly the
+      regression that costs a standing CODEOWNERS approval silently.
     cmd: |
       set -eu
       work="$(mktemp -d)" || { echo "test:pr-fix-admit: mktemp failed" >&2; exit 2; }
@@ -1740,7 +1782,11 @@ tasks:
         {"number":17,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"BLOCKED","headRefName":"f/q","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
         {"number":18,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/r","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"outsideReviewCount":2},
         {"number":19,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/s","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"selfOnlyThreadCount":3},
-        {"number":20,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/t","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":1,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":1,"outsideReviewCount":1}
+        {"number":20,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/t","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":1,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":1,"outsideReviewCount":1},
+        {"number":21,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"BEHIND","headRefName":"f/u","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":22,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/v","headSha":12345,"files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":23,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/w","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"outsideThreadCount":2},
+        {"number":24,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/x","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0,"outsideReviewCount":"2"}
       ]
       JSON
 
@@ -1785,6 +1831,16 @@ tasks:
       assert 19 no-findings "self-only-threads:3"
       # Warning composition stays stable and ordered.
       assert 20 admissible  "approvals-at-risk:1,outside-reviews:1"
+      # BEHIND is the NORMAL state under the merge queue — the allow-list must not refuse it.
+      assert 21 admissible  "-"
+      # A non-string headSha is a jq type error unless guarded; it must degrade to one
+      # incomplete record, not abort the whole array.
+      assert 22 incomplete  "-"
+      # An outsider's inline THREAD is the other unauthenticated channel: it must not lift
+      # no-findings either, and it must be visible.
+      assert 23 no-findings "outside-threads:2"
+      # A warning-only count of the wrong TYPE is a degraded gather, not a zero.
+      assert 24 incomplete  "-"
 
       # An empty operator login must fail closed rather than classify everything not-author.
       if ME="" task --silent pr:fix:admit >/dev/null 2>&1; then
@@ -4916,9 +4972,15 @@ tasks:
       is the repository's own default branch (the common fork shape is a contribution pushed
       from the fork's default branch, whose name collides with ours).
 
-      EXPECT_SHA (env, optional but recommended): the `headSha` from pr:fix:facts. The
-      target refuses when the checkout — fresh or reused — is not that commit, which is what
-      binds every later verification to the head the reviewer actually read.
+      ANCHOR (required by default): the target reads `.work/pr-fix/pr-<N>/anchor.sha` itself
+      and refuses when the checkout — fresh or reused — is not that commit, which is what
+      binds every later verification to the head the reviewer actually read. A MISSING or
+      empty anchor is the same verdict as a mismatched one. `EXPECT_SHA` overrides the file
+      for a caller that has the SHA but no state directory; `ANCHOR_OPTIONAL=1` is the
+      explicit opt-out for a standalone checkout with no pr-fix run behind it. The anchor is
+      deliberately NOT passed as a shell-prefix assignment by the caller: the natural form
+      `EXPECT_SHA="$(cat …)" wt="$(task …)"` is an assignment list with no command word, so
+      it never reaches the child process and the check would silently not run.
 
       A reused worktree is re-verified, never trusted: fetch, refuse a dirty tree, refuse a
       HEAD that is not `origin/<branch>`, then apply EXPECT_SHA. The checkout itself runs
@@ -4931,7 +4993,11 @@ tasks:
       # shellQuote, and NO surrounding quotes: go-task renders the template into the
       # script text before mvdan/sh parses it, so an unquoted caller value containing a
       # quote character becomes SYNTAX, not data — the digit guard below is downstream of
-      # that and cannot un-execute it. Same discipline as lint:pr's SUBJECT handling.
+      # that and cannot un-execute it. shellQuote renders the value single-quoted, which
+      # makes it inert. NOT the same mechanism as lint:pr's SUBJECT (which keeps the value
+      # out of the template entirely, via an env var) — that stronger route is unavailable
+      # here because the PR number arrives as a positional CLI argument; the digit guard
+      # below is the second layer.
       pr={{.PR | default .CLI_ARGS | shellQuote}}
       pr="${pr#\#}"
       case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr -- <PR-number>" >&2; exit 1 ;; esac
@@ -4954,7 +5020,61 @@ tasks:
         echo "worktree:pr: #$pr resolves to the default branch '${branch}' — refusing to check it out as a PR head" >&2
         exit 1
       fi
+      # A refname cannot begin with a dash (git check-ref-format), so this is belt-and-braces
+      # for an API value that reached us malformed — and it is what lets the checkout below
+      # pass the BARE branch name, which is the only form that actually attaches the branch.
+      case "$branch" in
+        -*|*' '*) echo "worktree:pr: refusing a malformed head branch name '${branch}'" >&2; exit 1 ;;
+      esac
       wt="$root/.claude/worktrees/pr-${pr}"
+
+      # The anchor is read HERE, not handed in by the caller. The documented caller form
+      # `EXPECT_SHA="$(cat …)" wt="$(task … )"` is an assignment LIST with no command word,
+      # so POSIX applies it to the calling shell and never exports it — the check would have
+      # silently not run, which is worse than not having it. Reading the file inside the
+      # target removes that failure mode; EXPECT_SHA still overrides for a caller that has
+      # the SHA but no state file, and ANCHOR_OPTIONAL=1 is the explicit opt-out for a
+      # standalone invocation with no pr-fix run behind it.
+      # resolve_anchor: prints the expected SHA, or nothing when the operator opted out.
+      # Deliberately NOT `[ -f "$af" ] && want=...`: under mvdan/sh with set -e a false
+      # AND-list aborts the whole task with NO output (measured), which is the worst possible
+      # failure mode for a guard.
+      resolve_anchor() {
+        _want="${EXPECT_SHA:-}"
+        if [ -z "$_want" ]; then
+          _af="$root/.work/pr-fix/pr-${pr}/anchor.sha"
+          if [ -f "$_af" ]; then
+            _want="$(tr -d '[:space:]' < "$_af")"
+          fi
+        fi
+        if [ -z "$_want" ]; then
+          if [ "${ANCHOR_OPTIONAL:-0}" = "1" ]; then
+            echo "worktree:pr: no anchor recorded — proceeding because ANCHOR_OPTIONAL=1" >&2
+            printf ''
+            return 0
+          fi
+          echo "worktree:pr: no anchor for #$pr (.work/pr-fix/pr-${pr}/anchor.sha missing or empty, EXPECT_SHA unset)" >&2
+          echo "             A missing anchor is the same verdict as a mismatched one: re-run the fact gather," >&2
+          echo "             or pass ANCHOR_OPTIONAL=1 for a standalone checkout." >&2
+          exit 1
+        fi
+        case "$_want" in
+          [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;;
+          *) echo "worktree:pr: anchor '${_want}' is not a 40-hex SHA — refusing" >&2; exit 1 ;;
+        esac
+        printf '%s' "$_want"
+      }
+      assert_anchor() { # $1 = worktree path, $2 = expected sha (may be empty = opted out)
+        [ -n "$2" ] || return 0
+        _got="$(git -C "$1" rev-parse HEAD)"
+        if [ "$_got" != "$2" ]; then
+          echo "worktree:pr: #$pr HEAD is ${_got}, expected anchor ${2} — the branch moved; re-gather the facts" >&2
+          return 1
+        fi
+      }
+      # Resolved BEFORE anything is created, so a missing/malformed anchor refuses without
+      # leaving a half-made worktree behind for the next run to trip over.
+      anchor="$(resolve_anchor)"
 
       if [ -d "$wt" ]; then
         cur="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -4976,10 +5096,7 @@ tasks:
           echo "worktree:pr: reused $wt is not at origin/${branch} — fast-forward or remove it (task worktree:pr:remove -- $pr)" >&2
           exit 1
         fi
-        if [ -n "${EXPECT_SHA:-}" ] && [ "$(git -C "$wt" rev-parse HEAD)" != "$EXPECT_SHA" ]; then
-          echo "worktree:pr: reused $wt is at $(git -C "$wt" rev-parse HEAD), expected anchor ${EXPECT_SHA} — re-gather the facts" >&2
-          exit 1
-        fi
+        assert_anchor "$wt" "$anchor" || exit 1
         (cd "$wt" && pwd); exit 0
       fi
 
@@ -4987,6 +5104,12 @@ tasks:
         || { echo "worktree:pr: git fetch failed — refusing to check out a possibly stale head" >&2; exit 1; }
       git -C "$root" rev-parse --verify --quiet "refs/remotes/origin/${branch}" >/dev/null \
         || { echo "worktree:pr: origin/${branch} does not exist — nothing to fix" >&2; exit 1; }
+      remote_sha="$(git -C "$root" rev-parse "refs/remotes/origin/${branch}")"
+      if [ -n "$anchor" ] && [ "$remote_sha" != "$anchor" ]; then
+        echo "worktree:pr: origin/${branch} is at ${remote_sha}, the recorded anchor is ${anchor}" >&2
+        echo "             — the branch moved since the fact gather; re-run it before fixing." >&2
+        exit 1
+      fi
 
       # A local branch that is not an ancestor-or-equal of origin's carries commits the PR
       # does not have (or a force-push happened). Reconciling is a human decision.
@@ -4995,9 +5118,13 @@ tasks:
           echo "worktree:pr: local ${branch} has commits origin/${branch} does not — reconcile by hand first" >&2
           exit 1
         fi
-        # refs/heads/ prefix: the branch name comes from the API, and a bare value could
-        # lead with a dash and be read as an option rather than a commit-ish.
-        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" "refs/heads/${branch}" >/dev/null
+        # BARE branch name, deliberately. `worktree add <path> refs/heads/<b>` DETACHES
+        # (git prefixes refs/heads/ itself, so the lookup becomes refs/heads/refs/heads/<b>
+        # and falls back to a commit-ish) — verified: it prints "detached HEAD". A detached
+        # worktree breaks the reuse guard below, makes the fast-forward advance nothing, and
+        # makes the documented `push origin HEAD` fail. The leading-dash concern the prefix
+        # was meant to address is handled by the refusal above instead.
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" "$branch" >/dev/null
         # Fail closed. The local branch is only guaranteed to be an ANCESTOR of origin's, so
         # without the fast-forward the worktree sits on an older head than the reviewer read
         # — and every finding would then be "verified" against code the PR does not have.
@@ -5007,16 +5134,11 @@ tasks:
         GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" -b "$branch" "origin/${branch}" >/dev/null
       fi
 
-      # ANCHOR BINDING (optional but recommended): the caller passes the headSha that
-      # pr:fix:facts reported, and this refuses when the checkout is not that commit. Without
-      # it the two `gh` reads are separate observations and a push between them leaves the
-      # verification bound to a commit that was never the reviewed head.
-      if [ -n "${EXPECT_SHA:-}" ]; then
-        got="$(git -C "$wt" rev-parse HEAD)"
-        if [ "$got" != "$EXPECT_SHA" ]; then
-          echo "worktree:pr: #$pr HEAD is ${got}, expected anchor ${EXPECT_SHA} — the branch moved; re-gather the facts" >&2
-          exit 1
-        fi
+      # On refusal remove the worktree we just made: leaving it behind would send the next
+      # run down the reuse path against a checkout the anchor already rejected.
+      if ! assert_anchor "$wt" "$anchor"; then
+        git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+        exit 1
       fi
       (cd "$wt" && pwd)
 
@@ -5027,7 +5149,11 @@ tasks:
       # shellQuote, and NO surrounding quotes: go-task renders the template into the
       # script text before mvdan/sh parses it, so an unquoted caller value containing a
       # quote character becomes SYNTAX, not data — the digit guard below is downstream of
-      # that and cannot un-execute it. Same discipline as lint:pr's SUBJECT handling.
+      # that and cannot un-execute it. shellQuote renders the value single-quoted, which
+      # makes it inert. NOT the same mechanism as lint:pr's SUBJECT (which keeps the value
+      # out of the template entirely, via an env var) — that stronger route is unavailable
+      # here because the PR number arrives as a positional CLI argument; the digit guard
+      # below is the second layer.
       pr={{.PR | default .CLI_ARGS | shellQuote}}
       pr="${pr#\#}"
       case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr:remove -- <PR-number>" >&2; exit 1 ;; esac
