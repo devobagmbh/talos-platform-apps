@@ -23,7 +23,7 @@ ordering, ADR-0028).
 - `helm/external-secrets.yaml` — ESO chart reference (chart 2.5.0,
   `installCRDs: false`) + slim default values.
 - `manifests/00-namespace.yaml` — the dedicated `external-secrets` Namespace
-  carrying the PSA `enforce` label (sole-claimant rule, ADR-0027).
+  carrying the PSA `enforce` label (sole-claimant rule, ADR-0032).
 
 ## Namespace & Pod Security
 
@@ -37,7 +37,7 @@ RuntimeDefault`; every container `allowPrivilegeEscalation: false` +
 `capabilities.drop: [ALL]`).
 
 The catalog ships **only** the `enforce` level plus the
-`platform.devoba.de/{sub-layer,component}` labels. Per ADR-0027, the **consumer**
+`platform.devoba.de/{sub-layer,component}` labels. Per ADR-0032, the **consumer**
 adds, in its Argo overlay:
 
 - `pod-security.kubernetes.io/enforce-version` — pinned to the consumer cluster's
@@ -105,4 +105,4 @@ mint bridges until ESO is up).
 - [ADR-0024 — Workload/Config Freeze-Line](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0024-workload-config-freeze-line.md)
 - [ADR-0011 — Secrets-Management (SOPS + Layer-3 Vault)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
 - [ADR-0025 — ArgoCD credentials, no PAT (GithubAccessToken generator)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0025-argocd-credentials-no-pat.md)
-- [ADR-0027 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0027-namespace-psa-ownership.md)
+- [ADR-0032 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0032-catalog-namespace-psa-ownership.md)
