@@ -164,6 +164,13 @@ Do **not** use `kubectl rollout restart`: it writes an uncommitted pod-template 
 that a self-healing Argo `Application` reverts. Carry a config-generation annotation on the
 pod templates in your overlay and bump it together with the ConfigMap.
 
+Express that annotation as a **strategic-merge** patch, not as a JSON-6902 `add`: JSON Patch
+has no create-parent semantics, so an `add` of
+`/spec/template/metadata/annotations/config-generation` fails outright on any pod template
+that carries no `annotations` object — and it replaces nothing gracefully when the chart's own
+`checksum/config` annotation is there. A merge creates the map when it is missing and adds to
+it when it is not.
+
 Use **two syncs, not one**:
 
 1. sync 1 — replicas only, no config change;
