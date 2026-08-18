@@ -1461,6 +1461,266 @@ tasks:
       if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (29 in-scope / 2 dropped)"; fi
       exit "$fail"
 
+  pr:fix:facts:
+    desc: 'Gather the review-response fact sheet for ONE PR as JSON: task pr:fix:facts -- <N>'
+    summary: |
+      The single `gh` surface the pr-fix skill reads, so the skill never improvises API
+      calls and every run reads the same fields. Network-bound and strictly READ-ONLY —
+      it posts nothing, pushes nothing, resolves nothing.
+
+      Emits ONE JSON object on stdout:
+        number, authorLogin, isCrossRepository, isDraft, mergeStateStatus,
+        headRefName, headSha,               # the anchor a fix is built on
+        files[],                            # changed paths (authoritative)
+        approvedAtHead,                     # approvals whose commit == headSha (push dismisses them)
+        latestReviewSha,                    # commit the newest review was submitted against ("" if none)
+        reviewCount,                        # reviews carrying a body, authored by someone else
+        unresolvedThreadCount,              # open inline review threads
+        reviews[]  {author, state, submittedAt, commitSha, body}
+        threads[]  {id, path, line, isResolved, isOutdated, comments[{author, body}]}
+
+      Review THREADS come from GraphQL: the REST pulls/comments endpoint carries no
+      `isResolved`, so a REST-only gather cannot tell an already-settled thread from an
+      open one and the fix loop would re-litigate closed discussions.
+
+      `latestReviewSha` is what makes staleness visible: a review written against an
+      older head may describe code the branch no longer has. The classifier
+      (pr:fix:admit) turns that into a warning; this target only reports it.
+    cmd: |
+      set -eu
+      pr="{{.PR | default .CLI_ARGS}}"
+      pr="${pr#\#}"
+      case "$pr" in ''|*[!0-9]*) echo "usage: task pr:fix:facts -- <PR-number>" >&2; exit 1 ;; esac
+      repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+      owner="${repo%/*}"; name="${repo#*/}"
+
+      base="$(gh pr view "$pr" --json number,author,isCrossRepository,isDraft,mergeStateStatus,headRefName,headRefOid,files,reviews)"
+
+      # Unresolved-thread detection needs GraphQL (REST has no isResolved). A failure here
+      # must NOT silently degrade to "no threads" — that would read as "nothing to fix".
+      threads="$(gh api graphql -f owner="$owner" -f name="$name" -F pr="$pr" -f query='
+        query($owner:String!,$name:String!,$pr:Int!){
+          repository(owner:$owner,name:$name){
+            pullRequest(number:$pr){
+              reviewThreads(first:100){
+                nodes{ id isResolved isOutdated path line
+                       comments(first:50){ nodes{ author{login} body } } }
+              }
+            }
+          }
+        }' --jq '.data.repository.pullRequest.reviewThreads.nodes')" || {
+        echo "pr:fix:facts: GraphQL reviewThreads query failed for #$pr — refusing to report an empty thread set" >&2
+        exit 1
+      }
+
+      me="$(gh api user --jq .login)"
+      printf '%s' "$base" | jq --argjson threads "$threads" --arg me "$me" '
+        (.headRefOid // "") as $head
+        | [ .reviews[]? | select((.body // "") | length > 0)
+            | select((.author.login // "") != $me) ] as $rv
+        | { number: .number,
+            authorLogin: (.author.login // ""),
+            isCrossRepository: .isCrossRepository,
+            isDraft: .isDraft,
+            mergeStateStatus: (.mergeStateStatus // ""),
+            headRefName: (.headRefName // ""),
+            headSha: $head,
+            files: [ .files[]?.path ],
+            approvedAtHead: ([ .reviews[]? | select(.state == "APPROVED")
+                               | select((.commit.oid // $head) == $head) ] | length),
+            latestReviewSha: ( [ .reviews[]? | select((.body // "") | length > 0) ]
+                               | sort_by(.submittedAt) | last | (.commit.oid // "") // "" ),
+            reviewCount: ($rv | length),
+            unresolvedThreadCount: ([ $threads[] | select(.isResolved == false) ] | length),
+            reviews: [ $rv[] | { author: .author.login, state: .state,
+                                 submittedAt: .submittedAt,
+                                 commitSha: (.commit.oid // ""), body: .body } ],
+            threads: [ $threads[] | { id: .id, path: (.path // ""), line: .line,
+                                      isResolved: .isResolved, isOutdated: .isOutdated,
+                                      comments: [ .comments.nodes[] | { author: .author.login, body: .body } ] } ] }
+      '
+
+  pr:fix:admit:
+    desc: 'PURE admissibility classifier for pr-fix: reads a JSON array of fact sheets, prints "<number>\t<class>\t<reason>\t<warnings>" TSV. Network-free.'
+    summary: |
+      The deterministic half of the review-response decision: MAY this session build a fix
+      commit on this PR's head branch at all? Kept out of skill prose for the same reason
+      pr:triage is — a regression here turns a fixture assertion red instead of quietly
+      pushing to the wrong branch. Bound red-green by `task test:pr-fix-admit` (in `task ci`).
+
+      INPUT (stdin, or a file path in PR_FIX_INPUT): a JSON array of pr:fix:facts objects.
+      ENV: ME (required — the operator login, for the authorship test).
+
+      CLASS (first match wins — the precedence IS the contract):
+        incomplete   — FAIL-CLOSED: a record whose decision fields are missing or malformed
+                       (non-number number, empty authorLogin, non-boolean isCrossRepository,
+                       empty mergeStateStatus, headSha not a 40-hex SHA, empty files[], or a
+                       non-number count). A degraded gather must never read as admissible.
+        fork         — isCrossRepository: the head lives in someone else's fork. Pushing a
+                       fix there is not this session's act to take.
+        not-author   — authorLogin != ME: fixing another maintainer's PR means pushing to
+                       their branch. That is a conversation, not an automated act.
+        dirty        — mergeStateStatus == DIRTY: a real conflict. A fix commit stacked on a
+                       conflicted branch buries the conflict instead of resolving it, and the
+                       resolution (rebase/merge) needs its own explicit human authorization.
+        no-findings  — no other-authored review body AND no unresolved thread: nothing to
+                       respond to. Distinct from admissible so a re-run after the work is
+                       done reports it instead of inventing findings.
+        admissible   — a fix may be built. NOT a licence to push: the push is a separate
+                       operator-confirmed act (see .claude/skills/pr-fix/SKILL.md).
+
+      WARNINGS (4th column, comma-separated, `-` when none) — never change the class, they
+      are what the operator has to see before authorizing the push:
+        approvals-at-risk:N  — N approvals stand at the current head. Branch protection sets
+                               dismiss_stale_reviews, so pushing DISMISSES them and the PR
+                               needs a fresh CODEOWNERS review. Silent dismissal is the
+                               costly surprise this warning exists for.
+        review-behind-head   — the newest review was submitted against an older commit, so
+                               some findings may describe code the branch no longer has.
+                               Re-verify each finding against the head before fixing it.
+        draft                — the PR is a draft; a review of a draft is provisional.
+
+      Deliberately NOT re-implemented here: the governance-path set. It has exactly one
+      source (pr:triage's `governance` class) and a second copy would drift. Governance
+      paths do not block a fix by the PR's own author anyway — what they block is
+      unattended APPROVAL, which is pr:triage's decision, not this one.
+    cmd: |
+      set -eu
+      : "${ME:?pr:fix:admit: ME (operator login) is required}"
+      # PR_FIX_INPUT is an ENVIRONMENT variable, not a task var: go-task exposes
+      # `task pr:fix:admit PR_FIX_INPUT=x` only to templating, never to the command's
+      # environment (verified on go-task 3.48), so the task-var form would silently fall
+      # through to stdin. Callers `export PR_FIX_INPUT=...` or pipe.
+      input="${PR_FIX_INPUT:-/dev/stdin}"
+      if [ "$input" = /dev/stdin ] && [ -t 0 ]; then
+        echo "pr:fix:admit: no input — pipe a fact-sheet array or export PR_FIX_INPUT=<file>" >&2
+        exit 2
+      fi
+      payload="$(cat "$input")" || { echo "pr:fix:admit: cannot read '$input'" >&2; exit 2; }
+      # Fail closed on a degraded gather: an empty or non-array payload must NOT print
+      # nothing and exit 0 — that reads as "no PR needs a fix" to every caller.
+      if ! printf '%s' "$payload" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+        echo "pr:fix:admit: input is not a non-empty JSON array — refusing" >&2
+        exit 2
+      fi
+      printf '%s' "$payload" | jq -r --arg me "$ME" '
+        ($me | ascii_downcase) as $ME
+        | .[]
+        | (if ((.number | type) != "number")
+                or ((.authorLogin // "") == "")
+                or ((.isCrossRepository | type) != "boolean")
+                or ((.mergeStateStatus // "") == "")
+                or (((.headSha // "") | test("^[0-9a-fA-F]{40}$")) | not)
+                or ((.files | type) != "array") or ((.files | length) == 0)
+                or ((.reviewCount | type) != "number")
+                or ((.unresolvedThreadCount | type) != "number")
+                or ((.approvedAtHead | type) != "number")
+                then ["incomplete", "malformed or partial fact sheet — refusing"]
+           elif (.isCrossRepository == true)
+                then ["fork", "head branch lives in a fork"]
+           elif (((.authorLogin // "") | ascii_downcase) != $ME)
+                then ["not-author", "authored by \(.authorLogin), not \($me)"]
+           elif (.mergeStateStatus == "DIRTY")
+                then ["dirty", "conflicts with the base branch"]
+           elif (.reviewCount == 0 and .unresolvedThreadCount == 0)
+                then ["no-findings", "no other-authored review body and no unresolved thread"]
+           else ["admissible",
+                 "\(.reviewCount) review(s), \(.unresolvedThreadCount) unresolved thread(s)"]
+           end) as $verdict
+        | ([ (if .approvedAtHead > 0 then "approvals-at-risk:\(.approvedAtHead)" else empty end),
+             (if ((.latestReviewSha // "") != "") and (.latestReviewSha != .headSha)
+                then "review-behind-head" else empty end),
+             (if .isDraft == true then "draft" else empty end) ]) as $warn
+        | [ (.number | tostring), $verdict[0], $verdict[1],
+            (if ($warn | length) > 0 then ($warn | join(",")) else "-" end) ]
+        | @tsv
+      '
+
+  test:pr-fix-admit:
+    desc: 'Hermetic red-green test for pr:fix:admit (the pr-fix admissibility gate; in task ci)'
+    summary: |
+      Binding acceptance test for the classifier that decides whether a session may build a
+      fix commit on a PR head branch. Network-free: feeds a fixture fact-sheet array to
+      `pr:fix:admit` and asserts every class AND every warning. Red-green — the class
+      precedence, the fail-closed field guards (bad SHA, empty files, non-number counts),
+      the fork/not-author/dirty refusals, the no-findings case, and the three warnings each
+      have a fixture; reverting any single rule in pr:fix:admit turns an assertion red.
+      The warnings are asserted, not just the classes: a dropped approvals-at-risk warning
+      is exactly the regression that costs a standing CODEOWNERS approval silently.
+    cmd: |
+      set -eu
+      work="$(mktemp -d)" || { echo "test:pr-fix-admit: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$work"' EXIT
+      good="1111111111111111111111111111111111111111"
+      old="2222222222222222222222222222222222222222"
+      fixture="$work/facts.json"
+      sed -e "s/__GOOD__/$good/g" -e "s/__OLD__/$old/g" > "$fixture" <<'JSON'
+      [
+        {"number":1,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/a","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":2,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/b","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0},
+        {"number":3,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/c","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":2},
+        {"number":4,"authorLogin":"robertschneiderdevoba","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/d","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":5,"authorLogin":"outsider","isCrossRepository":true,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/e","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":6,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"DIRTY","headRefName":"f/f","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":7,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/g","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":2,"latestReviewSha":"__OLD__","reviewCount":1,"unresolvedThreadCount":1},
+        {"number":8,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":true,"mergeStateStatus":"CLEAN","headRefName":"f/h","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":9,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/i","headSha":"not-a-sha","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":10,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/j","headSha":"__GOOD__","files":[],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":11,"authorLogin":"","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/k","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":12,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"","headRefName":"f/l","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":13,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/m","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":null,"unresolvedThreadCount":0},
+        {"number":14,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/n","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"isDraftX":true}
+      ]
+      JSON
+
+      # ENV, not task vars — see the note in pr:fix:admit.
+      export ME="Nosmoht"
+      export PR_FIX_INPUT="$fixture"
+      got="$(task --silent pr:fix:admit)"
+      assert() { # $1 number, $2 expected class, $3 expected warnings
+        line="$(printf '%s\n' "$got" | awk -F'\t' -v n="$1" '$1 == n {print $2"|"$4}')"
+        if [ "$line" = "$2|$3" ]; then
+          echo "✓ #$1 → $2 [$3]"
+        else
+          echo "✗ test:pr-fix-admit: #$1 — expected '$2|$3', got '${line:-<no line>}'" >&2
+          exit 1
+        fi
+      }
+      assert 1  admissible  "-"
+      assert 2  no-findings "-"
+      assert 3  admissible  "-"
+      assert 4  not-author  "-"
+      assert 5  fork        "-"
+      assert 6  dirty       "-"
+      assert 7  admissible  "approvals-at-risk:2,review-behind-head"
+      assert 8  admissible  "draft"
+      assert 9  incomplete  "-"
+      assert 10 incomplete  "-"
+      assert 11 incomplete  "-"
+      assert 12 incomplete  "-"
+      assert 13 incomplete  "-"
+      assert 14 no-findings "-"
+
+      # An empty operator login must fail closed rather than classify everything not-author.
+      if ME="" task --silent pr:fix:admit >/dev/null 2>&1; then
+        echo "✗ test:pr-fix-admit: an empty ME was accepted" >&2; exit 1
+      fi
+      echo "✓ empty ME rejected"
+
+      # A degraded gather must fail closed. Printing nothing and exiting 0 would read as
+      # "no PR needs a fix" — the silent-stuck class this whole target exists to prevent.
+      printf '[]\n' > "$work/empty.json"
+      if PR_FIX_INPUT="$work/empty.json" task --silent pr:fix:admit >/dev/null 2>&1; then
+        echo "✗ test:pr-fix-admit: an empty array was accepted" >&2; exit 1
+      fi
+      echo "✓ empty input array rejected"
+      printf '{"number":1}\n' > "$work/notarray.json"
+      if PR_FIX_INPUT="$work/notarray.json" task --silent pr:fix:admit >/dev/null 2>&1; then
+        echo "✗ test:pr-fix-admit: a non-array payload was accepted" >&2; exit 1
+      fi
+      echo "✓ non-array input rejected"
+      echo "test:pr-fix-admit OK"
+
   lint:commit-scope:
     desc: 'Single-component check: staged changes must touch at most ONE component'
     summary: |
@@ -4219,6 +4479,11 @@ tasks:
       # action-pin allowlist is caught here, not only when the loop wrongly auto-approves
       # a PR it should have withheld. Fast, no network (fixture records JSON).
       - task: test:pr-triage
+      # Hermetic red-green guard for the pr-fix admissibility gate: the classifier that
+      # decides whether a session may build a fix commit on a PR head branch at all.
+      # Same placement rationale as test:pr-triage — the decision lives in a tested
+      # target, so a regression is a red assertion instead of a push to the wrong branch.
+      - task: test:pr-fix-admit
       # Hermetic red-green guard for the image-CVE extractor (G3b AC6-extraction,
       # fast, no network). Wired here so a regression in the scan:extract-images
       # regex/tag-filter — which would let a bare name fail-close a publish, or let
@@ -4543,6 +4808,81 @@ tasks:
       # inside the repo, including a linked worktree — so no main-root anchor is needed here.
       # `\.` escapes the regex dot so the filter matches the literal `.claude/worktrees/` path.
       git worktree list | grep '\.claude/worktrees/' || echo "(no active component worktrees)"
+
+  worktree:pr:
+    desc: 'Create an isolated worktree on an EXISTING PR head branch: task worktree:pr -- <N>'
+    summary: |
+      The isolation half of the pr-fix skill: a git worktree under .claude/worktrees/pr-<N>
+      checked out on the PR's own head branch, so a review-response fix never touches the
+      caller's working tree and two sessions cannot fix two PRs in one checkout.
+
+      Different from worktree:create in one decisive way: the branch ALREADY exists and is
+      owned by the PR, so this target must never create one. It checks the branch out at
+      `origin/<branch>` (fetched first), which is the head the review was written against —
+      a fix built on a stale local copy would silently drop commits the remote already has.
+      No lock is needed: git itself refuses to check one branch out in two worktrees, and
+      that refusal IS the cross-session claim.
+
+      Idempotent: an existing worktree on the expected branch is reused and its path
+      printed. Fails closed when the directory exists on a different branch, when the
+      branch does not exist on origin, or when the local branch has diverged from origin
+      (that is a force-push or an unpushed commit — a human decision, not a checkout).
+      Prints the absolute worktree path on the LAST line.
+    cmd: |
+      set -eu
+      pr="{{.PR | default .CLI_ARGS}}"
+      pr="${pr#\#}"
+      case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr -- <PR-number>" >&2; exit 1 ;; esac
+      root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
+      case "$root" in /*) ;; *) echo "worktree:pr: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
+      branch="$(gh pr view "$pr" --json headRefName -q .headRefName)"
+      [ -n "$branch" ] || { echo "worktree:pr: could not resolve the head branch of #$pr" >&2; exit 1; }
+      wt="$root/.claude/worktrees/pr-${pr}"
+
+      if [ -d "$wt" ]; then
+        cur="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        if [ "$cur" = "$branch" ]; then (cd "$wt" && pwd); exit 0; fi
+        echo "worktree:pr: $wt exists but is on '$cur', not '$branch'" >&2
+        exit 1
+      fi
+
+      git -C "$root" fetch origin --quiet \
+        || { echo "worktree:pr: git fetch failed — refusing to check out a possibly stale head" >&2; exit 1; }
+      git -C "$root" rev-parse --verify --quiet "refs/remotes/origin/${branch}" >/dev/null \
+        || { echo "worktree:pr: origin/${branch} does not exist — nothing to fix" >&2; exit 1; }
+
+      # A local branch that is not an ancestor-or-equal of origin's carries commits the PR
+      # does not have (or a force-push happened). Reconciling is a human decision.
+      if git -C "$root" show-ref --verify --quiet "refs/heads/${branch}"; then
+        if ! git -C "$root" merge-base --is-ancestor "refs/heads/${branch}" "refs/remotes/origin/${branch}"; then
+          echo "worktree:pr: local ${branch} has commits origin/${branch} does not — reconcile by hand first" >&2
+          exit 1
+        fi
+        git -C "$root" worktree add "$wt" "$branch" >/dev/null
+        git -C "$wt" merge --ff-only "origin/${branch}" >/dev/null 2>&1 || true
+      else
+        git -C "$root" worktree add "$wt" -b "$branch" "origin/${branch}" >/dev/null
+      fi
+      (cd "$wt" && pwd)
+
+  worktree:pr:remove:
+    desc: 'Remove a PR-fix worktree (the branch is kept): task worktree:pr:remove -- <N>'
+    cmd: |
+      set -eu
+      pr="{{.PR | default .CLI_ARGS}}"
+      pr="${pr#\#}"
+      case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr:remove -- <PR-number>" >&2; exit 1 ;; esac
+      root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
+      case "$root" in /*) ;; *) echo "worktree:pr:remove: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
+      wt="$root/.claude/worktrees/pr-${pr}"
+      [ -d "$wt" ] || { echo "worktree:pr:remove: $wt does not exist (nothing to do)"; exit 0; }
+      # Refuse while work is uncommitted: removing the worktree would destroy it.
+      if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+        echo "worktree:pr:remove: $wt has uncommitted changes — commit or discard them first" >&2
+        exit 1
+      fi
+      git -C "$root" worktree remove "$wt"
+      echo "removed $wt (branch kept)"
 
   # --- Housekeeping ---
 

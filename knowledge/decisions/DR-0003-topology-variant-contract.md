@@ -3,7 +3,7 @@ type: decision
 title: "DR-0003 — Machine-readable topology-variant contract (catalog/topology-groups.yaml)"
 description: Express mutual-exclusion + either-satisfies between topology-sibling components in one central, schema-validated, ci-gated contract file, without touching the capability index, any requires: key, or any component compatibility.yaml.
 tags: [decision, catalog, topology-variant, compatibility, contract, observability]
-timestamp: 2026-08-12
+timestamp: 2026-08-18
 sources:
   - catalog/topology-groups.yaml
   - schemas/topology-groups.schema.json
