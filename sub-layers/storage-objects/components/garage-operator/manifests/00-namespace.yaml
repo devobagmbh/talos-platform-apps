@@ -21,7 +21,7 @@
 # cert-manager.io/inject-ca-from annotations in both halves of the pair reference
 # `garage-operator` literally. A consumer MUST NOT re-namespace this pair.
 #
-# The consumer adds — per ADR-0027 — the PNI labels and the
+# The consumer adds — per ADR-0032 — the PNI labels and the
 # pod-security.kubernetes.io/enforce-version pin (its cluster minor) in its Argo
 # overlay; the catalog ships neither (they are consumer-composition concerns).
 apiVersion: v1
