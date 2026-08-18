@@ -1478,6 +1478,7 @@ tasks:
         outsideReviewCount,                 # review bodies by an account outside the trusted set
         unresolvedThreadCount,              # unresolved threads carrying a TRUSTED other comment
         outsideThreadCount,                 # unresolved threads whose only other comments are untrusted
+        mixedThreadCount,                   # trusted threads that ALSO carry an untrusted comment
         selfOnlyThreadCount,                # unresolved threads only I wrote in (own notes, not findings)
         reviews[]  {author, association, state, submittedAt, commitSha, body}
         threads[]  {id, path, line, isResolved, isOutdated, comments[{author, body}]}
@@ -1580,6 +1581,13 @@ tasks:
         | [ $openOther[] | select(any(.comments.nodes[]?;
               ((.author.login // "") != $me)
               and ((.authorAssociation // "") as $a | $trusted | index($a)))) ] as $openTrusted
+        # A thread counts as trusted when ANY trusted non-self comment appears in it — which
+        # is right (a maintainer engaging is a signal) but means an outsider can open the
+        # thread and a one-word maintainer reply promotes it. Count those separately so the
+        # promotion is visible instead of laundered.
+        | [ $openTrusted[] | select(any(.comments.nodes[]?;
+              ((.author.login // "") != $me)
+              and (((.authorAssociation // "") as $a | $trusted | index($a)) | not))) ] as $openMixed
         | { number: .number,
             authorLogin: (.author.login // ""),
             isCrossRepository: .isCrossRepository,
@@ -1597,6 +1605,7 @@ tasks:
             outsideReviewCount: ($outside | length),
             unresolvedThreadCount: ($openTrusted | length),
             outsideThreadCount: (($openOther | length) - ($openTrusted | length)),
+            mixedThreadCount: ($openMixed | length),
             selfOnlyThreadCount: (($open | length) - ($openOther | length)),
             reviews: [ ($rv + $outside)[] | { author: .author.login,
                                  association: (.authorAssociation // ""), state: .state,
@@ -1604,7 +1613,12 @@ tasks:
                                  commitSha: (.commit.oid // ""), body: .body } ],
             threads: [ $threads[] | { id: .id, path: (.path // ""), line: .line,
                                       isResolved: .isResolved, isOutdated: .isOutdated,
-                                      comments: [ .comments.nodes[] | { author: .author.login, body: .body } ] } ] }
+                                      hasOutsideComment: (any(.comments.nodes[]?;
+                                        ((.author.login // "") != $me)
+                                        and (((.authorAssociation // "") as $a | $trusted | index($a)) | not))),
+                                      comments: [ .comments.nodes[] | { author: .author.login,
+                                                    association: (.authorAssociation // ""),
+                                                    body: .body } ] } ] }
       '
 
   pr:fix:admit:
@@ -1661,6 +1675,10 @@ tasks:
         outside-threads:N    — the same for N unresolved inline threads. Excluded from the
                                finding count for the same reason, and warned about so an
                                outsider's comment is visible rather than invisible.
+        mixed-threads:N      — N threads counted as findings (a trusted account commented)
+                               that ALSO carry an untrusted comment. A trusted one-word reply
+                               promotes an outsider's thread into the finding set; this makes
+                               the promotion visible. Read those threads before acting.
         self-only-threads:N  — N unresolved threads contain only my own comments (notes to
                                self, not findings). Excluded from the finding count so they
                                cannot lift `no-findings` on their own.
@@ -1703,11 +1721,15 @@ tasks:
                 or ((.reviewCount | type) != "number")
                 or ((.unresolvedThreadCount | type) != "number")
                 or ((.approvedAtHead | type) != "number")
-                or (((.outsideReviewCount // 0) | type) != "number")
-                or (((.outsideThreadCount // 0) | type) != "number")
-                or (((.selfOnlyThreadCount // 0) | type) != "number")
-                or (((.isDraft // false) | type) != "boolean")
-                or (((.latestReviewSha // "") | type) != "string")
+                # has()-based, NOT `// 0`: jq treats `false` as absent, so `(false // 0)`
+                # is a number and a boolean-typed count would pass the guard and then silently
+                # evaluate `false > 0` as false — deleting its warning.
+                or (has("outsideReviewCount") and ((.outsideReviewCount | type) != "number"))
+                or (has("outsideThreadCount") and ((.outsideThreadCount | type) != "number"))
+                or (has("mixedThreadCount") and ((.mixedThreadCount | type) != "number"))
+                or (has("selfOnlyThreadCount") and ((.selfOnlyThreadCount | type) != "number"))
+                or (has("isDraft") and ((.isDraft | type) != "boolean"))
+                or (has("latestReviewSha") and ((.latestReviewSha | type) != "string"))
                 then ["incomplete", "malformed or partial fact sheet — refusing"]
            elif ((.mergeStateStatus // "") == "UNKNOWN")
                 then ["incomplete", "GitHub has not finished computing mergeability — re-gather in a moment"]
@@ -1722,21 +1744,31 @@ tasks:
            else ["admissible",
                  "\(.reviewCount) review(s), \(.unresolvedThreadCount) unresolved thread(s)"]
            end) as $verdict
-        | ([ (if .approvedAtHead > 0 then "approvals-at-risk:\(.approvedAtHead)" else empty end),
-             (if ((.latestReviewSha // "") != "") and (.latestReviewSha != .headSha)
+        # Each warning is computed ONLY from a well-typed value. A malformed field lands the
+        # record in `incomplete` above; emitting a warning derived from it would present the
+        # untrustworthy value as a fact (jq would happily evaluate "2" > 0 as true).
+        | (def num($f): ($f | type) == "number";
+           [ (if num(.approvedAtHead) and (.approvedAtHead > 0)
+                then "approvals-at-risk:\(.approvedAtHead)" else empty end),
+             (if ((.latestReviewSha // "") | type) == "string"
+                 and ((.latestReviewSha // "") != "") and (.latestReviewSha != .headSha)
                 then "review-behind-head" else empty end),
-             (if ((.outsideReviewCount // 0) > 0)
+             (if num(.outsideReviewCount) and (.outsideReviewCount > 0)
                 then "outside-reviews:\(.outsideReviewCount)" else empty end),
-             (if ((.outsideThreadCount // 0) > 0)
+             (if num(.outsideThreadCount) and (.outsideThreadCount > 0)
                 then "outside-threads:\(.outsideThreadCount)" else empty end),
-             (if ((.selfOnlyThreadCount // 0) > 0)
+             (if num(.mixedThreadCount) and (.mixedThreadCount > 0)
+                then "mixed-threads:\(.mixedThreadCount)" else empty end),
+             (if num(.selfOnlyThreadCount) and (.selfOnlyThreadCount > 0)
                 then "self-only-threads:\(.selfOnlyThreadCount)" else empty end),
              (if .isDraft == true then "draft" else empty end) ]) as $warn
-        # For an `incomplete` record the warning fields are exactly the ones that cannot
-        # be trusted, so they are suppressed rather than presented as facts.
+        # Warnings are emitted on EVERY class, `incomplete` included: the type guards above
+        # already force an untrustworthy count into `incomplete`, so a warning that survives
+        # is either well-typed or the reason for the classification — and `incomplete` is the
+        # class a human adjudicates, which is exactly when "five outside review bodies" is
+        # worth seeing.
         | [ (.number | tostring), $verdict[0], $verdict[1],
-            (if $verdict[0] != "incomplete" and ($warn | length) > 0
-               then ($warn | join(",")) else "-" end) ]
+            (if ($warn | length) > 0 then ($warn | join(",")) else "-" end) ]
         | @tsv
       '
 
@@ -1786,7 +1818,9 @@ tasks:
         {"number":21,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"BEHIND","headRefName":"f/u","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
         {"number":22,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/v","headSha":12345,"files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
         {"number":23,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/w","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"outsideThreadCount":2},
-        {"number":24,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/x","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0,"outsideReviewCount":"2"}
+        {"number":24,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/x","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0,"outsideReviewCount":"2"},
+        {"number":25,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/y","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0,"outsideReviewCount":false},
+        {"number":26,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/z","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":2,"mixedThreadCount":1}
       ]
       JSON
 
@@ -1834,13 +1868,19 @@ tasks:
       # BEHIND is the NORMAL state under the merge queue — the allow-list must not refuse it.
       assert 21 admissible  "-"
       # A non-string headSha is a jq type error unless guarded; it must degrade to one
-      # incomplete record, not abort the whole array.
-      assert 22 incomplete  "-"
+      # incomplete record, not abort the whole array. Its warnings still show: they are
+      # well-typed, and `incomplete` is the class a human reads.
+      assert 22 incomplete  "review-behind-head"
       # An outsider's inline THREAD is the other unauthenticated channel: it must not lift
       # no-findings either, and it must be visible.
       assert 23 no-findings "outside-threads:2"
       # A warning-only count of the wrong TYPE is a degraded gather, not a zero.
       assert 24 incomplete  "-"
+      # …including `false`, which jq's `//` treats as absent — the value that would produce
+      # the quietest wrong answer (the warning silently disappears).
+      assert 25 incomplete  "-"
+      # A trusted reply in an outsider-opened thread is a promotion, and must be visible.
+      assert 26 admissible  "mixed-threads:1"
 
       # An empty operator login must fail closed rather than classify everything not-author.
       if ME="" task --silent pr:fix:admit >/dev/null 2>&1; then
@@ -5128,10 +5168,15 @@ tasks:
         # Fail closed. The local branch is only guaranteed to be an ANCESTOR of origin's, so
         # without the fast-forward the worktree sits on an older head than the reviewer read
         # — and every finding would then be "verified" against code the PR does not have.
-        git -C "$wt" merge --ff-only "origin/${branch}" >/dev/null \
+        git -C "$wt" merge --ff-only "refs/remotes/origin/${branch}" >/dev/null \
           || { echo "worktree:pr: fast-forward of ${branch} to origin/${branch} failed — refusing a stale checkout" >&2; exit 1; }
       else
-        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" -b "$branch" "origin/${branch}" >/dev/null
+        # refs/remotes/… , not origin/… : a LOCAL branch literally named `origin/<branch>`
+        # would win the DWIM lookup (refs/heads is searched first) while every comparison
+        # above uses the fully-qualified remote ref — the checkout would then be at content
+        # that is not the PR head. The `-b` argument stays the bare branch name, which is
+        # what attaches it.
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" -b "$branch" "refs/remotes/origin/${branch}" >/dev/null
       fi
 
       # On refusal remove the worktree we just made: leaving it behind would send the next
