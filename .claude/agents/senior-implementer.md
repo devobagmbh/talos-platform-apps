@@ -78,8 +78,8 @@ drift — never treat a sibling component as the pattern authority:
   not tool-name selectors, in NetworkPolicies / Cilium CCNPs. Reserved labels
   (`platform.io/provide.*`, `capability-provider.*`) only via producer charts /
   namespaces.
-- **Tiered bootstrap**: Stage 0 (Seeder via Tofu) → Stage 1 (Office-Lab via
-  Crossplane). Some sub-layers (e.g. `lifecycle`) are Seeder-exclusive.
+- **Tiered bootstrap**: Stage 0 (the seed cluster via Tofu) → Stage 1 (a consumer
+  cluster via Crossplane). Some sub-layers (e.g. `lifecycle`) are seed-cluster-exclusive.
 - **Two-lane secrets**: SOPS for static / bootstrap secrets; Vault + ESO for
   runtime secrets. Never commit plaintext secrets in Helm values.
 

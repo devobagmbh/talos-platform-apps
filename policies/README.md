@@ -18,7 +18,7 @@ This repo uses **Conftest in CI + Kyverno in the cluster** with separate roles. 
 
 **Conftest here**: pre-OCI-push validation of the `rendered/` manifests before they are published as signed OCI artifacts. Seconds-fast feedback in the PR.
 
-**Kyverno later** in consumer clusters (Seeder + Office-Lab): admission-webhook validation + Kyverno-exclusive features (cosign image verification, auto-generate, mutate). Lives in `sub-layers/secrets/manifests/policies/`.
+**Kyverno later** in consumer clusters: admission-webhook validation + Kyverno-exclusive features (cosign image verification, auto-generate, mutate). Lives in `sub-layers/secrets/manifests/policies/`.
 
 ## Mapping — which policy goes where
 
