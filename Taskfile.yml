@@ -1471,13 +1471,24 @@ tasks:
       Emits ONE JSON object on stdout:
         number, authorLogin, isCrossRepository, isDraft, mergeStateStatus,
         headRefName, headSha,               # the anchor a fix is built on
-        files[],                            # changed paths (authoritative)
+        files[],                            # changed paths (refused at the 100 API cap)
         approvedAtHead,                     # approvals whose commit == headSha (push dismisses them)
         latestReviewSha,                    # commit the newest review was submitted against ("" if none)
-        reviewCount,                        # reviews carrying a body, authored by someone else
-        unresolvedThreadCount,              # open inline review threads
-        reviews[]  {author, state, submittedAt, commitSha, body}
+        reviewCount,                        # TRUSTED review bodies by someone else (see below)
+        outsideReviewCount,                 # review bodies by an account with no write relationship
+        unresolvedThreadCount,              # unresolved threads carrying a comment by someone else
+        selfOnlyThreadCount,                # unresolved threads only I wrote in (own notes, not findings)
+        reviews[]  {author, association, state, submittedAt, commitSha, body}
         threads[]  {id, path, line, isResolved, isOutdated, comments[{author, body}]}
+
+      AUTHOR TRUST is a field, not an assumption. This repo is PUBLIC, so any GitHub account
+      can submit a review body or open an inline thread on a PR without any write
+      relationship — which would otherwise be enough to flip a PR from "nothing to respond
+      to" into "build a fix". `reviewCount` therefore counts only reviews whose
+      `authorAssociation` is OWNER / MEMBER / COLLABORATOR; everything else lands in
+      `outsideReviewCount`, which the classifier surfaces as a warning and never treats as a
+      reason to start work. Outside findings are not discarded — they stay in `reviews[]` with
+      their association, for a human to read.
 
       Review THREADS come from GraphQL: the REST pulls/comments endpoint carries no
       `isResolved`, so a REST-only gather cannot tell an already-settled thread from an
@@ -1488,7 +1499,11 @@ tasks:
       (pr:fix:admit) turns that into a warning; this target only reports it.
     cmd: |
       set -eu
-      pr="{{.PR | default .CLI_ARGS}}"
+      # shellQuote, and NO surrounding quotes: go-task renders the template into the
+      # script text before mvdan/sh parses it, so an unquoted caller value containing a
+      # quote character becomes SYNTAX, not data — the digit guard below is downstream of
+      # that and cannot un-execute it. Same discipline as lint:pr's SUBJECT handling.
+      pr={{.PR | default .CLI_ARGS | shellQuote}}
       pr="${pr#\#}"
       case "$pr" in ''|*[!0-9]*) echo "usage: task pr:fix:facts -- <PR-number>" >&2; exit 1 ;; esac
       repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
@@ -1503,21 +1518,48 @@ tasks:
           repository(owner:$owner,name:$name){
             pullRequest(number:$pr){
               reviewThreads(first:100){
+                pageInfo{ hasNextPage }
                 nodes{ id isResolved isOutdated path line
-                       comments(first:50){ nodes{ author{login} body } } }
+                       comments(first:50){ pageInfo{ hasNextPage } nodes{ author{login} body } } }
               }
             }
           }
-        }' --jq '.data.repository.pullRequest.reviewThreads.nodes')" || {
+        }' --jq '.data.repository.pullRequest.reviewThreads')" || {
         echo "pr:fix:facts: GraphQL reviewThreads query failed for #$pr — refusing to report an empty thread set" >&2
         exit 1
       }
 
+      # A truncated page is indistinguishable from a complete one in the payload, and an
+      # unharvested unresolved thread reads downstream as `no-findings` — the exact silent
+      # drop this target exists to prevent. Refuse instead of under-reporting.
+      if [ "$(printf '%s' "$threads" | jq -r '.pageInfo.hasNextPage')" != "false" ]; then
+        echo "pr:fix:facts: #$pr has more than 100 review threads — paginate before trusting the thread set" >&2
+        exit 1
+      fi
+      if [ "$(printf '%s' "$threads" | jq -r 'any(.nodes[]?; .comments.pageInfo.hasNextPage)')" != "false" ]; then
+        echo "pr:fix:facts: a review thread on #$pr carries more than 50 comments — paginate before trusting it" >&2
+        exit 1
+      fi
+      threads="$(printf '%s' "$threads" | jq -c '.nodes')"
+
+      # `gh pr view --json files` caps at 100 paths. A truncated list would understate the
+      # diff, and the skill picks its verification depth from it (a shared path selects the
+      # heavier `task ci`), so a cap hit is a refusal, not a warning.
+      if [ "$(printf '%s' "$base" | jq -r '[.files[]?] | length')" -ge 100 ]; then
+        echo "pr:fix:facts: #$pr changes 100+ files — the file list is truncated by the API; refusing a partial fact sheet" >&2
+        exit 1
+      fi
+
       me="$(gh api user --jq .login)"
       printf '%s' "$base" | jq --argjson threads "$threads" --arg me "$me" '
         (.headRefOid // "") as $head
+        | ["OWNER","MEMBER","COLLABORATOR"] as $trusted
         | [ .reviews[]? | select((.body // "") | length > 0)
-            | select((.author.login // "") != $me) ] as $rv
+            | select((.author.login // "") != $me) ] as $other
+        | [ $other[] | select(.authorAssociation as $a | $trusted | index($a)) ] as $rv
+        | [ $other[] | select(.authorAssociation as $a | $trusted | index($a) | not) ] as $outside
+        | [ $threads[] | select(.isResolved == false) ] as $open
+        | [ $open[] | select(any(.comments.nodes[]?; (.author.login // "") != $me)) ] as $openOther
         | { number: .number,
             authorLogin: (.author.login // ""),
             isCrossRepository: .isCrossRepository,
@@ -1531,8 +1573,11 @@ tasks:
             latestReviewSha: ( [ .reviews[]? | select((.body // "") | length > 0) ]
                                | sort_by(.submittedAt) | last | (.commit.oid // "") // "" ),
             reviewCount: ($rv | length),
-            unresolvedThreadCount: ([ $threads[] | select(.isResolved == false) ] | length),
-            reviews: [ $rv[] | { author: .author.login, state: .state,
+            outsideReviewCount: ($outside | length),
+            unresolvedThreadCount: ($openOther | length),
+            selfOnlyThreadCount: (($open | length) - ($openOther | length)),
+            reviews: [ ($rv + $outside)[] | { author: .author.login,
+                                 association: (.authorAssociation // ""), state: .state,
                                  submittedAt: .submittedAt,
                                  commitSha: (.commit.oid // ""), body: .body } ],
             threads: [ $threads[] | { id: .id, path: (.path // ""), line: .line,
@@ -1554,8 +1599,13 @@ tasks:
       CLASS (first match wins — the precedence IS the contract):
         incomplete   — FAIL-CLOSED: a record whose decision fields are missing or malformed
                        (non-number number, empty authorLogin, non-boolean isCrossRepository,
-                       empty mergeStateStatus, headSha not a 40-hex SHA, empty files[], or a
-                       non-number count). A degraded gather must never read as admissible.
+                       headSha not a 40-hex SHA, empty files[], or a non-number count), OR
+                       whose mergeStateStatus is not one of the settled values
+                       CLEAN / BEHIND / BLOCKED / UNSTABLE / HAS_HOOKS / DRAFT / DIRTY.
+                       GitHub reports UNKNOWN while it is still computing mergeability, so an
+                       exact `== DIRTY` test alone lets a genuinely conflicted PR pass as
+                       admissible whenever the facts were gathered early. A degraded or
+                       not-yet-computed gather must never read as admissible.
         fork         — isCrossRepository: the head lives in someone else's fork. Pushing a
                        fix there is not this session's act to take.
         not-author   — authorLogin != ME: fixing another maintainer's PR means pushing to
@@ -1563,9 +1613,12 @@ tasks:
         dirty        — mergeStateStatus == DIRTY: a real conflict. A fix commit stacked on a
                        conflicted branch buries the conflict instead of resolving it, and the
                        resolution (rebase/merge) needs its own explicit human authorization.
-        no-findings  — no other-authored review body AND no unresolved thread: nothing to
-                       respond to. Distinct from admissible so a re-run after the work is
-                       done reports it instead of inventing findings.
+        no-findings  — no TRUSTED other-authored review body AND no unresolved thread
+                       carrying someone else's comment: nothing to respond to. Distinct from
+                       admissible so a re-run after the work is done reports it instead of
+                       inventing findings. A review by an account with no write relationship
+                       does NOT lift this class — it raises the `outside-reviews:N` warning
+                       instead, because on a public repo anyone can post one.
         admissible   — a fix may be built. NOT a licence to push: the push is a separate
                        operator-confirmed act (see .claude/skills/pr-fix/SKILL.md).
 
@@ -1578,6 +1631,12 @@ tasks:
         review-behind-head   — the newest review was submitted against an older commit, so
                                some findings may describe code the branch no longer has.
                                Re-verify each finding against the head before fixing it.
+        outside-reviews:N    — N review bodies come from an account with no write
+                               relationship to the repo. Not a reason to refuse and not a
+                               reason to work: a human reads those before anything is fixed.
+        self-only-threads:N  — N unresolved threads contain only my own comments (notes to
+                               self, not findings). Excluded from the finding count so they
+                               cannot lift `no-findings` on their own.
         draft                — the PR is a draft; a review of a draft is provisional.
 
       Deliberately NOT re-implemented here: the governance-path set. It has exactly one
@@ -1609,7 +1668,9 @@ tasks:
         | (if ((.number | type) != "number")
                 or ((.authorLogin // "") == "")
                 or ((.isCrossRepository | type) != "boolean")
-                or ((.mergeStateStatus // "") == "")
+                or (((.mergeStateStatus // "")
+                      | IN("CLEAN","BEHIND","BLOCKED","UNSTABLE","HAS_HOOKS","DRAFT","DIRTY")) | not)
+                or ((.headSha | type) != "string")
                 or (((.headSha // "") | test("^[0-9a-fA-F]{40}$")) | not)
                 or ((.files | type) != "array") or ((.files | length) == 0)
                 or ((.reviewCount | type) != "number")
@@ -1630,6 +1691,10 @@ tasks:
         | ([ (if .approvedAtHead > 0 then "approvals-at-risk:\(.approvedAtHead)" else empty end),
              (if ((.latestReviewSha // "") != "") and (.latestReviewSha != .headSha)
                 then "review-behind-head" else empty end),
+             (if ((.outsideReviewCount // 0) > 0)
+                then "outside-reviews:\(.outsideReviewCount)" else empty end),
+             (if ((.selfOnlyThreadCount // 0) > 0)
+                then "self-only-threads:\(.selfOnlyThreadCount)" else empty end),
              (if .isDraft == true then "draft" else empty end) ]) as $warn
         | [ (.number | tostring), $verdict[0], $verdict[1],
             (if ($warn | length) > 0 then ($warn | join(",")) else "-" end) ]
@@ -1669,7 +1734,13 @@ tasks:
         {"number":11,"authorLogin":"","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/k","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
         {"number":12,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"","headRefName":"f/l","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
         {"number":13,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/m","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":null,"unresolvedThreadCount":0},
-        {"number":14,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/n","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"isDraftX":true}
+        {"number":14,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/n","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"isDraftX":true},
+        {"number":15,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"f/o","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":16,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"WEIRD","headRefName":"f/p","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":17,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"BLOCKED","headRefName":"f/q","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":18,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/r","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"outsideReviewCount":2},
+        {"number":19,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/s","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"selfOnlyThreadCount":3},
+        {"number":20,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/t","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":1,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":1,"outsideReviewCount":1}
       ]
       JSON
 
@@ -1700,6 +1771,20 @@ tasks:
       assert 12 incomplete  "-"
       assert 13 incomplete  "-"
       assert 14 no-findings "-"
+      # GitHub reports UNKNOWN while it is still computing mergeability, so an exact
+      # `== DIRTY` test would let a genuinely conflicted PR through as admissible whenever
+      # the facts were gathered early. Any value outside the settled enum is incomplete.
+      assert 15 incomplete  "-"
+      assert 16 incomplete  "-"
+      # …but a settled non-DIRTY state stays admissible (the allow-list must not over-refuse).
+      assert 17 admissible  "-"
+      # An outside account posting a review must NOT lift no-findings — on a public repo that
+      # would let anyone start a fix run. It surfaces as a warning for a human instead.
+      assert 18 no-findings "outside-reviews:2"
+      # Unresolved threads containing only my own comments are notes, not findings.
+      assert 19 no-findings "self-only-threads:3"
+      # Warning composition stays stable and ordered.
+      assert 20 admissible  "approvals-at-risk:1,outside-reviews:1"
 
       # An empty operator login must fail closed rather than classify everything not-author.
       if ME="" task --silent pr:fix:admit >/dev/null 2>&1; then
@@ -4825,25 +4910,77 @@ tasks:
 
       Idempotent: an existing worktree on the expected branch is reused and its path
       printed. Fails closed when the directory exists on a different branch, when the
-      branch does not exist on origin, or when the local branch has diverged from origin
-      (that is a force-push or an unpushed commit — a human decision, not a checkout).
+      branch does not exist on origin, when the local branch has diverged from origin (that
+      is a force-push or an unpushed commit — a human decision, not a checkout), when the
+      fast-forward to origin fails, when the head lives in a FORK, or when the resolved name
+      is the repository's own default branch (the common fork shape is a contribution pushed
+      from the fork's default branch, whose name collides with ours).
+
+      EXPECT_SHA (env, optional but recommended): the `headSha` from pr:fix:facts. The
+      target refuses when the checkout — fresh or reused — is not that commit, which is what
+      binds every later verification to the head the reviewer actually read.
+
+      A reused worktree is re-verified, never trusted: fetch, refuse a dirty tree, refuse a
+      HEAD that is not `origin/<branch>`, then apply EXPECT_SHA. The checkout itself runs
+      with `core.symlinks=false` and `GIT_LFS_SKIP_SMUDGE=1`, because a PR head can carry a
+      symlink at a path the fix will touch, or a `.gitattributes` smudge filter — the same
+      hardening the review skill applies for the same reason.
       Prints the absolute worktree path on the LAST line.
     cmd: |
       set -eu
-      pr="{{.PR | default .CLI_ARGS}}"
+      # shellQuote, and NO surrounding quotes: go-task renders the template into the
+      # script text before mvdan/sh parses it, so an unquoted caller value containing a
+      # quote character becomes SYNTAX, not data — the digit guard below is downstream of
+      # that and cannot un-execute it. Same discipline as lint:pr's SUBJECT handling.
+      pr={{.PR | default .CLI_ARGS | shellQuote}}
       pr="${pr#\#}"
       case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr -- <PR-number>" >&2; exit 1 ;; esac
       root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
       case "$root" in /*) ;; *) echo "worktree:pr: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
-      branch="$(gh pr view "$pr" --json headRefName -q .headRefName)"
+      head_json="$(gh pr view "$pr" --json headRefName,isCrossRepository)"
+      branch="$(printf '%s' "$head_json" | jq -r '.headRefName // ""')"
       [ -n "$branch" ] || { echo "worktree:pr: could not resolve the head branch of #$pr" >&2; exit 1; }
+
+      # A fork head is not this session's branch to check out — and the common fork shape is
+      # a contribution pushed from the fork's own default branch, whose NAME collides with
+      # ours: resolving it here would check out THIS repo's default branch and call it the PR
+      # head. The skill refuses `fork` earlier; this is the second layer, for a direct call.
+      if [ "$(printf '%s' "$head_json" | jq -r '.isCrossRepository')" != "false" ]; then
+        echo "worktree:pr: #$pr's head lives in a fork (or provenance is unreadable) — refusing" >&2
+        exit 1
+      fi
+      default_branch="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)"
+      if [ -n "$default_branch" ] && [ "$branch" = "$default_branch" ]; then
+        echo "worktree:pr: #$pr resolves to the default branch '${branch}' — refusing to check it out as a PR head" >&2
+        exit 1
+      fi
       wt="$root/.claude/worktrees/pr-${pr}"
 
       if [ -d "$wt" ]; then
         cur="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-        if [ "$cur" = "$branch" ]; then (cd "$wt" && pwd); exit 0; fi
-        echo "worktree:pr: $wt exists but is on '$cur', not '$branch'" >&2
-        exit 1
+        if [ "$cur" != "$branch" ]; then
+          echo "worktree:pr: $wt exists but is on '$cur', not '$branch'" >&2
+          exit 1
+        fi
+        # A reused worktree is NOT trusted to be the head. Re-fetch and re-check, or every
+        # finding would be reproduced (and every rejection cited) against whatever tree the
+        # previous run happened to leave — the wrong-revision failure is invisible in the
+        # artifact, because the evidence is genuine output of a genuine command.
+        git -C "$root" fetch origin --quiet \
+          || { echo "worktree:pr: git fetch failed — refusing to reuse $wt unverified" >&2; exit 1; }
+        if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+          echo "worktree:pr: reused $wt has uncommitted changes — commit or discard them first" >&2
+          exit 1
+        fi
+        if [ "$(git -C "$wt" rev-parse HEAD)" != "$(git -C "$root" rev-parse "refs/remotes/origin/${branch}")" ]; then
+          echo "worktree:pr: reused $wt is not at origin/${branch} — fast-forward or remove it (task worktree:pr:remove -- $pr)" >&2
+          exit 1
+        fi
+        if [ -n "${EXPECT_SHA:-}" ] && [ "$(git -C "$wt" rev-parse HEAD)" != "$EXPECT_SHA" ]; then
+          echo "worktree:pr: reused $wt is at $(git -C "$wt" rev-parse HEAD), expected anchor ${EXPECT_SHA} — re-gather the facts" >&2
+          exit 1
+        fi
+        (cd "$wt" && pwd); exit 0
       fi
 
       git -C "$root" fetch origin --quiet \
@@ -4858,10 +4995,28 @@ tasks:
           echo "worktree:pr: local ${branch} has commits origin/${branch} does not — reconcile by hand first" >&2
           exit 1
         fi
-        git -C "$root" worktree add "$wt" "$branch" >/dev/null
-        git -C "$wt" merge --ff-only "origin/${branch}" >/dev/null 2>&1 || true
+        # refs/heads/ prefix: the branch name comes from the API, and a bare value could
+        # lead with a dash and be read as an option rather than a commit-ish.
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" "refs/heads/${branch}" >/dev/null
+        # Fail closed. The local branch is only guaranteed to be an ANCESTOR of origin's, so
+        # without the fast-forward the worktree sits on an older head than the reviewer read
+        # — and every finding would then be "verified" against code the PR does not have.
+        git -C "$wt" merge --ff-only "origin/${branch}" >/dev/null \
+          || { echo "worktree:pr: fast-forward of ${branch} to origin/${branch} failed — refusing a stale checkout" >&2; exit 1; }
       else
-        git -C "$root" worktree add "$wt" -b "$branch" "origin/${branch}" >/dev/null
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" -b "$branch" "origin/${branch}" >/dev/null
+      fi
+
+      # ANCHOR BINDING (optional but recommended): the caller passes the headSha that
+      # pr:fix:facts reported, and this refuses when the checkout is not that commit. Without
+      # it the two `gh` reads are separate observations and a push between them leaves the
+      # verification bound to a commit that was never the reviewed head.
+      if [ -n "${EXPECT_SHA:-}" ]; then
+        got="$(git -C "$wt" rev-parse HEAD)"
+        if [ "$got" != "$EXPECT_SHA" ]; then
+          echo "worktree:pr: #$pr HEAD is ${got}, expected anchor ${EXPECT_SHA} — the branch moved; re-gather the facts" >&2
+          exit 1
+        fi
       fi
       (cd "$wt" && pwd)
 
@@ -4869,7 +5024,11 @@ tasks:
     desc: 'Remove a PR-fix worktree (the branch is kept): task worktree:pr:remove -- <N>'
     cmd: |
       set -eu
-      pr="{{.PR | default .CLI_ARGS}}"
+      # shellQuote, and NO surrounding quotes: go-task renders the template into the
+      # script text before mvdan/sh parses it, so an unquoted caller value containing a
+      # quote character becomes SYNTAX, not data — the digit guard below is downstream of
+      # that and cannot un-execute it. Same discipline as lint:pr's SUBJECT handling.
+      pr={{.PR | default .CLI_ARGS | shellQuote}}
       pr="${pr#\#}"
       case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr:remove -- <PR-number>" >&2; exit 1 ;; esac
       root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
