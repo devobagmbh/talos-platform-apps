@@ -1,4 +1,4 @@
-# democratic-csi — synology-iscsi driver for the Synology DS720+ NAS (ADR-0026).
+# democratic-csi — synology-iscsi driver for a Synology NAS (ADR-0026).
 # Helm chart democratic-csi/democratic-csi, rendered to static manifests for the
 # OCI catalog.
 #
