@@ -1461,6 +1461,447 @@ tasks:
       if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (29 in-scope / 2 dropped)"; fi
       exit "$fail"
 
+  pr:fix:facts:
+    desc: 'Gather the review-response fact sheet for ONE PR as JSON: task pr:fix:facts -- <N>'
+    summary: |
+      The single `gh` surface the pr-fix skill reads, so the skill never improvises API
+      calls and every run reads the same fields. Network-bound and strictly READ-ONLY —
+      it posts nothing, pushes nothing, resolves nothing.
+
+      Emits ONE JSON object on stdout:
+        number, authorLogin, isCrossRepository, isDraft, mergeStateStatus,
+        headRefName, headSha,               # the anchor a fix is built on
+        files[],                            # changed paths (refused at the 100 API cap)
+        approvedAtHead,                     # approvals whose commit == headSha (push dismisses them)
+        latestReviewSha,                    # commit the newest review was submitted against ("" if none)
+        reviewCount,                        # TRUSTED review bodies by someone else (see below)
+        outsideReviewCount,                 # review bodies by an account outside the trusted set
+        unresolvedThreadCount,              # unresolved threads carrying a TRUSTED other comment
+        outsideThreadCount,                 # unresolved threads whose only other comments are untrusted
+        mixedThreadCount,                   # trusted threads that ALSO carry an untrusted comment
+        selfOnlyThreadCount,                # unresolved threads only I wrote in (own notes, not findings)
+        reviews[]  {author, association, state, submittedAt, commitSha, body}
+        threads[]  {id, path, line, isResolved, isOutdated, comments[{author, body}]}
+
+      AUTHOR TRUST is a field, not an assumption, and it covers BOTH channels. This repo is
+      PUBLIC, so any GitHub account can submit a review body or open an inline thread on a PR
+      without any write relationship — either would otherwise be enough to flip a PR from
+      "nothing to respond to" into "build a fix". `reviewCount` and `unresolvedThreadCount`
+      therefore count only content whose `authorAssociation` is OWNER / MEMBER / COLLABORATOR;
+      the rest lands in `outsideReviewCount` / `outsideThreadCount`, which the classifier
+      surfaces as warnings and never treats as a reason to start work. `approvedAtHead` is
+      filtered the same way, since only a trusted account's approval can satisfy branch
+      protection in the first place. Nothing is discarded — outside content stays in
+      `reviews[]` / `threads[]` with its association, for a human to read.
+
+      Honest bound on the word "trusted": GitHub reports COLLABORATOR for any collaborator
+      (read-only included) and MEMBER for any org member, so this set means "has a declared
+      relationship with the repo", not "has write access". It is the strongest signal the
+      review payload carries; a write-permission check would need a second API call per
+      author, which is not made today.
+
+      Review THREADS come from GraphQL: the REST pulls/comments endpoint carries no
+      `isResolved`, so a REST-only gather cannot tell an already-settled thread from an
+      open one and the fix loop would re-litigate closed discussions.
+
+      `latestReviewSha` is what makes staleness visible: a review written against an
+      older head may describe code the branch no longer has. The classifier
+      (pr:fix:admit) turns that into a warning; this target only reports it.
+    cmd: |
+      set -eu
+      # shellQuote, and NO surrounding quotes: go-task renders the template into the
+      # script text before mvdan/sh parses it, so an unquoted caller value containing a
+      # quote character becomes SYNTAX, not data — the digit guard below is downstream of
+      # that and cannot un-execute it. shellQuote renders the value single-quoted, which
+      # makes it inert. NOT the same mechanism as lint:pr's SUBJECT (which keeps the value
+      # out of the template entirely, via an env var) — that stronger route is unavailable
+      # here because the PR number arrives as a positional CLI argument; the digit guard
+      # below is the second layer.
+      pr={{.PR | default .CLI_ARGS | shellQuote}}
+      pr="${pr#\#}"
+      case "$pr" in ''|*[!0-9]*) echo "usage: task pr:fix:facts -- <PR-number>" >&2; exit 1 ;; esac
+      repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+      owner="${repo%/*}"; name="${repo#*/}"
+
+      base="$(gh pr view "$pr" --json number,author,isCrossRepository,isDraft,mergeStateStatus,headRefName,headRefOid,files,reviews)"
+
+      # Unresolved-thread detection needs GraphQL (REST has no isResolved). A failure here
+      # must NOT silently degrade to "no threads" — that would read as "nothing to fix".
+      threads="$(gh api graphql -f owner="$owner" -f name="$name" -F pr="$pr" -f query='
+        query($owner:String!,$name:String!,$pr:Int!){
+          repository(owner:$owner,name:$name){
+            pullRequest(number:$pr){
+              reviewThreads(first:100){
+                pageInfo{ hasNextPage }
+                nodes{ id isResolved isOutdated path line
+                       comments(first:50){ pageInfo{ hasNextPage }
+                         nodes{ author{login} authorAssociation body } } }
+              }
+            }
+          }
+        }' --jq '.data.repository.pullRequest.reviewThreads')" || {
+        echo "pr:fix:facts: GraphQL reviewThreads query failed for #$pr — refusing to report an empty thread set" >&2
+        exit 1
+      }
+
+      # A truncated page is indistinguishable from a complete one in the payload, and an
+      # unharvested unresolved thread reads downstream as `no-findings` — the exact silent
+      # drop this target exists to prevent. Refuse instead of under-reporting.
+      if [ "$(printf '%s' "$threads" | jq -r '.pageInfo.hasNextPage')" != "false" ]; then
+        echo "pr:fix:facts: #$pr has more than 100 review threads — paginate before trusting the thread set" >&2
+        exit 1
+      fi
+      if [ "$(printf '%s' "$threads" | jq -r 'any(.nodes[]?; .comments.pageInfo.hasNextPage)')" != "false" ]; then
+        echo "pr:fix:facts: a review thread on #$pr carries more than 50 comments — paginate before trusting it" >&2
+        exit 1
+      fi
+      threads="$(printf '%s' "$threads" | jq -c '.nodes')"
+
+      # `gh pr view --json files` caps at 100 paths. A truncated list would understate the
+      # diff, and the skill picks its verification depth from it (a shared path selects the
+      # heavier `task ci`), so a cap hit is a refusal, not a warning.
+      if [ "$(printf '%s' "$base" | jq -r '[.files[]?] | length')" -ge 100 ] \
+         && [ "${ALLOW_TRUNCATED_FILES:-0}" != "1" ]; then
+        echo "pr:fix:facts: #$pr reports 100 file(s) — the API caps the list there, so it may be truncated" >&2
+        echo "              and the skill picks its verification depth from it. Re-run with" >&2
+        echo "              ALLOW_TRUNCATED_FILES=1 to proceed after checking the diff by hand." >&2
+        exit 1
+      fi
+
+      me="$(gh api user --jq .login)"
+      printf '%s' "$base" | jq --argjson threads "$threads" --arg me "$me" '
+        (.headRefOid // "") as $head
+        | ["OWNER","MEMBER","COLLABORATOR"] as $trusted
+        | [ .reviews[]? | select((.body // "") | length > 0)
+            | select((.author.login // "") != $me) ] as $other
+        | [ $other[] | select(.authorAssociation as $a | $trusted | index($a)) ] as $rv
+        | [ $other[] | select(.authorAssociation as $a | $trusted | index($a) | not) ] as $outside
+        | [ $threads[] | select(.isResolved == false) ] as $open
+        | [ $open[] | select(any(.comments.nodes[]?; (.author.login // "") != $me)) ] as $openOther
+        | [ $openOther[] | select(any(.comments.nodes[]?;
+              ((.author.login // "") != $me)
+              and ((.authorAssociation // "") as $a | $trusted | index($a)))) ] as $openTrusted
+        # A thread counts as trusted when ANY trusted non-self comment appears in it — which
+        # is right (a maintainer engaging is a signal) but means an outsider can open the
+        # thread and a one-word maintainer reply promotes it. Count those separately so the
+        # promotion is visible instead of laundered.
+        | [ $openTrusted[] | select(any(.comments.nodes[]?;
+              ((.author.login // "") != $me)
+              and (((.authorAssociation // "") as $a | $trusted | index($a)) | not))) ] as $openMixed
+        | { number: .number,
+            authorLogin: (.author.login // ""),
+            isCrossRepository: .isCrossRepository,
+            isDraft: .isDraft,
+            mergeStateStatus: (.mergeStateStatus // ""),
+            headRefName: (.headRefName // ""),
+            headSha: $head,
+            files: [ .files[]?.path ],
+            approvedAtHead: ([ .reviews[]? | select(.state == "APPROVED")
+                               | select(.authorAssociation as $a | $trusted | index($a))
+                               | select((.commit.oid // $head) == $head) ] | length),
+            latestReviewSha: ( [ .reviews[]? | select((.body // "") | length > 0) ]
+                               | sort_by(.submittedAt) | last | (.commit.oid // "") // "" ),
+            reviewCount: ($rv | length),
+            outsideReviewCount: ($outside | length),
+            unresolvedThreadCount: ($openTrusted | length),
+            outsideThreadCount: (($openOther | length) - ($openTrusted | length)),
+            mixedThreadCount: ($openMixed | length),
+            selfOnlyThreadCount: (($open | length) - ($openOther | length)),
+            reviews: [ ($rv + $outside)[] | { author: .author.login,
+                                 association: (.authorAssociation // ""), state: .state,
+                                 submittedAt: .submittedAt,
+                                 commitSha: (.commit.oid // ""), body: .body } ],
+            threads: [ $threads[] | { id: .id, path: (.path // ""), line: .line,
+                                      isResolved: .isResolved, isOutdated: .isOutdated,
+                                      hasOutsideComment: (any(.comments.nodes[]?;
+                                        ((.author.login // "") != $me)
+                                        and (((.authorAssociation // "") as $a | $trusted | index($a)) | not))),
+                                      comments: [ .comments.nodes[] | { author: .author.login,
+                                                    association: (.authorAssociation // ""),
+                                                    body: .body } ] } ] }
+      '
+
+  pr:fix:admit:
+    desc: 'PURE admissibility classifier for pr-fix: reads a JSON array of fact sheets, prints "<number>\t<class>\t<reason>\t<warnings>" TSV. Network-free.'
+    summary: |
+      The deterministic half of the review-response decision: MAY this session build a fix
+      commit on this PR's head branch at all? Kept out of skill prose for the same reason
+      pr:triage is — a regression here turns a fixture assertion red instead of quietly
+      pushing to the wrong branch. Bound red-green by `task test:pr-fix-admit` (in `task ci`).
+
+      INPUT (stdin, or a file path in PR_FIX_INPUT): a JSON array of pr:fix:facts objects.
+      Every count the classifier reads is type-guarded, including the warning-only ones —
+      a degraded gather that loses `outsideThreadCount` must not silently drop its warning.
+      ENV: ME (required — the operator login, for the authorship test).
+
+      CLASS (first match wins — the precedence IS the contract):
+        incomplete   — FAIL-CLOSED: a record whose decision fields are missing or malformed
+                       (non-number number, empty authorLogin, non-boolean isCrossRepository,
+                       headSha not a 40-hex SHA, empty files[], or a non-number count), OR
+                       whose mergeStateStatus is not one of the settled values
+                       CLEAN / BEHIND / BLOCKED / UNSTABLE / HAS_HOOKS / DRAFT / DIRTY.
+                       GitHub reports UNKNOWN while it is still computing mergeability, so an
+                       exact `== DIRTY` test alone lets a genuinely conflicted PR pass as
+                       admissible whenever the facts were gathered early. A degraded or
+                       not-yet-computed gather must never read as admissible.
+        fork         — isCrossRepository: the head lives in someone else's fork. Pushing a
+                       fix there is not this session's act to take.
+        not-author   — authorLogin != ME: fixing another maintainer's PR means pushing to
+                       their branch. That is a conversation, not an automated act.
+        dirty        — mergeStateStatus == DIRTY: a real conflict. A fix commit stacked on a
+                       conflicted branch buries the conflict instead of resolving it, and the
+                       resolution (rebase/merge) needs its own explicit human authorization.
+        no-findings  — no TRUSTED other-authored review body AND no unresolved thread
+                       carrying a TRUSTED other comment: nothing to respond to. Distinct from
+                       admissible so a re-run after the work is done reports it instead of
+                       inventing findings. A review by an account with no write relationship
+                       does NOT lift this class — it raises the `outside-reviews:N` warning
+                       instead, because on a public repo anyone can post one.
+        admissible   — a fix may be built. NOT a licence to push: the push is a separate
+                       operator-confirmed act (see .claude/skills/pr-fix/SKILL.md).
+
+      WARNINGS (4th column, comma-separated, `-` when none) — never change the class, they
+      are what the operator has to see before authorizing the push:
+        approvals-at-risk:N  — N approvals stand at the current head. Branch protection sets
+                               dismiss_stale_reviews, so pushing DISMISSES them and the PR
+                               needs a fresh CODEOWNERS review. Silent dismissal is the
+                               costly surprise this warning exists for.
+        review-behind-head   — the newest review was submitted against an older commit, so
+                               some findings may describe code the branch no longer has.
+                               Re-verify each finding against the head before fixing it.
+        outside-reviews:N    — N review bodies come from an account outside the trusted
+                               association set. Not a reason to refuse and not a reason to
+                               work: a human reads those before anything is fixed.
+        outside-threads:N    — the same for N unresolved inline threads. Excluded from the
+                               finding count for the same reason, and warned about so an
+                               outsider's comment is visible rather than invisible.
+        mixed-threads:N      — N threads counted as findings (a trusted account commented)
+                               that ALSO carry an untrusted comment. A trusted one-word reply
+                               promotes an outsider's thread into the finding set; this makes
+                               the promotion visible. Read those threads before acting.
+        self-only-threads:N  — N unresolved threads contain only my own comments (notes to
+                               self, not findings). Excluded from the finding count so they
+                               cannot lift `no-findings` on their own.
+        draft                — the PR is a draft; a review of a draft is provisional.
+
+      Deliberately NOT re-implemented here: the governance-path set. It has exactly one
+      source (pr:triage's `governance` class) and a second copy would drift. Governance
+      paths do not block a fix by the PR's own author anyway — what they block is
+      unattended APPROVAL, which is pr:triage's decision, not this one.
+    cmd: |
+      set -eu
+      : "${ME:?pr:fix:admit: ME (operator login) is required}"
+      # PR_FIX_INPUT is an ENVIRONMENT variable, not a task var: go-task exposes
+      # `task pr:fix:admit PR_FIX_INPUT=x` only to templating, never to the command's
+      # environment (verified on go-task 3.48), so the task-var form would silently fall
+      # through to stdin. Callers `export PR_FIX_INPUT=...` or pipe.
+      input="${PR_FIX_INPUT:-/dev/stdin}"
+      if [ "$input" = /dev/stdin ] && [ -t 0 ]; then
+        echo "pr:fix:admit: no input — pipe a fact-sheet array or export PR_FIX_INPUT=<file>" >&2
+        exit 2
+      fi
+      payload="$(cat "$input")" || { echo "pr:fix:admit: cannot read '$input'" >&2; exit 2; }
+      # Fail closed on a degraded gather: an empty or non-array payload must NOT print
+      # nothing and exit 0 — that reads as "no PR needs a fix" to every caller.
+      if ! printf '%s' "$payload" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+        echo "pr:fix:admit: input is not a non-empty JSON array — refusing" >&2
+        exit 2
+      fi
+      printf '%s' "$payload" | jq -r --arg me "$ME" '
+        ($me | ascii_downcase) as $ME
+        | .[]
+        | (if ((.number | type) != "number")
+                or ((.authorLogin // "") == "")
+                or ((.isCrossRepository | type) != "boolean")
+                or (((.mergeStateStatus // "")
+                      | IN("CLEAN","BEHIND","BLOCKED","UNSTABLE","HAS_HOOKS","DRAFT","DIRTY")) | not)
+                or ((.headSha | type) != "string")
+                or (((.headSha // "") | test("^[0-9a-fA-F]{40}$")) | not)
+                or ((.files | type) != "array") or ((.files | length) == 0)
+                or ((.reviewCount | type) != "number")
+                or ((.unresolvedThreadCount | type) != "number")
+                or ((.approvedAtHead | type) != "number")
+                # has()-based, NOT `// 0`: jq treats `false` as absent, so `(false // 0)`
+                # is a number and a boolean-typed count would pass the guard and then silently
+                # evaluate `false > 0` as false — deleting its warning.
+                or (has("outsideReviewCount") and ((.outsideReviewCount | type) != "number"))
+                or (has("outsideThreadCount") and ((.outsideThreadCount | type) != "number"))
+                or (has("mixedThreadCount") and ((.mixedThreadCount | type) != "number"))
+                or (has("selfOnlyThreadCount") and ((.selfOnlyThreadCount | type) != "number"))
+                or (has("isDraft") and ((.isDraft | type) != "boolean"))
+                or (has("latestReviewSha") and ((.latestReviewSha | type) != "string"))
+                then ["incomplete", "malformed or partial fact sheet — refusing"]
+           elif ((.mergeStateStatus // "") == "UNKNOWN")
+                then ["incomplete", "GitHub has not finished computing mergeability — re-gather in a moment"]
+           elif (.isCrossRepository == true)
+                then ["fork", "head branch lives in a fork"]
+           elif (((.authorLogin // "") | ascii_downcase) != $ME)
+                then ["not-author", "authored by \(.authorLogin), not \($me)"]
+           elif (.mergeStateStatus == "DIRTY")
+                then ["dirty", "conflicts with the base branch"]
+           elif (.reviewCount == 0 and .unresolvedThreadCount == 0)
+                then ["no-findings", "no other-authored review body and no unresolved thread"]
+           else ["admissible",
+                 "\(.reviewCount) review(s), \(.unresolvedThreadCount) unresolved thread(s)"]
+           end) as $verdict
+        # Each warning is computed ONLY from a well-typed value. A malformed field lands the
+        # record in `incomplete` above; emitting a warning derived from it would present the
+        # untrustworthy value as a fact (jq would happily evaluate "2" > 0 as true).
+        | (def num($f): ($f | type) == "number";
+           [ (if num(.approvedAtHead) and (.approvedAtHead > 0)
+                then "approvals-at-risk:\(.approvedAtHead)" else empty end),
+             (if ((.latestReviewSha // "") | type) == "string"
+                 and ((.latestReviewSha // "") != "") and (.latestReviewSha != .headSha)
+                then "review-behind-head" else empty end),
+             (if num(.outsideReviewCount) and (.outsideReviewCount > 0)
+                then "outside-reviews:\(.outsideReviewCount)" else empty end),
+             (if num(.outsideThreadCount) and (.outsideThreadCount > 0)
+                then "outside-threads:\(.outsideThreadCount)" else empty end),
+             (if num(.mixedThreadCount) and (.mixedThreadCount > 0)
+                then "mixed-threads:\(.mixedThreadCount)" else empty end),
+             (if num(.selfOnlyThreadCount) and (.selfOnlyThreadCount > 0)
+                then "self-only-threads:\(.selfOnlyThreadCount)" else empty end),
+             (if .isDraft == true then "draft" else empty end) ]) as $warn
+        # Warnings are emitted on EVERY class, `incomplete` included: the type guards above
+        # already force an untrustworthy count into `incomplete`, so a warning that survives
+        # is either well-typed or the reason for the classification — and `incomplete` is the
+        # class a human adjudicates, which is exactly when "five outside review bodies" is
+        # worth seeing.
+        | [ (.number | tostring), $verdict[0], $verdict[1],
+            (if ($warn | length) > 0 then ($warn | join(",")) else "-" end) ]
+        | @tsv
+      '
+
+  test:pr-fix-admit:
+    desc: 'Hermetic red-green test for pr:fix:admit (the pr-fix admissibility gate; in task ci)'
+    summary: |
+      Binding acceptance test for the classifier that decides whether a session may build a
+      fix commit on a PR head branch. Network-free: feeds a fixture fact-sheet array to
+      `pr:fix:admit` and asserts every class AND every warning. Red-green — the class
+      precedence, the fail-closed field guards (bad SHA, non-string SHA, empty
+      files, non-number counts — warning-only counts included, a not-yet-computed or
+      out-of-enum mergeStateStatus), the fork/not-author/dirty refusals, the no-findings case
+      for BOTH unauthenticated channels (outside review body, outside inline thread), the
+      over-refusal guard (BEHIND and BLOCKED stay admissible), and every warning each have a
+      fixture; reverting any single rule in pr:fix:admit turns an assertion red. The warnings
+      are asserted, not just the classes: a dropped approvals-at-risk warning is exactly the
+      regression that costs a standing CODEOWNERS approval silently.
+    cmd: |
+      set -eu
+      work="$(mktemp -d)" || { echo "test:pr-fix-admit: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$work"' EXIT
+      good="1111111111111111111111111111111111111111"
+      old="2222222222222222222222222222222222222222"
+      fixture="$work/facts.json"
+      sed -e "s/__GOOD__/$good/g" -e "s/__OLD__/$old/g" > "$fixture" <<'JSON'
+      [
+        {"number":1,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/a","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":2,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/b","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0},
+        {"number":3,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/c","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":2},
+        {"number":4,"authorLogin":"robertschneiderdevoba","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/d","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":5,"authorLogin":"outsider","isCrossRepository":true,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/e","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":6,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"DIRTY","headRefName":"f/f","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":7,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/g","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":2,"latestReviewSha":"__OLD__","reviewCount":1,"unresolvedThreadCount":1},
+        {"number":8,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":true,"mergeStateStatus":"CLEAN","headRefName":"f/h","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":9,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/i","headSha":"not-a-sha","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":10,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/j","headSha":"__GOOD__","files":[],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":11,"authorLogin":"","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/k","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":12,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"","headRefName":"f/l","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":13,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/m","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":null,"unresolvedThreadCount":0},
+        {"number":14,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/n","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"isDraftX":true},
+        {"number":15,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"UNKNOWN","headRefName":"f/o","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":16,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"WEIRD","headRefName":"f/p","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":17,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"BLOCKED","headRefName":"f/q","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":18,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/r","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"outsideReviewCount":2},
+        {"number":19,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/s","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"selfOnlyThreadCount":3},
+        {"number":20,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/t","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":1,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":1,"outsideReviewCount":1},
+        {"number":21,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"BEHIND","headRefName":"f/u","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":22,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/v","headSha":12345,"files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0},
+        {"number":23,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/w","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":0,"unresolvedThreadCount":0,"outsideThreadCount":2},
+        {"number":24,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/x","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0,"outsideReviewCount":"2"},
+        {"number":25,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/y","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":0,"outsideReviewCount":false},
+        {"number":26,"authorLogin":"Nosmoht","isCrossRepository":false,"isDraft":false,"mergeStateStatus":"CLEAN","headRefName":"f/z","headSha":"__GOOD__","files":["a.md"],"approvedAtHead":0,"latestReviewSha":"__GOOD__","reviewCount":1,"unresolvedThreadCount":2,"mixedThreadCount":1}
+      ]
+      JSON
+
+      # ENV, not task vars — see the note in pr:fix:admit.
+      export ME="Nosmoht"
+      export PR_FIX_INPUT="$fixture"
+      got="$(task --silent pr:fix:admit)"
+      assert() { # $1 number, $2 expected class, $3 expected warnings
+        line="$(printf '%s\n' "$got" | awk -F'\t' -v n="$1" '$1 == n {print $2"|"$4}')"
+        if [ "$line" = "$2|$3" ]; then
+          echo "✓ #$1 → $2 [$3]"
+        else
+          echo "✗ test:pr-fix-admit: #$1 — expected '$2|$3', got '${line:-<no line>}'" >&2
+          exit 1
+        fi
+      }
+      assert 1  admissible  "-"
+      assert 2  no-findings "-"
+      assert 3  admissible  "-"
+      assert 4  not-author  "-"
+      assert 5  fork        "-"
+      assert 6  dirty       "-"
+      assert 7  admissible  "approvals-at-risk:2,review-behind-head"
+      assert 8  admissible  "draft"
+      assert 9  incomplete  "-"
+      assert 10 incomplete  "-"
+      assert 11 incomplete  "-"
+      assert 12 incomplete  "-"
+      assert 13 incomplete  "-"
+      assert 14 no-findings "-"
+      # GitHub reports UNKNOWN while it is still computing mergeability, so an exact
+      # `== DIRTY` test would let a genuinely conflicted PR through as admissible whenever
+      # the facts were gathered early. Any value outside the settled enum is incomplete.
+      assert 15 incomplete  "-"
+      assert 16 incomplete  "-"
+      # …but a settled non-DIRTY state stays admissible (the allow-list must not over-refuse).
+      assert 17 admissible  "-"
+      # An outside account posting a review must NOT lift no-findings — on a public repo that
+      # would let anyone start a fix run. It surfaces as a warning for a human instead.
+      assert 18 no-findings "outside-reviews:2"
+      # Unresolved threads containing only my own comments are notes, not findings.
+      assert 19 no-findings "self-only-threads:3"
+      # Warning composition stays stable and ordered.
+      assert 20 admissible  "approvals-at-risk:1,outside-reviews:1"
+      # BEHIND is the NORMAL state under the merge queue — the allow-list must not refuse it.
+      assert 21 admissible  "-"
+      # A non-string headSha is a jq type error unless guarded; it must degrade to one
+      # incomplete record, not abort the whole array. Its warnings still show: they are
+      # well-typed, and `incomplete` is the class a human reads.
+      assert 22 incomplete  "review-behind-head"
+      # An outsider's inline THREAD is the other unauthenticated channel: it must not lift
+      # no-findings either, and it must be visible.
+      assert 23 no-findings "outside-threads:2"
+      # A warning-only count of the wrong TYPE is a degraded gather, not a zero.
+      assert 24 incomplete  "-"
+      # …including `false`, which jq's `//` treats as absent — the value that would produce
+      # the quietest wrong answer (the warning silently disappears).
+      assert 25 incomplete  "-"
+      # A trusted reply in an outsider-opened thread is a promotion, and must be visible.
+      assert 26 admissible  "mixed-threads:1"
+
+      # An empty operator login must fail closed rather than classify everything not-author.
+      if ME="" task --silent pr:fix:admit >/dev/null 2>&1; then
+        echo "✗ test:pr-fix-admit: an empty ME was accepted" >&2; exit 1
+      fi
+      echo "✓ empty ME rejected"
+
+      # A degraded gather must fail closed. Printing nothing and exiting 0 would read as
+      # "no PR needs a fix" — the silent-stuck class this whole target exists to prevent.
+      printf '[]\n' > "$work/empty.json"
+      if PR_FIX_INPUT="$work/empty.json" task --silent pr:fix:admit >/dev/null 2>&1; then
+        echo "✗ test:pr-fix-admit: an empty array was accepted" >&2; exit 1
+      fi
+      echo "✓ empty input array rejected"
+      printf '{"number":1}\n' > "$work/notarray.json"
+      if PR_FIX_INPUT="$work/notarray.json" task --silent pr:fix:admit >/dev/null 2>&1; then
+        echo "✗ test:pr-fix-admit: a non-array payload was accepted" >&2; exit 1
+      fi
+      echo "✓ non-array input rejected"
+      echo "test:pr-fix-admit OK"
+
   lint:commit-scope:
     desc: 'Single-component check: staged changes must touch at most ONE component'
     summary: |
@@ -4219,6 +4660,11 @@ tasks:
       # action-pin allowlist is caught here, not only when the loop wrongly auto-approves
       # a PR it should have withheld. Fast, no network (fixture records JSON).
       - task: test:pr-triage
+      # Hermetic red-green guard for the pr-fix admissibility gate: the classifier that
+      # decides whether a session may build a fix commit on a PR head branch at all.
+      # Same placement rationale as test:pr-triage — the decision lives in a tested
+      # target, so a regression is a red assertion instead of a push to the wrong branch.
+      - task: test:pr-fix-admit
       # Hermetic red-green guard for the image-CVE extractor (G3b AC6-extraction,
       # fast, no network). Wired here so a regression in the scan:extract-images
       # regex/tag-filter — which would let a bare name fail-close a publish, or let
@@ -4543,6 +4989,230 @@ tasks:
       # inside the repo, including a linked worktree — so no main-root anchor is needed here.
       # `\.` escapes the regex dot so the filter matches the literal `.claude/worktrees/` path.
       git worktree list | grep '\.claude/worktrees/' || echo "(no active component worktrees)"
+
+  worktree:pr:
+    desc: 'Create an isolated worktree on an EXISTING PR head branch: task worktree:pr -- <N>'
+    summary: |
+      The isolation half of the pr-fix skill: a git worktree under .claude/worktrees/pr-<N>
+      checked out on the PR's own head branch, so a review-response fix never touches the
+      caller's working tree and two sessions cannot fix two PRs in one checkout.
+
+      Different from worktree:create in one decisive way: the branch ALREADY exists and is
+      owned by the PR, so this target must never create one. It checks the branch out at
+      `origin/<branch>` (fetched first), which is the head the review was written against —
+      a fix built on a stale local copy would silently drop commits the remote already has.
+      No lock is needed: git itself refuses to check one branch out in two worktrees, and
+      that refusal IS the cross-session claim.
+
+      Idempotent: an existing worktree on the expected branch is reused and its path
+      printed. Fails closed when the directory exists on a different branch, when the
+      branch does not exist on origin, when the local branch has diverged from origin (that
+      is a force-push or an unpushed commit — a human decision, not a checkout), when the
+      fast-forward to origin fails, when the head lives in a FORK, or when the resolved name
+      is the repository's own default branch (the common fork shape is a contribution pushed
+      from the fork's default branch, whose name collides with ours).
+
+      ANCHOR (required by default): the target reads `.work/pr-fix/pr-<N>/anchor.sha` itself
+      and refuses when the checkout — fresh or reused — is not that commit, which is what
+      binds every later verification to the head the reviewer actually read. A MISSING or
+      empty anchor is the same verdict as a mismatched one. `EXPECT_SHA` overrides the file
+      for a caller that has the SHA but no state directory; `ANCHOR_OPTIONAL=1` is the
+      explicit opt-out for a standalone checkout with no pr-fix run behind it. The anchor is
+      deliberately NOT passed as a shell-prefix assignment by the caller: the natural form
+      `EXPECT_SHA="$(cat …)" wt="$(task …)"` is an assignment list with no command word, so
+      it never reaches the child process and the check would silently not run.
+
+      A reused worktree is re-verified, never trusted: fetch, refuse a dirty tree, refuse a
+      HEAD that is not `origin/<branch>`, then apply EXPECT_SHA. The checkout itself runs
+      with `core.symlinks=false` and `GIT_LFS_SKIP_SMUDGE=1`, because a PR head can carry a
+      symlink at a path the fix will touch, or a `.gitattributes` smudge filter — the same
+      hardening the review skill applies for the same reason.
+      Prints the absolute worktree path on the LAST line.
+    cmd: |
+      set -eu
+      # shellQuote, and NO surrounding quotes: go-task renders the template into the
+      # script text before mvdan/sh parses it, so an unquoted caller value containing a
+      # quote character becomes SYNTAX, not data — the digit guard below is downstream of
+      # that and cannot un-execute it. shellQuote renders the value single-quoted, which
+      # makes it inert. NOT the same mechanism as lint:pr's SUBJECT (which keeps the value
+      # out of the template entirely, via an env var) — that stronger route is unavailable
+      # here because the PR number arrives as a positional CLI argument; the digit guard
+      # below is the second layer.
+      pr={{.PR | default .CLI_ARGS | shellQuote}}
+      pr="${pr#\#}"
+      case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr -- <PR-number>" >&2; exit 1 ;; esac
+      root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
+      case "$root" in /*) ;; *) echo "worktree:pr: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
+      head_json="$(gh pr view "$pr" --json headRefName,isCrossRepository)"
+      branch="$(printf '%s' "$head_json" | jq -r '.headRefName // ""')"
+      [ -n "$branch" ] || { echo "worktree:pr: could not resolve the head branch of #$pr" >&2; exit 1; }
+
+      # A fork head is not this session's branch to check out — and the common fork shape is
+      # a contribution pushed from the fork's own default branch, whose NAME collides with
+      # ours: resolving it here would check out THIS repo's default branch and call it the PR
+      # head. The skill refuses `fork` earlier; this is the second layer, for a direct call.
+      if [ "$(printf '%s' "$head_json" | jq -r '.isCrossRepository')" != "false" ]; then
+        echo "worktree:pr: #$pr's head lives in a fork (or provenance is unreadable) — refusing" >&2
+        exit 1
+      fi
+      default_branch="$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)"
+      if [ -n "$default_branch" ] && [ "$branch" = "$default_branch" ]; then
+        echo "worktree:pr: #$pr resolves to the default branch '${branch}' — refusing to check it out as a PR head" >&2
+        exit 1
+      fi
+      # A refname cannot begin with a dash (git check-ref-format), so this is belt-and-braces
+      # for an API value that reached us malformed — and it is what lets the checkout below
+      # pass the BARE branch name, which is the only form that actually attaches the branch.
+      case "$branch" in
+        -*|*' '*) echo "worktree:pr: refusing a malformed head branch name '${branch}'" >&2; exit 1 ;;
+      esac
+      wt="$root/.claude/worktrees/pr-${pr}"
+
+      # The anchor is read HERE, not handed in by the caller. The documented caller form
+      # `EXPECT_SHA="$(cat …)" wt="$(task … )"` is an assignment LIST with no command word,
+      # so POSIX applies it to the calling shell and never exports it — the check would have
+      # silently not run, which is worse than not having it. Reading the file inside the
+      # target removes that failure mode; EXPECT_SHA still overrides for a caller that has
+      # the SHA but no state file, and ANCHOR_OPTIONAL=1 is the explicit opt-out for a
+      # standalone invocation with no pr-fix run behind it.
+      # resolve_anchor: prints the expected SHA, or nothing when the operator opted out.
+      # Deliberately NOT `[ -f "$af" ] && want=...`: under mvdan/sh with set -e a false
+      # AND-list aborts the whole task with NO output (measured), which is the worst possible
+      # failure mode for a guard.
+      resolve_anchor() {
+        _want="${EXPECT_SHA:-}"
+        if [ -z "$_want" ]; then
+          _af="$root/.work/pr-fix/pr-${pr}/anchor.sha"
+          if [ -f "$_af" ]; then
+            _want="$(tr -d '[:space:]' < "$_af")"
+          fi
+        fi
+        if [ -z "$_want" ]; then
+          if [ "${ANCHOR_OPTIONAL:-0}" = "1" ]; then
+            echo "worktree:pr: no anchor recorded — proceeding because ANCHOR_OPTIONAL=1" >&2
+            printf ''
+            return 0
+          fi
+          echo "worktree:pr: no anchor for #$pr (.work/pr-fix/pr-${pr}/anchor.sha missing or empty, EXPECT_SHA unset)" >&2
+          echo "             A missing anchor is the same verdict as a mismatched one: re-run the fact gather," >&2
+          echo "             or pass ANCHOR_OPTIONAL=1 for a standalone checkout." >&2
+          exit 1
+        fi
+        case "$_want" in
+          [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;;
+          *) echo "worktree:pr: anchor '${_want}' is not a 40-hex SHA — refusing" >&2; exit 1 ;;
+        esac
+        printf '%s' "$_want"
+      }
+      assert_anchor() { # $1 = worktree path, $2 = expected sha (may be empty = opted out)
+        [ -n "$2" ] || return 0
+        _got="$(git -C "$1" rev-parse HEAD)"
+        if [ "$_got" != "$2" ]; then
+          echo "worktree:pr: #$pr HEAD is ${_got}, expected anchor ${2} — the branch moved; re-gather the facts" >&2
+          return 1
+        fi
+      }
+      # Resolved BEFORE anything is created, so a missing/malformed anchor refuses without
+      # leaving a half-made worktree behind for the next run to trip over.
+      anchor="$(resolve_anchor)"
+
+      if [ -d "$wt" ]; then
+        cur="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        if [ "$cur" != "$branch" ]; then
+          echo "worktree:pr: $wt exists but is on '$cur', not '$branch'" >&2
+          exit 1
+        fi
+        # A reused worktree is NOT trusted to be the head. Re-fetch and re-check, or every
+        # finding would be reproduced (and every rejection cited) against whatever tree the
+        # previous run happened to leave — the wrong-revision failure is invisible in the
+        # artifact, because the evidence is genuine output of a genuine command.
+        git -C "$root" fetch origin --quiet \
+          || { echo "worktree:pr: git fetch failed — refusing to reuse $wt unverified" >&2; exit 1; }
+        if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+          echo "worktree:pr: reused $wt has uncommitted changes — commit or discard them first" >&2
+          exit 1
+        fi
+        if [ "$(git -C "$wt" rev-parse HEAD)" != "$(git -C "$root" rev-parse "refs/remotes/origin/${branch}")" ]; then
+          echo "worktree:pr: reused $wt is not at origin/${branch} — fast-forward or remove it (task worktree:pr:remove -- $pr)" >&2
+          exit 1
+        fi
+        assert_anchor "$wt" "$anchor" || exit 1
+        (cd "$wt" && pwd); exit 0
+      fi
+
+      git -C "$root" fetch origin --quiet \
+        || { echo "worktree:pr: git fetch failed — refusing to check out a possibly stale head" >&2; exit 1; }
+      git -C "$root" rev-parse --verify --quiet "refs/remotes/origin/${branch}" >/dev/null \
+        || { echo "worktree:pr: origin/${branch} does not exist — nothing to fix" >&2; exit 1; }
+      remote_sha="$(git -C "$root" rev-parse "refs/remotes/origin/${branch}")"
+      if [ -n "$anchor" ] && [ "$remote_sha" != "$anchor" ]; then
+        echo "worktree:pr: origin/${branch} is at ${remote_sha}, the recorded anchor is ${anchor}" >&2
+        echo "             — the branch moved since the fact gather; re-run it before fixing." >&2
+        exit 1
+      fi
+
+      # A local branch that is not an ancestor-or-equal of origin's carries commits the PR
+      # does not have (or a force-push happened). Reconciling is a human decision.
+      if git -C "$root" show-ref --verify --quiet "refs/heads/${branch}"; then
+        if ! git -C "$root" merge-base --is-ancestor "refs/heads/${branch}" "refs/remotes/origin/${branch}"; then
+          echo "worktree:pr: local ${branch} has commits origin/${branch} does not — reconcile by hand first" >&2
+          exit 1
+        fi
+        # BARE branch name, deliberately. `worktree add <path> refs/heads/<b>` DETACHES
+        # (git prefixes refs/heads/ itself, so the lookup becomes refs/heads/refs/heads/<b>
+        # and falls back to a commit-ish) — verified: it prints "detached HEAD". A detached
+        # worktree breaks the reuse guard below, makes the fast-forward advance nothing, and
+        # makes the documented `push origin HEAD` fail. The leading-dash concern the prefix
+        # was meant to address is handled by the refusal above instead.
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" "$branch" >/dev/null
+        # Fail closed. The local branch is only guaranteed to be an ANCESTOR of origin's, so
+        # without the fast-forward the worktree sits on an older head than the reviewer read
+        # — and every finding would then be "verified" against code the PR does not have.
+        git -C "$wt" merge --ff-only "refs/remotes/origin/${branch}" >/dev/null \
+          || { echo "worktree:pr: fast-forward of ${branch} to origin/${branch} failed — refusing a stale checkout" >&2; exit 1; }
+      else
+        # refs/remotes/… , not origin/… : a LOCAL branch literally named `origin/<branch>`
+        # would win the DWIM lookup (refs/heads is searched first) while every comparison
+        # above uses the fully-qualified remote ref — the checkout would then be at content
+        # that is not the PR head. The `-b` argument stays the bare branch name, which is
+        # what attaches it.
+        GIT_LFS_SKIP_SMUDGE=1 git -C "$root" -c core.symlinks=false worktree add "$wt" -b "$branch" "refs/remotes/origin/${branch}" >/dev/null
+      fi
+
+      # On refusal remove the worktree we just made: leaving it behind would send the next
+      # run down the reuse path against a checkout the anchor already rejected.
+      if ! assert_anchor "$wt" "$anchor"; then
+        git -C "$root" worktree remove --force "$wt" >/dev/null 2>&1 || true
+        exit 1
+      fi
+      (cd "$wt" && pwd)
+
+  worktree:pr:remove:
+    desc: 'Remove a PR-fix worktree (the branch is kept): task worktree:pr:remove -- <N>'
+    cmd: |
+      set -eu
+      # shellQuote, and NO surrounding quotes: go-task renders the template into the
+      # script text before mvdan/sh parses it, so an unquoted caller value containing a
+      # quote character becomes SYNTAX, not data — the digit guard below is downstream of
+      # that and cannot un-execute it. shellQuote renders the value single-quoted, which
+      # makes it inert. NOT the same mechanism as lint:pr's SUBJECT (which keeps the value
+      # out of the template entirely, via an env var) — that stronger route is unavailable
+      # here because the PR number arrives as a positional CLI argument; the digit guard
+      # below is the second layer.
+      pr={{.PR | default .CLI_ARGS | shellQuote}}
+      pr="${pr#\#}"
+      case "$pr" in ''|*[!0-9]*) echo "usage: task worktree:pr:remove -- <PR-number>" >&2; exit 1 ;; esac
+      root="$(git worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | head -1)"
+      case "$root" in /*) ;; *) echo "worktree:pr:remove: cannot resolve main repo root (got '$root'); refusing" >&2; exit 1 ;; esac
+      wt="$root/.claude/worktrees/pr-${pr}"
+      [ -d "$wt" ] || { echo "worktree:pr:remove: $wt does not exist (nothing to do)"; exit 0; }
+      # Refuse while work is uncommitted: removing the worktree would destroy it.
+      if [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ]; then
+        echo "worktree:pr:remove: $wt has uncommitted changes — commit or discard them first" >&2
+        exit 1
+      fi
+      git -C "$root" worktree remove "$wt"
+      echo "removed $wt (branch kept)"
 
   # --- Housekeeping ---
 
