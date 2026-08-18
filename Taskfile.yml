@@ -199,6 +199,12 @@ tasks:
       pair and fails on a missing rendered/ for a gated component, so a scope that drops
       the sibling turns a green gate red. Dropping the sibling loop turns those two cases
       red here; widening the outside-file filter turns the shared-file cases red.
+
+      A final INTEGRATION probe runs the production `render -> validate:crd-split` sequence
+      over the real catalog. Its input is synthesised (a component-only commit in a
+      throwaway detached worktree), never mined from the repo history — the expected scope
+      is therefore known exactly and asserted, the test is independent of which commits
+      happen to be checked out, and the caller's rendered/ directories are never touched.
     cmd: |
       set -eu
       root="$(git rev-parse --show-toplevel)"
@@ -296,45 +302,93 @@ tasks:
       expect "workload whose sibling is gone → itself only" "$(scope_of "${prev}..HEAD")" "t/alpha"
 
       # INTEGRATION, not just oracle strings: run the production sequence
-      # `render -> validate:crd-split` against the real catalog with a scope that touches
-      # ONE component. String-level tests alone stayed green while every scoped PR failed
-      # the required `ci` gate, because validate:crd-split is catalog-wide and treats a
-      # missing rendered/ for a strict-B half as an error. This binds that interaction.
-      probe_range=""
-      for sha in $(git -C "$root" log --format=%h -60 2>/dev/null); do
-        f="$(git -C "$root" show --name-only --format="" "$sha" 2>/dev/null)"
-        o="$(printf '%s\n' "$f" | grep -vE '(^$|\.md$)' | grep -vE '^sub-layers/[^/]+/components/[^/]+/' || true)"
-        if [ -z "$(printf '%s' "$o" | tr -d '[:space:]')" ] \
-           && printf '%s\n' "$f" | grep -qE '^sub-layers/[^/]+/components/'; then
-          probe_range="${sha}~1..${sha}"; break
-        fi
+      # `render -> validate:crd-split` over the REAL catalog with a scope that touches ONE
+      # component. String-level tests alone stayed green while every scoped PR failed the
+      # required `ci` gate, because validate:crd-split is catalog-wide and treats a missing
+      # rendered/ for a strict-B half as an error. This binds that interaction.
+      #
+      # The probe input is SYNTHESISED, not mined out of the repo history. Scanning the
+      # last N commits for a component-only commit coupled a required gate to the shape of
+      # whatever history happened to be checked out — on a fresh clone, a shallow CI
+      # checkout or a long non-component streak the test hard-failed for a reason that has
+      # nothing to do with the code under test. Here the range is constructed, so the
+      # expected scope is known exactly and can be asserted instead of merely checked for
+      # narrowness.
+      #
+      # It runs in a THROWAWAY DETACHED WORKTREE, so the render never touches the caller's
+      # rendered/ directories (a test that mutates the tree it validates has to restore it
+      # afterwards, and a restore is one interruption away from destroying local state).
+      # The working-tree Taskfile.yml is copied in — uncommitted, so it stays out of the
+      # probe's own diff — which keeps the logic under test the CURRENT one rather than the
+      # last committed one.
+      probe="$tmp/probe"
+      trap 'git -C "$root" worktree remove --force "$tmp/probe" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+      git -C "$root" worktree add --detach -q "$probe" HEAD \
+        || { echo "✗ test:ci-scope: could not create the probe worktree" >&2; exit 1; }
+      cp "$root/Taskfile.yml" "$probe/Taskfile.yml"
+
+      # Prefer a strict-B pair, so the integration exercises the sibling pull-in too and
+      # validate:crd-split judges a real pair. Directory order, so the choice is stable.
+      probe_comp=""; probe_expect=""
+      for cdir in "$root"/sub-layers/*/components/*-crds/; do
+        [ -d "$cdir" ] || continue
+        crds="$(basename "$cdir")"
+        sl="$(basename "$(dirname "$(dirname "$cdir")")")"
+        [ -d "$root/sub-layers/$sl/components/${crds%-crds}" ] || continue
+        [ -f "$root/sub-layers/$sl/components/${crds%-crds}/compatibility.yaml" ] || continue
+        probe_comp="$sl/${crds%-crds}"
+        probe_expect="$sl/${crds%-crds} $sl/$crds"
+        break
       done
-      if [ -z "$probe_range" ]; then
-        echo "✗ test:ci-scope: no component-only commit found in the last 60 — cannot bind the render/crd-split integration" >&2
+      if [ -z "$probe_comp" ]; then
+        for cdir in "$root"/sub-layers/*/components/*/; do
+          [ -d "$cdir" ] || continue
+          [ -f "$cdir/compatibility.yaml" ] || continue
+          probe_comp="$(basename "$(dirname "$(dirname "$cdir")")")/$(basename "$cdir")"
+          probe_expect="$probe_comp"
+          break
+        done
+      fi
+      if [ -z "$probe_comp" ]; then
+        echo "✗ test:ci-scope: the catalog holds no component with a compatibility.yaml — nothing to probe" >&2
         exit 1
       fi
-      scoped_n="$(task --silent -d "$root" scope:components SCOPE_RANGE="$probe_range" | grep -c . || true)"
-      if [ "$scoped_n" = "0" ] || [ "$(task --silent -d "$root" scope:components SCOPE_RANGE="$probe_range")" = "ALL" ]; then
-        echo "✗ test:ci-scope: probe range '$probe_range' did not produce a narrow scope" >&2; exit 1
+
+      # --no-verify: the probe commit is scaffolding inside a throwaway worktree, and the
+      # repo's own lefthook pre-commit chain (lint, gitleaks, signing-config) would both
+      # slow the test down and fail it for reasons unrelated to the oracle under test.
+      pf="sub-layers/${probe_comp%/*}/components/${probe_comp#*/}/compatibility.yaml"
+      printf '# test:ci-scope synthetic probe change (throwaway worktree)\n' >> "$probe/$pf"
+      git -C "$probe" -c user.email=t@t -c user.name=t -c commit.gpgsign=false add "$pf" \
+        && git -C "$probe" -c user.email=t@t -c user.name=t -c commit.gpgsign=false \
+             commit -q --no-verify -m "probe: component-only change" \
+        || { echo "✗ test:ci-scope: could not commit the probe change" >&2; exit 1; }
+
+      # Same oracle, real catalog, constructed range — assert the EXACT scope.
+      expect "probe range → $probe_expect" \
+        "$(task --silent -d "$root" scope:components SCOPE_REPO="$probe" SCOPE_RANGE='HEAD~1..HEAD' 2>/dev/null | tr '\n' ' ')" \
+        "$probe_expect"
+
+      CI_SCOPE_RANGE='HEAD~1..HEAD' task -d "$probe" render >/dev/null 2>&1 \
+        || { echo "✗ test:ci-scope: scoped render failed for the probe component '$probe_comp'" >&2; exit 1; }
+
+      # The render must have narrowed too, not just the oracle: exactly the expected
+      # components carry a rendered manifest, and nothing else in the catalog does.
+      want_n=0
+      for _c in $probe_expect; do want_n=$((want_n + 1)); done
+      got_n="$(find "$probe/sub-layers" -path '*/components/*/rendered/manifest.yaml' 2>/dev/null | grep -c . || true)"
+      if [ "$got_n" != "$want_n" ]; then
+        echo "✗ test:ci-scope: scoped render produced $got_n rendered manifest(s), expected $want_n — the scope did not reach render" >&2
+        exit 1
       fi
-      saved="$(mktemp -d)"; trap 'rm -rf "$tmp" "$saved"' EXIT
-      # Preserve whatever the caller had rendered; a test must not destroy local state.
-      (cd "$root" && find sub-layers -path '*/components/*/rendered' -type d 2>/dev/null | while read -r d; do
-        mkdir -p "$saved/$d" && cp -R "$d/." "$saved/$d/" 2>/dev/null || true
-      done)
-      (cd "$root" && rm -rf sub-layers/*/components/*/rendered)
-      CI_SCOPE_RANGE="$probe_range" task -d "$root" render >/dev/null 2>&1 \
-        || { echo "✗ test:ci-scope: scoped render failed for '$probe_range'" >&2; exit 1; }
-      if task -d "$root" validate:crd-split >/dev/null 2>&1; then
+      echo "✓ scoped render touched exactly $want_n component(s)"
+
+      if task -d "$probe" validate:crd-split >/dev/null 2>&1; then
         echo "✓ scoped render + validate:crd-split (catalog-wide gate tolerates an out-of-scope pair)"
       else
         echo "✗ test:ci-scope: validate:crd-split FAILED after a scoped render — every scoped PR would fail required ci" >&2
         exit 1
       fi
-      (cd "$root" && rm -rf sub-layers/*/components/*/rendered)
-      (cd "$saved" && find . -path '*/rendered' -type d 2>/dev/null | while read -r d; do
-        mkdir -p "$root/${d#./}" && cp -R "$d/." "$root/${d#./}/" 2>/dev/null || true
-      done)
 
       echo "test:ci-scope OK"
 
