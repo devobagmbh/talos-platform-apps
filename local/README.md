@@ -108,16 +108,17 @@ Two things to know before you use it:
 
 ### Running on Podman (instead of Docker Desktop)
 
-The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on **Podman**, but the Talos docker provisioner runs the node as a privileged container with nested services, so it **requires a rootful Podman machine** — rootless cannot write `oom_score_adj` / `/proc/sys` kernel params and the node never finishes bootstrapping. Starting from a default (rootless) Podman machine on macOS, four deltas apply:
+The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on **Podman**, but the Talos docker provisioner runs the node as a privileged container with nested services, so it **requires a rootful Podman machine** — rootless cannot write `oom_score_adj` / `/proc/sys` kernel params and the node never finishes bootstrapping. Starting from a default (rootless) Podman machine on macOS, five deltas apply:
 
 - **Rootful machine** (the decisive prerequisite): `podman machine set --rootful`, then restart the machine. This is what makes the Talos node bootstrap at all.
 - **`DOCKER_HOST`** must point at the Podman socket, because the provisioner talks to it directly: `export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"`. The `/var/run/docker.sock` symlink may resolve to a foreign user's socket and fail with a permission error. **The devbox shell sets this for you** (see *Automatic devbox fallback* below) — the manual export is only needed outside the devbox shell.
 - **VM size ≥ 6–8 GiB**: `podman machine set --memory 8192`. The default 2 GiB OOMs once Cilium + ArgoCD + a few components are up (same reason as the VM-headroom note above).
+- **Disk cap**: `podman machine init --disk-size 40` — the default is **100 GiB** (`podman machine init --help`). On the macOS `applehv` backend the machine image is sparse (measured: 100 GiB apparent, 40 GiB actually on disk), so the cap is not consumed up front; what it bounds is growth. Measured after a few component E2E runs: ~28 GB of pulled catalog images + ~3 GB system, so 40 GiB is a deliberately tight cap with limited headroom — raise it if a broader E2E sweep runs out (`podman machine set --disk-size 60`). Raising is the only in-place direction: podman rejects a smaller value (`new disk size must be larger than …`), so lowering means re-creating the machine. To reclaim space from an existing machine: `podman system prune -a` frees the space **inside** the VM immediately, but the sparse host image only shrinks once the freed blocks are discarded — `podman machine ssh sudo fstrim -av` does that on demand (a guest-side periodic `fstrim` may get there on its own; if the guest block device reports no discard support, expect the reclaim not to happen at all — check with `podman machine ssh lsblk -do NAME,DISC-MAX`).
 - **Host ports**: the validated run mapped the NodePorts to high host ports (`8080:30080`, `8443:30443`) instead of `80`/`443`, so the Argo/registry endpoints carry the high port. (Binding the privileged `80`/`443` ports was not exercised in this run.)
 
 Docker Desktop, Colima, and Orbstack provision a rootful daemon by default and need none of these. Validated end-to-end on 2026-06-14 (issue #168).
 
-**Automatic devbox fallback.** The devbox `init_hook` removes the two CLI-level deltas: when the shell activates and finds `podman` but **no** working `docker` daemon, it (1) exports `DOCKER_HOST` from `podman machine inspect`, and (2) drops an `exec podman "$@"` shim into the gitignored `.direnv/bin/` and prepends it to `PATH`. This is what makes `task local:*` work even when `docker` is missing or aliased to a wrapper that drops arguments (the classic `Error: missing command 'podman COMMAND'`). It is a strict no-op for anyone with a real `docker` daemon (Docker Desktop / Colima / Orbstack). The shim lives under `.direnv/`, so nothing is committed. **Still manual** (devbox cannot provision the VM): `podman machine set --rootful --memory 8192` plus the machine restart, and the host-port mapping if `80`/`443` are unavailable.
+**Automatic devbox fallback.** The devbox `init_hook` removes the two CLI-level deltas: when the shell activates and finds `podman` but **no** working `docker` daemon, it (1) exports `DOCKER_HOST` from `podman machine inspect`, and (2) drops an `exec podman "$@"` shim into the gitignored `.direnv/bin/` and prepends it to `PATH`. This is what makes `task local:*` work even when `docker` is missing or aliased to a wrapper that drops arguments (the classic `Error: missing command 'podman COMMAND'`). It is a strict no-op for anyone with a real `docker` daemon (Docker Desktop / Colima / Orbstack). The shim lives under `.direnv/`, so nothing is committed. **Still manual** (devbox cannot provision the VM): `podman machine set --rootful --memory 8192` plus the machine restart, the `--disk-size` cap at init time, and the host-port mapping if `80`/`443` are unavailable.
 
 ## Quickstart
 
@@ -344,7 +345,7 @@ task local:down
 |---|---|---|
 | `local:stop` | `docker stop` of the registry, the control plane and **every worker** | kept — on start all workloads return |
 | `local:start` | `docker start` of the same set + wait for the K8s API | restored from the container FS |
-| `local:down` | `talosctl cluster destroy` + `docker rm` the registry | **everything gone** — the next `local:up` is fresh |
+| `local:down` | `talosctl cluster destroy --force` + prune the orphaned talosctl contexts (**may switch your current talosctl context** — see Troubleshooting) + `docker rm` the registry | **everything gone** — the next `local:up` is fresh |
 
 `local:stop`/`local:start` is the path for laptop suspend or multi-day pauses without a reinstall. **Do not use it to reset state** — if the cluster gets into a bad state, `local:down && local:up` is the reliable reset, since `talosctl cluster create` provisions a clean cluster.
 
@@ -353,7 +354,15 @@ The mkcert CA stays in the system trust after `local:down` (re-install is idempo
 ## Troubleshooting
 
 **`talosctl cluster create` fails or hangs.**
-Check Docker is running and ports 80/443 are free. Inspect the node via the talosconfig under `~/.talos/clusters/talos-platform-apps/`. A full reset is `task local:down && task local:up` (create is not idempotent — the task skips create when `talosctl cluster show` already lists the cluster).
+Check Docker is running and ports 80/443 are free. Inspect the node via the talosconfig under `~/.talos/clusters/talos-platform-apps/`. A full reset is `task local:down && task local:up` (create is not idempotent — the task skips create when the state directory already exists; `talosctl cluster show` is deliberately not the probe, it exits 0 with empty output even when nothing exists).
+
+**Orphaned `talos-platform-apps-<N>` talosctl contexts.**
+`talosctl cluster destroy` leaves the context that `cluster create` wrote behind, so every up/down cycle used to add one — and once the bare name is taken, the next create falls back to `talos-platform-apps-1`, `-2`, … while `local:cluster:up` still pins the bare name, so it reads a stale, dead context. `local:down` now prunes them, and `local:cluster:up` prunes before it creates. To clean up by hand at any time: `task local:context:prune`.
+
+A context is pruned only if its name is `talos-platform-apps` or `talos-platform-apps-<N>` (one or two digits) **and** its endpoint is loopback-only, so a real cluster keeps its context even when it is numerically named — `talos-platform-apps-1` on a routable address survives, as does `talos-platform-apps-prod`. Two things to know:
+
+- **It may switch your current talosctl context.** talosctl refuses to remove the context that is currently selected, and `cluster create` leaves its own selected — so the task switches to the first non-prunable context, which may be a **production** cluster, and says so on stderr. No `task local:*` target depends on the *current* talosctl context — they address the cluster by `--name` or pin `--context` explicitly — so what is affected is your own subsequent bare `talosctl` commands; re-select deliberately with `talosctl config context <name>`.
+- **One context can survive.** If the talosconfig holds no non-prunable context at all, there is nothing to switch to, and that single current context stays (warned about on stderr). Select any other context and re-run to clear it.
 
 **`talosctl cluster create` skips creation forever after a crashed run.**
 A failed create can leave a partial state directory under `~/.talos/clusters/<name>/` with no `state.yaml`. `talosctl cluster destroy` cannot clean it (it needs the state file), and create keeps skipping while the directory exists. Remove it manually — `rm -rf ~/.talos/clusters/talos-platform-apps` — then `task local:up`.
