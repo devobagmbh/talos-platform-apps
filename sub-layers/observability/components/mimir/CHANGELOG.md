@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.4.1...observability/mimir-v0.5.0) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **observability/mimir:** consumer-settable replication factor, hard placement, switchable caches ([#817](https://github.com/devobagmbh/talos-platform-apps/issues/817))
+
+### Features
+
+* **observability/mimir:** consumer-settable replication factor, hard placement, switchable caches ([#817](https://github.com/devobagmbh/talos-platform-apps/issues/817)) ([2bef2cc](https://github.com/devobagmbh/talos-platform-apps/commit/2bef2ccc6b8b863ef444d3f968a35fe6b981be22))
+
 ## [0.4.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/mimir-v0.4.0...observability/mimir-v0.4.1) (2026-07-13)
 
 
