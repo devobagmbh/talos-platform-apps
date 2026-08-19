@@ -85,6 +85,29 @@ values:
       blocks_storage:
         s3:
           bucket_name: ${S3_BUCKET_BLOCKS}
+        # Bucket-store caches — see the query-path cache note further down (they live
+        # here because blocks_storage is one YAML key).
+        bucket_store:
+          chunks_cache:
+            backend: ${CHUNKS_CACHE_BACKEND:}
+            memcached:
+              addresses: ${CHUNKS_CACHE_ADDRESSES:}
+              max_item_size: 1048576
+              timeout: 750ms
+              max_idle_connections: 150
+          index_cache:
+            backend: ${INDEX_CACHE_BACKEND:inmemory}
+            memcached:
+              addresses: ${INDEX_CACHE_ADDRESSES:}
+              max_item_size: 5242880
+              timeout: 750ms
+              max_idle_connections: 150
+          metadata_cache:
+            backend: ${METADATA_CACHE_BACKEND:}
+            memcached:
+              addresses: ${METADATA_CACHE_ADDRESSES:}
+              max_item_size: 1048576
+              max_idle_connections: 150
       ruler_storage:
         s3:
           bucket_name: ${S3_BUCKET_RULER}
@@ -97,17 +120,38 @@ values:
       # Unset → empty → the ruler evaluates rules but does not notify (safe default).
       ruler:
         alertmanager_url: ${RULER_ALERTMANAGER_URL}
-      # Single-replica footprint (replicas 1, zone-awareness off below): the rings
-      # MUST run replication factor 1, else Mimir's default RF of 3 makes the
-      # read/write quorum (2) unreachable with one instance → every query and write
-      # fails with "too many unhealthy instances in the ring". Block durability comes
-      # from the consumer's replicated block storage, not from Mimir RF.
+      # Ring replication factor — CONSUMER-SETTABLE, default 1.
+      #
+      # The shipped default stays 1 and MUST stay 1 for the single-replica footprint
+      # below: Mimir's own default of 3 makes the read/write quorum (2) unreachable with
+      # one instance → every query and write fails with "too many unhealthy instances in
+      # the ring". At one replica, block durability comes from the consumer's replicated
+      # object store, not from Mimir RF.
+      #
+      # A multi-node consumer raises it without a catalog PR by setting the env key in
+      # their mimir-runtime-config ConfigMap (customization.yaml → optional.env_keys).
+      # Every ring client — distributor, ingester, querier, ruler, store-gateway — reads
+      # this one declared source, so no role can be left permanently on a different value.
+      #
+      # Invariants, in this order:
+      #   RF <= replicas          a factor above the replica count is unsatisfiable
+      #   raise replicas FIRST, then RF — the reverse reproduces the quorum-impossible
+      #                           state of #379/#380
+      #   RF is 1 or 3            an even RF raises the quorum without adding tolerance
+      #                           (RF 2 → quorum 2 → tolerates zero failures)
+      #
+      # One declared SOURCE is not one atomically applied VALUE. -config.expand-env=true
+      # makes each process resolve the placeholder at its own container start, so a
+      # changed ConfigMap takes effect per pod, as that pod restarts — and Kubernetes
+      # restarts nothing on its own. Until the consumer triggers a rollout, pods hold
+      # different values for the same key and nothing surfaces the disagreement. The
+      # component README documents the trigger and the residual risk.
       ingester:
         ring:
-          replication_factor: 1
+          replication_factor: ${INGESTER_REPLICATION_FACTOR:1}
       store_gateway:
         sharding_ring:
-          replication_factor: 1
+          replication_factor: ${STORE_GATEWAY_REPLICATION_FACTOR:1}
       # Per-tenant ingestion RATE limits. Mimir's defaults (ingestion_rate 10000
       # samples/s, ingestion_burst_size 200000) are demo-sized and far too low for a real
       # multi-node cluster: the metrics volume of kube-state-metrics + node-exporter +
@@ -130,6 +174,52 @@ values:
         ingestion_burst_size: 1500000
         max_global_series_per_user: 600000
 
+      # Query-path caches — CONSUMER-SWITCHABLE, off by default except the index cache.
+      #
+      # The catalog ships NO memcached (the chart's four *-cache subcharts stay disabled
+      # below); the consumer brings one and names its address. Every key here carries
+      # Mimir's OWN default, so an unset key changes nothing:
+      #   chunks / metadata / results  ->  ""        (no cache)
+      #   index                        ->  inmemory  (Mimir's default; NOT empty)
+      # The index cache is the outlier and the reason these are per-cache rather than one
+      # shared default. Because the fallback also fires on an EMPTY value, setting
+      # INDEX_CACHE_BACKEND="" yields `inmemory`, not "off" — disabling the index cache is
+      # deliberately not reachable through this knob, and `inmemory` is a working default.
+      #
+      # The memcached tuning constants are the chart's own per-cache values (they differ:
+      # max_item_size 1 MiB for chunks and metadata, 5 MiB for index and results, and only
+      # some carry a timeout), written out explicitly because the subcharts that would
+      # otherwise inject them are disabled. The consumer's memcached MUST accept at least
+      # the max_item_size configured here, or items above it are silently dropped.
+      #
+      # Trust note: Mimir CONSUMES RESPONSES from the address named here, and memcached is
+      # unauthenticated plaintext — a wrong or redirected address can leak queried data and
+      # serve fabricated results that alert rules then evaluate. Keep the endpoint
+      # in-cluster and constrain egress with a CiliumNetworkPolicy in the consumer cluster;
+      # the catalog cannot author one, because the address is supplied at runtime.
+      #
+      # A backend set to memcached with an EMPTY address list fails loudly at startup
+      # ("no memcached addresses provided"). A wrong but resolvable address does NOT — it
+      # degrades silently. The two failure modes are not symmetric; the README says so.
+      # (the three bucket-store caches live in the blocks_storage block above, which is
+      # the same YAML key — a second `blocks_storage:` here would be a duplicate mapping
+      # key, silently keeping only one of them.)
+      #
+      # cache_results is a separate switch from the results-cache backend: a consumer who
+      # sets only backend + addresses gets a configured but INERT cache with no error, so
+      # the three keys form one group (see customization.yaml).
+      # The chart pairs its own results-cache with query_sharding_target_series_per_shard;
+      # that is a query-sharding tuning knob, not part of the cache, and is deliberately
+      # NOT set here so enabling the cache does not silently change sharding behaviour.
+      frontend:
+        cache_results: ${RESULTS_CACHE_ENABLED:false}
+        results_cache:
+          backend: ${RESULTS_CACHE_BACKEND:}
+          memcached:
+            addresses: ${RESULTS_CACHE_ADDRESSES:}
+            max_item_size: 5242880
+            timeout: 500ms
+
   # Footprint: every Mimir core microservice at replicas 1 (smallest sensible for a
   # small single-workload cluster; no zone awareness). Each carries an explicit
   # resources block — requests.cpu + requests.memory + limits.memory, with NO cpu
@@ -150,6 +240,35 @@ values:
     # the replication factor is 1 (chart default 3 is a multi-replica/zone value).
     zoneAwareReplication:
       enabled: false
+    # HARD one-pod-per-node placement. INERT at replicas 1 — it only starts constraining
+    # once a consumer scales up, which is exactly when it matters: without it the chart's
+    # soft topologySpreadConstraints (whenUnsatisfiable: ScheduleAnyway) let two ingesters
+    # land on one node, and a replication factor the consumer just paid for is silently
+    # void — two of three copies die with that node. Upstream's own sizing plans pair
+    # multi-replica ingesters with this rule, and the chart's own comment recommends
+    # replacing the spread constraints with it "when deploying to production".
+    #
+    # The trade is visible failure over silent co-location: above node count, a surplus
+    # replica stays Pending instead of doubling up. That is the correct signal.
+    #
+    # BREAKING for an already-scaled installation: a consumer running more ingester
+    # replicas than nodes will see the surplus go Pending on the next sync. See the
+    # README migration note — and be aware that with node-pinned storage, adding a node
+    # does NOT release such a pod, because its PVC still binds it to the old one.
+    #
+    # Selector is the chart's own label triple. NOT upstream small.yaml's `target:`
+    # label, which pods of chart 5.8.0 do not carry — a selector that matches nothing
+    # makes the rule vacuous and it would silently do nothing.
+    # The chart ignores this block when zoneAwareReplication is enabled (it is not).
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: mimir
+                app.kubernetes.io/instance: mimir
+                app.kubernetes.io/component: ingester
     # Memory is the binding constraint for the single WAL-holding ingester. The OOM path is
     # WAL REPLAY on restart: it replays the on-disk WAL while holding the in-memory series — a
     # spike well above steady state; at 512Mi that OOMKilled mid-replay → CrashLoop death
@@ -195,6 +314,17 @@ values:
     replicas: 1
     zoneAwareReplication:
       enabled: false
+    # HARD one-pod-per-node placement — same rationale, trade and migration note as the
+    # ingester above. Inert at replicas 1; selector is the chart's own label triple.
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: mimir
+                app.kubernetes.io/instance: mimir
+                app.kubernetes.io/component: store-gateway
     resources:
       requests:
         cpu: 100m
