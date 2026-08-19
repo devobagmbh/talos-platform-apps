@@ -99,7 +99,7 @@ These map into `common.storage.s3` (credentials/endpoint/region),
 
 Beyond those, the same ConfigMap carries **optional** keys — the artifact ships a working
 default for each, and a consumer sets them only to change behaviour (`optional.env_keys` in
-`customization.yaml`): the two ring replication factors, the eight query-path cache keys,
+`customization.yaml`): the two ring replication factors, the nine query-path cache keys,
 and `RULER_ALERTMANAGER_URL`. See [High availability](#high-availability) below.
 
 **`RULER_ALERTMANAGER_URL`** — the built-in alertmanager is disabled (the platform uses a
