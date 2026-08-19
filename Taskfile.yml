@@ -64,12 +64,478 @@ tasks:
 
   # --- Render ---
 
+  scope:components:
+    desc: 'Resolve which components a diff range touches: prints ALL, or one <sub-layer>/<component> per line, or nothing'
+    summary: |
+      The single diff-scoping oracle, shared by `render` and `scan:trivy-cve`. Reads a
+      `<base>..<head>` range and prints ONE of:
+        ALL                  every component is in scope (see fail-safes below)
+        <sl>/<c> per line    only these components are affected
+        (nothing)            the diff touches no component at all (docs-only)
+
+      Fail-safe direction is ALWAYS "widen to ALL", never "narrow to nothing":
+        - no range given                          → ALL
+        - range unparseable / commits unresolvable → ALL
+        - the diff touches anything outside a component directory (Taskfile.yml,
+          policies/, schemas/, catalog/, .github/, devbox.*, a sub-layer aggregate)
+          → ALL, because a shared file can change every render
+      Only a diff confined to component directories (plus pure docs) narrows the scope.
+      A wrong ALL costs time; a wrong narrow scope skips a gate — so the asymmetry is
+      deliberate.
+
+      Sibling rule: a component pulls in its strict-B other half (`<x>` ⇄ `<x>-crds`)
+      when that directory exists. validate:crd-split judges the PAIR — it requires the
+      `-crds` half to render >0 CRDs and the workload half exactly 0, and treats a
+      missing rendered/ for a gated component as a failure — so rendering only one half
+      would fail the gate rather than skip it. This is the ONLY build coupling between
+      components: `requires:` in compatibility.yaml is a runtime/sync-wave statement,
+      and render:one reads no other component, so no further dependency fan-out applies.
+
+      Range comes from the SCOPE_RANGE task var, else the CI_SCOPE_RANGE env var (the
+      workflow sets the latter; the former is the test seam). SCOPE_REPO relocates the
+      whole lookup — git diff AND component discovery — so test:ci-scope can drive this
+      against a throwaway repo. Three-dot (merge-base) diff, matching scan:trivy-cve.
+    vars:
+      SCOPE_RANGE: '{{.SCOPE_RANGE | default ""}}'
+      SCOPE_REPO: '{{.SCOPE_REPO | default "."}}'
+    cmd: |
+      set -eu
+      repo='{{.SCOPE_REPO}}'
+      range='{{.SCOPE_RANGE}}'
+      [ -n "$range" ] || range="${CI_SCOPE_RANGE:-}"
+
+      all_components() {
+        # Same shape as the COMPONENTS var, but rooted at $repo so the test seam works.
+        for sldir in "$repo"/sub-layers/*/; do
+          [ -d "$sldir" ] || continue
+          sl=$(basename "$sldir")
+          for cdir in "$sldir"components/*/; do
+            [ -d "$cdir" ] || continue
+            echo "$sl/$(basename "$cdir")"
+          done
+        done
+      }
+
+      full=no
+      # Parse strictly. `${range%%..*}` / `${range##*..}` take the FIRST and LAST segment,
+      # so a malformed 'a..b..c' would silently degrade to 'a...c' — dropping b and
+      # producing a NARROW scope from input the contract says must widen. Requiring
+      # base..head to reconstruct the input exactly rejects that, and the -n tests reject
+      # a missing half ('..head', 'base..').
+      rbase="${range%%..*}"
+      rhead="${range##*..}"
+      if [ -z "$range" ]; then
+        full=yes
+      elif [ "${rbase}..${rhead}" != "$range" ] || [ -z "$rbase" ] || [ -z "$rhead" ] \
+        || ! git -C "$repo" rev-parse -q --verify "${rbase}^{commit}" >/dev/null 2>&1 \
+        || ! git -C "$repo" rev-parse -q --verify "${rhead}^{commit}" >/dev/null 2>&1 \
+        || ! git -C "$repo" merge-base "${rbase}" "${rhead}" >/dev/null 2>&1; then
+        echo "scope:components: range '${range}' unresolvable — full catalog" >&2
+        full=yes
+      else
+        changed="$(git -C "$repo" -c core.quotePath=false diff --no-renames --name-only "${rbase}...${rhead}" 2>/dev/null)" || full=yes
+      fi
+
+      if [ "$full" = no ]; then
+        # Anything that is neither a component file nor pure docs can change every
+        # render → widen. `|| true` is required: a no-match grep exits 1 and would abort
+        # the block under go-task's errexit. Both greps are extraction, not gates.
+        outside="$(printf '%s\n' "$changed" \
+          | grep -vE '(^$|\.md$|^\.github/(ISSUE_TEMPLATE|PULL_REQUEST))' \
+          | grep -vE '^sub-layers/[^/]+/components/[^/]+/' || true)"
+        if [ -n "$(printf '%s' "$outside" | tr -d '[:space:]')" ]; then
+          echo "scope:components: shared/non-component change in range — full catalog" >&2
+          full=yes
+        fi
+      fi
+
+      if [ "$full" = yes ]; then
+        echo "ALL"
+        exit 0
+      fi
+
+      comps="$(printf '%s\n' "$changed" \
+        | grep -oE '^sub-layers/[^/]+/components/[^/]+/' \
+        | sed -E 's#^sub-layers/([^/]+)/components/([^/]+)/#\1/\2#' | sort -u || true)"
+      if [ -z "$(printf '%s' "$comps" | tr -d '[:space:]')" ]; then
+        echo "scope:components: no component touched in range — empty scope" >&2
+        exit 0
+      fi
+
+      # Pull in the strict-B sibling in both directions (see summary).
+      for c in $comps; do
+        # A component the range DELETED (or renamed away from — --no-renames reports the
+        # old path too) is still in the diff, but there is nothing left to render, and
+        # render:one hard-fails on a missing directory. Emitting it would turn the
+        # required `ci` check red on a perfectly valid deletion/rename PR. Dropping it is
+        # not a coverage hole: what has to hold for a deletion is catalog-wide consistency
+        # (validate:release-config, validate:compatibility, validate:topology-groups), and
+        # those gates are never scoped.
+        [ -d "$repo/sub-layers/${c%/*}/components/${c#*/}" ] || continue
+        echo "$c"
+        case "$c" in
+          *-crds) sibling="${c%-crds}" ;;
+          *)      sibling="${c}-crds" ;;
+        esac
+        if [ -d "$repo/sub-layers/${sibling%/*}/components/${sibling#*/}" ]; then
+          echo "$sibling"
+        fi
+      done | sort -u
+
+  test:ci-scope:
+    desc: 'Test of scope:components: fail-safes widen to ALL, a component change pulls in its -crds sibling, a docs-only change scopes to nothing. Red-green bound via the SCOPE_REPO seam.'
+    summary: |
+      Hermetic red-green test for the diff-scoping oracle (wired into `task ci`). Builds a
+      throwaway git repo (no network, the real repo is never read or mutated) and drives
+      scope:components through its SCOPE_REPO/SCOPE_RANGE seams. Scenarios:
+        no range                  → ALL      (fail-safe: unset)
+        unresolvable range        → ALL      (fail-safe: bad input)
+        shared file (Taskfile)    → ALL      (fail-safe: can change every render)
+        sub-layer aggregate       → ALL      (compatibility.yaml above components/)
+        one component             → that component AND its -crds sibling
+        one -crds half            → that half AND its workload sibling
+        docs-only (.md)           → empty    (nothing to render)
+      The sibling assertions are the ones that protect validate:crd-split: it judges the
+      pair and fails on a missing rendered/ for a gated component, so a scope that drops
+      the sibling turns a green gate red. Dropping the sibling loop turns those two cases
+      red here; widening the outside-file filter turns the shared-file cases red.
+
+      Two INTEGRATION cases run the production `render -> render-consuming gates` sequence
+      over the real catalog, each in its own throwaway detached worktree (so the caller's
+      rendered/ is never touched and case 2 cannot inherit case 1's output):
+        component-only change  → exactly that component + its sibling render, all gates green
+        docs-only change       → EMPTY scope: render is a no-op and every gate stays green
+      The second case is the one the feature can strand — a catalog-wide gate that refuses to
+      pass vacuously would turn the required `ci` check red on every docs-only PR. Both
+      inputs are synthesised, never mined from the repo history, so the expected scope is
+      known exactly and asserted, and the test is independent of which commits happen to be
+      checked out. Candidate selection reads the probe's tracked files (an uncommitted
+      component is invisible at HEAD) and prefers a strict-B pair that renders without the
+      network, printing which class it got.
+    cmd: |
+      set -eu
+      root="$(git rev-parse --show-toplevel)"
+      # The string-level phase drives scope:components through SCOPE_RANGE and asserts the
+      # UNSET-range fail-safe with SCOPE_RANGE=''. scope:components falls back to
+      # CI_SCOPE_RANGE when SCOPE_RANGE is empty — and the required `ci` job SETS that
+      # variable — so without this unset the "no range → ALL" case would be satisfied by the
+      # unresolvable-range path instead, and deleting the unset-range fail-safe would keep the
+      # suite green in CI. The integration phase re-exports it deliberately, per case.
+      unset CI_SCOPE_RANGE || true
+      tmp="$(mktemp -d)" || { echo "test:ci-scope: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$tmp"' EXIT
+      g() { git -C "$tmp" -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
+
+      mkdir -p "$tmp/sub-layers/t/components/alpha" \
+               "$tmp/sub-layers/t/components/alpha-crds" \
+               "$tmp/sub-layers/t/components/beta"
+      for c in alpha alpha-crds beta; do
+        printf 'x\n' > "$tmp/sub-layers/t/components/$c/compatibility.yaml"
+      done
+      printf 'shared\n' > "$tmp/Taskfile.yml"
+      printf 'agg\n' > "$tmp/sub-layers/t/compatibility.yaml"
+      printf 'doc\n' > "$tmp/README.md"
+      g init -q  && g add -A && g commit -qm base
+      base="$(g rev-parse HEAD)"
+
+      scope_of() {
+        # Capture first, THEN pipe. `resolver | tr` would report tr's status, so a resolver
+        # that died without output would satisfy an expected-empty assertion for the wrong
+        # reason. Here a non-zero resolver fails the test loudly instead.
+        out="$(task --silent -d "$root" scope:components SCOPE_REPO="$tmp" SCOPE_RANGE="$1" 2>/dev/null)" \
+          || { echo "✗ test:ci-scope: scope:components exited non-zero for range '$1'" >&2; exit 1; }
+        printf '%s' "$out" | tr '\n' ' '
+      }
+      expect() {
+        # $1 = label, $2 = actual, $3 = expected (space-normalised)
+        a="$(printf '%s' "$2" | tr -s ' ' | sed -e 's/^ //' -e 's/ $//')"
+        e="$(printf '%s' "$3" | tr -s ' ' | sed -e 's/^ //' -e 's/ $//')"
+        if [ "$a" = "$e" ]; then
+          echo "✓ $1"
+        else
+          echo "✗ test:ci-scope: $1 — expected '$e', got '$a'" >&2
+          exit 1
+        fi
+      }
+
+      expect "no range → ALL"           "$(scope_of '')"          "ALL"
+      expect "unresolvable range → ALL" "$(scope_of 'nonsense')"  "ALL"
+      # A malformed multi-segment range must widen, not silently drop the middle segment
+      # and scope against first...last (which would produce a NARROW scope from input the
+      # contract says is unparseable).
+      expect "malformed a..b..c → ALL"  "$(scope_of "${base}..junk..${base}")" "ALL"
+      expect "missing base '..head' → ALL" "$(scope_of "..${base}")" "ALL"
+      expect "missing head 'base..' → ALL" "$(scope_of "${base}..")" "ALL"
+
+      printf 'changed\n' >> "$tmp/sub-layers/t/components/alpha/compatibility.yaml"
+      g add -A && g commit -qm alpha
+      expect "component → component + -crds sibling" "$(scope_of "${base}..HEAD")" "t/alpha t/alpha-crds"
+
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/sub-layers/t/components/alpha-crds/compatibility.yaml"
+      g add -A && g commit -qm crds
+      expect "-crds half → half + workload sibling" "$(scope_of "${prev}..HEAD")" "t/alpha t/alpha-crds"
+
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/sub-layers/t/components/beta/compatibility.yaml"
+      g add -A && g commit -qm beta
+      expect "component without sibling → itself only" "$(scope_of "${prev}..HEAD")" "t/beta"
+
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/Taskfile.yml"
+      g add -A && g commit -qm shared
+      expect "shared file → ALL" "$(scope_of "${prev}..HEAD")" "ALL"
+
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/sub-layers/t/compatibility.yaml"
+      g add -A && g commit -qm aggregate
+      expect "sub-layer aggregate → ALL" "$(scope_of "${prev}..HEAD")" "ALL"
+
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/README.md"
+      g add -A && g commit -qm docs
+      expect "docs-only → empty scope" "$(scope_of "${prev}..HEAD")" ""
+
+      # A deleted component must NOT reach render:one, which hard-fails on a missing
+      # directory — that would turn the required `ci` check red on a valid deletion PR.
+      prev="$(g rev-parse HEAD)"
+      rm -rf "$tmp/sub-layers/t/components/beta"
+      g add -A && g commit -qm "delete beta"
+      expect "deleted component → not in scope" "$(scope_of "${prev}..HEAD")" ""
+
+      # Deleting one half of a pair must not drag the surviving half's dead sibling in.
+      prev="$(g rev-parse HEAD)"
+      rm -rf "$tmp/sub-layers/t/components/alpha-crds"
+      g add -A && g commit -qm "delete alpha-crds"
+      expect "deleted -crds half → not in scope, workload not resurrected" "$(scope_of "${prev}..HEAD")" ""
+
+      # And the surviving workload alone no longer emits the deleted sibling.
+      prev="$(g rev-parse HEAD)"
+      printf 'changed\n' >> "$tmp/sub-layers/t/components/alpha/compatibility.yaml"
+      g add -A && g commit -qm "touch alpha after sibling deletion"
+      expect "workload whose sibling is gone → itself only" "$(scope_of "${prev}..HEAD")" "t/alpha"
+
+      # INTEGRATION, not just oracle strings: run the production sequence
+      # `render -> the render-consuming gates` over the REAL catalog, twice — once with a
+      # scope that touches ONE component, once with an EMPTY scope (the docs-only case).
+      # String-level tests alone stayed green while every scoped PR failed the required `ci`
+      # gate, because those gates are catalog-wide.
+      #
+      # The probe input is SYNTHESISED, not mined out of the repo history. Scanning the last
+      # N commits for a component-only commit coupled a required gate to the shape of
+      # whatever history happened to be checked out — on a fresh clone, a shallow CI checkout
+      # or a long non-component streak the test hard-failed for a reason that has nothing to
+      # do with the code under test. Here the range is constructed, so the expected scope is
+      # known exactly and can be asserted instead of merely checked for narrowness.
+      #
+      # Each case runs in its OWN throwaway detached worktree, so the render never touches
+      # the caller's rendered/ directories and case 2 cannot inherit case 1's output (a
+      # shared worktree would leave case 1's manifests in place and case 2 would pass
+      # vacuously — exactly how a stale local tree masks this class). The working-tree
+      # Taskfile.yml is copied in — uncommitted, so it stays out of the probe's own diff —
+      # which keeps the logic under test the CURRENT one rather than the last committed one.
+      probe_n=0
+      new_probe() {
+        probe_n=$((probe_n + 1))
+        # $$-unique: two sessions may run `task ci` against ONE clone (the documented
+        # parallelism model), and a shared basename would make a leaked registration
+        # ambiguous. `worktree prune` below only ever removes entries whose directory is
+        # already gone, so it cannot touch a live worktree of another session.
+        p="$tmp/probe-$$-${probe_n}"
+        # Self-heal a worktree registration leaked by an earlier interrupted run: the EXIT
+        # trap does not fire on SIGINT/SIGTERM under go-task's shell, and a GHA
+        # cancel-in-progress is exactly that signal.
+        git -C "$root" worktree prune >/dev/null 2>&1 || true
+        git -C "$root" worktree add --detach -q "$p" HEAD \
+          || { echo "✗ test:ci-scope: could not create probe worktree $p" >&2; exit 1; }
+        cp "$root/Taskfile.yml" "$p/Taskfile.yml" \
+          || { echo "✗ test:ci-scope: could not seed the probe with the working-tree Taskfile" >&2; exit 1; }
+        printf '%s' "$p"
+      }
+      drop_probe() {
+        git -C "$root" worktree remove --force "$1" >/dev/null 2>&1 || true
+      }
+      trap 'git -C "$root" worktree prune >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+
+      gp() { # git inside a probe, with commits that skip this repo's own hooks
+        _d="$1"; shift
+        git -C "$_d" -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"
+      }
+      # The render-consuming gates, in `ci:artifact` order. `render` narrowing is only half
+      # the contract — every one of these runs catalog-wide afterwards and must tolerate a
+      # partially-rendered catalog. Asserting crd-split alone left the other five unpinned,
+      # so a future fail-closed "nothing rendered" arm in any of them would strand PRs while
+      # this test stayed green.
+      RENDER_GATES="lint:rendered lint:kustomize-base validate:crd-split lint:version scan:conftest scan:psa-conformance"
+      run_logged() { # $1 label, $2 dir, rest: task + args; on failure print the captured log
+        _label="$1"; _dir="$2"; shift 2
+        if ! (cd "$_dir" && "$@" >"$tmp/${_label}.log" 2>&1); then
+          echo "✗ test:ci-scope: ${_label} failed — last 40 lines of its output:" >&2
+          # tail FIRST, then indent: `sed … >&2 | tail` hands tail an immediately-closed pipe,
+          # so it prints nothing while sed dumps the whole log to stderr unbounded.
+          tail -40 "$tmp/${_label}.log" | sed 's/^/    /' >&2 || true
+          return 1
+        fi
+        return 0
+      }
+
+      # Exported ONCE, not prefixed onto the function calls: POSIX leaves it unspecified
+      # whether an assignment preceding a FUNCTION call persists afterwards, and both
+      # cases want the same synthetic range.
+      export CI_SCOPE_RANGE='HEAD~1..HEAD'
+      # --- case 1: a component-only change -------------------------------------------------
+      probe="$(new_probe)"
+
+      # Candidates come from the PROBE's tracked files, not the caller's working tree: an
+      # uncommitted component (the normal mid-build state of this repo) exists in the caller
+      # and not in a HEAD-only checkout, and appending to it there would abort the task with
+      # no message of its own. Prefer a strict-B pair so the sibling pull-in and the
+      # crd-split pair judgement are both exercised; prefer a pair that renders WITHOUT the
+      # network, so a required gate does not silently acquire a chart download.
+      probe_comp=""; probe_expect=""; probe_kind=""; probe_net="network"
+      for compat in $(git -C "$probe" ls-files 'sub-layers/*/components/*-crds/compatibility.yaml'); do
+        crds_dir="${compat%/compatibility.yaml}"
+        crds="$(basename "$crds_dir")"
+        sl="$(basename "$(dirname "$(dirname "$crds_dir")")")"
+        work="${crds%-crds}"
+        [ -f "$probe/sub-layers/$sl/components/$work/compatibility.yaml" ] || continue
+        # hermetic == neither half pulls a chart (manifests-only components)
+        if [ -z "$(git -C "$probe" ls-files "sub-layers/$sl/components/$work/helm" "sub-layers/$sl/components/$crds/helm")" ]; then
+          probe_comp="$sl/$work"; probe_expect="$sl/$work $sl/$crds"; probe_kind=pair; probe_net=hermetic
+          break
+        fi
+        # remember the first pair as the fallback, keep looking for a hermetic one
+        if [ -z "$probe_comp" ]; then
+          probe_comp="$sl/$work"; probe_expect="$sl/$work $sl/$crds"; probe_kind=pair; probe_net=network
+        fi
+      done
+      if [ -z "$probe_comp" ]; then
+        for compat in $(git -C "$probe" ls-files 'sub-layers/*/components/*/compatibility.yaml'); do
+          cdir="${compat%/compatibility.yaml}"
+          probe_comp="$(basename "$(dirname "$(dirname "$cdir")")")/$(basename "$cdir")"
+          probe_expect="$probe_comp"; probe_kind=single
+          break
+        done
+      fi
+      if [ -z "$probe_comp" ]; then
+        echo "✗ test:ci-scope: the catalog holds no component with a compatibility.yaml — nothing to probe" >&2
+        exit 1
+      fi
+      echo "probe: ${probe_comp} (${probe_kind}, ${probe_net})"
+
+      pf="sub-layers/${probe_comp%/*}/components/${probe_comp#*/}/compatibility.yaml"
+      printf '# test:ci-scope synthetic probe change (throwaway worktree)\n' >> "$probe/$pf"
+      gp "$probe" add "$pf" \
+        && gp "$probe" commit -q --no-verify -m "probe: component-only change" \
+        || { echo "✗ test:ci-scope: could not commit the probe change" >&2; exit 1; }
+
+      # Same oracle, real catalog, constructed range — assert the EXACT scope.
+      expect "probe range → $probe_expect" \
+        "$(task --silent -d "$root" scope:components SCOPE_REPO="$probe" SCOPE_RANGE='HEAD~1..HEAD' 2>/dev/null | tr '\n' ' ')" \
+        "$probe_expect"
+
+      run_logged "render-scoped" "$probe" task render \
+        || { echo "✗ test:ci-scope: scoped render failed for the probe component '$probe_comp'" >&2; exit 1; }
+
+      # The render must have narrowed too, not just the oracle — and by IDENTITY, not count:
+      # a mutation that renders two WRONG components satisfies a count.
+      got="$(find "$probe/sub-layers" -path '*/components/*/rendered/manifest.yaml' 2>/dev/null \
+             | sed -E 's#.*/sub-layers/([^/]+)/components/([^/]+)/rendered/manifest\.yaml#\1/\2#' \
+             | LC_ALL=C sort | tr '\n' ' ')"
+      expect "scoped render touched exactly the expected component(s)" "$got" \
+        "$(printf '%s\n' $probe_expect | LC_ALL=C sort | tr '\n' ' ')"
+
+      for g in $RENDER_GATES; do
+        run_logged "gate-${g}" "$probe" task "$g" \
+          || { echo "✗ test:ci-scope: ${g} FAILED after a scoped render — every scoped PR would fail required ci" >&2; exit 1; }
+      done
+      pairs_total="$(git -C "$probe" ls-files 'sub-layers/*/components/*-crds/compatibility.yaml' | grep -c . || true)"
+      if [ "$probe_kind" = pair ] && [ "${pairs_total:-0}" -gt 1 ]; then
+        echo "✓ scoped render + $(printf '%s' "$RENDER_GATES" | wc -w | tr -d ' ') render-consuming gates (catalog-wide, tolerating the other ${pairs_total} out-of-scope pair(s))"
+      else
+        echo "⚠ scoped render + gates OK, but the out-of-scope PAIR tolerance was NOT exercised (pairs available: ${pairs_total:-0})"
+      fi
+      drop_probe "$probe"
+
+      # --- case 2: a docs-only change (EMPTY scope) ---------------------------------------
+      # The everyday PR shape, and the one the scoping feature can strand: an empty scope
+      # renders nothing, and a catalog-wide gate that refuses to "pass vacuously" then turns
+      # the required `ci` check red on a change that touches no component at all. A FRESH
+      # worktree is mandatory — reusing case 1's would leave its manifests in place and this
+      # case would pass for the wrong reason.
+      probe2="$(new_probe)"
+      printf '\ntest:ci-scope synthetic docs-only probe change\n' >> "$probe2/README.md"
+      gp "$probe2" add README.md \
+        && gp "$probe2" commit -q --no-verify -m "probe: docs-only change" \
+        || { echo "✗ test:ci-scope: could not commit the docs-only probe change" >&2; exit 1; }
+
+      expect "docs-only probe range → empty scope" \
+        "$(task --silent -d "$root" scope:components SCOPE_REPO="$probe2" SCOPE_RANGE='HEAD~1..HEAD' 2>/dev/null | tr '\n' ' ')" \
+        ""
+
+      run_logged "render-empty" "$probe2" task render \
+        || { echo "✗ test:ci-scope: render failed on an EMPTY scope (it must be a clean no-op)" >&2; exit 1; }
+      empty_n="$(find "$probe2/sub-layers" -path '*/components/*/rendered/manifest.yaml' 2>/dev/null | grep -c . || true)"
+      [ "${empty_n:-0}" = "0" ] \
+        || { echo "✗ test:ci-scope: an empty scope rendered ${empty_n} component(s)" >&2; exit 1; }
+      for g in $RENDER_GATES; do
+        run_logged "empty-gate-${g}" "$probe2" task "$g" \
+          || { echo "✗ test:ci-scope: ${g} FAILED on an empty scope — every docs-only PR would fail required ci" >&2; exit 1; }
+      done
+      echo "✓ empty scope: render is a no-op and all render-consuming gates stay green"
+      drop_probe "$probe2"
+
+      # --- case 3: the escape hatch must stay CLOSED for a NON-empty scope ----------------
+      # Case 2 binds only the skip direction. Without this, an edit that widens the hatch
+      # (dropping the CI_SCOPE_RANGE guard, or inverting the emptiness test) would turn
+      # validate:crd-split into an unconditional exit 0 with every assertion still green.
+      probe3="$(new_probe)"
+      printf '# test:ci-scope fail-closed probe change\n' >> "$probe3/$pf"
+      gp "$probe3" add "$pf" \
+        && gp "$probe3" commit -q --no-verify -m "probe: component-only change (unrendered)" \
+        || { echo "✗ test:ci-scope: could not commit the fail-closed probe change" >&2; exit 1; }
+      # The scope must be NON-empty here, or the case would pass for the wrong reason —
+      # a refusal produced by an unset CI_SCOPE_RANGE, or by a marker failure, is not the
+      # property under test.
+      expect "fail-closed probe range → $probe_expect" \
+        "$(task --silent -d "$root" scope:components SCOPE_REPO="$probe3" SCOPE_RANGE='HEAD~1..HEAD' 2>/dev/null | tr '\n' ' ')" \
+        "$probe_expect"
+      if (cd "$probe3" && task validate:crd-split >"$tmp/failclosed.log" 2>&1); then
+        echo "✗ test:ci-scope: validate:crd-split PASSED with a non-empty scope and nothing rendered — the empty-scope hatch is too wide" >&2
+        exit 1
+      fi
+      if ! grep -q 'refusing to pass vacuously' "$tmp/failclosed.log"; then
+        echo "✗ test:ci-scope: validate:crd-split refused for the WRONG reason — expected the vacuity refusal, got:" >&2
+        tail -10 "$tmp/failclosed.log" | sed 's/^/    /' >&2
+        exit 1
+      fi
+      echo "✓ non-empty scope + nothing rendered → validate:crd-split still refuses, for the right reason"
+      drop_probe "$probe3"
+
+      echo "test:ci-scope OK"
+
   render:
     desc: Render all components into sub-layers/*/components/*/rendered/manifest.yaml
-    cmds:
-      - for: { var: COMPONENTS }
-        task: render:one
-        vars: { COMPONENT_ID: '{{.ITEM}}' }
+    summary: |
+      Renders every component, or — when a diff range is in scope (CI_SCOPE_RANGE, set
+      by the PR `ci` job) — only the components that range touches plus their strict-B
+      siblings. See scope:components for the resolution rules and the fail-safe
+      direction. merge_group and tag pushes set no range, so the queue and every
+      publish still render the whole catalog.
+    cmd: |
+      set -eu
+      scope="$(task --silent scope:components)"
+      if [ "$scope" = "ALL" ]; then
+        scope='{{.COMPONENTS}}'
+      elif [ -z "$(printf '%s' "$scope" | tr -d '[:space:]')" ]; then
+        echo "render: no component in scope — nothing to render"
+        exit 0
+      else
+        echo "render: scoped to $(printf '%s\n' "$scope" | tr -d ' ' | grep -c . || true) component(s)"
+      fi
+      for c in $scope; do
+        task render:one -- "$c"
+      done
 
   render:one:
     desc: 'Render one component: task render:one -- <sub-layer>/<component>'
@@ -734,6 +1200,54 @@ tasks:
       set -eu
       root="$(git rev-parse --show-toplevel)"
       fail=0
+      # Scoped renders (CI_SCOPE_RANGE, see scope:components) produce rendered/ for only
+      # SOME components, so "no manifest" stops being proof of a forgotten render. The
+      # render-dependent arms below therefore skip a strict-B pair when NEITHER half was
+      # rendered — that is the pair being out of scope, and scope:components guarantees a
+      # pair is always in or out TOGETHER (the sibling rule). One half missing while the
+      # other is present is still a hard failure: that is either a real split defect or a
+      # scope bug, and both must be loud. The static marker checks are render-independent
+      # and always run.
+      #
+      # The forgotten-render protection this weakens is restored globally right here: if
+      # NOTHING at all was rendered, fail closed rather than skip every pair and report a
+      # vacuous green.
+      rendered_total="$(find "$root/sub-layers" -path '*/components/*/rendered/manifest.yaml' 2>/dev/null | wc -l | tr -d ' ')"
+      markers_only=no
+      if [ "$rendered_total" -eq 0 ]; then
+        # A scoped run whose diff touches NO component renders nothing by design — a
+        # docs-only PR is the everyday case — and failing here would turn the required `ci`
+        # check red on every one of them. Distinguish the two states by asking the same
+        # oracle `render` asked: an empty scope means "nothing to render", a full scope
+        # (or no range at all) means somebody forgot to render.
+        #
+        # Capture the resolver FIRST, then test — `resolver | tr` reports tr's status, so a
+        # resolver that died without output would look exactly like an empty scope and this
+        # gate would fail OPEN on a crash. Its exit status is the guard.
+        empty_scope=no
+        if [ -n "${CI_SCOPE_RANGE:-}" ]; then
+          if scope_out="$(task --silent -d "$root" scope:components)"; then
+            if [ -z "$(printf '%s' "$scope_out" | tr -d '[:space:]')" ]; then
+              empty_scope=yes
+            fi
+          else
+            echo "crd-split: the scope resolver failed - refusing to interpret that as an empty scope" >&2
+            exit 1
+          fi
+        fi
+        if [ "$empty_scope" = yes ]; then
+          # NOT an early exit: the marker checks below are render-INDEPENDENT (a -crds half
+          # must carry the line-anchored marker, a non--crds half must not), and skipping them
+          # would stop the cheap half of the ADR-0028 oracle from running on the everyday PR
+          # shape. Only the CRD-count arms self-skip, which they already do when neither half
+          # of a pair is rendered.
+          echo "crd-split: scope is empty for range '${CI_SCOPE_RANGE}' (no component touched) - running the render-independent marker checks only"
+          markers_only=yes
+        else
+          echo "crd-split: no rendered/manifest.yaml anywhere - run 'task render' first (refusing to pass vacuously)" >&2
+          exit 1
+        fi
+      fi
       for compat in "$root"/sub-layers/*/components/*/compatibility.yaml; do
         [ -f "$compat" ] || continue
         comp_dir="$(dirname "$compat")"
@@ -757,7 +1271,10 @@ tasks:
         case "$comp" in
           *-crds)
             [ "$has_marker" = yes ] || { echo "crd-split: ${id} is a -crds artifact but its compatibility.yaml has no line-anchored 'crd-bearing: true' (marker missing or typo)" >&2; fail=1; }
-            if [ ! -f "$manifest" ]; then
+            other="${root}/sub-layers/${sl}/components/${comp%-crds}/rendered/manifest.yaml"
+            if [ ! -f "$manifest" ] && [ ! -f "$other" ]; then
+              : # pair out of scope for this render — see the note above
+            elif [ ! -f "$manifest" ]; then
               echo "crd-split: ${id} (-crds) has no rendered/manifest.yaml - run 'task render' first" >&2; fail=1
             elif [ "$crd_count" -eq 0 ]; then
               echo "crd-split: ${id} is a -crds artifact but renders 0 CustomResourceDefinition (mislabeled empty crds half)" >&2; fail=1
@@ -768,7 +1285,10 @@ tasks:
             # carrying it is a misplaced marker (the co-build oracle keys on it).
             [ "$has_marker" = no ] || { echo "crd-split: ${id} carries 'crd-bearing: true' but is not a -crds artifact - the marker belongs ONLY on the -crds half" >&2; fail=1; }
             if [ -d "${root}/sub-layers/${sl}/components/${comp}-crds" ]; then
-              if [ ! -f "$manifest" ]; then
+              other="${root}/sub-layers/${sl}/components/${comp}-crds/rendered/manifest.yaml"
+              if [ ! -f "$manifest" ] && [ ! -f "$other" ]; then
+                : # pair out of scope for this render — see the note above
+              elif [ ! -f "$manifest" ]; then
                 echo "crd-split: ${id} (workload half) has no rendered/manifest.yaml - run 'task render' first" >&2; fail=1
               elif [ "$crd_count" -ne 0 ]; then
                 echo "crd-split: ${id} is the workload half of a strict-B pair but renders ${crd_count} CustomResourceDefinition(s) - CRDs belong in ${comp}-crds (crds.create:false / strip inline CRDs)" >&2; fail=1
@@ -778,6 +1298,10 @@ tasks:
         esac
       done
       [ "$fail" -eq 0 ] || { echo "crd-split: strict-B CRD-count oracle FAILED (see above)" >&2; exit 1; }
+      if [ "$markers_only" = yes ]; then
+        echo "crd-split: OK - marker placement consistent across the catalog (CRD counts not checked: nothing rendered, empty scope)"
+        exit 0
+      fi
       echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
 
   lint:version:
@@ -4868,6 +5392,11 @@ tasks:
       # regression that lets a failed chart render leave a truncated manifest behind is
       # caught by this hermetic fixture rather than by whatever gate later reads that file.
       - task: test:render-one
+      # Red-greens the diff-scoping oracle BEFORE `render` consumes it. A regression that
+      # narrows the scope wrongly would not turn any gate red — it would silently skip
+      # components — so this hermetic guard is the only thing standing between a scope bug
+      # and an unchecked component. Runs on the publish path too, where no range is set.
+      - task: test:ci-scope
       - task: lint
       - task: validate:compatibility
       - task: render
