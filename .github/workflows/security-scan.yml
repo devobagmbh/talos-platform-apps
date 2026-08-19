@@ -98,9 +98,20 @@ jobs:
 
   conftest:
     name: conftest (Rego policies)
-    # Not a required check — skip on merge_group (already ran on the PR; conftest is also
-    # part of `task ci`, which the required `ci` job re-runs in the queue).
-    if: github.event_name != 'merge_group'
+    # Scoped to the events `ci` does NOT cover, instead of running everywhere.
+    #
+    # `scan:conftest` + `scan:conftest-verify` are part of `ci:artifact`, so the required
+    # `ci` job in oci-publish.yml already runs both on pull_request and on the merge_group
+    # head. Running this job there too re-rendered the entire catalog a second time for
+    # the identical two tasks — one full extra set of unretried third-party Helm-chart
+    # fetches per PR, the dominant source of the intermittent 5xx CI failures (#790).
+    #
+    # But oci-publish.yml triggers ONLY on pull_request, merge_group and tag pushes, and
+    # its `ci` job is further gated to pull_request/merge_group — so on `push:[main]` and
+    # on the weekly `schedule` (both of which THIS workflow has) nothing else runs the
+    # policy gate. Deleting the job outright would silently drop post-merge and scheduled
+    # policy coverage. Hence: skip exactly where `ci` covers us, keep it everywhere else.
+    if: github.event_name == 'push' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
