@@ -3,7 +3,7 @@ type: workflow
 title: Issue and PR lifecycle
 description: How an issue becomes a merged PR - the status state machine, the claim protocol, and the ADR-conformance gates.
 tags: [workflow, issue, pr, lifecycle]
-timestamp: 2026-08-18
+timestamp: 2026-08-19
 sources:
   - AGENTS.md
   - .claude/rules/issue-interface.md

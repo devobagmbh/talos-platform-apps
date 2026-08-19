@@ -2751,19 +2751,87 @@ tasks:
       exit "$fail"
 
   validate:contract:
-    desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1); optional: -- <sub-layer>/<component> to scope to one'
+    desc: 'Customization-Contract self-consistency (ADR-0024 v2, Layer 1) — schema + required/optional semantics; optional: -- <sub-layer>/<component> to scope to one'
     summary: |
       Validates each component's customization.yaml against
       schemas/customization.schema.json (ADR-0024 v2 freeze-line contract) with
-      check-jsonschema. Components WITHOUT customization.yaml are reported (not
-      yet under contract).
+      check-jsonschema, then applies the two semantic rules JSON Schema cannot
+      express for the additive `optional` block (#794):
 
-      Scope: schema self-consistency only. The deeper render-time checks from
-      ADR-0024 (config-file mount #1, selector non-nil #3, config snapshot #5)
-      are a follow-up and require the Dex pilot component.
+        S1  required.env_keys and optional.env_keys[].name are DISJOINT — a key
+            either carries a working baked default (optional) or the consumer
+            MUST supply it (required); declaring both makes the contract
+            self-contradictory and the consumer cannot tell which holds.
+        S2  optional.env_keys[].name is UNIQUE — two entries for one key are a
+            contradiction the schema cannot see (they are distinct array items,
+            so `uniqueItems` does not apply once their descriptions differ): they
+            may declare different defaults and different descriptions, and
+            nothing decides which one holds. Left unchecked, a consumer reading
+            the contract gets whichever entry they happened to read first.
+
+      Components WITHOUT customization.yaml are reported (not yet under contract).
+
+      Full-corpus runs additionally red-green BOTH layers against
+      schemas/testdata/customization-optional-*.yaml: seven schema-reject
+      fixtures, one positive, and two SEMANTIC-reject fixtures that are
+      schema-valid by construction (uniqueness and cross-channel disjointness
+      are not expressible in JSON Schema). Each negative is otherwise fully
+      valid and fails for exactly one reason, so removing the corresponding
+      schema keyword or semantic check turns that fixture green.
+
+      Scope: schema + contract self-consistency only. Neither layer compares a
+      declared key against the render — a declared key with no matching ${KEY}
+      placeholder in helm/ passes green (known residual, recorded in the
+      schema's optional.env_keys description). The deeper render-time checks
+      from ADR-0024 (config-file mount #1, selector non-nil #3, config snapshot
+      #5) are a follow-up and require the Dex pilot component.
     cmd: |
       set -uo pipefail
       schema="schemas/customization.schema.json"
+
+      # Semantic layer (S1 + S2 above). Prints the offending keys and returns 1
+      # on violation. Called for real components AND for the semantic fixtures,
+      # so the fixtures bind THIS code path, not a copy of it.
+      # jq set intersection: A - (A - B).
+      # Every yq status is captured EXPLICITLY into rc on the next line. The function
+      # is called from an `if` condition, and POSIX suppresses errexit inside a
+      # condition — so a yq that fails (unreadable file, malformed YAML, a broken
+      # filter after an edit) would otherwise leave the output variable empty, take
+      # the "no violation" branch and report the component as clean. Empty output
+      # from a SUCCESSFUL yq means "no violation"; empty output from a FAILED yq
+      # means "not checked", and the two must not collapse into one.
+      semantic_check() {
+        sfile="$1"
+        slabel="$2"
+        src=0
+        both=$(yq -r '(.required.env_keys // []) as $r
+                      | [ (.optional.env_keys // [])[].name ] as $o
+                      | ($r - ($r - $o)) | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "✗ ${slabel}: could not evaluate the required/optional disjointness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 1
+        fi
+        if [ -n "$both" ]; then
+          echo "✗ ${slabel}: key(s) declared in BOTH required.env_keys and optional.env_keys: ${both}"
+          echo "    A key either has a working baked default (optional) or the consumer must supply it (required)."
+          src=1
+        fi
+        dupes=$(yq -r '[ (.optional.env_keys // [])[].name ]
+                      | group_by(.) | map(select(length > 1) | .[0]) | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "✗ ${slabel}: could not evaluate the optional-name uniqueness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 1
+        fi
+        if [ -n "$dupes" ]; then
+          echo "✗ ${slabel}: duplicate optional.env_keys[].name: ${dupes}"
+          echo "    Two entries for one key contradict each other: they carry different descriptions and may carry different defaults, and nothing decides which one the consumer should read."
+          src=1
+        fi
+        return $src
+      }
+
       # Optional per-component scope: `task validate:contract -- <sub-layer>/<component>`
       # validates only that component; with no arg, every component is validated.
       scope="{{.CLI_ARGS}}"
@@ -2784,7 +2852,11 @@ tasks:
         fi
         found=$((found+1))
         if out=$(check-jsonschema --schemafile "$schema" "$cfile" 2>&1); then
-          echo "✓ ${comp_id}"
+          if semantic_check "$cfile" "$comp_id"; then
+            echo "✓ ${comp_id}"
+          else
+            fail=1
+          fi
         else
           echo "✗ ${comp_id}:"
           printf '%s\n' "$out" | sed 's/^/    /'
@@ -2792,10 +2864,68 @@ tasks:
         fi
       done
       echo ""
-      echo "→ ${found} component(s) validated against ${schema}."
+      echo "→ ${found} component(s) validated against ${schema} (+ S1/S2 semantics)."
       if [ -n "$missing" ]; then
         echo "Components WITHOUT customization.yaml (not yet under contract):"
         printf '%s' "$missing"
+      fi
+
+      # Red-green fixture guard (full-corpus runs only) — mirrors
+      # validate:compatibility's in-task guard. A fixture landing on the wrong
+      # side means the reject-side of the schema, or one of the two semantic
+      # checks, silently regressed.
+      if [ -z "$scope" ]; then
+        echo ""
+        td="schemas/testdata"
+        for nf in "$td/customization-optional-unknown-key.yaml" \
+                  "$td/customization-optional-item-unknown-key.yaml" \
+                  "$td/customization-optional-missing-name.yaml" \
+                  "$td/customization-optional-missing-description.yaml" \
+                  "$td/customization-optional-missing-default.yaml" \
+                  "$td/customization-optional-bad-name.yaml" \
+                  "$td/customization-optional-default-not-string.yaml"; do
+          # A missing/unreadable fixture also makes check-jsonschema exit non-zero,
+          # which the rejection branch below would happily read as "correctly
+          # rejected" — a deleted or renamed fixture would silently stop testing
+          # anything. Assert the file exists first.
+          if [ ! -f "$nf" ]; then
+            echo "✗ NEGATIVE FIXTURE MISSING (the reject-side is no longer tested): $nf" >&2
+            fail=1
+            continue
+          fi
+          if check-jsonschema --schemafile "$schema" "$nf" >/dev/null 2>&1; then
+            echo "✗ NEGATIVE FIXTURE PASSED (schema reject-side regressed): $nf" >&2
+            fail=1
+          else
+            echo "✓ negative fixture correctly rejected: $(basename "$nf")"
+          fi
+        done
+        # Semantic fixtures: schema-VALID by construction (that is the point —
+        # they isolate the layer the schema cannot cover), semantic-INVALID.
+        for sf in "$td/customization-optional-duplicate-name.yaml" \
+                  "$td/customization-optional-both-channels.yaml"; do
+          if [ ! -f "$sf" ]; then
+            echo "✗ SEMANTIC FIXTURE MISSING (S1/S2 are no longer tested): $sf" >&2
+            fail=1
+            continue
+          fi
+          if ! check-jsonschema --schemafile "$schema" "$sf" >/dev/null 2>&1; then
+            echo "✗ SEMANTIC FIXTURE REJECTED BY SCHEMA — it no longer isolates the semantic layer: $sf" >&2
+            fail=1
+          elif semantic_check "$sf" "fixture $(basename "$sf")" >/dev/null 2>&1; then
+            echo "✗ SEMANTIC FIXTURE PASSED (S1/S2 check regressed): $sf" >&2
+            fail=1
+          else
+            echo "✓ semantic fixture correctly rejected: $(basename "$sf")"
+          fi
+        done
+        pf="$td/customization-optional-valid.yaml"
+        if check-jsonschema --schemafile "$schema" "$pf" >/dev/null 2>&1 && semantic_check "$pf" "fixture $(basename "$pf")"; then
+          echo "✓ positive fixture correctly accepted: $(basename "$pf")"
+        else
+          echo "✗ POSITIVE FIXTURE REJECTED (accept-side regressed): $pf" >&2
+          fail=1
+        fi
       fi
       exit $fail
 
