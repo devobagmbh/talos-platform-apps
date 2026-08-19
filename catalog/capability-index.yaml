@@ -152,7 +152,7 @@ capabilities:
     name: Dashboard / visualization frontend
     domain: observability
     implementations:
-      - {name: grafana, status: active, swap_class: label-move}
+      - {name: grafana, status: active, swap_class: label-move}  # Grafana (#24): the chosen implementation, but NOT a catalog OCI artifact and (by design) NO components/grafana dir — the catalog ships the operator (observability/grafana-operator + -crds); the consumer instantiates a Grafana CR. 'active' = chosen design, not shippable-today.
       - {name: perses, status: considered, swap_class: label-move}
   - id: alert-routing
     name: Alert-Routing / Notification
