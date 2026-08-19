@@ -5436,8 +5436,17 @@ tasks:
     # Unlike local:down, nothing is deleted here — on the next
     # local:start all workloads + data are back. Useful for
     # laptop suspend or multi-day breaks without a re-install.
+    #
+    # The worker set is DISCOVERED, not hardcoded: a hardcoded control-plane-only
+    # list left every worker running on stop and, worse, brought a multi-node
+    # cluster back as one node on start — while the cluster still claimed its
+    # worker count, so every placement assertion would have "passed" against a
+    # single node. The filter is an ANCHORED regex: docker/podman `name=` matches
+    # any part of a container name, so a bare substring would stop unrelated
+    # containers that merely contain this cluster's name.
     cmd: |
-      for c in talos-platform-apps-controlplane-1 kind-registry; do
+      workers=$(docker ps -a --filter 'name=^talos-platform-apps-worker-[0-9]+$' --format '{{`{{.Names}}`}}' | sort)
+      for c in talos-platform-apps-controlplane-1 $workers kind-registry; do
         if [ "$(docker inspect -f '{{`{{.State.Running}}`}}' "$c" 2>/dev/null)" = "true" ]; then
           docker stop "$c" >/dev/null
           echo "✓ $c stopped"
@@ -5452,7 +5461,9 @@ tasks:
     # containers. Waits until the K8s API responds so that follow-up tasks
     # (kubectl, helm) do not run into race conditions.
     cmd: |
-      for c in kind-registry talos-platform-apps-controlplane-1; do
+      # Workers discovered, not hardcoded, anchored regex — see the note on local:stop.
+      workers=$(docker ps -a --filter 'name=^talos-platform-apps-worker-[0-9]+$' --format '{{`{{.Names}}`}}' | sort)
+      for c in kind-registry talos-platform-apps-controlplane-1 $workers; do
         if ! docker inspect "$c" >/dev/null 2>&1; then
           echo "ERROR: container '$c' does not exist — task local:up?"
           exit 1
@@ -5530,19 +5541,114 @@ tasks:
         # + several platform components (crossplane, cnpg, …) blow past 2GiB →
         # apiserver timeouts + OOM. Default 8GiB/6CPU (limit, no reservation →
         # fits smaller VMs too, until actually used). Overridable via LOCAL_NODE_MEMORY
-        # / LOCAL_NODE_CPUS.
+        # / LOCAL_NODE_CPUS (control plane) and LOCAL_WORKER_MEMORY / LOCAL_WORKER_CPUS.
+        #
+        # Node COUNT: LOCAL_WORKERS (default 0 → the single schedulable control plane).
+        # Set it to exercise anything that needs real placement across nodes — hard pod
+        # anti-affinity, replication factors, node-loss behaviour — which a one-node
+        # cluster cannot show (a hard anti-affinity is inert at one replica, and a
+        # "survives node loss" claim is untestable when losing the node loses the
+        # cluster). LOCAL_WORKERS=2 gives three schedulable nodes, the floor for a
+        # replication-factor-3 ring. Cost is real: each worker is another VM at
+        # LOCAL_WORKER_MEMORY.
+        #
         # talosctl create is NOT idempotent (it refuses if the state dir exists).
         # NOTE: `talosctl cluster show` is NOT a reliable existence probe — it exits
         # 0 with empty output even when nothing exists. Gate on the state dir.
+        # LOCAL_WORKERS: distinguish UNSET (accept whatever exists) from SET (assert it).
+        # `${VAR:-}` would collapse the two, so `LOCAL_WORKERS= task local:up` would
+        # silently skip the assertion the operator just asked for. Validate the value
+        # here rather than handing a non-numeric string to talosctl.
+        if [ -n "${LOCAL_WORKERS+set}" ]; then
+          case "${LOCAL_WORKERS}" in
+            ''|*[!0-9]*)
+              echo "ERROR: LOCAL_WORKERS must be a non-negative integer; got '${LOCAL_WORKERS}'."
+              exit 1
+              ;;
+          esac
+          workers_req="${LOCAL_WORKERS}"
+          workers_explicit=1
+        else
+          workers_req=0
+          workers_explicit=0
+        fi
+        # Anchored regex, NOT a bare substring: docker/podman `name=` matches any part
+        # of the name, so an unrelated container such as backup-talos-platform-apps-worker-1
+        # would be counted as a cluster node (and stopped/started by local:stop/start).
+        worker_filter='name=^talos-platform-apps-worker-[0-9]+$'
         state_dir="${HOME}/.talos/clusters/talos-platform-apps"
         if [ -d "$state_dir" ]; then
-          echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create)"
+          have=$(docker ps -aq --filter "$worker_filter" | wc -l | tr -d ' ')
+          cp_have=$(docker ps -aq --filter 'name=^talos-platform-apps-controlplane-[0-9]+$' | wc -l | tr -d ' ')
+          # A crashed create leaves the state directory behind with no state.yaml.
+          # `talosctl cluster destroy` cannot clean that (it needs the state file) and
+          # create keeps skipping while the directory exists — so `task local:down`
+          # is NOT the fix here, and saying so would send the operator in circles.
+          # Detect it by the absence of a control-plane container: state dir without a
+          # node is a leftover, not a cluster.
+          if [ "$cp_have" = "0" ]; then
+            echo "ERROR: the state directory exists but there is no control-plane container —"
+            echo "       a previous create failed, or the containers were removed outside talosctl."
+            echo "       talosctl cluster destroy cannot clean this (it needs state.yaml)."
+            echo "       Remove the leftover state directory by hand, then re-run:"
+            echo "         rm -rf \"\$HOME/.talos/clusters/talos-platform-apps\""
+            echo "       See local/README.md § Troubleshooting."
+            exit 1
+          fi
+          # talosctl cannot resize an existing cluster, and the skip path silently
+          # ignored every flag — so `LOCAL_WORKERS=2 task local:up` against a
+          # one-node cluster used to print "already exists" and hand back a cluster
+          # that cannot satisfy the run. Compare against OBSERVED state (the worker
+          # containers), not a recorded intent: no marker file to drift, and a
+          # destroyed/recreated cluster cannot lie. This counts CONTAINERS, not Ready
+          # nodes — a worker that exists but never joined still passes here; the node
+          # count you actually run against is what `kubectl get nodes` reports.
+          if [ "$workers_explicit" = "1" ] && [ "${workers_req}" != "$have" ]; then
+            echo "ERROR: LOCAL_WORKERS=${workers_req} requested, but the existing cluster has ${have} worker(s)."
+            echo "       talosctl cannot resize a cluster. Recreate it:"
+            echo "         task local:down && LOCAL_WORKERS=${workers_req} task local:up"
+            exit 1
+          fi
+          echo "✓ Talos cluster 'talos-platform-apps' already exists (skip create; ${have} worker container(s))"
         else
+          # NAME COLLISION in the talosconfig. A context called talos-platform-apps already
+          # exists while this cluster does not — usually a cluster destroyed without pruning
+          # the client config, but it could equally be a context someone else's tooling owns.
+          # Either way `talosctl cluster create` does NOT overwrite it: it files the NEW
+          # context as talos-platform-apps-1 and leaves the pre-existing one under the plain
+          # name, which is the name every later step asks for. kubeconfig generation then
+          # addresses the OTHER cluster and local:up dies minutes later with an opaque
+          # `error copying: rpc error … connection refused`. Refuse before creating anything
+          # and let the operator decide whether the context is stale — this check proves the
+          # collision, never that the other context is dead.
+          # Membership test via `case`, not `grep -q` over a pipe: a -q that closes the pipe
+          # early raises SIGPIPE under pipefail (see the validate:release-config comment).
+          ctx_list=$(talosctl config contexts 2>/dev/null | awk 'NR>1 {print ($1 == "*") ? $2 : $1}' | tr '\n' ' ')
+          case " ${ctx_list}" in
+            *" talos-platform-apps "*)
+              echo "ERROR: a talosconfig context named 'talos-platform-apps' already exists while this"
+              echo "       cluster does not. talosctl would file the new context as"
+              echo "       'talos-platform-apps-1' and every later step would keep addressing the other one."
+              echo "       Check what that context points at first:"
+              echo "         talosctl config info --context talos-platform-apps"
+              echo "       If it is stale, remove it and re-run (a context cannot remove itself, so"
+              echo "       select another one first):"
+              echo "         talosctl config context <OTHER-CONTEXT>"
+              echo "         talosctl config remove talos-platform-apps --noconfirm"
+              echo "       Prune the matching kube entries too, if they are stale:"
+              echo "         kubectl config delete-context admin@talos-platform-apps"
+              echo "         kubectl config delete-cluster talos-platform-apps"
+              echo "         kubectl config delete-user    admin@talos-platform-apps"
+              exit 1
+              ;;
+          esac
           talosctl cluster create docker \
             --name talos-platform-apps \
-            --workers 0 \
+            --workers "${workers_req}" \
             --memory-controlplanes "${LOCAL_NODE_MEMORY:-8GiB}" \
             --cpus-controlplanes "${LOCAL_NODE_CPUS:-6}" \
+            --memory-workers "${LOCAL_WORKER_MEMORY:-8GiB}" \
+            --cpus-workers "${LOCAL_WORKER_CPUS:-6}" \
             --image ghcr.io/siderolabs/talos:v1.13.3 \
             --kubernetes-version 1.36.0 \
             --config-patch @local/talos-patch.yaml \
@@ -6059,7 +6165,27 @@ tasks:
       fdir="local/fixtures/${sl}/${comp}"
       [ -d "$fdir" ] || { echo "  (no fixtures for ${cid})"; exit 0; }
       KC="kubectl --context {{.LOCAL_KUBE_CONTEXT}}"
-      ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
+      # Namespace from the component's Argo-app template when one exists, else the
+      # component name. NOT every component with fixtures has such a template: one whose
+      # Applications live under local/fixtures/<sl>/<comp>/ on purpose (mimir — local:apply
+      # fans out every file in local/argo-apps/<sl>/, and eight mimir workloads have no
+      # business in an unrelated observability E2E) has none. yq exits 2 on a missing file
+      # and go-task runs each cmd under errexit, so the bare assignment aborted the whole
+      # task — SILENTLY, stderr being discarded: `task local:s3-backend` died with a bare
+      # "exit status 2" and not one line of output. Probe for the file; keep `|| true` so a
+      # malformed template falls back to the component name instead of killing the run.
+      appfile="local/argo-apps/${sl}/${comp}.yaml"
+      ns=""
+      if [ -f "$appfile" ]; then
+        # No `|| true` here: absence is handled by the -f probe, so a non-zero yq now means
+        # the template is UNREADABLE. Falling back silently would pick the component name as
+        # the namespace and apply fixtures — or, in local:s3-backend, mint a credential
+        # Secret — into the wrong one. Fail instead.
+        ns=$(yq -r '.spec.destination.namespace' "$appfile") || {
+          echo "ERROR: cannot read .spec.destination.namespace from ${appfile}"
+          exit 1
+        }
+      fi
       { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
       $KC create namespace "$ns" --dry-run=client -o yaml | $KC apply -f - >/dev/null
 
@@ -6168,7 +6294,17 @@ tasks:
       [ -f "$rc" ] || { echo "ERROR: no runtime-config fixture at ${rc} — ${cid} is not wired for the local S3 backend"; exit 1; }
       # Target namespace from the argo-app template; credential Secret name from the
       # component's freeze-line (provided_refs.secret), fallback <component>-runtime-secret.
-      ns=$(yq -r '.spec.destination.namespace' "local/argo-apps/${sl}/${comp}.yaml" 2>/dev/null)
+      # The -f probe is load-bearing, not defensive: without it a component whose
+      # Applications live under local/fixtures/ (mimir) kills this task before its first
+      # echo. Full rationale at the identical lookup in local:fixtures.
+      appfile="local/argo-apps/${sl}/${comp}.yaml"
+      ns=""
+      if [ -f "$appfile" ]; then
+        ns=$(yq -r '.spec.destination.namespace' "$appfile") || {
+          echo "ERROR: cannot read .spec.destination.namespace from ${appfile}"
+          exit 1
+        }
+      fi
       { [ -z "$ns" ] || [ "$ns" = "null" ]; } && ns="$comp"
       sec=$(yq -r '.provided_refs.secret' "sub-layers/${sl}/components/${comp}/customization.yaml" 2>/dev/null)
       { [ -z "$sec" ] || [ "$sec" = "null" ]; } && sec="${comp}-runtime-secret"

@@ -81,6 +81,31 @@ A prod-shaped **Talos** cluster (docker provisioner) for local sub-layer testing
 - Ports `80` and `443` free on the workstation (no other local HTTP/HTTPS service bound).
 - **VM headroom.** The node is created with **8 GiB / 6 CPU** (`--memory-controlplanes`/`--cpus-controlplanes`; override via `LOCAL_NODE_MEMORY` / `LOCAL_NODE_CPUS`). The talosctl default (2 GiB / 2 CPU) is too small — Cilium + ArgoCD + a few platform components (crossplane, cnpg, …) exhaust it and the apiserver starts timing out. These are limits, not reservations, so they fit a smaller VM until actually used; give the Docker/Colima VM enough memory for what you deploy.
 
+### Multi-node mode (`LOCAL_WORKERS`)
+
+The cluster defaults to **one schedulable node** (the control plane). That is enough for
+admission, scheduling, container start and object-store round-trips — but it cannot show
+anything that depends on real placement *across* nodes: a hard pod anti-affinity is inert
+at one replica, a replication factor above 1 has nowhere to go, and "survives node loss" is
+untestable when losing the node loses the cluster.
+
+`LOCAL_WORKERS=<n> task local:up` adds `<n>` worker nodes (sized via `LOCAL_WORKER_MEMORY`
+/ `LOCAL_WORKER_CPUS`, same 8 GiB / 6 CPU defaults). `LOCAL_WORKERS=2` gives **three**
+schedulable nodes — the floor for a replication-factor-3 ring, and the shape the
+`observability/mimir` HA fixture expects.
+
+Two things to know before you use it:
+
+- **`talosctl` cannot resize a cluster.** The node count is fixed at create time, so
+  switching shapes means `task local:down` first. `local:cluster:up` compares
+  `LOCAL_WORKERS` against the worker containers that actually exist and fails with that
+  instruction rather than silently handing back a cluster of the wrong size. It only
+  compares when `LOCAL_WORKERS` is explicitly set, so a plain `task local:up` against an
+  existing multi-node cluster still works.
+- **The cost is real.** Each worker is another VM at `LOCAL_WORKER_MEMORY`; three nodes at
+  the default is 24 GiB of limits. They are limits and not reservations, but a workload
+  that genuinely uses them needs a Docker/Podman VM that large.
+
 ### Running on Podman (instead of Docker Desktop)
 
 The `task local:*` flow targets a Docker-Desktop-style daemon. It also works on **Podman**, but the Talos docker provisioner runs the node as a privileged container with nested services, so it **requires a rootful Podman machine** — rootless cannot write `oom_score_adj` / `/proc/sys` kernel params and the node never finishes bootstrapping. Starting from a default (rootless) Podman machine on macOS, four deltas apply:
@@ -175,6 +200,14 @@ task local:apply   -- observability 0.0.0-dev
 # Tear the component's Argo apps down (garage + its fixtures survive; local:down resets).
 task local:remove -- observability
 ```
+
+**`mimir` is wired for `local:s3-backend` but has no `local/argo-apps/` template** — its two
+Applications (shipped default and HA shape) live in
+[`local/fixtures/observability/mimir/`](fixtures/observability/mimir/README.md) and are
+applied by hand. `task local:apply -- observability` fans out every file in the argo-apps
+directory, and mimir is eight workloads, one of which reserves 4 GiB — attaching that to
+every unrelated observability E2E on an 8 GiB node is not a trade worth making. The fixture
+README carries both run sequences, including the three-node HA one.
 
 `local:s3-backend` is idempotent and re-run-safe:
 
@@ -309,8 +342,8 @@ task local:down
 
 | Task | What happens | State |
 |---|---|---|
-| `local:stop` | `docker stop` of both containers | kept — on start all workloads return |
-| `local:start` | `docker start` + wait for the K8s API | restored from the container FS |
+| `local:stop` | `docker stop` of the registry, the control plane and **every worker** | kept — on start all workloads return |
+| `local:start` | `docker start` of the same set + wait for the K8s API | restored from the container FS |
 | `local:down` | `talosctl cluster destroy` + `docker rm` the registry | **everything gone** — the next `local:up` is fresh |
 
 `local:stop`/`local:start` is the path for laptop suspend or multi-day pauses without a reinstall. **Do not use it to reset state** — if the cluster gets into a bad state, `local:down && local:up` is the reliable reset, since `talosctl cluster create` provisions a clean cluster.
@@ -324,6 +357,23 @@ Check Docker is running and ports 80/443 are free. Inspect the node via the talo
 
 **`talosctl cluster create` skips creation forever after a crashed run.**
 A failed create can leave a partial state directory under `~/.talos/clusters/<name>/` with no `state.yaml`. `talosctl cluster destroy` cannot clean it (it needs the state file), and create keeps skipping while the directory exists. Remove it manually — `rm -rf ~/.talos/clusters/talos-platform-apps` — then `task local:up`.
+
+**`local:up` dies with `error copying: rpc error … connection refused` minutes into a fresh create.**
+A talosconfig context named `talos-platform-apps` already exists (destroying a cluster does not prune the client config). `talosctl cluster create` will not overwrite it: it files the NEW context as `talos-platform-apps-1` and leaves the pre-existing one under the plain name — which is the name every later step asks for, so kubeconfig generation addresses the other cluster. `local:cluster:up` now refuses before creating anything rather than failing halfway.
+
+The check proves a **name collision**, not that the other context is dead — inspect it before deleting anything:
+
+```bash
+talosctl config info --context talos-platform-apps
+```
+
+If it is stale, remove it. A context cannot remove itself, so select another one first (any context from `talosctl config contexts`):
+
+```bash
+talosctl config context <OTHER-CONTEXT>
+talosctl config remove talos-platform-apps --noconfirm
+kubectl config delete-context admin@talos-platform-apps   # plus delete-cluster / delete-user
+```
 
 **Wrong kube-context — guard before any `local:apply`.**
 `task local:apply` is a `kubectl apply` against the **current** context. When the workstation kubeconfig also holds real (production / consumer) contexts, assert the local one first: `kubectl config current-context` MUST read `admin@talos-platform-apps` before applying. Never run a context-less apply against a shared kubeconfig (tracked in issue #172).

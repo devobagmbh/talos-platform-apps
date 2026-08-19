@@ -1,0 +1,187 @@
+# Argo Application for observability/mimir in the HA shape (local test, three nodes).
+#
+# ┌─ NOT SELF-SUFFICIENT ON THIS BRANCH ────────────────────────────────────────┐
+# │ The mimir artifact does not yet consume INGESTER_REPLICATION_FACTOR or      │
+# │ STORE_GATEWAY_REPLICATION_FACTOR, and carries no hard pod anti-affinity —   │
+# │ both arrive with the component change for issue #794. Against the current   │
+# │ artifact this fixture raises REPLICA COUNTS only: the replication factors   │
+# │ stay at the literal 1 baked into the rendered config no matter what the     │
+# │ ConfigMap says, and placement falls back to the chart's SOFT                │
+# │ topologySpreadConstraints (whenUnsatisfiable: ScheduleAnyway), which permit │
+# │ two ingesters on one node. Do not read a green run here as evidence of      │
+# │ RF 3 or of one-pod-per-node until that change has landed.                   │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# This is the consumer-side overlay the component README documents, expressed as a
+# local fixture so the multi-node E2E exercises the real mechanism rather than a
+# hand-edited cluster. Two halves, deliberately kept apart:
+#
+#   1. REPLICAS come from `source.kustomize.patches` below (a consumer overlay on the
+#      signed base — ADR-0024 calibrated friction).
+#   2. The REPLICATION FACTORS do NOT live here. They are env keys in the consumer's
+#      mimir-runtime-config ConfigMap. Kubernetes only injects the variable; Mimir
+#      itself expands ${VAR:default} in its config text, and only because every
+#      container runs with -config.expand-env=true. Set them there (effective only
+#      once the artifact renders the placeholders — see the box above):
+#        kubectl --context admin@talos-platform-apps -n mimir patch cm mimir-runtime-config \
+#          --type merge \
+#          -p '{"data":{"INGESTER_REPLICATION_FACTOR":"3","STORE_GATEWAY_REPLICATION_FACTOR":"3"}}'
+#      and bump `config-generation` below in the SAME step, so the pods actually re-read it.
+#
+# Order matters: raise replicas FIRST (sync 1), wait until every ingester is ACTIVE in the
+# ring, and only THEN raise the replication factor (sync 2). The reverse makes quorum
+# unreachable — the state issue #379 fixed.
+#
+# manual sync ON PURPOSE (no `automated:` block): the test controls when each of those two
+# steps lands. A self-healing Application would also revert `kubectl rollout restart`'s
+# pod-template annotation, which is why the config-generation annotation below — a real
+# field of the desired state — is the documented restart mechanism instead.
+#
+# Wants three schedulable nodes (LOCAL_WORKERS=2 task local:up). Once the #794 change has
+# landed, a fourth ingester on three nodes stays Pending — which is the CORRECT signal
+# from the hard anti-affinity, not a defect. Before it lands, the soft spread lets them
+# co-locate instead.
+#
+# Apply by hand (see argo-app.yaml for the full prerequisite sequence). Every command
+# pins the local context — the workstation kubeconfig also holds real clusters:
+#   TAG=0.0.0-dev REGISTRY=kind-registry.registry.svc.cluster.local:5000/talos-platform-apps \
+#     envsubst < local/fixtures/observability/mimir/argo-app-ha.yaml | \
+#     kubectl --context admin@talos-platform-apps apply -f -
+#   argocd app sync observability-mimir-ha
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-mimir-ha
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: mimir
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/mimir
+    targetRevision: ${TAG}
+    path: .
+    kustomize:
+      patches:
+        # STRATEGIC-MERGE patches, not JSON6902. A JSON-Patch `add` of
+        # /spec/template/metadata/annotations/config-generation fails outright when the
+        # rendered pod template carries no `annotations` object at all — JSON Patch has no
+        # create-parent semantics and no conditional. Chart 5.8.0 does render one (the
+        # checksum/config annotation), so the JSON6902 form held, but it held by accident of
+        # an upstream detail: a chart bump that drops that annotation would break every
+        # patch here rather than the one it changed. A strategic merge creates the parent if
+        # it is missing and merges into it if it is not, which is what "bump a generation
+        # annotation" means. `replicas` is set in the same document, so one patch per target
+        # instead of two ops (review on #800).
+        # --- stateful roles: 3 replicas. One per node ONLY once the #794 change ships
+        #     the hard anti-affinity; against the current artifact the chart's soft
+        #     spread permits co-location. ---
+        - target: {kind: StatefulSet, name: mimir-ingester}
+          patch: |
+            apiVersion: apps/v1
+            kind: StatefulSet
+            metadata:
+              name: mimir-ingester
+            spec:
+              replicas: 3
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        - target: {kind: StatefulSet, name: mimir-store-gateway}
+          patch: |
+            apiVersion: apps/v1
+            kind: StatefulSet
+            metadata:
+              name: mimir-store-gateway
+            spec:
+              replicas: 3
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        # --- stateless roles: 2 replicas each ---
+        - target: {kind: Deployment, name: mimir-distributor}
+          patch: |
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-distributor
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        - target: {kind: Deployment, name: mimir-querier}
+          patch: |
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-querier
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        - target: {kind: Deployment, name: mimir-query-frontend}
+          patch: |
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-query-frontend
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        - target: {kind: Deployment, name: mimir-query-scheduler}
+          patch: |
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-query-scheduler
+            spec:
+              replicas: 2
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        # compactor and ruler stay at 1 replica — singletons by design in this shape,
+        # but they still read the config, so they carry the annotation too.
+        - target: {kind: StatefulSet, name: mimir-compactor}
+          patch: |
+            apiVersion: apps/v1
+            kind: StatefulSet
+            metadata:
+              name: mimir-compactor
+            spec:
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+        - target: {kind: Deployment, name: mimir-ruler}
+          patch: |
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: mimir-ruler
+            spec:
+              template:
+                metadata:
+                  annotations:
+                    config-generation: "1"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mimir
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true

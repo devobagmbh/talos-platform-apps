@@ -41,5 +41,7 @@ cluster:
   # kube-proxy off — Cilium's kubeProxyReplacement takes over (ADR-0014).
   proxy:
     disabled: true
-  # Single-node: the lone control plane must run workloads.
+  # The control plane is schedulable in every shape of this test cluster: at the
+  # LOCAL_WORKERS=0 default it is the only node, and with workers it still counts
+  # as a schedulable node (so LOCAL_WORKERS=2 yields three, not two).
   allowSchedulingOnControlPlanes: true

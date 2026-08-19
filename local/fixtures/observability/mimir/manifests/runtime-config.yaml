@@ -1,0 +1,28 @@
+# Local mimir fixture: the consumer-owned, NON-secret S3 connection scalars
+# (ConfigMap mimir-runtime-config) that the frozen mimir config expands at runtime
+# via -config.expand-env=true (customization.yaml, Shape a).
+# LOCAL-ONLY: points mimir at the in-cluster garage S3 endpoint.
+#
+# There is deliberately NO secrets.yaml in this fixture dir. The credential Secret
+# mimir-runtime-secret (S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY) is minted at apply
+# time by `task local:s3-backend -- observability/mimir <tag>` from the garage access
+# key it provisions, never shipped here. That task also derives the buckets to create
+# from the S3_BUCKET_* keys below, so the two stay in step by construction.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mimir-runtime-config
+  namespace: mimir
+data:
+  # garage S3 API Service (ClusterIP garage:3900 in the garage namespace), plain HTTP.
+  # HOST:PORT, no scheme — mimir's S3 client is thanos-io/objstore, which rejects a
+  # fully-qualified URL outright ("Endpoint url cannot have fully qualified paths"). With
+  # an `http://` prefix here all eight mimir workloads crash-looped on the usage-stats
+  # bucket client. The scheme is NOT part of this value: S3_INSECURE selects http vs https.
+  # The loki fixture next door does carry an `http://` prefix and works — Loki's S3 client
+  # accepts a URL. Do not copy that form here.
+  S3_ENDPOINT: "garage.garage.svc.cluster.local:3900"
+  S3_REGION: "garage"
+  S3_BUCKET_BLOCKS: "mimir-blocks"
+  S3_BUCKET_RULER: "mimir-ruler"
+  S3_INSECURE: "true"
