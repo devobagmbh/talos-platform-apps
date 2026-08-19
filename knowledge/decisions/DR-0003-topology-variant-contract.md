@@ -26,7 +26,7 @@ sources:
 
 ## Context
 
-`observability/loki` and `observability/loki-distributed` (and, identically, `observability/tempo` / `observability/tempo-distributed`) are alternative deployment topologies of the same product. A consumer runs exactly one of each pair. `schemas/compatibility.schema.json` is `additionalProperties: false` with only `requires` / `provides` / `crd-bearing` / `resource_policy` — there was no machine-readable way to say "these two are alternatives, never co-deployed", nor that a concrete `requires: observability/loki` pin (written by `alloy`, `alloy-singleton`, `grafana`; and `requires: observability/tempo` by `alloy`, `grafana`) is satisfiable by either member. The exclusion lived only in README prose and sub-layer aggregate comments.
+`observability/loki` and `observability/loki-distributed` (and, identically, `observability/tempo` / `observability/tempo-distributed`) are alternative deployment topologies of the same product. A consumer runs exactly one of each pair. `schemas/compatibility.schema.json` is `additionalProperties: false` with only `requires` / `provides` / `crd-bearing` / `resource_policy` — there was no machine-readable way to say "these two are alternatives, never co-deployed", nor that a concrete `requires: observability/loki` pin (written by `alloy`, `alloy-singleton`; and `requires: observability/tempo` by `alloy`) is satisfiable by either member. The exclusion lived only in README prose and sub-layer aggregate comments.
 
 ## Decision
 
