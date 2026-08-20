@@ -20,7 +20,6 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`alloy`](components/alloy/) | 20 | Helm `grafana/alloy` (DaemonSet) | `oci://.../observability/alloy:vX.Y.Z` |
 | [`alloy-metrics`](components/alloy-metrics/) | 20 | Helm `grafana/alloy` (clustered StatefulSet, Prometheus-format metrics-scrape role) | `oci://.../observability/alloy-metrics:vX.Y.Z` |
 | [`alloy-singleton`](components/alloy-singleton/) | 20 | Helm `grafana/alloy` (Deployment, single-replica cluster Event collector → Loki; `events-collect`) | `oci://.../observability/alloy-singleton:vX.Y.Z` |
-| [`grafana`](components/grafana/) | 20 | Helm `grafana/grafana`, OIDC via Dex | `oci://.../observability/grafana:vX.Y.Z` |
 | [`hubble`](components/hubble/) | 0 | Curated slice of Helm `cilium/cilium` (relay/ui/certs) | `oci://.../observability/hubble:vX.Y.Z` |
 | [`metrics-server`](components/metrics-server/) | 0 | Helm `metrics-server` (Resource Metrics API — HPA + `kubectl top`) | `oci://.../observability/metrics-server:vX.Y.Z` |
 | [`kube-state-metrics`](components/kube-state-metrics/) | 0 | Helm `prometheus-community/kube-state-metrics` (Kubernetes object-state metrics — `kube_*` series, scraped by Alloy) | `oci://.../observability/kube-state-metrics:vX.Y.Z` |
@@ -56,9 +55,9 @@ The upstream `prometheus-community/kube-prometheus-stack` chart bundles operator
 | Alertmanager | `alertmanager` (consumer-instantiated via the operator `Alertmanager` CR) | `alert-routing` | [#43](https://github.com/devobagmbh/talos-platform-apps/issues/43) | no |
 | node-exporter | [`node-exporter`](components/node-exporter/) | — (scrape target) | [#44](https://github.com/devobagmbh/talos-platform-apps/issues/44) | yes |
 | kube-state-metrics | [`kube-state-metrics`](components/kube-state-metrics/) | — (scrape target) | [#45](https://github.com/devobagmbh/talos-platform-apps/issues/45) | yes |
-| Grafana | [`grafana`](components/grafana/) | `dashboards` | [#24](https://github.com/devobagmbh/talos-platform-apps/issues/24) | no |
+| Grafana | `grafana` (consumer-instantiated via the operator `Grafana` CR) | `dashboards` | [#24](https://github.com/devobagmbh/talos-platform-apps/issues/24) | no |
 
-Long-term metric storage and query are served by [`mimir`](components/mimir/) (`metrics-storage` / `metrics-query`); scraping/forwarding by [`alloy`](components/alloy/) (`metrics-scrape`). The Prometheus and Alertmanager *instances* are consumer concerns wired via the operator CRs, not published catalog artifacts.
+Long-term metric storage and query are served by [`mimir`](components/mimir/) (`metrics-storage` / `metrics-query`); scraping/forwarding by [`alloy`](components/alloy/) (`metrics-scrape`). The Prometheus, Alertmanager and Grafana *instances* are consumer concerns wired via the operator CRs, not published catalog artifacts.
 
 ## Consumed by
 
