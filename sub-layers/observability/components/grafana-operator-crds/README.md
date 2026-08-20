@@ -114,8 +114,9 @@ api-surface-only, **no capability** — `capabilities: []`. The
 `grafana.integreatly.org` CRDs are the API surface (schemas) of the Grafana
 Operator's own exclusive API group, not a swappable operational capability: no
 alternative implementation satisfies the same group/version contract. The
-operational `dashboards` capability belongs to a running Grafana **instance** (the
-`observability/grafana` component), not to this CRD bundle or to the operator
+operational `dashboards` capability belongs to a running Grafana **instance** (a
+consumer-instantiated `Grafana` CR — the catalog ships no `observability/grafana`
+component by design, issue #24), not to this CRD bundle or to the operator
 controller. Carrying `capabilities: []` here is the deliberate design (precedent:
 `observability/prometheus-operator-crds` and `secrets/external-secrets-crds`,
 likewise api-surface-only with no capability), NOT a deferral — so no `# TODO:`.
