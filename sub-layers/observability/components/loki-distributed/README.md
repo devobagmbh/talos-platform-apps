@@ -262,8 +262,8 @@ of these:
   `ConfigMap`s (the chart bundles a set; it is switched off by the same `monitoring`
   block that disables the scrape resources above — one chart key, two distinct
   ownership questions). Dashboard provisioning is a consumer concern, handled through
-  the catalog's Grafana components (`observability/grafana`,
-  `observability/grafana-operator`) and the consumer's own overlay. A consumer that
+  the catalog's `observability/grafana-operator` (which reconciles the consumer's
+  `GrafanaDashboard` CRs) and the consumer's own overlay. A consumer that
   wants the upstream Loki dashboards imports them there rather than re-enabling
   anything in this component.
 - **Network isolation.** `auth_enabled: false` (single-tenant) and no shipped
