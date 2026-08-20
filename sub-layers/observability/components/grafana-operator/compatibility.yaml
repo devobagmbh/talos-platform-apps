@@ -12,7 +12,8 @@ requires:
 
 # api-surface-only, NO capability — `capabilities: []` is the deliberate design, NOT a
 # deferral, so there is no `# TODO:`. The `dashboards` capability belongs to a running
-# Grafana INSTANCE (observability/grafana, issue #24), not to this controller: the
+# Grafana INSTANCE (a consumer-instantiated Grafana CR; no observability/grafana
+# component by design, issue #24), not to this controller: the
 # grafana-operator is a Kubernetes controller that reconciles Grafana instances via the
 # grafana.integreatly.org CRDs — it is not itself a dashboard frontend. No other index
 # capability fits. Precedent for the api-surface-only, no-TODO pattern:

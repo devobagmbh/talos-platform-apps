@@ -137,7 +137,8 @@ api-surface-only, **no capability** — `capabilities: []` (precedent:
 `observability/prometheus-operator` and `lifecycle/providers`, likewise api-surface-only
 with no capabilities, no `# TODO`). This is a design state, not a deferral: the
 operational `dashboards` capability belongs to a running **Grafana instance**
-(`observability/grafana`, issue #24), not to this controller framework. The
+(a consumer-instantiated `Grafana` CR — the catalog ships no `observability/grafana`
+component by design, issue #24), not to this controller framework. The
 grafana-operator reconciles Grafana instances via the `grafana.integreatly.org` CRDs —
 it is not itself a dashboard frontend — so assigning `dashboards` here would be
 incorrect, and no other index capability fits.
