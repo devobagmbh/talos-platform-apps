@@ -18,6 +18,7 @@ See [ADR-0011 Secrets-Management](https://github.com/devobagmbh/talos-platform-d
 | [`cert-manager`](components/cert-manager/) | 0 | Helm `cert-manager` @ jetstack v1.20.2 — TLS issuance controller + CRDs | `oci://.../secrets/cert-manager:vX.Y.Z` |
 | [`external-secrets`](components/external-secrets/) | 0 | Helm `external-secrets/external-secrets` — CRD-free ESO operator (strict-B workload half; requires `external-secrets-crds`) | `oci://.../secrets/external-secrets:vX.Y.Z` |
 | [`vault-operator`](components/vault-operator/) | 0 | Helm `vault-operator` v1.24.0 — Bank-Vaults Vault Operator (strict-B workload half; requires `vault-operator-crds`) | `oci://.../secrets/vault-operator:vX.Y.Z` |
+| [`vault-server`](components/vault-server/) | 0 | Helm `hashicorp/vault` 0.34.1 (Vault 2.0.4) — official Vault server, standalone **human-custody manual-unseal** (a 2nd `vault-secrets` implementation alongside `vault-operator`) | `oci://.../secrets/vault-server:vX.Y.Z` |
 | [`vault-config-operator`](components/vault-config-operator/) | 1 | Helm `vault-config-operator` v0.8.49 — declarative Vault config operator workload (strict-B workload half; requires `vault-config-operator-crds`) | `oci://.../secrets/vault-config-operator:vX.Y.Z` |
 | [`clustersecretstore-defaults`](components/clustersecretstore-defaults/) | 10 | Boilerplate manifests | `oci://.../secrets/clustersecretstore-defaults:vX.Y.Z` |
 | [`ca-clusterissuer`](components/ca-clusterissuer/) | 20 | cert-manager CA `ClusterIssuer`, CA key via ESO from Vault | `oci://.../secrets/ca-clusterissuer:vX.Y.Z` |
