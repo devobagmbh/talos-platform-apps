@@ -3,7 +3,7 @@ type: reference
 title: secrets sub-layer
 description: Secret-management TOOLING - External Secrets, cert-manager, Vault operator (not secret material).
 tags: [reference, sub-layer, secrets]
-timestamp: 2026-07-13
+timestamp: 2026-08-24
 sources:
   - sub-layers/secrets/README.md
   - sub-layers/secrets/compatibility.yaml
@@ -12,7 +12,8 @@ sources:
 # secrets sub-layer
 
 Secret-management **tooling** — External Secrets Operator (the Vault-to-workload
-sync mechanism), cert-manager, and the Vault operator. It holds no real secret
+sync mechanism), cert-manager, the Vault operator, and a directly-shipped Vault server
+(`vault-server`, a second `vault-secrets` implementation). It holds no real secret
 material (those are SOPS-encrypted elsewhere). OCI prefix:
 `ghcr.io/devobagmbh/talos-platform-apps/secrets/`.
 
@@ -31,6 +32,7 @@ false-positive. The link text and title remain the sub-layer's real name.)
 | cert-manager | 0 | inline CRDs (not split) | `tls-issuance` (label-move) | - |
 | external-secrets | 0 | - | `secret-sync` (rewrite-required) | secrets/external-secrets-crds |
 | vault-operator | 0 | - | `vault-secrets` (data-migration) | secrets/vault-operator-crds |
+| vault-server | 0 | - (chart ships no CRDs) | `vault-secrets` (data-migration) | - |
 | vault-config-operator | 1 | - | `secret-config-declarative` (rewrite-required) | secrets/vault-config-operator-crds, secrets/cert-manager |
 | clustersecretstore-defaults | 10 | - | - | secrets/external-secrets |
 | ca-clusterissuer | 20 | - | `tls-issuance` (label-move) | secrets/external-secrets |

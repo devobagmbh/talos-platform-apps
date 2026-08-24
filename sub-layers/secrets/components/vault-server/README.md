@@ -17,7 +17,7 @@ two differ in the unseal model, which is the reason both exist:
   under **human custody** and are never machine-readable in-cluster — the model a
   human-custody security root requires. bank-vaults cannot do this.
 
-`kind: mixed`: the chart renders the StatefulSet, Services, RBAC, ConfigMap, and
+`kind: mixed`: the chart renders the StatefulSet, Services, ConfigMap, and
 ServiceAccount; `manifests/00-namespace.yaml` ships the dedicated Namespace (the
 chart has no Namespace template). The chart ships **no** CustomResourceDefinitions,
 so there is no strict-B `-crds` split.
@@ -86,6 +86,18 @@ model them.
   auto-injected (the chart dropped `IPC_LOCK`), which lets the kernel page Vault
   process memory — including unsealed key material — to swap. Disabling swap on the
   nodes is the mitigation.
+- **Back up the data PVC — it is the platform crypto root (ADR-0008).** The sole
+  datastore is a **single, non-replicated RWO PVC** (`storage "file"`, one replica). PVC
+  loss is **total, permanent, unrecoverable** loss of every stored secret, with **no
+  re-derivation path** (unlike an operator whose unseal keys live in a KMS/Secret). The
+  consumer MUST schedule a backup of the Vault data PVC — e.g. a Velero schedule, a
+  Layer-3 obligation. NOTE: a restored PVC still comes up **sealed** and needs the
+  original key shares (Step 3 of the init/unseal runbook) to unseal — the backup
+  protects the *stored data*, not the unseal capability.
+- **Size the memory limit to observed usage — an OOM is a human incident.** The baseline
+  sets `limits.memory: 512Mi` (above the chart's 256Mi example). An OOM-kill re-seals the
+  pod, which then needs a **manual re-unseal** — a human-paged incident, not a
+  self-healing restart. Do not set the limit tight.
 
 ## TLS
 
@@ -155,3 +167,4 @@ The chart exposes no CRD/API surface (`api_surface: []`).
 - [ADR-0021 — Capability-Layer-Model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0021-capability-layer-model.md)
 - [ADR-0011 — Secrets-Management (SOPS + Layer-3 Vault)](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0011-secrets-management.md)
 - [ADR-0027 — Namespace / PSA ownership model](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0027-namespace-psa-ownership.md)
+- [ADR-0008 — Backup-Strategy](https://github.com/devobagmbh/talos-platform-docs/blob/main/adr/0008-backup-strategy.md) — the data PVC is the sole store; back it up (see Consumer obligations)
