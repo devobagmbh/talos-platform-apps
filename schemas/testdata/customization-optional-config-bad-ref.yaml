@@ -1,0 +1,24 @@
+# NEGATIVE: `ref` violates the RFC 1123 DNS-subdomain pattern Kubernetes enforces
+# for object names. The pattern is load-bearing beyond charset hygiene: the gate
+# builds an entry identity as "<ref>|<key>", so a ref containing `|` would collide
+# with a different entry pair and make S3/S4 report a phantom duplicate.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture|config
+      key: rules.yaml
+      description: Rule set the workload evaluates.
+      default: |
+        rules: []
+sync_wave: "10"
+external_dependencies: []

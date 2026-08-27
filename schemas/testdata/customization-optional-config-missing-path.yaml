@@ -1,0 +1,22 @@
+# NEGATIVE: config_files item missing the required `path` field.
+# Otherwise fully valid, so removing `path` from the item's `required` list
+# in the schema turns this fixture green.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - ref: fixture-config
+      key: rules.yaml
+      description: Rule set the workload evaluates.
+      default: |
+        rules: []
+sync_wave: "10"
+external_dependencies: []

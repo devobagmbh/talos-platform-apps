@@ -83,10 +83,11 @@ hard-anchored at consumer admission; other fields consumer-overlayable per-clust
 platform-set ones like sync_wave that stay catalog-owned)
 **and** the config the consumer **must supply** (the `required` env / secret keys, config
 files, and selector CRs). Where a component exposes a knob that is *not* mandatory — an env
-key the artifact carries a working baked default for, which a consumer sets only to change
-behaviour — the issue names it under the contract's additive `optional.env_keys` channel
-(DR-0004), never under `required`: the two channels are disjoint, and `required` means the
-workload does not function without it.
+key or a whole config file the artifact carries a working baked default for, which a
+consumer supplies only to change behaviour — the issue names it under the contract's additive
+`optional.env_keys` (DR-0004) or `optional.config_files` (DR-0005) channel, never under
+`required`: the two channels are disjoint, and `required` means the workload does not
+function without it.
 
 ## Lifecycle
 

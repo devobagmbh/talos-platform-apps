@@ -3279,8 +3279,10 @@ tasks:
     summary: |
       Validates each component's customization.yaml against
       schemas/customization.schema.json (ADR-0024 v2 freeze-line contract) with
-      check-jsonschema, then applies the two semantic rules JSON Schema cannot
-      express for the additive `optional` block (#794):
+      check-jsonschema, then applies the seven semantic rules JSON Schema cannot
+      express for the additive `optional` block (env shape #794 / DR-0004;
+      config-file shape #831 / DR-0005). S1-S2 are the env shape, S3-S7 the
+      config-file shape:
 
         S1  required.env_keys and optional.env_keys[].name are DISJOINT — a key
             either carries a working baked default (optional) or the consumer
@@ -3292,21 +3294,79 @@ tasks:
             may declare different defaults and different descriptions, and
             nothing decides which one holds. Left unchecked, a consumer reading
             the contract gets whichever entry they happened to read first.
+        S3  required.config_files and optional.config_files are DISJOINT on the
+            (ref, key) identity — the same channel boundary as S1, applied to the
+            file shape: a file either ships with working baked content or the
+            consumer must author it.
+        S4  within EACH channel, the (ref, key) identity is UNIQUE — the S2
+            contradiction for files. Checked in `required` too, not only in
+            `optional`: that channel had no uniqueness rule at all, and forbidding
+            a contradiction in the new channel while leaving it legal in the one
+            live components already populate is the compounding asymmetry
+            rules/schema-contract-parity.md exists to prevent.
+        S5  `path` is UNIQUE across BOTH channels together. One mount path cannot
+            hold two different files, and nothing says which the workload reads.
+            Spanning both channels is the point: when a consumer-authored file and
+            an artifact-baked file collide on a path, they have different OWNERS,
+            so the collision decides whether the consumer's file loads at all.
+        S6  optional.config_files[].ref is never provided_refs.secret. That channel
+            declares content the artifact BAKES and `default` records it verbatim,
+            so a Secret ref would oblige committing real secret material
+            (AGENTS.md §Hard Constraints). JSON Schema cannot see an object's kind.
+        S7  optional.config_files[].ref IS provided_refs.config. The positive form
+            of S6: a negative rule keyed on provided_refs.secret is closed by simply
+            not declaring that field, and the skip was indistinguishable from a clean
+            evaluation. Requiring the ref to BE the declared config ref means an
+            undeclared object can no longer enter the channel by omission — only by
+            an affirmative false declaration, which review can see.
 
       Components WITHOUT customization.yaml are reported (not yet under contract).
 
       Full-corpus runs additionally red-green BOTH layers against
-      schemas/testdata/customization-optional-*.yaml: seven schema-reject
-      fixtures, one positive, and two SEMANTIC-reject fixtures that are
-      schema-valid by construction (uniqueness and cross-channel disjointness
-      are not expressible in JSON Schema). Each negative is otherwise fully
-      valid and fails for exactly one reason, so removing the corresponding
-      schema keyword or semantic check turns that fixture green.
+      schemas/testdata/customization-optional-*.yaml: 20 schema-reject fixtures,
+      2 positives, and 9 SEMANTIC-reject fixtures that are schema-valid by
+      construction (uniqueness, cross-channel disjointness and the Secret-ref
+      prohibition are not expressible in JSON Schema). Each negative is otherwise
+      fully valid and fails for exactly one reason, so removing the corresponding
+      schema keyword or semantic check turns that fixture green — S4 and S5 each
+      bind two fixtures (one per channel, and the within-channel plus the
+      cross-channel path case), and `pattern` on `path` binds two (a relative path
+      and the regex-variant canary). One keyword is deliberately unbound: the
+      `maxLength` on `key` is the symmetric copy of the one on `ref`, which IS
+      bound; a second 254-character fixture would assert nothing new.
+      The `-config-` fixtures cover S3-S7 and the config_files item shape; the rest
+      cover S1/S2 and env_keys.
+
+      `pattern` is evaluated with ECMAScript semantics (check-jsonschema's default,
+      via regress), where `$` anchors only at end-of-input. The
+      `-config-trailing-newline-path` fixture is the canary for that: under
+      `--regex-variant python` the same value would be accepted, and a value with a
+      trailing newline is a DIFFERENT string in S5's group_by, so a duplicate path
+      would stop colliding. If that fixture ever flips, pin the variant.
+
+      semantic_check() returns 1 when a rule FIRES and 2 when a rule could not be
+      EVALUATED (absent yq, wrong yq flavour, a filter broken by a later edit).
+      The distinction is load-bearing for the fixture guard: collapsed into one
+      code, a dead checker reports every fixture as "correctly rejected" while
+      binding nothing. All three call sites branch on all three states. The same
+      inversion on the SCHEMA layer is covered by the validator-liveness probe
+      before the negative loop, since that loop reads a non-zero check-jsonschema
+      exit as "correctly rejected" too.
+
+      Callers invoke semantic_check in a condition or with `|| rc=$?`, never bare.
+      go-task runs the script under mvdan/sh with errexit in effect (the script's
+      own `set -uo pipefail` does not enable it), so a bare simple command exiting
+      non-zero aborts the whole task — and a fixture that correctly FAILS the check
+      is exactly that. Standard POSIX errexit exemptions apply: a command inside an
+      `&&`/`||` list or an `if` condition does not abort, which is why the AND-lists
+      elsewhere in this file are safe. Verified with a throwaway task: a bare `f`
+      returning 1 killed the script, `false && { ... }` did not.
 
       Scope: schema + contract self-consistency only. Neither layer compares a
-      declared key against the render — a declared key with no matching ${KEY}
-      placeholder in helm/ passes green (known residual, recorded in the
-      schema's optional.env_keys description). The deeper render-time checks
+      declared key or file against the render — a declared key with no matching
+      ${KEY} placeholder in helm/, or a declared config_files path/ref/key that
+      no rendered volume actually mounts, passes green (known residual, recorded
+      in both schema descriptions). The deeper render-time checks
       from ADR-0024 (config-file mount #1, selector non-nil #3, config snapshot
       #5) are a follow-up and require the Dex pilot component.
     cmd: |
@@ -3333,8 +3393,8 @@ tasks:
                       | ($r - ($r - $o)) | unique | join(" ")' "$sfile" 2>/dev/null)
         rc=$?
         if [ "$rc" -ne 0 ]; then
-          echo "✗ ${slabel}: could not evaluate the required/optional disjointness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
-          return 1
+          echo "UNCHECKED ${slabel}: could not evaluate the required/optional env disjointness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
         fi
         if [ -n "$both" ]; then
           echo "✗ ${slabel}: key(s) declared in BOTH required.env_keys and optional.env_keys: ${both}"
@@ -3345,12 +3405,106 @@ tasks:
                       | group_by(.) | map(select(length > 1) | .[0]) | unique | join(" ")' "$sfile" 2>/dev/null)
         rc=$?
         if [ "$rc" -ne 0 ]; then
-          echo "✗ ${slabel}: could not evaluate the optional-name uniqueness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
-          return 1
+          echo "UNCHECKED ${slabel}: could not evaluate the optional env-name uniqueness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
         fi
         if [ -n "$dupes" ]; then
           echo "✗ ${slabel}: duplicate optional.env_keys[].name: ${dupes}"
           echo "    Two entries for one key contradict each other: they carry different descriptions and may carry different defaults, and nothing decides which one the consumer should read."
+          src=1
+        fi
+        # Cheap gate before S3-S6: most components declare no config_files at all, and
+        # four rules over two empty arrays can produce no violation. One probe replaces
+        # five yq spawns for them (measured over the full corpus: 24s before this change,
+        # 54s without this probe, 39s with it). Fail-closed
+        # like every other branch — an unevaluable probe is UNCHECKED, never "no files".
+        cfcount=$(yq -r '((.required.config_files // []) | length) + ((.optional.config_files // []) | length)' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ] || [ -z "$cfcount" ]; then
+          echo "UNCHECKED ${slabel}: could not count config_files entries (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
+        fi
+        if [ "$cfcount" -eq 0 ]; then
+          return $src
+        fi
+        # S3-S7 — the config-file shape (DR-0005). Identity is the (ref, key) pair: that is
+        # the object the consumer's kustomize patch targets, while `path` is where the workload
+        # reads it. The two are checked separately because they fail differently, and `path`
+        # is checked across BOTH channels because a consumer-authored file and an artifact-baked
+        # file colliding on one mount point is the worst case, not an excluded one.
+        # Each yq status is captured EXPLICITLY into rc on the next line, exactly as S1/S2 above.
+        cboth=$(yq -r '[ (.required.config_files // [])[] | "\(.ref)|\(.key)" ] as $r
+                      | [ (.optional.config_files // [])[] | "\(.ref)|\(.key)" ] as $o
+                      | ($r - ($r - $o)) | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${slabel}: could not evaluate the required/optional config-file disjointness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
+        fi
+        if [ -n "$cboth" ]; then
+          echo "✗ ${slabel}: config file(s) declared in BOTH required.config_files and optional.config_files (ref|key): ${cboth}"
+          echo "    A file either ships with working baked content (optional) or the consumer must author it (required)."
+          src=1
+        fi
+        for chan in required optional; do
+          cdupes=$(yq -r --arg c "$chan" '[ (.[$c].config_files // [])[] | "\(.ref)|\(.key)" ]
+                        | group_by(.) | map(select(length > 1) | .[0]) | unique | join(" ")' "$sfile" 2>/dev/null)
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "UNCHECKED ${slabel}: could not evaluate the ${chan} config-file (ref, key) uniqueness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+            return 2
+          fi
+          if [ -n "$cdupes" ]; then
+            echo "✗ ${slabel}: duplicate ${chan}.config_files (ref|key): ${cdupes}"
+            echo "    Two entries for one file contradict each other: they may declare different mount paths and different defaults, and nothing decides which one holds."
+            src=1
+          fi
+        done
+        cpaths=$(yq -r '[ ((.required.config_files // []) + (.optional.config_files // []))[].path ]
+                      | group_by(.) | map(select(length > 1) | .[0]) | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${slabel}: could not evaluate the config-file path uniqueness check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
+        fi
+        if [ -n "$cpaths" ]; then
+          echo "✗ ${slabel}: duplicate config_files[].path across both channels: ${cpaths}"
+          echo "    One mount path cannot hold two different files, and nothing in the contract says which one the workload reads."
+          src=1
+        fi
+        # S7 — every optional config-file ref IS provided_refs.config. A positive
+        # requirement, because S6's negative one is keyed on a declaration the same
+        # author controls: omitting `provided_refs.secret` skipped S6 entirely, and a
+        # skip was indistinguishable from a clean evaluation. Requiring the ref to
+        # equal the declared config ref means a Secret can now only enter by an
+        # affirmative false declaration (naming a Secret as provided_refs.config),
+        # not by an omission. It also enforces what the schema already states — the
+        # ref "matches provided_refs.config" — and is why S6 keeps its own message:
+        # the deliberate-evasion case is worth naming separately from a typo.
+        cnotcfg=$(yq -r '(.provided_refs.config // "") as $c
+                      | [ (.optional.config_files // [])[] | select(.ref != $c) | .ref ]
+                      | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${slabel}: could not evaluate the optional config-file provided_refs.config check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
+        fi
+        if [ -n "$cnotcfg" ]; then
+          echo "✗ ${slabel}: optional.config_files[].ref does not match provided_refs.config: ${cnotcfg}"
+          echo "    The artifact ships this object, so it is the component's declared config ref. An undeclared or divergent ref is either a typo or a Secret entering the channel that bakes its content verbatim."
+          src=1
+        fi
+        csecret=$(yq -r '(.provided_refs.secret // "") as $s
+                      | if $s == "" then [] else [ (.optional.config_files // [])[] | select(.ref == $s) | .ref ] end
+                      | unique | join(" ")' "$sfile" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${slabel}: could not evaluate the optional config-file secret-ref check (yq exit ${rc}) — treating as UNCHECKED, not clean."
+          return 2
+        fi
+        if [ -n "$csecret" ]; then
+          echo "✗ ${slabel}: optional.config_files[].ref names the secret ref: ${csecret}"
+          echo "    optional.config_files declares content the artifact BAKES and its 'default' records that content verbatim, so a Secret ref would oblige committing real secret material (AGENTS.md §Hard Constraints). A consumer-authored secret file belongs in required.config_files."
           src=1
         fi
         return $src
@@ -3376,11 +3530,14 @@ tasks:
         fi
         found=$((found+1))
         if out=$(check-jsonschema --schemafile "$schema" "$cfile" 2>&1); then
-          if semantic_check "$cfile" "$comp_id"; then
-            echo "✓ ${comp_id}"
-          else
-            fail=1
-          fi
+          sc_rc=0
+          semantic_check "$cfile" "$comp_id" || sc_rc=$?
+          case "$sc_rc" in
+            0) echo "✓ ${comp_id}" ;;
+            1) fail=1 ;;
+            *) echo "✗ ${comp_id}: a semantic rule could not be evaluated (semantic_check exit ${sc_rc}) — UNCHECKED, not clean." >&2
+               fail=1 ;;
+          esac
         else
           echo "✗ ${comp_id}:"
           printf '%s\n' "$out" | sed 's/^/    /'
@@ -3388,10 +3545,17 @@ tasks:
         fi
       done
       echo ""
-      echo "→ ${found} component(s) validated against ${schema} (+ S1/S2 semantics)."
+      echo "→ ${found} component(s) validated against ${schema} (+ S1-S7 semantics)."
       if [ -n "$missing" ]; then
         echo "Components WITHOUT customization.yaml (not yet under contract):"
         printf '%s' "$missing"
+      fi
+      if [ -n "$scope" ]; then
+        echo ""
+        echo "NOTE: scoped run — the fixture guard did NOT run. Every red-green binding for"
+        echo "      S1-S7 and for the schema keywords lives in that guard, so a scoped run"
+        echo "      proves this component conforms, never that the rules still work. CI runs"
+        echo "      the unscoped form; keep it that way (see contract-validate.yml)."
       fi
 
       # Red-green fixture guard (full-corpus runs only) — mirrors
@@ -3401,13 +3565,37 @@ tasks:
       if [ -z "$scope" ]; then
         echo ""
         td="schemas/testdata"
+        # Validator liveness. The negative loop below reads a non-zero check-jsonschema
+        # exit as "correctly rejected", so an absent, broken or wrong-version validator
+        # would print a green line for every negative fixture while asserting nothing —
+        # the same inversion the exit-1/exit-2 split closes on the semantic layer. Assert
+        # first that the validator ACCEPTS a known-good file; if it cannot, no rejection
+        # below carries information.
+        if ! check-jsonschema --schemafile "$schema" "$td/customization-optional-valid.yaml" >/dev/null 2>&1; then
+          echo "✗ VALIDATOR UNUSABLE: check-jsonschema rejects the known-good fixture, so every 'correctly rejected' line below would be meaningless." >&2
+          check-jsonschema --schemafile "$schema" "$td/customization-optional-valid.yaml" >&2 || true
+          fail=1
+        fi
         for nf in "$td/customization-optional-unknown-key.yaml" \
                   "$td/customization-optional-item-unknown-key.yaml" \
                   "$td/customization-optional-missing-name.yaml" \
                   "$td/customization-optional-missing-description.yaml" \
                   "$td/customization-optional-missing-default.yaml" \
                   "$td/customization-optional-bad-name.yaml" \
-                  "$td/customization-optional-default-not-string.yaml"; do
+                  "$td/customization-optional-default-not-string.yaml" \
+                  "$td/customization-optional-config-item-unknown-key.yaml" \
+                  "$td/customization-optional-config-missing-path.yaml" \
+                  "$td/customization-optional-config-missing-ref.yaml" \
+                  "$td/customization-optional-config-missing-key.yaml" \
+                  "$td/customization-optional-config-missing-description.yaml" \
+                  "$td/customization-optional-config-missing-default.yaml" \
+                  "$td/customization-optional-config-default-not-string.yaml" \
+                  "$td/customization-optional-config-bad-ref.yaml" \
+                  "$td/customization-optional-config-bad-key.yaml" \
+                  "$td/customization-optional-config-relative-path.yaml" \
+                  "$td/customization-optional-config-empty-description.yaml" \
+                  "$td/customization-optional-config-trailing-newline-path.yaml" \
+                  "$td/customization-optional-config-overlong-ref.yaml"; do
           # A missing/unreadable fixture also makes check-jsonschema exit non-zero,
           # which the rejection branch below would happily read as "correctly
           # rejected" — a deleted or renamed fixture would silently stop testing
@@ -3427,29 +3615,70 @@ tasks:
         # Semantic fixtures: schema-VALID by construction (that is the point —
         # they isolate the layer the schema cannot cover), semantic-INVALID.
         for sf in "$td/customization-optional-duplicate-name.yaml" \
-                  "$td/customization-optional-both-channels.yaml"; do
+                  "$td/customization-optional-both-channels.yaml" \
+                  "$td/customization-optional-config-duplicate-ref-key.yaml" \
+                  "$td/customization-optional-config-duplicate-path.yaml" \
+                  "$td/customization-optional-config-cross-channel-path.yaml" \
+                  "$td/customization-optional-config-required-duplicate.yaml" \
+                  "$td/customization-optional-config-secret-ref.yaml" \
+                  "$td/customization-optional-config-ref-not-config.yaml" \
+                  "$td/customization-optional-config-both-channels.yaml"; do
           if [ ! -f "$sf" ]; then
-            echo "✗ SEMANTIC FIXTURE MISSING (S1/S2 are no longer tested): $sf" >&2
+            echo "✗ SEMANTIC FIXTURE MISSING (S1-S7 are no longer tested): $sf" >&2
             fail=1
             continue
           fi
           if ! check-jsonschema --schemafile "$schema" "$sf" >/dev/null 2>&1; then
             echo "✗ SEMANTIC FIXTURE REJECTED BY SCHEMA — it no longer isolates the semantic layer: $sf" >&2
             fail=1
-          elif semantic_check "$sf" "fixture $(basename "$sf")" >/dev/null 2>&1; then
-            echo "✗ SEMANTIC FIXTURE PASSED (S1/S2 check regressed): $sf" >&2
-            fail=1
-          else
-            echo "✓ semantic fixture correctly rejected: $(basename "$sf")"
+            continue
           fi
+          # Exit 1 = the rule fired (what the fixture asserts). Exit 2 = semantic_check
+          # could not evaluate a rule (missing yq, wrong yq flavour, a filter broken by a
+          # later edit). Collapsing the two would let a dead checker report every fixture
+          # as "correctly rejected" while binding nothing — the guard's whole job.
+          # `|| sc_rc=$?`, never a bare call. go-task runs this script under mvdan/sh with
+          # errexit in effect — the `set -uo pipefail` above does NOT enable it — so a bare
+          # simple command exiting non-zero aborts the whole task, and a fixture that
+          # correctly FAILS the check is exactly that. Standard POSIX errexit exemptions
+          # apply, so an `&&`/`||` list or an `if` condition consumes the status safely
+          # (verified with a throwaway task: bare `f` returning 1 aborted, `false && {...}`
+          # did not). This is narrower than "any non-zero command aborts" — do not reach for
+          # a blanket `|| true` on a gate member, which AGENTS.md names as gate-blinding.
+          sc_rc=0
+          semantic_check "$sf" "fixture $(basename "$sf")" >/dev/null 2>&1 || sc_rc=$?
+          case "$sc_rc" in
+            0) echo "✗ SEMANTIC FIXTURE PASSED (S1-S7 check regressed): $sf" >&2; fail=1 ;;
+            1) echo "✓ semantic fixture correctly rejected: $(basename "$sf")" ;;
+            *) echo "✗ SEMANTIC FIXTURE UNEVALUATED (semantic_check exit ${sc_rc} — a rule could not run, so this fixture asserts nothing): $sf" >&2
+               semantic_check "$sf" "fixture $(basename "$sf")" >&2 || true
+               fail=1 ;;
+          esac
         done
-        pf="$td/customization-optional-valid.yaml"
-        if check-jsonschema --schemafile "$schema" "$pf" >/dev/null 2>&1 && semantic_check "$pf" "fixture $(basename "$pf")"; then
-          echo "✓ positive fixture correctly accepted: $(basename "$pf")"
-        else
-          echo "✗ POSITIVE FIXTURE REJECTED (accept-side regressed): $pf" >&2
-          fail=1
-        fi
+        for pf in "$td/customization-optional-valid.yaml" \
+                  "$td/customization-optional-config-valid.yaml"; do
+          if [ ! -f "$pf" ]; then
+            echo "✗ POSITIVE FIXTURE MISSING (the accept-side is no longer tested): $pf" >&2
+            fail=1
+            continue
+          fi
+          if ! check-jsonschema --schemafile "$schema" "$pf" >/dev/null 2>&1; then
+            echo "✗ POSITIVE FIXTURE REJECTED BY SCHEMA (accept-side regressed): $pf" >&2
+            fail=1
+            continue
+          fi
+          sc_rc=0
+          semantic_check "$pf" "fixture $(basename "$pf")" >/dev/null 2>&1 || sc_rc=$?
+          case "$sc_rc" in
+            0) echo "✓ positive fixture correctly accepted: $(basename "$pf")" ;;
+            1) echo "✗ POSITIVE FIXTURE REJECTED by a semantic rule (accept-side regressed): $pf" >&2
+               semantic_check "$pf" "fixture $(basename "$pf")" >&2 || true
+               fail=1 ;;
+            *) echo "✗ POSITIVE FIXTURE UNEVALUATED (semantic_check exit ${sc_rc} — a rule could not run, so this fixture asserts nothing): $pf" >&2
+               semantic_check "$pf" "fixture $(basename "$pf")" >&2 || true
+               fail=1 ;;
+          esac
+        done
       fi
       exit $fail
 

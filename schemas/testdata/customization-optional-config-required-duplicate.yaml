@@ -1,0 +1,25 @@
+# SEMANTIC NEGATIVE (S4, required channel): two required.config_files entries
+# share the (ref, key) identity fixture-mandatory-config|rules.yaml while
+# declaring different mount paths. Schema-valid. The optional channel is empty,
+# so this fixture binds the half of S4 that covers the OLDER channel — the one
+# live components already populate. Without it the change would forbid a
+# contradiction in the new channel while leaving it legal in the old, which is
+# the compounding asymmetry rules/schema-contract-parity.md warns about.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-mandatory-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-mandatory-config
+      key: rules.yaml
+    - path: /etc/fixture/other/rules.yaml
+      ref: fixture-mandatory-config
+      key: rules.yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "10"
+external_dependencies: []
