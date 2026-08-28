@@ -4,13 +4,13 @@
 # topology, and PNI labels are consumer-overlay concerns — see customization.yaml
 # and the README §Consumer obligations).
 #
-# Chart 7.5.1 already ships a restricted-compliant pod-level securityContext and
+# Chart 8.4.1 already ships a restricted-compliant pod-level securityContext and
 # container-level containerSecurityContext. We pin both EXPLICITLY here
 # (explicit-not-inherited pattern) so a future chart bump cannot silently weaken
 # the posture that satisfies `pod-security.kubernetes.io/enforce: restricted` on
 # the namespace.
 #
-# NOTE on chart-specific key names (chart 7.5.1, verified via `helm show values`):
+# NOTE on chart-specific key names (chart 8.4.1, verified via `helm show values`):
 #   - the POD-level key is `securityContext:` (NOT `podSecurityContext:`) and it
 #     carries an `enabled:` gate that must be true for the block to render.
 #   - the CONTAINER-level key is `containerSecurityContext:`.
@@ -19,10 +19,10 @@
 metadata:
   chart: kube-state-metrics
   repo: https://prometheus-community.github.io/helm-charts
-  version: 7.5.1 # bare SemVer — NO leading 'v' (--version v7.5.1 fails to resolve)
-  # appVersion 2.19.1 → image tag registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
+  version: 8.4.1 # bare SemVer — NO leading 'v' (--version v8.4.1 fails to resolve)
+  # appVersion 2.20.0 → image tag registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
   # (chart appVersion pin, NEVER :latest; never overridden here). VERIFY at push
-  # (`helm show chart kube-state-metrics --repo <repo> --version 7.5.1`).
+  # (`helm show chart kube-state-metrics --repo <repo> --version 8.4.1`).
   namespace: kube-state-metrics
 
 values:
@@ -61,6 +61,45 @@ values:
     capabilities:
       drop:
         - ALL
+
+  # CustomResourceState (CRS) plumbing — ENABLED with an EMPTY baked config (#832).
+  # This is what makes `kube_customresource_*` series reachable from a consumer
+  # overlay at all: the component is published as a pre-rendered Kustomize base
+  # (ADR-0024), and a kustomize patch can change objects that exist but cannot
+  # conjure a ConfigMap, a volume, a volumeMount and a CLI flag that were never
+  # rendered. Enabling it here puts all four into the signed artifact; the consumer
+  # replaces only the ConfigMap's `config.yaml` content.
+  #
+  # The exporter runs unchanged when nothing is replaced: `spec.resources: []` is a
+  # valid CRS spec that defines zero custom metrics, so no `kube_customresource_*`
+  # series are emitted and the built-in `kube_*` collectors are untouched.
+  #
+  # NO rule set is baked for the catalog's own CRDs: a shipped rule would need RBAC
+  # for CRD groups a given cluster may not have, and pinning against upstream
+  # CR-schema drift. The empty skeleton keeps the component cluster-agnostic.
+  #
+  # `name` is pinned EXPLICITLY rather than derived from the release name: it is the
+  # consumer-facing contract value declared in `customization.yaml`
+  # (`provided_refs.config` + `optional.config_files[].ref`), so a chart-template
+  # change must not rename the patch target silently. `create` and `key` repeat the
+  # chart's declared defaults on purpose (explicit-not-inherited, as with the
+  # securityContext blocks): both are contract values — `key` IS
+  # `optional.config_files[].key` and half of the entry's (ref, key) identity — so
+  # `task lint:values-keys` reporting them as NO-EFFECT is expected, not dead weight.
+  #
+  # RBAC: `rbac.customResourceState.createClusterRoleRules` (chart default true)
+  # adds ONLY `list`/`watch` on `apiextensions.k8s.io/customresourcedefinitions`.
+  # `rbac.extraRules` is deliberately left at its `[]` default — read access to a
+  # consumer's CR apiGroups is consumer-owned and per-apiGroup (never `apiGroups:
+  # ["*"]`, which would be cluster-wide read on every present and future CRD).
+  customResourceState:
+    enabled: true
+    create: true
+    name: kube-state-metrics-customresourcestate-config
+    key: config.yaml
+    config:
+      spec:
+        resources: []
 
   # NOTE: no `replicas:` key. Replica count / HA topology is a consumer-overlay
   # concern (cluster-specific per AGENTS.md §Hard Constraints); the catalog leaves
