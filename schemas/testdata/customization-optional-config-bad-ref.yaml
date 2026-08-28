@@ -2,10 +2,13 @@
 # for object names. The pattern is load-bearing beyond charset hygiene: the gate
 # builds an entry identity as "<ref>|<key>", so a ref containing `|` would collide
 # with a different entry pair and make S3/S4 report a phantom duplicate.
+# provided_refs.config carries the SAME invalid ref on purpose: with a different
+# one the fixture would also violate S7, and deleting the pattern it is meant to
+# bind would leave it semantically invalid instead of turning it green.
 freeze_line:
   workload: rendered/manifest.yaml
 provided_refs:
-  config: fixture-config
+  config: fixture|config
 provided_selectors: {}
 required:
   env_keys: []

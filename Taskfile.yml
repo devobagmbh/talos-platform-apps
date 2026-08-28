@@ -3294,6 +3294,9 @@ tasks:
             may declare different defaults and different descriptions, and
             nothing decides which one holds. Left unchecked, a consumer reading
             the contract gets whichever entry they happened to read first.
+            Scope: the OPTIONAL channel only. required.env_keys holds plain
+            strings, so its own uniqueness is the schema's `uniqueItems` (same
+            for required.secret_keys) — S2 cannot see that list and never could.
         S3  required.config_files and optional.config_files are DISJOINT on the
             (ref, key) identity — the same channel boundary as S1, applied to the
             file shape: a file either ships with working baked content or the
@@ -3323,19 +3326,30 @@ tasks:
       Components WITHOUT customization.yaml are reported (not yet under contract).
 
       Full-corpus runs additionally red-green BOTH layers against
-      schemas/testdata/customization-optional-*.yaml: 20 schema-reject fixtures,
-      2 positives, and 9 SEMANTIC-reject fixtures that are schema-valid by
+      schemas/testdata/customization-{optional,required}-*.yaml: 27 schema-reject
+      fixtures, 2 positives, and 9 SEMANTIC-reject fixtures that are schema-valid by
       construction (uniqueness, cross-channel disjointness and the Secret-ref
       prohibition are not expressible in JSON Schema). Each negative is otherwise
       fully valid and fails for exactly one reason, so removing the corresponding
       schema keyword or semantic check turns that fixture green — S4 and S5 each
       bind two fixtures (one per channel, and the within-channel plus the
-      cross-channel path case), and `pattern` on `path` binds two (a relative path
-      and the regex-variant canary). One keyword is deliberately unbound: the
-      `maxLength` on `key` is the symmetric copy of the one on `ref`, which IS
-      bound; a second 254-character fixture would assert nothing new.
-      The `-config-` fixtures cover S3-S7 and the config_files item shape; the rest
-      cover S1/S2 and env_keys.
+      cross-channel path case), and `pattern` on `path` binds four (a relative
+      path, the regex-variant canary, and one non-canonical path per channel).
+      The `-config-` fixtures cover S3-S7 and the config_files item shape; the
+      `customization-required-*` ones bind the constraints COPIED onto the required
+      channel, which every optional-side fixture leaves untouched; the rest cover
+      S1/S2 and env_keys.
+
+      Three keywords are deliberately unbound, each the symmetric copy of a bound
+      one, so a fixture for it would assert nothing new: `maxLength` on `key` in
+      either channel (the one on `ref` IS bound, per channel), and `uniqueItems`
+      on required.secret_keys (the one on required.env_keys IS bound).
+
+      Two path/key constraints exist only for the GATE, not for Kubernetes alone,
+      and each has its own fixture: a non-canonical `path` (`.`/`..`/empty segment,
+      trailing slash) would let two spellings of one file slip past S5, which
+      compares raw strings; and a `|` in `ref` or `key` would collide two entries
+      into a phantom duplicate in S3/S4, which build the identity as "<ref>|<key>".
 
       `pattern` is evaluated with ECMAScript semantics (check-jsonschema's default,
       via regress), where `$` anchors only at end-of-input. The
@@ -3349,9 +3363,13 @@ tasks:
       The distinction is load-bearing for the fixture guard: collapsed into one
       code, a dead checker reports every fixture as "correctly rejected" while
       binding nothing. All three call sites branch on all three states. The same
-      inversion on the SCHEMA layer is covered by the validator-liveness probe
-      before the negative loop, since that loop reads a non-zero check-jsonschema
-      exit as "correctly rejected" too.
+      inversion on the SCHEMA layer is covered by TWO complementary probes, since
+      that loop reads a non-zero check-jsonschema exit as "correctly rejected" too:
+      a validator-liveness probe before the loop (the validator ACCEPTS a known-good
+      file, so it is present and working), and a per-fixture parse probe inside it
+      (each fixture is readable and parses, so its non-zero exit is the schema's
+      verdict and not a chmod-000 or a corrupted file). Liveness alone would still
+      green-line an unreadable fixture.
 
       Callers invoke semantic_check in a condition or with `|| rc=$?`, never bare.
       go-task runs the script under mvdan/sh with errexit in effect (the script's
@@ -3595,13 +3613,29 @@ tasks:
                   "$td/customization-optional-config-relative-path.yaml" \
                   "$td/customization-optional-config-empty-description.yaml" \
                   "$td/customization-optional-config-trailing-newline-path.yaml" \
-                  "$td/customization-optional-config-overlong-ref.yaml"; do
-          # A missing/unreadable fixture also makes check-jsonschema exit non-zero,
-          # which the rejection branch below would happily read as "correctly
-          # rejected" — a deleted or renamed fixture would silently stop testing
-          # anything. Assert the file exists first.
+                  "$td/customization-optional-config-overlong-ref.yaml" \
+                  "$td/customization-optional-config-noncanonical-path.yaml" \
+                  "$td/customization-optional-config-dotdot-key.yaml" \
+                  "$td/customization-required-env-duplicate.yaml" \
+                  "$td/customization-required-config-noncanonical-path.yaml" \
+                  "$td/customization-required-config-bad-ref.yaml" \
+                  "$td/customization-required-config-bad-key.yaml" \
+                  "$td/customization-required-config-overlong-ref.yaml"; do
+          # A missing, unreadable or malformed fixture also makes check-jsonschema
+          # exit non-zero, which the rejection branch below would happily read as
+          # "correctly rejected" — so a deleted, renamed, chmod-000 or corrupted
+          # fixture would silently stop testing anything while printing a green
+          # line. `-f` catches only the deletion; the parse probe covers the other
+          # three, so the non-zero exit below can only be the schema's verdict.
+          # The liveness probe above proves the VALIDATOR works, never that each
+          # individual fixture was readable and parsed — these are complementary.
           if [ ! -f "$nf" ]; then
             echo "✗ NEGATIVE FIXTURE MISSING (the reject-side is no longer tested): $nf" >&2
+            fail=1
+            continue
+          fi
+          if ! yq . "$nf" >/dev/null 2>&1; then
+            echo "✗ NEGATIVE FIXTURE UNREADABLE OR MALFORMED (its non-zero exit below would not be the schema's verdict, so it asserts nothing): $nf" >&2
             fail=1
             continue
           fi

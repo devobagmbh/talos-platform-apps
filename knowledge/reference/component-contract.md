@@ -12,8 +12,11 @@ sources:
 
 # Component contract
 
-Every component carries two schema-validated contract files that ship inside the
-OCI artifact. Authoritative source: the schema descriptions in
+Every component carries two schema-validated contract files. They live next to
+the component's `helm/` + `manifests/` in this repository and are NOT inside the
+published OCI artifact — `task package` tars only `kustomization.yaml` +
+`manifest.yaml`, so a consumer reads both contracts from the catalog repository
+at the tag they pin. Authoritative source: the schema descriptions in
 `schemas/compatibility.schema.json` and `schemas/customization.schema.json`, and
 `AGENTS.md` §Sub-layer and component conventions.
 

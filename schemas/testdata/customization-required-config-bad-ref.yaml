@@ -1,0 +1,19 @@
+# NEGATIVE: required.config_files[].ref violates the RFC 1123 DNS-subdomain
+# pattern. Load-bearing on this side too: S3 and S4 build the entry identity as
+# "<ref>|<key>" from BOTH channels, so a pipe in a required ref collides two
+# distinct entries into a phantom duplicate exactly as it would in an optional one.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/mandatory.yaml
+      ref: fixture|mandatory
+      key: mandatory.yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "10"
+external_dependencies: []

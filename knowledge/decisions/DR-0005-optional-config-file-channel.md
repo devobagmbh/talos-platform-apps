@@ -110,7 +110,34 @@ All three call sites — the real-component loop, the semantic-fixture guard and
 
 The reason is narrower than "any non-zero command aborts", and the first draft of this record got it wrong. go-task runs the script under mvdan/sh **with errexit in effect** — the script's own `set -uo pipefail` does not enable it — so a bare *simple command* exiting non-zero aborts the whole task, and a fixture that correctly fails the check is exactly that. Standard POSIX errexit exemptions still apply: a command inside an `&&`/`||` list or an `if` condition does not abort, which is why the bare AND-lists elsewhere in the Taskfile are safe. Verified with a throwaway task: a bare function call returning 1 killed the script, `false && { ... }` did not. The distinction matters because the wrong version of it invites a blanket `|| true` on gate members, which `AGENTS.md §Taskfile conventions` names as gate-blinding.
 
-The same silent inversion exists one layer down, on the schema side: the negative-fixture loop reads a non-zero `check-jsonschema` exit as "correctly rejected", so an absent or broken validator would green all twenty negatives. A **validator-liveness probe** now asserts, before that loop, that the validator still ACCEPTS a known-good fixture.
+The same silent inversion exists one layer down, on the schema side: the negative-fixture loop reads a non-zero `check-jsonschema` exit as "correctly rejected", so anything that makes the command exit non-zero for a reason other than the schema greens the whole loop. Two probes close it, and they are complementary rather than redundant. A **validator-liveness probe** before the loop asserts the validator still ACCEPTS a known-good fixture — that covers an absent, broken or wrong-version validator. A **per-fixture parse probe** inside the loop asserts each fixture is readable and parses — that covers the case liveness cannot see, a fixture that is `chmod 000` or corrupted while the validator is perfectly healthy. Both were bound by observation: with the schema pointed at a missing file the run reports `VALIDATOR UNUSABLE`; with one fixture at mode `000` it reports `NEGATIVE FIXTURE UNREADABLE OR MALFORMED` and exits non-zero, where before it printed a green line.
+
+## Two constraints that exist for the gate, not for Kubernetes
+
+Two of the field constraints are stronger than Kubernetes alone would require,
+and both were added after a cross-model review round found the gate evadable
+without them.
+
+**`path` must be canonical.** S5 compares raw strings, so `/etc/x/f.yaml` and
+`/etc/x/./f.yaml` are two different keys in its `group_by` while naming one
+file. The consumer-authored and artifact-baked entries could therefore collide
+on a mount point and pass — exactly the case S5 spans both channels to catch.
+The pattern now rejects an empty, `.` or `..` segment and a trailing slash, in
+both channels, so the string comparison is sound rather than merely usual.
+
+**`key` must not begin with two dots.** Kubernetes' `IsConfigMapKey` rejects
+`.`, `..` and *any* key starting with `..` — the kubelet reserves that prefix
+for a projected volume's own bookkeeping. The first pattern anchored on the two
+exact names, so `..data` passed the contract and would have been refused by the
+API server: a component could ship a declaration no cluster can honour.
+
+A third, milder case is the same class: the constraints copied onto
+`required.config_files` had no fixture of their own, because every negative
+fixture exercised the optional channel. The `customization-required-*` fixtures
+bind them, so the required side cannot silently regress while the optional side
+stays green. `required.env_keys` and `required.secret_keys` gained `uniqueItems`
+in the same pass — they hold plain strings, which S2 cannot see, so nothing
+stopped one name appearing twice.
 
 ## Why only a second shape
 
@@ -134,7 +161,7 @@ The same silent inversion exists one layer down, on the schema side: the negativ
 - **Version-skew cost recurs per shape.** See parity decision 3.
 - **S6/S7 do not close the Secret class, they price it.** An author who declares a Secret's name as `provided_refs.config` passes both. Closing it needs the render, which no layer of this gate reads.
 - **The gate is regex-dialect-dependent.** `pattern` is evaluated with ECMAScript semantics (check-jsonschema's default, via regress). Under `--regex-variant python`, `$` also matches before a trailing newline and a path carrying one would be accepted — a different string in S5's `group_by`, so a duplicate would stop colliding. The `-config-trailing-newline-path` fixture is the canary; nothing pins the variant.
-- **One schema keyword is unbound by symmetry.** `maxLength` on `key` mirrors the bound one on `ref`. Stated in the task summary rather than bound by a redundant fixture.
+- **Three schema keywords are unbound by symmetry.** `maxLength` on `key` in either channel mirrors the bound one on `ref`, and `uniqueItems` on `required.secret_keys` mirrors the bound one on `required.env_keys`. Stated in the task summary rather than bound by redundant fixtures.
 - **A scoped run proves less than it looks.** `task validate:contract -- <component>` skips the whole fixture guard, so every red-green binding for S1-S7 goes unexercised. The task now says so on every scoped run, and CI runs the unscoped form.
 - **The gate got slower.** Full-corpus wall time went from 24s to 39s (54s before a cheap probe that skips the four config-file rules for the 57 components declaring no `config_files` at all). It is a required status check, so the pressure this creates is toward per-component scoping — which is exactly the residual above.
 
@@ -145,4 +172,4 @@ The same silent inversion exists one layer down, on the schema side: the negativ
 
 ## Consequences
 
-Additive and repo-only: one schema block, twenty-one fixtures, five semantic rules (S3-S7), the alignment of the older `required.config_files` field definitions with them, and the fixture-guard entries inside an existing task, plus documentation. No component file changes in this record's own change, so release-please cuts no tag and no OCI artifact is republished. Rollback is a single revert — **except** that it must be co-ordinated with any component that has adopted the block: reverting the schema alone makes that component's `customization.yaml` fail the required `validate-contract` check, so this change and [#832](https://github.com/devobagmbh/talos-platform-apps/issues/832) revert together.
+Additive and repo-only: one schema block, twenty-eight fixtures, five semantic rules (S3-S7), the alignment of the older `required.config_files` field definitions with them, and the fixture-guard entries inside an existing task, plus documentation. No component file changes in this record's own change, so release-please cuts no tag and no OCI artifact is republished. Rollback is a single revert — **except** that it must be co-ordinated with any component that has adopted the block: reverting the schema alone makes that component's `customization.yaml` fail the required `validate-contract` check, so this change and [#832](https://github.com/devobagmbh/talos-platform-apps/issues/832) revert together.

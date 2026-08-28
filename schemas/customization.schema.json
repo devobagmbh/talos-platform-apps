@@ -76,8 +76,9 @@
         "env_keys": {
           "type": "array",
           "default": [],
+          "uniqueItems": true,
           "items": { "type": "string" },
-          "description": "Shape (a): scalar keys the consumer must set in the env ConfigMap (provided_refs.env)."
+          "description": "Shape (a): scalar keys the consumer must set in the env ConfigMap (provided_refs.env). `uniqueItems` carries within-channel uniqueness HERE: the semantic gate's S2 groups optional.env_keys[].name and cannot see this list, which holds plain strings."
         },
         "config_files": {
           "type": "array",
@@ -90,8 +91,8 @@
             "properties": {
               "path": {
                 "type": "string",
-                "pattern": "^/[^\\s]*[^/\\s]$",
-                "description": "Absolute path of the FILE the workload reads — the volume mountPath plus the file name, e.g. /etc/booter/booter.yaml. It is a file path, never a bare mountPath: a ConfigMap volume projects every key as its own file. Identical semantics to optional.config_files[].path, deliberately: task validate:contract checks path uniqueness across the UNION of both channels, which is only meaningful while the two fields denote the same kind of value."
+                "pattern": "^(?!.*/\\.\\.?(/|$))(/[^/\\s]+)+$",
+                "description": "Absolute path of the FILE the workload reads — the volume mountPath plus the file name, e.g. /etc/booter/booter.yaml. It is a file path, never a bare mountPath: a ConfigMap volume projects every key as its own file. Identical semantics to optional.config_files[].path, deliberately: task validate:contract checks path uniqueness across the UNION of both channels, which is only meaningful while the two fields denote the same kind of value. The pattern requires a canonical path — no empty, `.` or `..` segment and no trailing slash — because S5 compares raw strings, so /etc/x/f.yaml and /etc/x/./f.yaml would otherwise name one file and pass as two."
               },
               "ref": {
                 "type": "string",
@@ -102,8 +103,8 @@
               "key": {
                 "type": "string",
                 "maxLength": 253,
-                "pattern": "^(?!\\.{1,2}$)[-._a-zA-Z0-9]+$",
-                "description": "Key within the ref holding the file content. The pattern is the charset Kubernetes enforces for ConfigMap data keys, minus the two names it rejects outright (a single dot and a double dot); it also keeps the pipe character out of the identity string the gate builds."
+                "pattern": "^(?!\\.\\.)(?!\\.$)[-._a-zA-Z0-9]+$",
+                "description": "Key within the ref holding the file content. The pattern is the charset Kubernetes enforces for ConfigMap data keys, minus what its IsConfigMapKey rejects outright: a single dot, and ANY key beginning with two dots — `..data` as much as the bare `..`, because the kubelet reserves that prefix for a projected volume's own bookkeeping. It also keeps the pipe character out of the identity string the gate builds."
               }
             }
           }
@@ -111,8 +112,9 @@
         "secret_keys": {
           "type": "array",
           "default": [],
+          "uniqueItems": true,
           "items": { "type": "string" },
-          "description": "Shape (c): keys the consumer must provide in the runtime secret (provided_refs.secret)."
+          "description": "Shape (c): keys the consumer must provide in the runtime secret (provided_refs.secret). `uniqueItems` for the same reason as env_keys above — no semantic rule covers a plain string list."
         },
         "selector_crs": {
           "type": "array",
@@ -138,7 +140,7 @@
     "optional": {
       "type": "object",
       "additionalProperties": false,
-      "description": "What the consumer MAY supply to change behaviour, per shape — the counterpart to `required`. `required` = the consumer MUST set it or the workload does not function; `optional` = the artifact carries a working baked default and the component runs unset. This is the ADR-0024 calibrated-friction surface in its ergonomic form: a knob a consumer turns per-cluster without a catalog PR and without replacing the signed config. Additive and absent by default. Two of `required`'s four shapes are modelled: the env shape (DR-0004) and the config-file shape (DR-0005). A secret-key / selector channel is added when a component needs one (an unused shape would be unexercised semantics), and because this block is `additionalProperties: false` that addition is always an explicit, reviewed schema change. Six rules JSON Schema cannot express are enforced by `task validate:contract` over the real component files: an env name is not in both channels (S1) and is unique here (S2); a config-file (ref, key) identity is not in both channels (S3) and is unique within each channel (S4); a config-file `path` is unique across both channels together (S5); and an optional config-file `ref` is never the secret ref (S6), because `default` records baked content verbatim and this repository forbids real secrets. Two consequences a component author has to know: a consumer validating against a VENDORED copy of this schema predating the shape they use REJECTS the customization.yaml carrying it (closed root, `$id` deliberately unchanged — the validation error naming the unknown property is the only in-band signal); and renaming a shipped entry, removing it, or changing its `default` is BREAKING and SILENT (an env expansion falls back with no error; a renamed file ref leaves the consumer's kustomize patch on an object the workload no longer reads, and the patch may even keep applying cleanly while the old object lingers under Prune=false) — major bump plus migration note, never an in-place edit. Rationale and all five schema-contract-parity decisions in full: knowledge/decisions/DR-0004-optional-customization-keys.md (env shape) and knowledge/decisions/DR-0005-optional-config-file-channel.md (config-file shape).",
+      "description": "What the consumer MAY supply to change behaviour, per shape — the counterpart to `required`. `required` = the consumer MUST set it or the workload does not function; `optional` = the artifact carries a working baked default and the component runs unset. This is the ADR-0024 calibrated-friction surface in its ergonomic form: a knob a consumer turns per-cluster without a catalog PR and without replacing the signed config. Additive and absent by default. Two of `required`'s four shapes are modelled: the env shape (DR-0004) and the config-file shape (DR-0005). A secret-key / selector channel is added when a component needs one (an unused shape would be unexercised semantics), and because this block is `additionalProperties: false` that addition is always an explicit, reviewed schema change. Seven rules JSON Schema cannot express are enforced by `task validate:contract` over the real component files: an env name is not in both channels (S1) and is unique within THIS one (S2 — the required channel is a list of plain strings, so its own uniqueness is the schema's `uniqueItems` instead); a config-file (ref, key) identity is not in both channels (S3) and is unique within each channel (S4); a config-file `path` is unique across both channels together (S5); an optional config-file `ref` is never the secret ref (S6), because `default` records baked content verbatim and this repository forbids real secrets; and an optional config-file `ref` IS the declared `provided_refs.config` (S7 — the positive form, because a rule keyed only on `provided_refs.secret` is evaded by not declaring that field). Two consequences a component author has to know: a consumer validating against a VENDORED copy of this schema predating the shape they use REJECTS the customization.yaml carrying it (closed root, `$id` deliberately unchanged — the validation error naming the unknown property is the only in-band signal); and renaming a shipped entry, removing it, or changing its `default` is BREAKING and SILENT (an env expansion falls back with no error; a renamed file ref leaves the consumer's kustomize patch on an object the workload no longer reads, and the patch may even keep applying cleanly while the old object lingers under Prune=false) — major bump plus migration note, never an in-place edit. Rationale and all five schema-contract-parity decisions in full: knowledge/decisions/DR-0004-optional-customization-keys.md (env shape) and knowledge/decisions/DR-0005-optional-config-file-channel.md (config-file shape).",
       "properties": {
         "env_keys": {
           "type": "array",
@@ -181,8 +183,8 @@
             "properties": {
               "path": {
                 "type": "string",
-                "pattern": "^/[^\\s]*[^/\\s]$",
-                "description": "Absolute path of the FILE the workload reads — the volume's mountPath plus the name the key projects to (e.g. /etc/customresourcestate/config.yaml for key config.yaml under mountPath /etc/customresourcestate), the convention required.config_files already uses. It is a file path, never a bare mountPath: a ConfigMap volume projects every key as its own file, so two replaceable keys of one ConfigMap carry two distinct paths here. Unique across required.config_files AND optional.config_files together — one path cannot hold two different files. Not representable: one (ref, key) mounted at two paths (e.g. into two containers); declare the one the consumer's replacement is about."
+                "pattern": "^(?!.*/\\.\\.?(/|$))(/[^/\\s]+)+$",
+                "description": "Absolute path of the FILE the workload reads — the volume's mountPath plus the name the key projects to (e.g. /etc/customresourcestate/config.yaml for key config.yaml under mountPath /etc/customresourcestate), the convention required.config_files already uses. It is a file path, never a bare mountPath: a ConfigMap volume projects every key as its own file, so two replaceable keys of one ConfigMap carry two distinct paths here. Unique across required.config_files AND optional.config_files together — one path cannot hold two different files. The pattern requires a canonical path — no empty, `.` or `..` segment and no trailing slash — because that uniqueness check compares raw strings, so /etc/x/f.yaml and /etc/x/./f.yaml would otherwise name one file and pass as two. Not representable: one (ref, key) mounted at two paths (e.g. into two containers); declare the one the consumer's replacement is about."
               },
               "ref": {
                 "type": "string",
@@ -193,8 +195,8 @@
               "key": {
                 "type": "string",
                 "maxLength": 253,
-                "pattern": "^(?!\\.{1,2}$)[-._a-zA-Z0-9]+$",
-                "description": "Key within the ref holding the file content. The (ref, key) pair is this entry's identity: unique within optional.config_files and never also present in required.config_files. The pattern is the charset Kubernetes enforces for ConfigMap data keys, which also keeps `|` out of the identity string the gate builds."
+                "pattern": "^(?!\\.\\.)(?!\\.$)[-._a-zA-Z0-9]+$",
+                "description": "Key within the ref holding the file content. The (ref, key) pair is this entry's identity: unique within optional.config_files and never also present in required.config_files. The pattern is the charset Kubernetes enforces for ConfigMap data keys, minus what its IsConfigMapKey rejects outright: a single dot, and ANY key beginning with two dots (`..data` as much as the bare `..`). It also keeps `|` out of the identity string the gate builds."
               },
               "description": {
                 "type": "string",

@@ -1,7 +1,8 @@
 # NEGATIVE: `default` is a mapping, not a string. The field is deliberately typed
-# as a string so the contract records the baked content verbatim (or, when it is
-# too large to inline, the behaviour it produces) rather than a re-encoded copy a
-# reader would have to serialise back to compare against the artifact.
+# as a string so the contract records the baked content VERBATIM, rather than a
+# re-encoded copy a reader would have to serialise back to compare against the
+# artifact. There is no prose escape hatch for large content (DR-0005): a summary
+# would not be diffable against the render, which is the whole point of the field.
 freeze_line:
   workload: rendered/manifest.yaml
 provided_refs:
