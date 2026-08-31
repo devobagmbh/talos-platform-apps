@@ -1,0 +1,281 @@
+# Catalog-owned provisioning script. It drives the Garage admin HTTP API v2
+# (port 3903, Bearer <adminToken>) to make buckets + consumer-supplied access
+# keys exist idempotently. It is shipped by the catalog and never consumer-patched
+# (it is part of the signed workload). The DATA it acts on is 100% consumer-owned:
+# the bucket→alias mapping (ConfigMap garage-buckets-config, key buckets.yaml,
+# mounted at /etc/garage-buckets/) and the key material + admin token (Secret
+# garage-buckets-secret — adminToken via env, per-alias keys mounted at
+# /etc/garage-keys/<alias>.access-key-id and <alias>.secret-key).
+#
+# JSON parsing note: the image is curlimages/curl (no jq). The only field this
+# script extracts from a response is the bucket `.id` (a flat string), pulled with
+# POSIX grep/sed — sufficient and dependency-free. See README § Image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-buckets-provision
+  namespace: garage
+  labels:
+    app.kubernetes.io/name: garage-buckets
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-buckets
+data:
+  provision.sh: |
+    #!/bin/sh
+    # Idempotent Garage S3 bucket + key provisioner (admin API v2).
+    # Re-running is a no-op: every mutating call is guarded by a GET, so a
+    # second run exits 0 with no duplicates.
+    set -eu
+
+    ADMIN_URL="${ADMIN_URL:-http://garage.garage.svc.cluster.local:3903}"
+    BUCKETS_FILE="${BUCKETS_FILE:-/etc/garage-buckets/buckets.yaml}"
+    KEYS_DIR="${KEYS_DIR:-/etc/garage-keys}"
+
+    : "${GARAGE_ADMIN_TOKEN:?GARAGE_ADMIN_TOKEN env (from Secret garage-buckets-secret key adminToken) is required}"
+
+    # api METHOD PATH [BODY] -> sets BODY + HTTP_CODE in the CALLER's scope.
+    # MUST be invoked as a bare statement, e.g. `api GET "/path"`, never as
+    # `x="$(api ...)"` — a command substitution around the call would run
+    # api() itself in a subshell, and the BODY/HTTP_CODE assignments below
+    # would then be invisible to the caller once that subshell exits.
+    #
+    # Retries a transport failure (Garage unreachable) or a 5xx response with
+    # bounded backoff before returning. On a fresh cluster the admin API can
+    # be transiently unreachable or erroring while the daemon starts, or while
+    # the operator is still mid-`garage layout apply` (README § Bootstrap
+    # caveats) — this lets a single Job attempt ride that out instead of
+    # spending the Job's own backoffLimit budget on it. A 404 or other 4xx is
+    # a normal, meaningful outcome for the call sites below and is returned to
+    # the caller immediately, never retried here.
+    #
+    # --connect-timeout/--max-time bound each individual curl call so a peer
+    # that accepts the connection but never responds (a stall, not a clean
+    # refusal) can't hold the pod indefinitely — the retry-attempt count above
+    # only bounds total attempts, not the wall-clock time of any single one.
+    API_RETRY_ATTEMPTS="${API_RETRY_ATTEMPTS:-10}"
+    API_RETRY_DELAY_SECONDS="${API_RETRY_DELAY_SECONDS:-15}"
+    API_CONNECT_TIMEOUT_SECONDS="${API_CONNECT_TIMEOUT_SECONDS:-5}"
+    API_MAX_TIME_SECONDS="${API_MAX_TIME_SECONDS:-30}"
+
+    # require_nonneg_int NAME VALUE -> exit 1 with an actionable error if VALUE
+    # isn't a non-negative integer. Guards against a typo'd override (e.g.
+    # API_RETRY_ATTEMPTS=abc) turning the retry loop below into an unbounded
+    # one: `[ "$_attempt" -ge "$API_RETRY_ATTEMPTS" ]` on a non-numeric value
+    # errors on stderr but evaluates false, which under `set -e` does NOT abort
+    # the script (the test is an if-condition) — the loop would otherwise spin
+    # forever instead of failing fast.
+    require_nonneg_int() {
+      case "$2" in
+        ''|*[!0-9]*) echo "ERROR: $1 must be a non-negative integer, got '$2'" >&2; exit 1 ;;
+      esac
+    }
+    require_nonneg_int API_RETRY_ATTEMPTS "$API_RETRY_ATTEMPTS"
+    require_nonneg_int API_RETRY_DELAY_SECONDS "$API_RETRY_DELAY_SECONDS"
+    require_nonneg_int API_CONNECT_TIMEOUT_SECONDS "$API_CONNECT_TIMEOUT_SECONDS"
+    require_nonneg_int API_MAX_TIME_SECONDS "$API_MAX_TIME_SECONDS"
+
+    api() {
+      _method="$1"; _path="$2"; _body="${3:-}"
+      _attempt=1
+      while true; do
+        _ok=1
+        if [ -n "$_body" ]; then
+          _out="$(
+            curl -sS -X "$_method" \
+              --connect-timeout "$API_CONNECT_TIMEOUT_SECONDS" \
+              --max-time "$API_MAX_TIME_SECONDS" \
+              -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -w '\n__HTTP_CODE__%{http_code}' \
+              -d "$_body" \
+              "${ADMIN_URL}${_path}"
+          )" || _ok=0
+        else
+          _out="$(
+            curl -sS -X "$_method" \
+              --connect-timeout "$API_CONNECT_TIMEOUT_SECONDS" \
+              --max-time "$API_MAX_TIME_SECONDS" \
+              -H "Authorization: Bearer ${GARAGE_ADMIN_TOKEN}" \
+              -w '\n__HTTP_CODE__%{http_code}' \
+              "${ADMIN_URL}${_path}"
+          )" || _ok=0
+        fi
+
+        if [ "$_ok" = "1" ]; then
+          HTTP_CODE="$(printf '%s' "$_out" | sed -n 's/.*__HTTP_CODE__\([0-9]*\)$/\1/p')"
+          BODY="$(printf '%s' "$_out" | sed 's/__HTTP_CODE__[0-9]*$//')"
+          case "$HTTP_CODE" in
+            5[0-9][0-9]) : ;; # transient server error - fall through to retry
+            *) return 0 ;;
+          esac
+        fi
+
+        if [ "$_attempt" -ge "$API_RETRY_ATTEMPTS" ]; then
+          if [ "$_ok" = "1" ]; then
+            # retry budget exhausted on a persistent 5xx (Garage reachable,
+            # still erroring) - log it, then return with HTTP_CODE=5xx so the
+            # caller's own 200/404/else branching produces the specific error.
+            echo "  admin API still returning HTTP ${HTTP_CODE} for ${_method} ${_path} after ${_attempt} attempts - giving up, handing HTTP $HTTP_CODE to caller" >&2
+            return 0
+          fi
+          echo "ERROR: ${_method} ${ADMIN_URL}${_path} unreachable after ${_attempt} attempts - is Garage (storage-objects/garage) up? See README § Bootstrap caveats" >&2
+          exit 1
+        fi
+        if [ "$_ok" = "1" ]; then
+          echo "  admin API returned HTTP ${HTTP_CODE} for ${_method} ${_path} - retrying in ${API_RETRY_DELAY_SECONDS}s (attempt ${_attempt}/${API_RETRY_ATTEMPTS})" >&2
+        else
+          echo "  admin API unreachable for ${_method} ${_path} - retrying in ${API_RETRY_DELAY_SECONDS}s (attempt ${_attempt}/${API_RETRY_ATTEMPTS})" >&2
+        fi
+        sleep "$API_RETRY_DELAY_SECONDS"
+        _attempt=$((_attempt + 1))
+      done
+    }
+
+    # Redact known secret-bearing JSON fields from an API response body before it
+    # is logged on an error path (CWE-532). The Garage admin API may reflect a
+    # submitted secret (e.g. the imported secretAccessKey) in an error body; logging
+    # the raw body would leak it into pod logs. Covers every field that could carry
+    # secret material; the HTTP status code is logged separately, never the raw body.
+    redact() {
+      sed -e 's/"secretAccessKey":"[^"]*"/"secretAccessKey":"***"/g' \
+          -e 's/"secretKey":"[^"]*"/"secretKey":"***"/g' \
+          -e 's/"adminToken":"[^"]*"/"adminToken":"***"/g'
+    }
+
+    # Extract the flat top-level JSON string field "id" from a bucket response.
+    extract_id() {
+      sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1
+    }
+
+    # Read a scalar value for a key from the consumer buckets.yaml. The file is a
+    # minimal block-style YAML list of {name, key_alias} maps; we parse the two
+    # fields with POSIX tools (no yq in the image).
+    #   buckets:
+    #     - name: <bucket-name>
+    #       key_alias: <key-alias>
+    # Emits "name<TAB>key_alias" lines, ONE PER `- name:` LINE SEEN, even if
+    # the parsed name is empty (e.g. `name: ""`) — `have_entry` tracks "is
+    # there a pending entry to flush" independently of the name's own
+    # emptiness, so an empty name is reported to the caller as an empty
+    # BUCKET field rather than silently dropped (an earlier version used
+    # `name != ""` as that sentinel, which conflated "no entry yet" with
+    # "entry present but its name normalized to empty" and made the entry
+    # vanish with no error). Trims only trailing whitespace and, if the WHOLE
+    # value is wrapped in one matching pair of quotes, that outer pair — never
+    # characters inside the value. Stripping quotes/whitespace anywhere in the
+    # string (as an earlier version did) would silently turn e.g.
+    # `name: "bad name"` into `badname`, defeating the character-class check
+    # below the parser: a rejected value must reach that check intact, not get
+    # silently normalized into an accepted one first.
+    parse_buckets() {
+      awk '
+        /^[[:space:]]*-[[:space:]]*name:/ {
+          if (have_entry) print name "|" alias
+          name = $0; sub(/.*name:[[:space:]]*/, "", name); sub(/[[:space:]]+$/, "", name)
+          if (name ~ /^"[^"]*"$/) { sub(/^"/, "", name); sub(/"$/, "", name) }
+          else if (name ~ /^\x27[^\x27]*\x27$/) { sub(/^\x27/, "", name); sub(/\x27$/, "", name) }
+          alias = ""
+          have_entry = 1
+          next
+        }
+        /^[[:space:]]*key_alias:/ {
+          alias = $0; sub(/.*key_alias:[[:space:]]*/, "", alias); sub(/[[:space:]]+$/, "", alias)
+          if (alias ~ /^"[^"]*"$/) { sub(/^"/, "", alias); sub(/"$/, "", alias) }
+          else if (alias ~ /^\x27[^\x27]*\x27$/) { sub(/^\x27/, "", alias); sub(/\x27$/, "", alias) }
+        }
+        END { if (have_entry) print name "|" alias }
+      ' "$BUCKETS_FILE"
+    }
+
+    test -r "$BUCKETS_FILE" || { echo "ERROR: bucket list $BUCKETS_FILE not readable (consumer ConfigMap garage-buckets-config missing?)" >&2; exit 1; }
+
+    echo "garage-buckets: provisioning against ${ADMIN_URL}"
+
+    # `|` (not tab) as the field separator: with IFS made of "IFS whitespace"
+    # characters (tab included), POSIX `read` strips LEADING/TRAILING runs of
+    # it before splitting, so an empty BUCKET field silently vanished into the
+    # ALIAS field instead of staying empty (verified: `printf '\tx' | IFS=$(printf
+    # '\t') read -r a b` yields a=x b="", not a="" b=x). `|` isn't IFS
+    # whitespace, so both empty leading and trailing fields are preserved. `|`
+    # can never appear in a value that passes the character-class check below,
+    # so this can't collide with legitimate bucket/alias content.
+    parse_buckets | while IFS='|' read -r BUCKET ALIAS; do
+      if [ -z "$BUCKET" ]; then
+        echo "ERROR: found a bucket entry with an empty/missing name in $BUCKETS_FILE" >&2
+        exit 1
+      fi
+      if [ -z "$ALIAS" ]; then
+        echo "ERROR: bucket '$BUCKET' has no key_alias in $BUCKETS_FILE" >&2
+        exit 1
+      fi
+
+      # BUCKET/ALIAS are interpolated unescaped into JSON request bodies below
+      # and into file paths above; reject anything outside a safe character
+      # class before either use, rather than risk a malformed API call or path
+      # from a stray quote/backslash in a consumer typo.
+      case "$BUCKET" in
+        *[!A-Za-z0-9_-]*)
+          echo "ERROR: bucket name '$BUCKET' in $BUCKETS_FILE contains characters outside [A-Za-z0-9_-]" >&2
+          exit 1
+          ;;
+      esac
+      case "$ALIAS" in
+        *[!A-Za-z0-9_-]*)
+          echo "ERROR: key_alias '$ALIAS' for bucket '$BUCKET' in $BUCKETS_FILE contains characters outside [A-Za-z0-9_-]" >&2
+          exit 1
+          ;;
+      esac
+
+      AKID_FILE="${KEYS_DIR}/${ALIAS}.access-key-id"
+      SKEY_FILE="${KEYS_DIR}/${ALIAS}.secret-key"
+      test -r "$AKID_FILE" || { echo "ERROR: missing access-key-id for alias '$ALIAS' at $AKID_FILE (consumer Secret garage-buckets-secret)" >&2; exit 1; }
+      test -r "$SKEY_FILE" || { echo "ERROR: missing secret-key for alias '$ALIAS' at $SKEY_FILE (consumer Secret garage-buckets-secret)" >&2; exit 1; }
+      ACCESS_KEY_ID="$(cat "$AKID_FILE")"
+      SECRET_KEY="$(cat "$SKEY_FILE")"
+
+      # Garage S3 access-key-ids are always GK-prefixed. Reject anything else
+      # with an actionable message rather than importing an invalid key.
+      case "$ACCESS_KEY_ID" in
+        GK*) : ;;
+        *)
+          echo "ERROR: access-key-id for alias '$ALIAS' must start with 'GK' (Garage convention) — fix the consumer Secret garage-buckets-secret entry '${ALIAS}.access-key-id'" >&2
+          exit 1
+          ;;
+      esac
+
+      # --- Bucket: GET then CreateBucket (idempotent) ---
+      api GET "/v2/GetBucketInfo?globalAlias=${BUCKET}"
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "  bucket '${BUCKET}' exists"
+      elif [ "$HTTP_CODE" = "404" ]; then
+        echo "  creating bucket '${BUCKET}'"
+        api POST "/v2/CreateBucket" "{\"globalAlias\":\"${BUCKET}\"}"
+        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: CreateBucket '${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
+      else
+        echo "ERROR: GetBucketInfo '${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2
+        exit 1
+      fi
+      BUCKET_ID="$(printf '%s' "$BODY" | extract_id)"
+      [ -n "$BUCKET_ID" ] || { echo "ERROR: could not extract bucket id for '${BUCKET}' from: $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
+
+      # --- Key: GET then ImportKey (idempotent; imports consumer-known material) ---
+      api GET "/v2/GetKeyInfo?id=${ACCESS_KEY_ID}"
+      if [ "$HTTP_CODE" = "200" ]; then
+        echo "  key '${ALIAS}' (${ACCESS_KEY_ID}) exists"
+      elif [ "$HTTP_CODE" = "404" ]; then
+        echo "  importing key '${ALIAS}' (${ACCESS_KEY_ID})"
+        api POST "/v2/ImportKey" "{\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"secretAccessKey\":\"${SECRET_KEY}\",\"name\":\"${ALIAS}\"}"
+        [ "$HTTP_CODE" = "200" ] || { echo "ERROR: ImportKey '${ALIAS}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
+      else
+        echo "ERROR: GetKeyInfo '${ALIAS}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2
+        exit 1
+      fi
+
+      # --- Grant: AllowBucketKey is idempotent; call unconditionally with the
+      #     bucket UUID (.id), NOT the globalAlias. ---
+      echo "  granting key '${ALIAS}' read+write on '${BUCKET}'"
+      api POST "/v2/AllowBucketKey" "{\"bucketId\":\"${BUCKET_ID}\",\"accessKeyId\":\"${ACCESS_KEY_ID}\",\"permissions\":{\"read\":true,\"write\":true,\"owner\":false}}"
+      [ "$HTTP_CODE" = "200" ] || { echo "ERROR: AllowBucketKey '${ALIAS}'->'${BUCKET}' failed (HTTP $HTTP_CODE): $(printf '%s' "$BODY" | redact)" >&2; exit 1; }
+    done
+
+    echo "garage-buckets: done"
