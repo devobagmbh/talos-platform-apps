@@ -1,0 +1,27 @@
+# SEMANTIC NEGATIVE (S7): the optional entry names a ref the component never
+# declared as provided_refs.config. Schema-valid — `ref` is a plain string and the
+# schema cannot cross-reference another field. This is the rule that closes S6's
+# bypass: S6 alone was keyed on provided_refs.secret, which an author closes by
+# simply not declaring it, and a skipped rule was indistinguishable from a clean
+# one. Requiring the ref to BE the declared config ref means an undeclared object
+# — a Secret among them — can no longer enter the channel by omission.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-undeclared-config
+      key: rules.yaml
+      description: Rule set the workload evaluates.
+      default: |
+        rules: []
+sync_wave: "10"
+external_dependencies: []

@@ -3,7 +3,7 @@ type: reference
 title: Release automation
 description: release-please-managed per-component releases, the tag-triggered publish flow, and the config-parity gate.
 tags: [reference, release, release-please, oci-publish]
-timestamp: 2026-08-19
+timestamp: 2026-08-27
 sources:
   - AGENTS.md
   - .github/workflows

@@ -3,7 +3,7 @@ type: glossary
 title: Glossary
 description: Core terms of the talos-platform-apps catalog - component, sub-layer, capability, swap-class, freeze-line, strict-B, and the platform-layer terms.
 tags: [glossary, terminology]
-timestamp: 2026-08-19
+timestamp: 2026-08-28
 sources:
   - AGENTS.md
   - catalog/README.md
@@ -35,7 +35,7 @@ under `schemas/`; this glossary is the terse orientation.
 - **Capability** - a stable interface a consumer composes against (e.g. `cnpg-postgres`), defined in `catalog/capability-index.yaml`. The tool implementing it is swappable.
 - **swap_class** - the cost of swapping a capability's implementation: `drop-in`, `label-move` (both consumer-invisible), `data-migration`, `rewrite-required`, `consumer-change` (visible). See `catalog/README.md`.
 - **Freeze-line** - the workload/config boundary declared in a component's `customization.yaml` (ADR-0024). The pre-rendered, signed workload is the baseline; the image digest is the hard consumer-admission anchor, most other fields are consumer-overlayable per-cluster.
-- **`required` vs `optional`** - the two disjoint consumer-input channels of `customization.yaml` (DR-0004). `required.*` is must-supply: without it the workload does not function. The additive `optional` channel names a key the artifact carries a working baked default for, which a consumer sets only to *change* behaviour. Renaming a shipped optional key, removing it, or changing its `default` is breaking and fails silently, because the placeholder expansion falls back without an error.
+- **`required` vs `optional`** - the two disjoint consumer-input channels of `customization.yaml` (DR-0004, DR-0005). `required.*` is must-supply: without it the workload does not function. The additive `optional` channel names something the artifact carries a working baked default for, which a consumer supplies only to *change* behaviour - a scalar under `optional.env_keys`, or a whole file under `optional.config_files`, where the artifact ships a ConfigMap with working content and the consumer replaces that content by kustomize patch (never the mount, never the object, and never a Secret - `default` records the baked content verbatim). Renaming a shipped optional entry, removing it, or changing its `default` is breaking and fails silently: a placeholder expansion falls back without an error, and a renamed file ref leaves the consumer's patch on an object the workload no longer reads.
 - **Compatibility surface** - a component's declared `requires` / `provides` in `compatibility.yaml`: catalog-internal component dependencies, capability requirements, and the capabilities/API surface it provides.
 
 ## CRD management

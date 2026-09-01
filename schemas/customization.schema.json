@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://devoba.de/schemas/customization.schema.json",
   "title": "Component Customization Contract v2",
-  "description": "Contract declaring the freeze-line and the four config shapes a pre-rendered OCI component expects from the consumer (talos-platform-docs ADR-0024). Lives as customization.yaml next to the component's helm/ + manifests/ and ships with the OCI artifact. Supersedes the ADR-0023 v1 contract.",
+  "description": "Contract declaring the freeze-line and the four config shapes a pre-rendered OCI component expects from the consumer (talos-platform-docs ADR-0024). Lives as customization.yaml next to the component's helm/ + manifests/ in the catalog repository. Note it is NOT inside the published OCI artifact: `task package` tars only kustomization.yaml + manifest.yaml, so a consumer reads this contract from the catalog repository at the tag they pin. Supersedes the ADR-0023 v1 contract.",
   "type": "object",
   "additionalProperties": false,
   "required": ["freeze_line", "provided_refs", "provided_selectors", "required", "sync_wave", "external_dependencies"],
@@ -22,7 +22,7 @@
     "provided_refs": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Names under which the rendered workload expects consumer-supplied config, by shape. Empty {} for cluster-agnostic components.",
+      "description": "Names under which the rendered workload expects config the consumer controls, by shape. Two ownership modes share these names: for a `required` shape the consumer AUTHORS the object; for an `optional` shape the artifact SHIPS the object with working content and the consumer replaces that content by kustomize patch. Empty {} for cluster-agnostic components.",
       "properties": {
         "env": {
           "type": "string",
@@ -76,8 +76,9 @@
         "env_keys": {
           "type": "array",
           "default": [],
+          "uniqueItems": true,
           "items": { "type": "string" },
-          "description": "Shape (a): scalar keys the consumer must set in the env ConfigMap (provided_refs.env)."
+          "description": "Shape (a): scalar keys the consumer must set in the env ConfigMap (provided_refs.env). `uniqueItems` carries within-channel uniqueness HERE: the semantic gate's S2 groups optional.env_keys[].name and cannot see this list, which holds plain strings."
         },
         "config_files": {
           "type": "array",
@@ -88,17 +89,32 @@
             "additionalProperties": false,
             "required": ["path", "ref", "key"],
             "properties": {
-              "path": { "type": "string", "description": "Mount path the workload reads the file from." },
-              "ref": { "type": "string", "description": "ConfigMap/Secret name carrying the file (matches provided_refs.config or .secret)." },
-              "key": { "type": "string", "description": "Key within the ref holding the file content." }
+              "path": {
+                "type": "string",
+                "pattern": "^(?!.*/\\.\\.?(/|$))(/[^/\\s]+)+$",
+                "description": "Absolute path of the FILE the workload reads — the volume mountPath plus the file name, e.g. /etc/booter/booter.yaml. It is a file path, never a bare mountPath: a ConfigMap volume projects every key as its own file. Identical semantics to optional.config_files[].path, deliberately: task validate:contract checks path uniqueness across the UNION of both channels, which is only meaningful while the two fields denote the same kind of value. The pattern requires a canonical path — no empty, `.` or `..` segment and no trailing slash — because S5 compares raw strings, so /etc/x/f.yaml and /etc/x/./f.yaml would otherwise name one file and pass as two."
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                "description": "ConfigMap/Secret name carrying the file (matches provided_refs.config or .secret). The pattern is the RFC 1123 DNS subdomain Kubernetes enforces for object names — dot-separated labels, no consecutive dots, no dot-adjacent hyphens — with its 253-character bound. Beyond charset hygiene it is load-bearing for the gate: an entry identity is built as <ref>|<key>, so a pipe character in either field would collide two distinct entries into a phantom duplicate. Both channels feed that identity, so both carry the pattern."
+              },
+              "key": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^(?!\\.\\.)(?!\\.$)[-._a-zA-Z0-9]+$",
+                "description": "Key within the ref holding the file content. The pattern is the charset Kubernetes enforces for ConfigMap data keys, minus what its IsConfigMapKey rejects outright: a single dot, and ANY key beginning with two dots — `..data` as much as the bare `..`, because the kubelet reserves that prefix for a projected volume's own bookkeeping. It also keeps the pipe character out of the identity string the gate builds."
+              }
             }
           }
         },
         "secret_keys": {
           "type": "array",
           "default": [],
+          "uniqueItems": true,
           "items": { "type": "string" },
-          "description": "Shape (c): keys the consumer must provide in the runtime secret (provided_refs.secret)."
+          "description": "Shape (c): keys the consumer must provide in the runtime secret (provided_refs.secret). `uniqueItems` for the same reason as env_keys above — no semantic rule covers a plain string list."
         },
         "selector_crs": {
           "type": "array",
@@ -124,7 +140,7 @@
     "optional": {
       "type": "object",
       "additionalProperties": false,
-      "description": "What the consumer MAY supply to change behaviour, per shape — the counterpart to `required`. `required` = the consumer MUST set it or the workload does not function; `optional` = the artifact carries a working baked default and the component runs unset. This is the ADR-0024 calibrated-friction surface in its ergonomic form: a knob a consumer turns per-cluster without a catalog PR and without replacing the signed config. Additive and absent by default. Only the env shape is modelled today; a config-file / secret-key / selector channel is added when a component needs one (an unused shape would be unexercised semantics). Two rules JSON Schema cannot express are enforced by `task validate:contract` over the real component files: a name MUST NOT appear in both channels, and each name MUST be unique within this one. Two consequences a component author has to know: a consumer validating against a VENDORED PRE-`optional` COPY of this schema REJECTS a customization.yaml carrying this block (closed root, `$id` deliberately unchanged — the validation error naming `optional` is the only in-band signal); and renaming a shipped key, removing it, or changing its `default` is BREAKING and SILENT (expansion falls back with no error, so the consumer loses their setting or silently gets new behaviour) — major bump plus migration note, never an in-place edit. Rationale and all five schema-contract-parity decisions in full: knowledge/decisions/DR-0004-optional-customization-keys.md.",
+      "description": "What the consumer MAY supply to change behaviour, per shape — the counterpart to `required`. `required` = the consumer MUST set it or the workload does not function; `optional` = the artifact carries a working baked default and the component runs unset. This is the ADR-0024 calibrated-friction surface in its ergonomic form: a knob a consumer turns per-cluster without a catalog PR and without replacing the signed config. Additive and absent by default. Two of `required`'s four shapes are modelled: the env shape (DR-0004) and the config-file shape (DR-0005). A secret-key / selector channel is added when a component needs one (an unused shape would be unexercised semantics), and because this block is `additionalProperties: false` that addition is always an explicit, reviewed schema change. Seven rules JSON Schema cannot express are enforced by `task validate:contract` over the real component files: an env name is not in both channels (S1) and is unique within THIS one (S2 — the required channel is a list of plain strings, so its own uniqueness is the schema's `uniqueItems` instead); a config-file (ref, key) identity is not in both channels (S3) and is unique within each channel (S4); a config-file `path` is unique across both channels together (S5); an optional config-file `ref` is never the secret ref (S6), because `default` records baked content verbatim and this repository forbids real secrets; and an optional config-file `ref` IS the declared `provided_refs.config` (S7 — the positive form, because a rule keyed only on `provided_refs.secret` is evaded by not declaring that field). Two consequences a component author has to know: a consumer validating against a VENDORED copy of this schema predating the shape they use REJECTS the customization.yaml carrying it (closed root, `$id` deliberately unchanged — the validation error naming the unknown property is the only in-band signal); and renaming a shipped entry, removing it, or changing its `default` is BREAKING and SILENT (an env expansion falls back with no error; a renamed file ref leaves the consumer's kustomize patch on an object the workload no longer reads, and the patch may even keep applying cleanly while the old object lingers under Prune=false) — major bump plus migration note, never an in-place edit. Rationale and all five schema-contract-parity decisions in full: knowledge/decisions/DR-0004-optional-customization-keys.md (env shape) and knowledge/decisions/DR-0005-optional-config-file-channel.md (config-file shape).",
       "properties": {
         "env_keys": {
           "type": "array",
@@ -152,6 +168,48 @@
               "group": {
                 "type": "string",
                 "description": "Optional grouping label for keys that only make sense set together (e.g. a cache's backend plus its addresses). DESCRIPTIVE ONLY: nothing validates that a consumer set every member of a group — it records the co-requirement for the reader."
+              }
+            }
+          }
+        },
+        "config_files": {
+          "type": "array",
+          "default": [],
+          "description": "Shape (b): whole config files the artifact BAKES with working content and the consumer MAY replace to change behaviour — the optional counterpart to required.config_files, which the consumer MUST author. Each entry documents one file the rendered workload already reads from a ConfigMap the artifact ships, so the component runs untouched. MECHANISM: the consumer does NOT write into the shipped object directly — it is part of the signed base and Argo reconciles it back. The consumer replaces the content per-cluster through `source.kustomize.patches` on that ConfigMap (ADR-0024 calibrated friction), exactly as for any other field of the base. ConfigMap only: a Secret is never a valid ref here, because `default` records the baked content verbatim and baking usable secret material into this repository violates AGENTS.md §Hard Constraints — `task validate:contract` refuses a ref equal to provided_refs.secret. Item fields mirror required.config_files (path/ref/key) plus optional.env_keys (description/default/group), because an optional file needs the same two facts an optional key does: what it drives, and what holds when the consumer supplies nothing. Residual: no gate compares a declared entry against the render, so a declared path/ref/key that no rendered volume actually mounts is a knob that silently does nothing.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "ref", "key", "description", "default"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^(?!.*/\\.\\.?(/|$))(/[^/\\s]+)+$",
+                "description": "Absolute path of the FILE the workload reads — the volume's mountPath plus the name the key projects to (e.g. /etc/customresourcestate/config.yaml for key config.yaml under mountPath /etc/customresourcestate), the convention required.config_files already uses. It is a file path, never a bare mountPath: a ConfigMap volume projects every key as its own file, so two replaceable keys of one ConfigMap carry two distinct paths here. Unique across required.config_files AND optional.config_files together — one path cannot hold two different files. The pattern requires a canonical path — no empty, `.` or `..` segment and no trailing slash — because that uniqueness check compares raw strings, so /etc/x/f.yaml and /etc/x/./f.yaml would otherwise name one file and pass as two. Not representable: one (ref, key) mounted at two paths (e.g. into two containers); declare the one the consumer's replacement is about."
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$",
+                "description": "Name of the ConfigMap carrying the file, matching provided_refs.config. Unlike required.config_files, this object IS shipped in the artifact with working content — the consumer replaces that content by kustomize patch, never by creating the object. Pin the name explicitly in the component's helm values where the chart would otherwise derive it from the release name: it is a consumer-facing contract value, so a chart-template change must not rename it silently. The pattern is the RFC 1123 DNS-subdomain charset Kubernetes enforces for object names, which also keeps `|` out of the (ref, key) identity string the gate builds."
+              },
+              "key": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^(?!\\.\\.)(?!\\.$)[-._a-zA-Z0-9]+$",
+                "description": "Key within the ref holding the file content. The (ref, key) pair is this entry's identity: unique within optional.config_files and never also present in required.config_files. The pattern is the charset Kubernetes enforces for ConfigMap data keys, minus what its IsConfigMapKey rejects outright: a single dot, and ANY key beginning with two dots (`..data` as much as the bare `..`). It also keeps `|` out of the identity string the gate builds."
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What the file drives, the effect of replacing it, HOW a replacement takes effect (a projected ConfigMap file updates on the kubelet sync period, so state whether the workload re-reads it or the consumer must restart the pod), and any obligation that comes with it (e.g. RBAC the consumer must add for the resources the file names). Required — an undocumented knob is not a contract. Reload semantics live here rather than in a field of their own: the answer is per-workload prose, not a boolean."
+              },
+              "default": {
+                "type": "string",
+                "description": "The file content that applies when the consumer replaces nothing, as a string, VERBATIM as baked into the artifact — never a summary or a description of its effect. Verbatim is load-bearing: it is what lets a future render-vs-contract check compare this field against the rendered ConfigMap's data[key] and call a mismatch a defect. A component whose baked content is too large to inline usefully gets no prose escape hatch here; it needs a discriminated field of its own, added as an explicit reviewed schema change. An empty string means an empty file is baked — say so in `description`, together with what the workload does with it."
+              },
+              "group": {
+                "type": "string",
+                "description": "Optional grouping label for files that only make sense replaced together. DESCRIPTIVE ONLY: nothing validates that a consumer replaced every member of a group — it records the co-requirement for the reader."
               }
             }
           }

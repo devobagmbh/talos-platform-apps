@@ -3,7 +3,7 @@ type: decision
 title: "DR-0004 — Optional consumer-supplied env keys in the customization contract"
 description: Add an additive top-level `optional` block to the customization contract so a component can declare env keys that carry a working baked default, keeping `required` strictly the must-supply channel; enforce the two rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-08-18
+timestamp: 2026-08-27
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-valid.yaml
@@ -14,7 +14,7 @@ sources:
 
 # DR-0004 — Optional consumer-supplied env keys in the customization contract
 
-- **Status:** Accepted for the repo-local scope (this schema + its two task-enforced rules). The platform-wide companion — `talos-platform-docs` ADR-0037 — is still `proposed` and flips to `accepted` once this change is merged; this record does not ratify the platform decision on its behalf, and nothing in the schema or the gate depends on that flip.
+- **Status:** Accepted for the repo-local scope (this schema + its two task-enforced rules). **Extended (not superseded) by [DR-0005](DR-0005-optional-config-file-channel.md)**, which adds the `config_files` shape to the same `optional` block; everything this record decides about the env shape still holds unchanged. The platform-wide companion — `talos-platform-docs` ADR-0037 — is still `proposed` and flips to `accepted` once this change is merged; this record does not ratify the platform decision on its behalf, and nothing in the schema or the gate depends on that flip.
 - **Date:** 2026-08-16
 - **Issue:** #794
 - **Record class:** repo-local decision record (`knowledge/decisions/`), distinct from the platform-wide ADR series in `talos-platform-docs/adr/`.
@@ -69,6 +69,8 @@ does not have. It is a schema-reject fixture
 a future author who reaches for it hits a red gate and reads this record.
 
 ## Why only the env shape
+
+> **Since resolved for one shape.** [DR-0005](DR-0005-optional-config-file-channel.md) built the config-file channel once a component defined what it means (`observability/kube-state-metrics`, [#832](https://github.com/devobagmbh/talos-platform-apps/issues/832)) — the answer to the open question below is *default file baked in*. The reasoning in this section is what gated that addition, and it still gates `secret_keys` and `selector_crs`.
 
 `required` models four shapes (env keys, config files, secret keys, selector CRs). `optional` models one. A config-file / secret-key / selector optional channel has no user today, so its semantics would be unexercised: nothing would pin down what "an optional config file" means (mounted-but-empty? absent mount? default file baked in?). The block is `additionalProperties: false`, so adding a shape later is an explicit, reviewed schema change — which is the point.
 

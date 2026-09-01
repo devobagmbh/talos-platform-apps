@@ -1,0 +1,45 @@
+# POSITIVE fixture for schemas/customization.schema.json (DR-0005).
+# A minimal, fully valid contract exercising the additive optional.config_files
+# shape: two entries against ONE artifact-shipped ConfigMap (two keys, two file
+# paths — the ordinary ConfigMap-volume projection), one with a group and one
+# without. The required entry names a DIFFERENT ref on purpose: a single object
+# cannot be both consumer-authored (required) and artifact-shipped (optional),
+# so sharing the ref would encode an unrealisable deployment shape while still
+# satisfying the disjointness rule. Asserted ACCEPTED by check-jsonschema AND by
+# the semantic checks in `task validate:contract`.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/mandatory.yaml
+      ref: fixture-mandatory-config
+      key: mandatory.yaml
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-config
+      key: rules.yaml
+      description: >-
+        Rule set the workload evaluates. The artifact ships an empty list, so the
+        component runs untouched and evaluates nothing. Replaced via
+        source.kustomize.patches on the ConfigMap; the workload re-reads the file
+        on the next kubelet sync, no pod restart required.
+      default: |
+        rules: []
+    - path: /etc/fixture/tuning.yaml
+      ref: fixture-config
+      key: tuning.yaml
+      description: >-
+        Query-path tuning; the baked file selects the conservative profile.
+        Read once at start, so a replacement takes effect on the next pod restart.
+      default: |
+        profile: conservative
+      group: tuning
+sync_wave: "10"
+external_dependencies: []
