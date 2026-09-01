@@ -92,6 +92,11 @@ values:
   # `rbac.extraRules` is deliberately left at its `[]` default — read access to a
   # consumer's CR apiGroups is consumer-owned and per-apiGroup (never `apiGroups:
   # ["*"]`, which would be cluster-wide read on every present and future CRD).
+  #
+  # `config` below is the SECOND copy of the baked CRS spec: the same content is
+  # declared as `optional.config_files[].default` in `customization.yaml`, which the
+  # consumer reads to know what it is replacing. Nothing gates the two against each
+  # other yet (the config-file arm of #802), so edit BOTH or neither.
   customResourceState:
     enabled: true
     create: true

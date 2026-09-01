@@ -63,6 +63,10 @@ optional:
         `kube-state-metrics` ServiceAccount granting `list`/`watch` on it (the catalog
         never grants `apiGroups: ["*"]`). Without that grant the exporter still runs,
         but no series appear for that kind — its list/watch on the CR is denied.
+      # Second copy of the baked CRS spec: `helm/kube-state-metrics.yaml`
+      # (`customResourceState.config`) is what actually renders into the ConfigMap.
+      # Nothing gates the two against each other yet (the config-file arm of #802),
+      # so edit BOTH or neither.
       default: |
         spec:
           resources: []
