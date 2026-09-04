@@ -5,7 +5,8 @@
 # § Namespace & PSA). The strict-B CRD half (storage-block/piraeus-operator-crds)
 # ships NO Namespace; this workload is the sole claimant.
 #
-# enforce: privileged — verbatim from upstream manifest.yaml @ v2.10.7. Required
+# enforce: privileged — verbatim from upstream manifest.yaml @ v2.11.0
+# (byte-identical to v2.10.7's Namespace). Required
 # because the operator dynamically creates privileged DRBD/Linstor satellite
 # DaemonSets at runtime (those satellite pods are operator-created from a
 # consumer's LinstorCluster CR and are NOT in this manifest). The operator's OWN
