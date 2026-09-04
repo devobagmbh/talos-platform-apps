@@ -10,15 +10,18 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.5.3**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-operator.yaml`)
+`kubevirt-operator.yaml` at tag **v1.6.6**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.6.6/kubevirt-operator.yaml`)
 and the `KubeVirt` CR from `kubevirt-cr.yaml` at the same release
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-cr.yaml`).
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.6.6/kubevirt-cr.yaml`).
 KubeVirt publishes no anonymously-pullable Helm chart (the upstream install method is
 `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered as raw
 manifests (`kind: manifests`) — the **non-CRD** objects extracted from the release
-manifest via `yq 'select(.kind != "CustomResourceDefinition")'`. Nothing is
-hand-edited: no `replicas` pin, no consumer-specific values, no invented pod labels.
+manifest via `yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'`
+(mikefarah/yq v4 — the python-yq on the devbox PATH emits JSON for this expression and
+does not reproduce the committed bytes; the `Namespace` is authored in
+`00-namespace.yaml`, see below). Nothing is hand-edited: no `replicas` pin, no
+consumer-specific values, no invented pod labels.
 
 ## What ships
 
@@ -27,10 +30,10 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.5.3`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.6.6`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are pinned to the v1.5.3 shasums baked into the virt-operator container env
+  images are pinned to the v1.6.6 shasums baked into the virt-operator container env
   (not in this manifest — the operator injects them at reconcile time).
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
@@ -45,7 +48,7 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.5.3.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.6.6.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -54,7 +57,7 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 ## The `KubeVirt` CR — a catalog default (consumer-overridable)
 
 This workload ships the `KubeVirt` CR as a **catalog default**, taken verbatim from
-the base migration source at v1.5.3. Its security/posture **spec values** are the
+the base migration source at v1.6.6. Its security/posture **spec values** are the
 upstream defaults verbatim; the `app.kubernetes.io/*` labels (incl. `managed-by:
 argocd`) are standard labels the base source carries on the minimal upstream CR. It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
@@ -122,6 +125,51 @@ ships no Namespace.
   production VMs SHOULD override to `[LiveMigrateIfPossible]` in their overlay before
   starting a multi-hop walk — that needs at least two schedulable nodes and
   migration-capable hardware. Dev/test consumers may keep the default.
+- **The v1.6 hop drops two `instancetype.kubevirt.io` API versions.** `v1alpha1` and
+  `v1alpha2` are no longer served or supported upstream (KubeVirt PR #14048). Those
+  CRDs are operator-installed at runtime (see above), so nothing in this artifact
+  changes — but a consumer whose `VirtualMachine`s reference an instancetype or
+  preference through `v1alpha{1,2}` MUST migrate those objects to `v1beta1` **before**
+  applying this tag, or the VMs stop resolving their instancetype.
+- **Two v1.6 monitoring contracts changed, and both fail silently.** A consumer MUST
+  audit their observability layer **before** applying this tag; neither break produces
+  an error, an Argo health signal, or a Kubernetes event.
+  - `kubevirt_vmi_vcpu_seconds_total` switched unit from microseconds to nanoseconds
+    (PR #13898). Every dashboard panel and alert expression doing arithmetic on it is
+    off by 1000x — update the expressions.
+  - The four `VirtHandlerRESTErrorsHigh`, `VirtOperatorRESTErrorsHigh`,
+    `VirtAPIRESTErrorsHigh` and `VirtControllerRESTErrorsHigh` alerts were removed
+    (PR #13911). Any alerting rule or runbook naming them goes dead — these are
+    control-plane health canaries, so losing them undetected means missed incidents.
+    Remove or replace the rules and fix the runbooks.
+
+  This artifact ships no `PrometheusRule`, so both live entirely in the consumer's
+  observability layer.
+- **KubeVirt no longer creates PodDisruptionBudgets** (PR #13764). A consumer whose
+  node-drain tooling or policy asserted the presence of a KubeVirt-managed PDB must
+  stop relying on it. Under the catalog default `workloadUpdateMethods: [Evict]` this
+  changes nothing — eviction is already the intended behaviour. A consumer who
+  overrode to `[LiveMigrateIfPossible]` loses the PDB as a backstop: a failed migration
+  now falls through to eviction with no mandatory delay window, where the PDB
+  previously held it off.
+- **`developerConfiguration.memoryOvercommit` is now bounded below at 10** in the CRD
+  schema (`-crds` half), and the `-crds` half syncs FIRST (wave -1), so the new bound
+  is active before the operator upgrades. A value of 1-9 was accepted before this hop
+  and is rejected by the API server after it, which leaves the live CR unwritable and
+  the operator unable to reconcile it. Check before syncing:
+
+  ```console
+  kubectl get kubevirt kubevirt -n kubevirt \
+    -o jsonpath='{.spec.configuration.developerConfiguration.memoryOvercommit}'
+  ```
+
+  An empty result or a value ≥ 10 needs nothing. A value of 1-9 MUST be corrected to
+  ≥ 10 (in the consumer overlay, then synced) before the `-crds` tag is applied. The
+  catalog default does not set the field, so only an overlay can put a cluster in this
+  state.
+- **cgroup v1 is in maintenance mode as of v1.6** (PR #14538) and upstream announces
+  removal in a later release. Nodes still on cgroup v1 need to move to v2 before the
+  chain reaches that release.
 
 ## Upgrade path — sequential, forward only
 
