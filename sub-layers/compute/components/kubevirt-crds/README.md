@@ -8,8 +8,8 @@ together form the strict-B pair: CRD first (this artifact, sync-wave -1), worklo
 after (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream KubeVirt release operator manifest
-at tag **v1.7.4**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.7.4/kubevirt-operator.yaml`).
+at tag **v1.8.4**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.8.4/kubevirt-operator.yaml`).
 KubeVirt publishes no anonymously-pullable CRDs-only Helm chart (the upstream install
 method is `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered
 as a raw manifest (`kind: manifests`, `manifests/00-kubevirt-crds.yaml`) — the CRD
@@ -90,6 +90,19 @@ A safe schema-remove upgrade follows three steps:
    CR (and its operator-installed VM CRs) exists: Argo would cascade-delete those CRs
    and tear down the running virtualization workloads. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.8.4 — additive only
+
+The v1.7.4 -> v1.8.4 schema diff is additive on both served versions:
+`configuration.hypervisors[]` (enum `kvm` / `hyperv-direct`, `maxItems: 1`),
+`configuration.roleAggregationStrategy` (enum `AggregateToDefault` / `Manual`),
+`configuration.developerConfiguration.disabledFeatureGates[]`,
+`configuration.mediatedDevicesConfiguration.enabled` (the replacement for the
+deprecated `DisableMDEVConfiguration` gate), `configuration.migrations
+.utilityVolumesTimeout` and `configuration.virtTemplateDeployment`. The existing
+`featureGates` and the two new list fields carry `x-kubernetes-list-type: atomic`, so
+no set-uniqueness constraint is imposed on values already stored. Nothing is removed
+and no constraint is narrowed; served/storage versions are unchanged.
 
 ### v1.7.4 — additive only
 
