@@ -1,7 +1,7 @@
 # The KubeVirt operator-config singleton CR — the operator watches it and, on
 # reconcile, deploys the virtualization control plane (virt-api, virt-controller,
 # virt-handler, the webhooks). Shipped HERE in the workload as a CATALOG DEFAULT,
-# verbatim from the base migration source at v1.5.3 — NOT consumer-owned-only. A
+# verbatim from the base migration source at v1.6.6 — NOT consumer-owned-only. A
 # consumer patches it via their own Argo overlay (Kustomize/values) where they need
 # to (e.g. enable useEmulation on hardware without vt-x/amd-v); the bundled spec is
 # the platform's posture default.
@@ -25,7 +25,7 @@ metadata:
   namespace: kubevirt
   labels:
     app.kubernetes.io/name: kubevirt
-    app.kubernetes.io/version: v1.5.3
+    app.kubernetes.io/version: v1.6.6
     app.kubernetes.io/component: operator
     app.kubernetes.io/managed-by: argocd
 spec:

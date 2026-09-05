@@ -8,13 +8,15 @@ together form the strict-B pair: CRD first (this artifact, sync-wave -1), worklo
 after (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream KubeVirt release operator manifest
-at tag **v1.5.3**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-operator.yaml`).
+at tag **v1.6.6**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.6.6/kubevirt-operator.yaml`).
 KubeVirt publishes no anonymously-pullable CRDs-only Helm chart (the upstream install
 method is `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered
 as a raw manifest (`kind: manifests`, `manifests/00-kubevirt-crds.yaml`) — the CRD
 object extracted from the release manifest via
-`yq 'select(.kind == "CustomResourceDefinition")'`.
+`yq 'select(.kind == "CustomResourceDefinition")'` (mikefarah/yq v4 — the python-yq on
+the devbox PATH emits JSON for this expression and does not reproduce the committed
+bytes).
 
 ## What ships
 
@@ -88,6 +90,26 @@ A safe schema-remove upgrade follows three steps:
    CR (and its operator-installed VM CRs) exists: Argo would cascade-delete those CRs
    and tear down the running virtualization workloads. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.6.6 — one narrowing, the rest additive
+
+The v1.5.3 -> v1.6.6 schema diff is additive (`developerConfiguration.clusterProfiler`,
+`customizeComponents`/`status.synchronizationAddresses` and `synchronizationPort` for the
+new synchronization controller, `virtSynchronizationController` in the log-verbosity map),
+with **one narrowing**: `developerConfiguration.memoryOvercommit` gained `minimum: 10`.
+A live `KubeVirt` CR carrying a value of 1-9 was valid before this hop and is **rejected**
+by the API server after it, which leaves the CR unwritable and the operator unable to
+reconcile it. This half syncs at wave -1, so the bound is active before the workload
+upgrades — check the live CR first:
+
+```console
+kubectl get kubevirt kubevirt -n kubevirt \
+  -o jsonpath='{.spec.configuration.developerConfiguration.memoryOvercommit}'
+```
+
+An empty result or a value ≥ 10 needs nothing; a value of 1-9 MUST be corrected to ≥ 10
+before this tag is applied. No served version was added or removed (`v1` + `v1alpha3`,
+storage `v1`), so no stored-object conversion is involved.
 
 ## Capability
 
