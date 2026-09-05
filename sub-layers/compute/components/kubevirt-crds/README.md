@@ -8,8 +8,8 @@ together form the strict-B pair: CRD first (this artifact, sync-wave -1), worklo
 after (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream KubeVirt release operator manifest
-at tag **v1.6.6**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.6.6/kubevirt-operator.yaml`).
+at tag **v1.7.4**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.7.4/kubevirt-operator.yaml`).
 KubeVirt publishes no anonymously-pullable CRDs-only Helm chart (the upstream install
 method is `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered
 as a raw manifest (`kind: manifests`, `manifests/00-kubevirt-crds.yaml`) — the CRD
@@ -90,6 +90,14 @@ A safe schema-remove upgrade follows three steps:
    CR (and its operator-installed VM CRs) exists: Argo would cascade-delete those CRs
    and tear down the running virtualization workloads. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.7.4 — additive only
+
+The v1.6.6 -> v1.7.4 schema diff adds `configuration.changedBlockTrackingLabelSelectors`
+(the namespace/VM label selectors for incremental-backup overlays) and the
+`architectureConfiguration.s390x` block, on both served versions. Nothing is removed and
+no constraint is narrowed, so no live `KubeVirt` CR can become invalid at this hop, and
+the served/storage versions are unchanged (`v1` + `v1alpha3`, storage `v1`).
 
 ### v1.6.6 — one narrowing, the rest additive
 
