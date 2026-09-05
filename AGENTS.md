@@ -147,6 +147,8 @@ The end-to-end issue→PR interface — how an issue becomes a merged, ADR-confo
 
 **Adding a required check under the merge queue:** a newly-required check MUST also fire on the `merge_group` event, not only `pull_request` — otherwise the queue's re-validation never reports for it and an enqueued PR stalls indefinitely. All current required checks are `merge_group`-aware (#513); the pending `commit-lint` short-circuits on `merge_group` by design.
 
+**Stacked PRs (a PR based on another PR's branch).** The PR-gating workflows carry **no `branches:` filter**, so a stacked PR runs the same checks as one onto `main`. This is deliberate: under a `branches: [main]` filter those jobs never fire on a stacked PR, which then shows green with nothing having run — and branch protection does not cover it either (the ruleset governs `main`), so its checks and its human review are the only gate it has. A check conclusion attaches to the **head SHA**, so a run on the stacked base still counts once GitHub retargets the PR to `main` after its parent merges; the merge queue re-validates on the `merge_group` head regardless, and that stays the authoritative gate. Note that the retarget itself raises no `pull_request` event type these workflows listen for — if a stacked PR was opened before this rule existed, or its head predates a required check, close and reopen it to get a run.
+
 **Non-status-check merge gates:**
 
 - **Signed commits** (`required_signatures`) — an unsigned commit → `BLOCKED`; see § Commits & Pull Requests for the one-time setup.
