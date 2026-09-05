@@ -1,21 +1,22 @@
 # CDI operator workload — strict-B WORKLOAD half (ADR-0028), 0 CRDs. Extracted
-# verbatim from the upstream CDI release cdi-operator.yaml at tag v1.62.0
-# (https://github.com/kubevirt/containerized-data-importer/releases/download/v1.62.0/cdi-operator.yaml,
+# verbatim from the upstream CDI release cdi-operator.yaml at tag v1.63.1
+# (https://github.com/kubevirt/containerized-data-importer/releases/download/v1.63.1/cdi-operator.yaml,
 # vendored in talos-platform-base at
-# kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml @ v1.62.0)
-# via `yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'`.
+# kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml @ v1.63.1)
+# via mikefarah/yq v4 (devbox's python-yq emits JSON here and will not reproduce these
+# bytes): yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'
 # The single cdi.kubevirt.io CRD (cdis.cdi.kubevirt.io / CDI) ships in the SEPARATE
 # strict-B artifact compute/kubevirt-cdi-crds (sync-wave -1); this workload carries
-# 0 CRDs. The upstream manifest ships NO Namespace object — the cdi Namespace (with
-# the PSA enforce:restricted labels) is authored in 00-namespace.yaml, this
-# component being the sole catalog occupant of the namespace.
+# 0 CRDs. The upstream Namespace object is dropped by the extraction — the cdi
+# Namespace is authored in 00-namespace.yaml instead (ADR-0032 namespace ownership),
+# adding the PSA enforce:restricted labels upstream ships none of.
 #
 # Content (verbatim, NOT hand-edited): the ServiceAccount cdi-operator; the
 # ClusterRole cdi-operator-cluster + ClusterRoleBinding cdi-operator; the Role +
 # RoleBinding cdi-operator (namespace cdi); and the Deployment cdi-operator. Only
-# the image quay.io/kubevirt/cdi-operator:v1.62.0 is pinned (no :latest); the
+# the image quay.io/kubevirt/cdi-operator:v1.63.1 is pinned (no :latest); the
 # cdi-apiserver/cdi-controller/cdi-uploadproxy/cdi-importer/cdi-cloner/
-# cdi-uploadserver images the operator deploys are pinned to v1.62.0 via the
+# cdi-uploadserver images the operator deploys are pinned to v1.63.1 via the
 # operator container env (CONTROLLER_IMAGE, IMPORTER_IMAGE, …) — not as separate
 # objects here; the operator injects them when it reconciles the CDI CR.
 # securityContexts are shipped verbatim (restricted-compliant — see 00-namespace.yaml).
@@ -295,6 +296,7 @@ rules:
       - get
   - apiGroups:
       - cdi.kubevirt.io
+      - forklift.cdi.kubevirt.io
     resources:
       - '*'
     verbs:
@@ -354,15 +356,6 @@ rules:
       - virtualmachines/finalizers
     verbs:
       - update
-  - apiGroups:
-      - forklift.cdi.kubevirt.io
-    resources:
-      - ovirtvolumepopulators
-      - openstackvolumepopulators
-    verbs:
-      - get
-      - list
-      - watch
   - apiGroups:
       - ""
     resources:
@@ -645,31 +638,31 @@ spec:
             - name: DEPLOY_CLUSTER_RESOURCES
               value: "true"
             - name: OPERATOR_VERSION
-              value: v1.62.0
+              value: v1.63.1
             - name: CONTROLLER_IMAGE
-              value: quay.io/kubevirt/cdi-controller:v1.62.0
+              value: quay.io/kubevirt/cdi-controller:v1.63.1
             - name: IMPORTER_IMAGE
-              value: quay.io/kubevirt/cdi-importer:v1.62.0
+              value: quay.io/kubevirt/cdi-importer:v1.63.1
             - name: CLONER_IMAGE
-              value: quay.io/kubevirt/cdi-cloner:v1.62.0
+              value: quay.io/kubevirt/cdi-cloner:v1.63.1
             - name: OVIRT_POPULATOR_IMAGE
-              value: quay.io/kubevirt/cdi-importer:v1.62.0
+              value: quay.io/kubevirt/cdi-importer:v1.63.1
             - name: APISERVER_IMAGE
-              value: quay.io/kubevirt/cdi-apiserver:v1.62.0
+              value: quay.io/kubevirt/cdi-apiserver:v1.63.1
             - name: UPLOAD_SERVER_IMAGE
-              value: quay.io/kubevirt/cdi-uploadserver:v1.62.0
+              value: quay.io/kubevirt/cdi-uploadserver:v1.63.1
             - name: UPLOAD_PROXY_IMAGE
-              value: quay.io/kubevirt/cdi-uploadproxy:v1.62.0
+              value: quay.io/kubevirt/cdi-uploadproxy:v1.63.1
             - name: VERBOSITY
               value: "1"
             - name: PULL_POLICY
               value: IfNotPresent
             - name: MONITORING_NAMESPACE
-          image: quay.io/kubevirt/cdi-operator:v1.62.0
+          image: quay.io/kubevirt/cdi-operator:v1.63.1
           imagePullPolicy: IfNotPresent
           name: cdi-operator
           ports:
-            - containerPort: 8080
+            - containerPort: 8443
               name: metrics
               protocol: TCP
           resources:
@@ -685,7 +678,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           terminationMessagePath: /dev/termination-log
-          terminationMessagePolicy: File
+          terminationMessagePolicy: FallbackToLogsOnError
       nodeSelector:
         kubernetes.io/os: linux
       securityContext:

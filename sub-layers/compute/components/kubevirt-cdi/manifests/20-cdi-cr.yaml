@@ -1,7 +1,7 @@
 # The CDI operator-config singleton CR — the cdi-operator watches it and, on
 # reconcile, deploys the CDI control plane (cdi-apiserver, cdi-controller,
 # cdi-uploadproxy). Shipped HERE in the workload as a CATALOG DEFAULT, verbatim from
-# the base migration source at v1.62.0
+# the base migration source at v1.63.1
 # (kubernetes/base/infrastructure/kubevirt-cdi/cdi-cr.yaml). A consumer who needs to
 # diverge patches it via their own Argo overlay (Kustomize/values in the
 # consumer-cluster repo); the bundled spec is the platform's posture default.
@@ -23,7 +23,7 @@ metadata:
   namespace: cdi
   labels:
     app.kubernetes.io/name: cdi
-    app.kubernetes.io/version: v1.62.0
+    app.kubernetes.io/version: v1.63.1
     app.kubernetes.io/component: data-importer
     app.kubernetes.io/managed-by: argocd
 spec:
