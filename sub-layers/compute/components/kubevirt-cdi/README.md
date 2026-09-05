@@ -10,8 +10,8 @@ half, [`compute/kubevirt-cdi-crds`](../kubevirt-cdi-crds/README.md). The two tog
 form the strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream CDI release `cdi-operator.yaml`
-at tag **v1.62.0**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.62.0/cdi-operator.yaml`,
+at tag **v1.63.1**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.63.1/cdi-operator.yaml`,
 vendored in `talos-platform-base` at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`) and the `CDI` CR
 from `cdi-cr.yaml` at the same release. CDI publishes no anonymously-pullable Helm
@@ -28,11 +28,11 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 `manifests/20-cdi-cr.yaml` — the `CDI` operator-config CR:
 
 - **Deployment `cdi-operator`** (ns `cdi`, image
-  `quay.io/kubevirt/cdi-operator:v1.62.0`) — the operator. On reconcile of the `CDI`
+  `quay.io/kubevirt/cdi-operator:v1.63.1`) — the operator. On reconcile of the `CDI`
   CR it deploys the CDI control plane (`cdi-apiserver`, `cdi-controller`,
   `cdi-uploadproxy`); the per-component images (`cdi-controller`, `cdi-importer`,
   `cdi-cloner`, `cdi-apiserver`, `cdi-uploadserver`, `cdi-uploadproxy`) are pinned to
-  `v1.62.0` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
+  `v1.63.1` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
   not as separate objects here — the operator injects them at reconcile time.
 - **ServiceAccount `cdi-operator`**, the **Role + RoleBinding `cdi-operator`** (ns
   `cdi`), and the **ClusterRole `cdi-operator-cluster` + ClusterRoleBinding
@@ -43,18 +43,24 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 `compute/kubevirt-cdi-crds`, not here (strict-B workload half).
 
 > **Operator RBAC provenance.** The `cdi-operator-cluster` `ClusterRole` carries broad
-> grants — including wildcard `resources`/`verbs` on the `cdi.kubevirt.io` API group
-> and `clusterrole`/`clusterrolebinding` write — taken **verbatim** from the upstream
-> `cdi-operator.yaml` v1.62.0. They are part of `cdi-operator`'s documented threat
+> grants — including wildcard `resources`/`verbs` on the `cdi.kubevirt.io`,
+> `upload.cdi.kubevirt.io` and `forklift.cdi.kubevirt.io` API groups, and
+> `clusterrole`/`clusterrolebinding` write — taken **verbatim** from the upstream
+> `cdi-operator.yaml` v1.63.1. They are part of `cdi-operator`'s documented threat
 > model (it reconciles the full CDI control plane, including the RBAC for its
 > operands) and are **not** narrowed here: hand-narrowing upstream operator RBAC
 > silently breaks reconciliation on the next version bump. Accepted as
 > upstream-verbatim; re-derived on every version re-extraction.
+>
+> `forklift.cdi.kubevirt.io` entered that wildcard rule at v1.63.1, widening it from
+> `get`/`list`/`watch` on `ovirtvolumepopulators` + `openstackvolumepopulators` to all
+> verbs on all resources in the group (upstream v1.63.0, "BugFix: Add missing RBAC for
+> ovirt and openstack volume populator CRDs").
 
 ## The `CDI` CR — a catalog default (consumer-overridable)
 
 This workload ships the `CDI` CR as a **catalog default**, taken verbatim from the
-base migration source at v1.62.0. It is **not** consumer-owned-only: the platform
+base migration source at v1.63.1. It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
 (Kustomize/values in the consumer-cluster repo) where they need to diverge. The one
 field that is genuinely cluster-specific is preserved **empty** and MUST stay empty
@@ -76,12 +82,13 @@ Deployment is `restricted`-compliant (pod `runAsNonRoot: true`; every container
 `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `runAsNonRoot: true`,
 `seccompProfile: RuntimeDefault`), and the control-plane pods the operator creates at
 reconcile time (`cdi-apiserver`, `cdi-controller`, `cdi-uploadproxy`) are likewise
-restricted-compatible at v1.62.0 — so the namespace admits them without softening to
+restricted-compatible at v1.63.1 — so the namespace admits them without softening to
 `baseline` or `privileged`. CDI is **not** like KubeVirt here: it spawns no privileged
 host-access DaemonSet, so `restricted` (not `privileged`) is correct.
 
-The upstream `cdi-operator.yaml` ships **no** Namespace object, so the `Namespace`
-(with the PSA labels) is authored in `00-namespace.yaml`. This component is the
+The upstream `cdi-operator.yaml` ships a `cdi` Namespace carrying no PSA labels at
+all; the extraction drops it and the `Namespace` is authored in `00-namespace.yaml`
+with the full PSA label triad (ADR-0032 namespace ownership). This component is the
 **sole catalog occupant** of `cdi` (dedicated namespace), so it ships the `Namespace`
 object; a shipped manifest takes precedence over Argo `managedNamespaceMetadata`,
 making the PSA posture authoritative. The `-crds` half ships no Namespace.
@@ -95,6 +102,41 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   `cdiconfigs.cdi.kubevirt.io`, …) are **operator-installed at runtime** by
   `cdi-operator` once the `CDI` CR reconciles (ADR-0028 "operator-installed CRDs — out
   of scope"); they are neither in this workload nor in the `-crds` half.
+- **Metrics scrape target moved at v1.63.1** — the `cdi-operator` metrics container
+  port moved `8080` -> `8443` (upstream v1.63.0: "Metrics port for
+  cdi-prometheus-metrics service changed from 8080 to 8443"). The port NAME is
+  unchanged (`metrics`), so a `ServiceMonitor`/`PodMonitor` selecting by port name
+  needs no change; one pinned to the numeric port `8080` MUST be retargeted to `8443`
+  or it silently stops scraping. This artifact ships no `Service` — the
+  `cdi-prometheus-metrics` `Service` is operator-created at reconcile time, so there
+  is no stale `targetPort` in the catalog artifact to update.
+- **Default filesystem overhead rose at v1.63.1** — upstream raised
+  `DefaultGlobalOverhead` from `0.055` to `0.06` (`pkg/common/common.go`). A consumer
+  who does not pin `spec.config.filesystemOverhead.global` in their `CDI` CR overlay
+  gets 6% reserved overhead instead of 5.5% on newly provisioned Filesystem-mode
+  PVCs. Existing PVCs are unaffected; pin the field to keep the old value.
+
+## Upgrade path — sequential by convention
+
+The KubeVirt family documents only **N-1 -> N** upgrades, each hop starting from the
+latest patch of the current minor
+([updating_and_deletion](https://kubevirt.io/user-guide/cluster_admin/updating_and_deletion/)).
+That page covers KubeVirt; **CDI's own upgrade constraint is unconfirmed** — neither
+`doc/releases.md` nor the CDI user-guide page states a skip restriction. The catalog
+therefore stages CDI conservatively, matching the family convention: **every**
+intermediate upstream minor ships as its own release. The three obligations below hold
+either way.
+
+- **Apply the catalog tags in order.** Read the CHANGELOG to see which upstream version
+  a catalog tag carries. Should CDI turn out to permit a skip, stepping through is still
+  safe — the reverse is not.
+- **Rolling a minor back is unsupported.** `Prune=false` on the `-crds` `Application`
+  protects against an accidental CR-cascade delete; it does **not** make a downgrade
+  safe — re-pinning the `-crds` tag can re-apply the older schema while the newer
+  operator has already reconciled state against the newer one. Recovery from a failed
+  hop is forward (finish the hop) or a restore from a pre-hop backup.
+- **Take a cluster backup before every hop** (etcd snapshot or Velero), not only the
+  first.
 
 ## Strict-B consumer wiring (ADR-0028)
 
