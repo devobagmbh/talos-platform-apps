@@ -23,7 +23,7 @@ metadata:
   namespace: cdi
   labels:
     app.kubernetes.io/name: cdi
-    app.kubernetes.io/version: v1.65.0
+    app.kubernetes.io/version: v1.66.0
     app.kubernetes.io/component: data-importer
     app.kubernetes.io/managed-by: argocd
 spec:

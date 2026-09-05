@@ -1,8 +1,8 @@
 # Strict-B CRDs artifact (talos-platform-docs ADR-0028) for compute/kubevirt-cdi.
 # Ships ONLY the cdi.kubevirt.io operator-config CustomResourceDefinition. Extracted
-# VERBATIM from the upstream CDI v1.65.0 operator manifest via python-yq, the devbox yq
+# VERBATIM from the upstream CDI v1.66.0 operator manifest via python-yq, the devbox yq
 # (`-Y` is python-yq-only): yq -Y 'select(.kind == "CustomResourceDefinition")'
-# Source: https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml
+# Source: https://github.com/kubevirt/containerized-data-importer/releases/download/v1.66.0/cdi-operator.yaml
 # (migrated from talos-platform-base, where it was vendored at
 #  kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml)
 # Do NOT hand-edit the schema; a version bump re-extracts from the upstream release.
@@ -440,6 +440,12 @@ spec:
                       type: object
                     uploadProxyURLOverride:
                       description: Override the URL used when uploading to a DataVolume
+                      type: string
+                    webhookPvcRendering:
+                      description: |-
+                        WebhookPvcRendering controls whether the PVC mutating webhook that completes
+                        PVC specs from StorageProfiles is enabled or disabled
+                        Allowed values are "Enabled" (default) and "Disabled"
                       type: string
                   type: object
                 customizeComponents:
@@ -2962,6 +2968,12 @@ spec:
                       type: object
                     uploadProxyURLOverride:
                       description: Override the URL used when uploading to a DataVolume
+                      type: string
+                    webhookPvcRendering:
+                      description: |-
+                        WebhookPvcRendering controls whether the PVC mutating webhook that completes
+                        PVC specs from StorageProfiles is enabled or disabled
+                        Allowed values are "Enabled" (default) and "Disabled"
                       type: string
                   type: object
                 customizeComponents:
