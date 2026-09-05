@@ -1,9 +1,9 @@
 # Strict-B CRDs artifact (talos-platform-docs ADR-0028) for compute/kubevirt-cdi.
 # Ships ONLY the cdi.kubevirt.io operator-config CustomResourceDefinition. Extracted
-# VERBATIM from the upstream CDI v1.62.0 operator manifest via
-#   yq -Y 'select(.kind == "CustomResourceDefinition")'
-# Source: https://github.com/kubevirt/containerized-data-importer/releases/download/v1.62.0/cdi-operator.yaml
-# (vendored in talos-platform-base at kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml @ v1.62.0)
+# VERBATIM from the upstream CDI v1.63.1 operator manifest via python-yq, the devbox yq
+# (`-Y` is python-yq-only): yq -Y 'select(.kind == "CustomResourceDefinition")'
+# Source: https://github.com/kubevirt/containerized-data-importer/releases/download/v1.63.1/cdi-operator.yaml
+# (vendored in talos-platform-base at kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml @ v1.63.1)
 # Do NOT hand-edit the schema; a version bump re-extracts from the upstream release.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -130,7 +130,7 @@ spec:
                     filesystemOverhead:
                       description: FilesystemOverhead describes the space reserved
                         for overhead when using Filesystem volumes. A value is between
-                        0 and 1, if not defined it is 0.055 (5.5% overhead)
+                        0 and 1, if not defined it is 0.06 (6% overhead)
                       properties:
                         global:
                           description: Global is how much space of a Filesystem volume
@@ -2667,7 +2667,7 @@ spec:
                     filesystemOverhead:
                       description: FilesystemOverhead describes the space reserved
                         for overhead when using Filesystem volumes. A value is between
-                        0 and 1, if not defined it is 0.055 (5.5% overhead)
+                        0 and 1, if not defined it is 0.06 (6% overhead)
                       properties:
                         global:
                           description: Global is how much space of a Filesystem volume
