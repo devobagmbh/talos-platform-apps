@@ -9,8 +9,8 @@ strict-B pair: CRD first (this artifact, sync-wave -1), workload after
 (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream CDI release operator manifest
-at tag **v1.65.0**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml`,
+at tag **v1.66.0**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.66.0/cdi-operator.yaml`,
 migrated from `talos-platform-base`, where it was vendored at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`). CDI publishes no
 anonymously-pullable CRDs-only Helm chart (the upstream install method is
@@ -92,6 +92,14 @@ A safe schema-remove upgrade follows three steps:
    (and its operator-installed `DataVolume` CRs) exists: Argo would cascade-delete
    those CRs and tear down in-flight disk imports. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.66.0 — additive only
+
+The v1.65.0 -> v1.66.0 schema diff adds one field on both served versions:
+`config.webhookPvcRendering`, the toggle for the `WebhookPvcRendering` feature that
+upstream turns **on by default** at this release (PR #4172). Nothing is removed and no
+constraint is narrowed. Served versions are unchanged (`v1alpha1` + `v1beta1`, storage
+`v1beta1`).
 
 ### v1.65.0 — additive only
 
