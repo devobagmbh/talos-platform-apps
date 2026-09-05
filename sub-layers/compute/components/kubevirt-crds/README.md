@@ -8,8 +8,8 @@ together form the strict-B pair: CRD first (this artifact, sync-wave -1), worklo
 after (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream KubeVirt release operator manifest
-at tag **v1.8.4**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.8.4/kubevirt-operator.yaml`).
+at tag **v1.9.0**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.9.0/kubevirt-operator.yaml`).
 KubeVirt publishes no anonymously-pullable CRDs-only Helm chart (the upstream install
 method is `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered
 as a raw manifest (`kind: manifests`, `manifests/00-kubevirt-crds.yaml`) — the CRD
@@ -90,6 +90,21 @@ A safe schema-remove upgrade follows three steps:
    CR (and its operator-installed VM CRs) exists: Argo would cascade-delete those CRs
    and tear down the running virtualization workloads. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.9.0 — additive only
+
+The v1.8.4 -> v1.9.0 schema diff is additive on both served versions:
+`configuration.confidentialCompute.tdx.attestation` (`enforced`, `qgsSocketPath`),
+`configuration.persistentReservationConfiguration` (the feature reached GA at v1.9),
+and `configuration.migrations.maxDowntimeMs` (a NEW field, bounded 1..2000000 — the
+bound constrains nothing that existed before). Nothing is removed and no existing
+constraint is narrowed, so no live `KubeVirt` CR can become invalid at this hop.
+Served/storage versions are unchanged.
+
+The consumer-visible change at this hop is in the **workload** half, not here:
+`developerConfiguration.disabledFeatureGates` (added at v1.8.4) becomes load-bearing,
+because v1.9 enables every Beta gate by default. See
+[`compute/kubevirt`](../kubevirt/README.md) § Consumer obligations.
 
 ### v1.8.4 — additive only
 
