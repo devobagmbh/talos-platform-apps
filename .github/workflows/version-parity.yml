@@ -14,8 +14,8 @@ name: version-parity
 # Convention (AGENTS.md § CI-Konventionen): pipeline = thin task caller.
 
 on:
+  # pull_request carries no `branches:` filter on purpose — AGENTS.md § Branch protection & merge gates.
   pull_request:
-    branches: [main]
     paths:
       - 'sub-layers/**/compatibility.yaml'
       - 'sub-layers/**/helm/**'
