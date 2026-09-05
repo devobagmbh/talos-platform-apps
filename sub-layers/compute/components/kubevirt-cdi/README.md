@@ -10,8 +10,8 @@ half, [`compute/kubevirt-cdi-crds`](../kubevirt-cdi-crds/README.md). The two tog
 form the strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream CDI release `cdi-operator.yaml`
-at tag **v1.65.0**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml`,
+at tag **v1.66.0**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.66.0/cdi-operator.yaml`,
 migrated from `talos-platform-base`, where it was vendored at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`) and the `CDI` CR
 from `cdi-cr.yaml` at the same release. CDI publishes no anonymously-pullable Helm
@@ -28,11 +28,11 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 `manifests/20-cdi-cr.yaml` — the `CDI` operator-config CR:
 
 - **Deployment `cdi-operator`** (ns `cdi`, image
-  `quay.io/kubevirt/cdi-operator:v1.65.0`) — the operator. On reconcile of the `CDI`
+  `quay.io/kubevirt/cdi-operator:v1.66.0`) — the operator. On reconcile of the `CDI`
   CR it deploys the CDI control plane (`cdi-apiserver`, `cdi-controller`,
   `cdi-uploadproxy`); the per-component images (`cdi-controller`, `cdi-importer`,
   `cdi-cloner`, `cdi-apiserver`, `cdi-uploadserver`, `cdi-uploadproxy`) are pinned to
-  `v1.65.0` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
+  `v1.66.0` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
   not as separate objects here — the operator injects them at reconcile time.
 - **ServiceAccount `cdi-operator`**, the **Role + RoleBinding `cdi-operator`** (ns
   `cdi`), and the **ClusterRole `cdi-operator-cluster` + ClusterRoleBinding
@@ -46,7 +46,7 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 > grants — including wildcard `resources`/`verbs` on the `cdi.kubevirt.io`,
 > `upload.cdi.kubevirt.io` and `forklift.cdi.kubevirt.io` API groups, and
 > `clusterrole`/`clusterrolebinding` write — taken **verbatim** from the upstream
-> `cdi-operator.yaml` v1.65.0. They are part of `cdi-operator`'s documented threat
+> `cdi-operator.yaml` v1.66.0. They are part of `cdi-operator`'s documented threat
 > model (it reconciles the full CDI control plane, including the RBAC for its
 > operands) and are **not** narrowed here: hand-narrowing upstream operator RBAC
 > silently breaks reconciliation on the next version bump. Accepted as
@@ -82,7 +82,7 @@ Deployment is `restricted`-compliant (pod `runAsNonRoot: true`; every container
 `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `runAsNonRoot: true`,
 `seccompProfile: RuntimeDefault`), and the control-plane pods the operator creates at
 reconcile time (`cdi-apiserver`, `cdi-controller`, `cdi-uploadproxy`) are likewise
-restricted-compatible at v1.65.0 — so the namespace admits them without softening to
+restricted-compatible at v1.66.0 — so the namespace admits them without softening to
 `baseline` or `privileged`. CDI is **not** like KubeVirt here: it spawns no privileged
 host-access DaemonSet, so `restricted` (not `privileged`) is correct.
 
@@ -162,6 +162,26 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   seeing them. The upload server moved to a **headless** Service (PR #4052), so a
   consumer NetworkPolicy or probe selecting it by ClusterIP needs to select pods
   instead. Neither affects a consumer using CDI through `DataVolume` objects only.
+
+- **The `/metrics` endpoints now require authentication at v1.66.0** (upstream PR
+  #4121). `cdi-deployment` and `cdi-operator` stop serving metrics to an anonymous
+  client: a scraper MUST present a bearer token whose subject has `get` on the
+  `/metrics` `nonResourceURL`. Upstream creates a `cdi-metrics-reader` ServiceAccount
+  and ClusterRole for exactly this — the operator creates them at reconcile time, so
+  they are not in this artifact. An existing `ServiceMonitor`/`PodMonitor` without
+  `bearerTokenSecret` (or `authorization`) **goes silent without an error**: the target
+  turns unhealthy, no Argo signal, no Kubernetes event. A consumer MUST update the
+  scrape config in the same change as this tag. This is the same failure shape as the
+  v1.63.1 port move above, one layer further in.
+- **The `WebhookPvcRendering` feature gate is on by default at v1.66.0** (PR #4172),
+  with the matching `config.webhookPvcRendering` field in the `CDI` CR schema
+  (`-crds` half). PVC rendering now runs through the mutating webhook by default; a
+  consumer who needs the old path must set the field explicitly to opt out.
+- **Secure pprof endpoints are exposed on the controller and the operator** (PR #4161),
+  which is why the operator ClusterRole gains `get` on the `/debug/pprof` and
+  `/debug/pprof/*` `nonResourceURL`s. The endpoints are authenticated the same way
+  `/metrics` is, so nothing is reachable anonymously; nothing is required of a
+  consumer, but the grant is visible in the diff.
 
 ## Upgrade path — sequential by convention
 
