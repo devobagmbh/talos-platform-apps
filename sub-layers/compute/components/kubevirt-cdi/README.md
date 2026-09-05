@@ -10,9 +10,9 @@ half, [`compute/kubevirt-cdi-crds`](../kubevirt-cdi-crds/README.md). The two tog
 form the strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream CDI release `cdi-operator.yaml`
-at tag **v1.64.0**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.64.0/cdi-operator.yaml`,
-vendored in `talos-platform-base` at
+at tag **v1.65.0**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml`,
+migrated from `talos-platform-base`, where it was vendored at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`) and the `CDI` CR
 from `cdi-cr.yaml` at the same release. CDI publishes no anonymously-pullable Helm
 chart (the upstream install method is `kubectl apply -f cdi-operator.yaml`), so this
@@ -28,11 +28,11 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 `manifests/20-cdi-cr.yaml` — the `CDI` operator-config CR:
 
 - **Deployment `cdi-operator`** (ns `cdi`, image
-  `quay.io/kubevirt/cdi-operator:v1.64.0`) — the operator. On reconcile of the `CDI`
+  `quay.io/kubevirt/cdi-operator:v1.65.0`) — the operator. On reconcile of the `CDI`
   CR it deploys the CDI control plane (`cdi-apiserver`, `cdi-controller`,
   `cdi-uploadproxy`); the per-component images (`cdi-controller`, `cdi-importer`,
   `cdi-cloner`, `cdi-apiserver`, `cdi-uploadserver`, `cdi-uploadproxy`) are pinned to
-  `v1.64.0` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
+  `v1.65.0` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
   not as separate objects here — the operator injects them at reconcile time.
 - **ServiceAccount `cdi-operator`**, the **Role + RoleBinding `cdi-operator`** (ns
   `cdi`), and the **ClusterRole `cdi-operator-cluster` + ClusterRoleBinding
@@ -46,7 +46,7 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 > grants — including wildcard `resources`/`verbs` on the `cdi.kubevirt.io`,
 > `upload.cdi.kubevirt.io` and `forklift.cdi.kubevirt.io` API groups, and
 > `clusterrole`/`clusterrolebinding` write — taken **verbatim** from the upstream
-> `cdi-operator.yaml` v1.64.0. They are part of `cdi-operator`'s documented threat
+> `cdi-operator.yaml` v1.65.0. They are part of `cdi-operator`'s documented threat
 > model (it reconciles the full CDI control plane, including the RBAC for its
 > operands) and are **not** narrowed here: hand-narrowing upstream operator RBAC
 > silently breaks reconciliation on the next version bump. Accepted as
@@ -60,7 +60,7 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 ## The `CDI` CR — a catalog default (consumer-overridable)
 
 This workload ships the `CDI` CR as a **catalog default**, taken verbatim from the
-base migration source at v1.64.0. It is **not** consumer-owned-only: the platform
+base migration source. It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
 (Kustomize/values in the consumer-cluster repo) where they need to diverge. The one
 field that is genuinely cluster-specific is preserved **empty** and MUST stay empty
@@ -82,7 +82,7 @@ Deployment is `restricted`-compliant (pod `runAsNonRoot: true`; every container
 `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `runAsNonRoot: true`,
 `seccompProfile: RuntimeDefault`), and the control-plane pods the operator creates at
 reconcile time (`cdi-apiserver`, `cdi-controller`, `cdi-uploadproxy`) are likewise
-restricted-compatible at v1.64.0 — so the namespace admits them without softening to
+restricted-compatible at v1.65.0 — so the namespace admits them without softening to
 `baseline` or `privileged`. CDI is **not** like KubeVirt here: it spawns no privileged
 host-access DaemonSet, so `restricted` (not `privileged`) is correct.
 
@@ -141,6 +141,27 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   bugfix). CDI's PVC mutating webhook previously inflated a direct restore from a
   snapshot source, which strict CSI drivers rejected. A consumer who compensated for
   that inflation by over-requesting the restore size SHOULD drop the compensation.
+
+- **Four CDI metrics are deprecated at v1.65.0** (upstream PR #4038) in favour of
+  recording-rule-conforming names: `kubevirt_cdi_clone_pods_high_restart`,
+  `..._import_pods_high_restart` and `..._upload_pods_high_restart` become
+  `cluster:<same>:count`, and `kubevirt_cdi_operator_up` becomes
+  `cluster:kubevirt_cdi_operator_up:sum`. The old names still exist at this tag, so
+  nothing breaks yet — but a consumer dashboard or alert naming them will go silent
+  when upstream removes them. This artifact ships no `PrometheusRule`; the rename lives
+  entirely in the consumer's observability layer.
+- **Scratch-space PVCs now inherit the source PVC's StorageClass** rather than the
+  cluster default (PR #4054). An import whose source class cannot provision the scratch
+  volume — a snapshot-only or capacity-capped class, or one whose quota is already
+  exhausted — now fails where it previously borrowed the default class. A consumer
+  running imports against a non-default class SHOULD confirm that class can provision a
+  second, temporary PVC before applying this tag.
+- **CDI worker and upload pods changed shape at v1.65.0.** `enableServiceLinks` is now
+  `false` on worker pods (PR #4067), so the per-Service environment variables
+  Kubernetes used to inject are gone — a custom importer image reading them stops
+  seeing them. The upload server moved to a **headless** Service (PR #4052), so a
+  consumer NetworkPolicy or probe selecting it by ClusterIP needs to select pods
+  instead. Neither affects a consumer using CDI through `DataVolume` objects only.
 
 ## Upgrade path — sequential by convention
 
