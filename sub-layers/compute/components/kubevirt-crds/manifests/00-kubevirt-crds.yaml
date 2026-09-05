@@ -1,8 +1,9 @@
 # Strict-B CRDs artifact (talos-platform-docs ADR-0028) for compute/kubevirt.
 # Ships ONLY the kubevirt.io operator-config CustomResourceDefinition. Extracted
-# VERBATIM from the upstream KubeVirt v1.5.0 operator manifest via
+# VERBATIM from the upstream KubeVirt v1.5.3 operator manifest via mikefarah/yq v4
+# (devbox's python-yq emits JSON here and will not reproduce these bytes):
 #   yq 'select(.kind == "CustomResourceDefinition")'
-# Source: https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-operator.yaml
+# Source: https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-operator.yaml
 # Do NOT hand-edit the schema; a version bump re-extracts from the upstream release.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
