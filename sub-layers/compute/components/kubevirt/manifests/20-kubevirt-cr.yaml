@@ -1,7 +1,7 @@
 # The KubeVirt operator-config singleton CR — the operator watches it and, on
 # reconcile, deploys the virtualization control plane (virt-api, virt-controller,
 # virt-handler, the webhooks). Shipped HERE in the workload as a CATALOG DEFAULT,
-# verbatim from the base migration source at v1.5.0 — NOT consumer-owned-only. A
+# verbatim from the base migration source at v1.5.3 — NOT consumer-owned-only. A
 # consumer patches it via their own Argo overlay (Kustomize/values) where they need
 # to (e.g. enable useEmulation on hardware without vt-x/amd-v); the bundled spec is
 # the platform's posture default.
@@ -11,8 +11,8 @@
 #     (KVM); never silently fall back to slow/insecure software emulation.
 #   - network.permitBridgeInterfaceOnPodNetwork: false — block bridge binding on the
 #     pod network (a hardening default).
-#   - workloadUpdateStrategy.workloadUpdateMethods: [Evict] — live-migrate/evict VMIs
-#     on operator upgrade rather than leaving them on stale virt-launcher pods.
+#   - workloadUpdateStrategy.workloadUpdateMethods: [Evict] — on operator upgrade the
+#     VMI's pod is shut down, NOT live-migrated; see README § Consumer obligations.
 #
 # The CR carries 0 CustomResourceDefinitions (it is an instance of the KubeVirt CRD
 # shipped by compute/kubevirt-crds); it renders as exactly one `kind: KubeVirt`
@@ -25,7 +25,7 @@ metadata:
   namespace: kubevirt
   labels:
     app.kubernetes.io/name: kubevirt
-    app.kubernetes.io/version: v1.5.0
+    app.kubernetes.io/version: v1.5.3
     app.kubernetes.io/component: operator
     app.kubernetes.io/managed-by: argocd
 spec:
