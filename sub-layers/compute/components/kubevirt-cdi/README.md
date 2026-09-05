@@ -10,8 +10,8 @@ half, [`compute/kubevirt-cdi-crds`](../kubevirt-cdi-crds/README.md). The two tog
 form the strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream CDI release `cdi-operator.yaml`
-at tag **v1.63.1**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.63.1/cdi-operator.yaml`,
+at tag **v1.64.0**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.64.0/cdi-operator.yaml`,
 vendored in `talos-platform-base` at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`) and the `CDI` CR
 from `cdi-cr.yaml` at the same release. CDI publishes no anonymously-pullable Helm
@@ -28,11 +28,11 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 `manifests/20-cdi-cr.yaml` — the `CDI` operator-config CR:
 
 - **Deployment `cdi-operator`** (ns `cdi`, image
-  `quay.io/kubevirt/cdi-operator:v1.63.1`) — the operator. On reconcile of the `CDI`
+  `quay.io/kubevirt/cdi-operator:v1.64.0`) — the operator. On reconcile of the `CDI`
   CR it deploys the CDI control plane (`cdi-apiserver`, `cdi-controller`,
   `cdi-uploadproxy`); the per-component images (`cdi-controller`, `cdi-importer`,
   `cdi-cloner`, `cdi-apiserver`, `cdi-uploadserver`, `cdi-uploadproxy`) are pinned to
-  `v1.63.1` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
+  `v1.64.0` via the operator container env (`CONTROLLER_IMAGE`, `IMPORTER_IMAGE`, …),
   not as separate objects here — the operator injects them at reconcile time.
 - **ServiceAccount `cdi-operator`**, the **Role + RoleBinding `cdi-operator`** (ns
   `cdi`), and the **ClusterRole `cdi-operator-cluster` + ClusterRoleBinding
@@ -46,7 +46,7 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 > grants — including wildcard `resources`/`verbs` on the `cdi.kubevirt.io`,
 > `upload.cdi.kubevirt.io` and `forklift.cdi.kubevirt.io` API groups, and
 > `clusterrole`/`clusterrolebinding` write — taken **verbatim** from the upstream
-> `cdi-operator.yaml` v1.63.1. They are part of `cdi-operator`'s documented threat
+> `cdi-operator.yaml` v1.64.0. They are part of `cdi-operator`'s documented threat
 > model (it reconciles the full CDI control plane, including the RBAC for its
 > operands) and are **not** narrowed here: hand-narrowing upstream operator RBAC
 > silently breaks reconciliation on the next version bump. Accepted as
@@ -60,7 +60,7 @@ is hand-edited: no `replicas` pin, no consumer-specific values, no invented pod 
 ## The `CDI` CR — a catalog default (consumer-overridable)
 
 This workload ships the `CDI` CR as a **catalog default**, taken verbatim from the
-base migration source at v1.63.1. It is **not** consumer-owned-only: the platform
+base migration source at v1.64.0. It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
 (Kustomize/values in the consumer-cluster repo) where they need to diverge. The one
 field that is genuinely cluster-specific is preserved **empty** and MUST stay empty
@@ -82,7 +82,7 @@ Deployment is `restricted`-compliant (pod `runAsNonRoot: true`; every container
 `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `runAsNonRoot: true`,
 `seccompProfile: RuntimeDefault`), and the control-plane pods the operator creates at
 reconcile time (`cdi-apiserver`, `cdi-controller`, `cdi-uploadproxy`) are likewise
-restricted-compatible at v1.63.1 — so the namespace admits them without softening to
+restricted-compatible at v1.64.0 — so the namespace admits them without softening to
 `baseline` or `privileged`. CDI is **not** like KubeVirt here: it spawns no privileged
 host-access DaemonSet, so `restricted` (not `privileged`) is correct.
 
@@ -115,6 +115,32 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   who does not pin `spec.config.filesystemOverhead.global` in their `CDI` CR overlay
   gets 6% reserved overhead instead of 5.5% on newly provisioned Filesystem-mode
   PVCs. Existing PVCs are unaffected; pin the field to keep the old value.
+- **The `CriticalAddonsOnly` toleration was removed at v1.64.0** (upstream: "BugFix:
+  Removal of CriticalAddonsOnly toleration from CDI pods"). The `cdi-operator`
+  Deployment this artifact ships no longer tolerates that taint, so on a cluster where
+  the only eligible nodes carry it the operator pod goes `Pending` after this hop. A
+  consumer in that position re-adds the toleration through their Kustomize overlay —
+  `spec.infra.tolerations` in the `CDI` CR does **not** cover it, that field governs
+  only the control-plane pods the operator creates. **Order matters:** the overlay MUST
+  be committed and synced BEFORE the tag is bumped. Applying the tag first leaves
+  `cdi-operator` `Pending`, which stalls every DataVolume import, disk-image upload and
+  boot-from-DataVolume until the overlay lands. Running VMs are unaffected — CDI
+  downtime blocks disk-image operations, not the VMs themselves.
+- **A new `health` container port 8444 carries the v1.64.0 probes.** The operator
+  gained a `readinessProbe` (`/readyz`) and `livenessProbe` (`/healthz`) on 8444,
+  alongside the unchanged `metrics` port 8443. A failing probe now restart-loops the
+  operator where v1.63.1 had no probe at all, so a consumer running a default-deny
+  ingress posture in `cdi` SHOULD confirm the new port is reachable from the node
+  before applying this tag. Whether a `NetworkPolicy` applies to kubelet probe traffic
+  at all is CNI-dependent (host-sourced traffic is admitted by default under some
+  CNIs), so verify against the cluster's own CNI rather than assuming either way. The
+  pod template also gained the upstream NetworkPolicy selector label
+  `np.kubevirt.io/allow-access-cluster-services: "true"`; this artifact ships no
+  `NetworkPolicy`, the label is only a selector handle.
+- **Restores from a VolumeSnapshot source are no longer size-inflated** (v1.64.0
+  bugfix). CDI's PVC mutating webhook previously inflated a direct restore from a
+  snapshot source, which strict CSI drivers rejected. A consumer who compensated for
+  that inflation by over-requesting the restore size SHOULD drop the compensation.
 
 ## Upgrade path — sequential by convention
 

@@ -1,8 +1,8 @@
 # CDI operator workload — strict-B WORKLOAD half (ADR-0028), 0 CRDs. Extracted
-# verbatim from the upstream CDI release cdi-operator.yaml at tag v1.63.1
-# (https://github.com/kubevirt/containerized-data-importer/releases/download/v1.63.1/cdi-operator.yaml,
+# verbatim from the upstream CDI release cdi-operator.yaml at tag v1.64.0
+# (https://github.com/kubevirt/containerized-data-importer/releases/download/v1.64.0/cdi-operator.yaml,
 # vendored in talos-platform-base at
-# kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml @ v1.63.1)
+# kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml @ v1.64.0)
 # via mikefarah/yq v4 (devbox's python-yq emits JSON here and will not reproduce these
 # bytes): yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'
 # The single cdi.kubevirt.io CRD (cdis.cdi.kubevirt.io / CDI) ships in the SEPARATE
@@ -14,9 +14,9 @@
 # Content (verbatim, NOT hand-edited): the ServiceAccount cdi-operator; the
 # ClusterRole cdi-operator-cluster + ClusterRoleBinding cdi-operator; the Role +
 # RoleBinding cdi-operator (namespace cdi); and the Deployment cdi-operator. Only
-# the image quay.io/kubevirt/cdi-operator:v1.63.1 is pinned (no :latest); the
+# the image quay.io/kubevirt/cdi-operator:v1.64.0 is pinned (no :latest); the
 # cdi-apiserver/cdi-controller/cdi-uploadproxy/cdi-importer/cdi-cloner/
-# cdi-uploadserver images the operator deploys are pinned to v1.63.1 via the
+# cdi-uploadserver images the operator deploys are pinned to v1.64.0 via the
 # operator container env (CONTROLLER_IMAGE, IMPORTER_IMAGE, …) — not as separate
 # objects here; the operator injects them when it reconciles the CDI CR.
 # securityContexts are shipped verbatim (restricted-compliant — see 00-namespace.yaml).
@@ -103,9 +103,28 @@ rules:
       - update
       - delete
   - apiGroups:
+      - admissionregistration.k8s.io
+    resourceNames:
+      - cdi-api-dataimportcron-mutate
+    resources:
+      - mutatingwebhookconfigurations
+    verbs:
+      - delete
+  - apiGroups:
       - apiregistration.k8s.io
     resources:
       - apiservices
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - populator.storage.k8s.io
+    resources:
+      - volumepopulators
     verbs:
       - get
       - list
@@ -223,6 +242,9 @@ rules:
     verbs:
       - create
       - patch
+      - get
+      - list
+      - watch
   - apiGroups:
       - ""
     resources:
@@ -263,6 +285,14 @@ rules:
       - watch
       - create
       - delete
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
   - apiGroups:
       - ""
     resources:
@@ -356,6 +386,12 @@ rules:
       - virtualmachines/finalizers
     verbs:
       - update
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
   - apiGroups:
       - ""
     resources:
@@ -600,6 +636,7 @@ metadata:
   labels:
     cdi.kubevirt.io: cdi-operator
     name: cdi-operator
+    np.kubevirt.io/allow-access-cluster-services: "true"
     operator.cdi.kubevirt.io: ""
     prometheus.cdi.kubevirt.io: "true"
   name: cdi-operator
@@ -618,6 +655,7 @@ spec:
       labels:
         cdi.kubevirt.io: cdi-operator
         name: cdi-operator
+        np.kubevirt.io/allow-access-cluster-services: "true"
         operator.cdi.kubevirt.io: ""
         prometheus.cdi.kubevirt.io: "true"
     spec:
@@ -638,33 +676,50 @@ spec:
             - name: DEPLOY_CLUSTER_RESOURCES
               value: "true"
             - name: OPERATOR_VERSION
-              value: v1.63.1
+              value: v1.64.0
             - name: CONTROLLER_IMAGE
-              value: quay.io/kubevirt/cdi-controller:v1.63.1
+              value: quay.io/kubevirt/cdi-controller:v1.64.0
             - name: IMPORTER_IMAGE
-              value: quay.io/kubevirt/cdi-importer:v1.63.1
+              value: quay.io/kubevirt/cdi-importer:v1.64.0
             - name: CLONER_IMAGE
-              value: quay.io/kubevirt/cdi-cloner:v1.63.1
+              value: quay.io/kubevirt/cdi-cloner:v1.64.0
             - name: OVIRT_POPULATOR_IMAGE
-              value: quay.io/kubevirt/cdi-importer:v1.63.1
+              value: quay.io/kubevirt/cdi-importer:v1.64.0
             - name: APISERVER_IMAGE
-              value: quay.io/kubevirt/cdi-apiserver:v1.63.1
+              value: quay.io/kubevirt/cdi-apiserver:v1.64.0
             - name: UPLOAD_SERVER_IMAGE
-              value: quay.io/kubevirt/cdi-uploadserver:v1.63.1
+              value: quay.io/kubevirt/cdi-uploadserver:v1.64.0
             - name: UPLOAD_PROXY_IMAGE
-              value: quay.io/kubevirt/cdi-uploadproxy:v1.63.1
+              value: quay.io/kubevirt/cdi-uploadproxy:v1.64.0
             - name: VERBOSITY
               value: "1"
             - name: PULL_POLICY
               value: IfNotPresent
             - name: MONITORING_NAMESPACE
-          image: quay.io/kubevirt/cdi-operator:v1.63.1
+          image: quay.io/kubevirt/cdi-operator:v1.64.0
           imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8444
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 10
           name: cdi-operator
           ports:
             - containerPort: 8443
               name: metrics
               protocol: TCP
+            - containerPort: 8444
+              name: health
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8444
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 10
           resources:
             requests:
               cpu: 100m
@@ -684,6 +739,3 @@ spec:
       securityContext:
         runAsNonRoot: true
       serviceAccountName: cdi-operator
-      tolerations:
-        - key: CriticalAddonsOnly
-          operator: Exists
