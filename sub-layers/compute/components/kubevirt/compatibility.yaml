@@ -23,7 +23,7 @@ provides:
   - name: kubevirt
     version:
       sot: app        # virt-operator app-version — the running workload (#226 A6)
-      app: v1.8.4     # KubeVirt release (image quay.io/kubevirt/virt-operator:v1.8.4)
+      app: v1.9.0     # KubeVirt release (image quay.io/kubevirt/virt-operator:v1.9.0)
     api_surface: []   # the kubevirts.kubevirt.io CRD ships in compute/kubevirt-crds, not here (formerly apis[])
     capabilities:
       - {id: vm-runtime, swap_class: rewrite-required}

@@ -10,10 +10,10 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.8.4**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.8.4/kubevirt-operator.yaml`)
+`kubevirt-operator.yaml` at tag **v1.9.0**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.9.0/kubevirt-operator.yaml`)
 and the `KubeVirt` CR from `kubevirt-cr.yaml` at the same release
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.8.4/kubevirt-cr.yaml`).
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.9.0/kubevirt-cr.yaml`).
 KubeVirt publishes no anonymously-pullable Helm chart (the upstream install method is
 `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered as raw
 manifests (`kind: manifests`) — the **non-CRD** objects extracted from the release
@@ -30,10 +30,10 @@ consumer-specific values, no invented pod labels.
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.8.4`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.9.0`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are derived from the `KUBEVIRT_VERSION` env value (`v1.8.4`) and injected at
+  images are derived from the `KUBEVIRT_VERSION` env value (`v1.9.0`) and injected at
   reconcile time — they are not listed in this manifest.
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
@@ -48,7 +48,7 @@ consumer-specific values, no invented pod labels.
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.8.4.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.9.0.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -224,9 +224,35 @@ ships no Namespace.
   additive, and not narrowed here. `virt-operator` also applies client rate limits by
   default now (200 QPS / 400 burst, tunable via `--client-qps` / `--client-burst` or
   `VIRT_OPERATOR_CLIENT_{QPS,BURST}`, PR #16491).
-- **cgroup v1 is in maintenance mode as of v1.6** (PR #14538) and upstream announces
-  removal in a later release. Nodes still on cgroup v1 need to move to v2 before the
-  chain reaches that release.
+- **cgroup v1 is deprecated as of v1.9, with removal planned for the next release**
+  (PR #17809; maintenance mode since v1.6, PR #14538). Nodes still on cgroup v1 keep
+  working at this tag and stop working at the next minor — move them to v2 now, not
+  when the next bump lands.
+
+- **The v1.9 hop turns every Beta feature gate on.** Upstream changed what "Beta"
+  means (PR #17405): through v1.8 a Beta gate was opt-in like an Alpha one; from v1.9 it
+  is **enabled by default**, and the opt-out is the new
+  `spec.configuration.developerConfiguration.disabledFeatureGates` list. Sixteen gates
+  switch on at this tag without any change to the consumer overlay, including
+  `Template`, `SnapshotGate`, `NodeRestriction`, `PasstBinding`, `ImageVolume`,
+  `KubevirtSeccompProfile`, `WorkloadEncryptionSEV`, `RebootPolicy`,
+  `DeclarativeHotplugVolumes` and the three DRA gates. A consumer who wants any of them
+  off MUST list it in `disabledFeatureGates` **in the same change** as this tag.
+- **`Template` being on by default deploys new workloads** (PR #18065). The
+  virt-template components come up automatically unless the gate is disabled, which
+  also explains the `template.kubevirt.io` and `plugin.kubevirt.io` grants added to the
+  operator RBAC. A consumer with a namespace resource quota or a restrictive
+  NetworkPolicy in `kubevirt` should expect additional pods.
+- **Eight features reached GA and can no longer be switched off**: `ExpandDisks`,
+  `LiveUpdateNADRef`, `MigrationPriorityQueue`, `SecureExecution`, `VMExport`,
+  `VideoConfig`, `PanicDevices` and `PersistentReservation`. Their gate names are inert
+  in `featureGates`, so a stale entry is harmless but should be cleaned up.
+  `HotplugVolumes` is deprecated in favour of `DeclarativeHotplugVolumes` (now Beta and
+  therefore on).
+- **More recording rules and metrics are deprecated** (PR #17065), and two go away
+  completely: the `kubevirt_vm_created_total` recording rule and the
+  `kubevirt_vm_created_by_pod_total` metric. Same silent-drift class as the v1.6 and
+  v1.8 metric changes above — the consumer's observability layer owns the fix.
 
 ## Upgrade path — sequential, forward only
 
