@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-cdi-v0.4.0...compute/kubevirt-cdi-v0.5.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **compute/kubevirt-cdi:** bump the CDI operator to v1.65.0 ([#849](https://github.com/devobagmbh/talos-platform-apps/issues/849))
+
+### Features
+
+* **compute/kubevirt-cdi:** bump the CDI operator to v1.65.0 ([#849](https://github.com/devobagmbh/talos-platform-apps/issues/849)) ([e7ba021](https://github.com/devobagmbh/talos-platform-apps/commit/e7ba0216a531e501e1a9074c873a5680c9432f69))
+
 ## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-cdi-v0.3.0...compute/kubevirt-cdi-v0.4.0) (2026-09-06)
 
 
