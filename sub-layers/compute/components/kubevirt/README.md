@@ -10,8 +10,8 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.7.4**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.7.4/kubevirt-operator.yaml`).
+`kubevirt-operator.yaml` at tag **v1.8.4**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.8.4/kubevirt-operator.yaml`).
 The bundled `KubeVirt` CR is **not** upstream's `kubevirt-cr.yaml` — it came from
 the `talos-platform-base` migration and only its version label tracks the release;
 see § The `KubeVirt` CR below.
@@ -31,10 +31,10 @@ consumer-specific values, no invented pod labels.
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.7.4`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.8.4`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are derived from the `KUBEVIRT_VERSION` env value (`v1.7.4`) and injected at
+  images are derived from the `KUBEVIRT_VERSION` env value (`v1.8.4`) and injected at
   reconcile time — they are not listed in this manifest.
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
@@ -49,7 +49,7 @@ consumer-specific values, no invented pod labels.
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.7.4.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.8.4.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -226,6 +226,50 @@ ships no Namespace.
   `np.kubevirt.io/allow-access-cluster-services: "true"`, upstream's selector for
   KubeVirt control-plane NetworkPolicies. Nothing breaks without it; a consumer running
   default-deny policies can select on it instead of on `kubevirt.io: virt-operator`.
+- **The v1.8 hop removes the macvtap and SLIRP core network bindings** (PRs #16453,
+  #16456). Their feature gates were already `Discontinued` at v1.7 and the admission
+  webhook rejects a VMI whose interface still requests either binding. A consumer with
+  such VMs MUST move them to a network-binding plugin (or another binding) before
+  applying this tag — the VMs do not start afterwards.
+- **`EnableVirtioFsConfigVolumes` reached GA and `ExperimentalVirtiofsSupport` went
+  inert** (PR #15913). The config-volumes feature is now unconditional, and the old
+  `ExperimentalVirtiofsSupport` gate no longer does anything (it carries no spec
+  predicate, so listing it is harmless but misleading). Drop both from the
+  `featureGates` list in the consumer overlay; the PVC case is
+  `EnableVirtioFsStorageVolumes` (`VirtIOFSStorageVolumeGate`,
+  `pkg/virt-config/featuregate/active.go`), which is still Alpha and therefore opt-in.
+- **`kubevirt_vmi_migration_data_total_bytes` is deprecated** in favour of
+  `kubevirt_vmi_migration_data_bytes_total` (PR #15975), matching the Prometheus naming
+  convention. The old name still exists at this tag, so nothing breaks yet — the same
+  silent-drift class as the v1.6 metric changes above.
+- **The `kubevirt_vmi_vcpu_count` recording rule is RENAMED to
+  `vmi:kubevirt_vmi_vcpu:count`** (PR #15968). Unlike the deprecations above this is a
+  rename at this tag — the old name stops existing, so any dashboard, alert or
+  downstream recording rule reading it goes silent with no error. Update the
+  expressions in the same change as this tag.
+- **A paused VMI can no longer be stopped directly** (PR #15405) — the request is
+  rejected and the VMI must be unpaused first. Lifecycle automation that stops VMIs
+  without checking the paused condition breaks here.
+- **`QuiesceFailed` is replaced by the `QuiesceTimeout` indication, and the Velero
+  pre-backup hook gains a 60 s timeout** (PR #16653). Backup tooling matching on
+  `QuiesceFailed` stops matching, and a Windows VSS quiesce that used to hang now
+  times out instead.
+- **VMI status reports at most 10 guest-only interfaces** (PR #16391). Interfaces in
+  the VMI *spec* are unaffected; inventory or controllers treating VMI status as the
+  complete interface list are wrong above ten.
+- **Two feature gates are deprecated and one gains a replacement field.**
+  `DisableMDEVConfiguration` is superseded by
+  `configuration.mediatedDevicesConfiguration.enabled` in the `KubeVirt` CR (PR
+  #16220) — move the setting there. `MultiArchitecture` is deprecated and **no longer
+  gates the admission check** that rejected VMs whose architecture differs from the
+  control plane (PR #16023): that rejection is gone whether or not the gate is set.
+- **The operator RBAC gains two new API groups**, `template.kubevirt.io`
+  (virtualmachinetemplates / -requests) and `backup.kubevirt.io`
+  (virtualmachinebackups / -trackers), for the new virt-template and VM-backup
+  components, plus their cert Secrets and a `nonResourceURLs: /metrics` grant. Purely
+  additive, and not narrowed here. `virt-operator` also applies client rate limits by
+  default now (200 QPS / 400 burst, tunable via `--client-qps` / `--client-burst` or
+  `VIRT_OPERATOR_CLIENT_{QPS,BURST}`, PR #16491).
 - **cgroup v1 is in maintenance mode as of v1.6** (PR #14538) and upstream announces
   removal in a later release. Nodes still on cgroup v1 need to move to v2 before the
   chain reaches that release.
