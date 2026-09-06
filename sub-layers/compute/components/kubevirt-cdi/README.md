@@ -133,14 +133,18 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   consumer in that position re-adds the toleration through their Kustomize overlay —
   `spec.infra.tolerations` in the `CDI` CR does **not** cover it, that field governs
   only the control-plane pods the operator creates. **Order matters:** the overlay MUST
-  be committed and synced BEFORE the tag is bumped. Applying the tag first leaves
-  `cdi-operator` `Pending`, which stalls every DataVolume import, disk-image upload and
-  boot-from-DataVolume until the overlay lands. Running VMs are unaffected — CDI
-  downtime blocks disk-image operations, not the VMs themselves.
+  be committed and synced BEFORE the tag is bumped. Applying the tag first leaves the
+  *replacement* `cdi-operator` pod `Pending`: the Deployment is `replicas: 1` with the
+  default `RollingUpdate` strategy, so `maxUnavailable` rounds down to 0 and the running
+  pod is kept — imports, uploads and clones keep working on the OLD version while the
+  rollout never completes. The component is stuck, not down, and it goes down only if
+  that surviving pod is lost (node drain, eviction, restart). Running VMs are unaffected
+  either way.
 - **A new `health` container port 8444 carries the v1.64.0 probes.** The operator
   gained a `readinessProbe` (`/readyz`) and `livenessProbe` (`/healthz`) on 8444,
-  alongside the unchanged `metrics` port 8443. A failing probe now restart-loops the
-  operator where v1.63.1 had no probe at all, so a consumer running a default-deny
+  alongside the unchanged `metrics` port 8443. A failing **liveness** probe now
+  restart-loops the operator where v1.63.1 had no probe at all (a failing readiness
+  probe alone would only mark it unready), so a consumer running a default-deny
   ingress posture in `cdi` SHOULD confirm the new port is reachable from the node
   before applying this tag. Whether a `NetworkPolicy` applies to kubelet probe traffic
   at all is CNI-dependent (host-sourced traffic is admitted by default under some
@@ -161,18 +165,24 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   nothing breaks yet — but a consumer dashboard or alert naming them will go silent
   when upstream removes them. This artifact ships no `PrometheusRule`; the rename lives
   entirely in the consumer's observability layer.
-- **Scratch-space PVCs now inherit the source PVC's StorageClass** rather than the
-  cluster default (PR #4054). An import whose source class cannot provision the scratch
+- **Scratch-space PVCs now inherit the TARGET PVC's StorageClass** rather than the
+  cluster default (PR #4054; upstream: "scratch space will default to using the storage
+  class of target resource" when `config.scratchSpaceStorageClass` is unset). An import
+  whose target class cannot provision the scratch
   volume — a snapshot-only or capacity-capped class, or one whose quota is already
   exhausted — now fails where it previously borrowed the default class. A consumer
   running imports against a non-default class SHOULD confirm that class can provision a
-  second, temporary PVC before applying this tag.
+  second, temporary PVC before applying this tag, or pin
+  `spec.config.scratchSpaceStorageClass` in their `CDI` CR overlay to keep the old
+  behaviour.
 - **CDI worker and upload pods changed shape at v1.65.0.** `enableServiceLinks` is now
   `false` on worker pods (PR #4067), so the per-Service environment variables
   Kubernetes used to inject are gone — a custom importer image reading them stops
-  seeing them. The upload server moved to a **headless** Service (PR #4052), so a
-  consumer NetworkPolicy or probe selecting it by ClusterIP needs to select pods
-  instead. Neither affects a consumer using CDI through `DataVolume` objects only.
+  seeing them. The upload server moved to a **headless** Service **on port 8443, up
+  from 443** (PR #4052), so a consumer NetworkPolicy or probe selecting it by ClusterIP
+  needs to select pods instead, and anything pinned to port 443 — a NetworkPolicy
+  `ports:` entry, a direct client, an egress rule — must be retargeted to 8443. Neither
+  affects a consumer using CDI through `DataVolume` objects only.
 
 ## Upgrade path — sequential by convention
 
