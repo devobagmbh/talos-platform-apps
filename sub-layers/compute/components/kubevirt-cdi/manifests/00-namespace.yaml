@@ -5,15 +5,16 @@
 # § Namespace & PSA). The strict-B CRD half (compute/kubevirt-cdi-crds) ships NO
 # Namespace; this workload is the sole claimant.
 #
-# enforce: restricted — the upstream v1.62.0 cdi-operator.yaml ships NO Namespace
-# object (and no PSA labels), so this label set is authored here, not copied. The
+# enforce: restricted — the upstream Namespace carries no PSA labels (only
+# `cdi.kubevirt.io: ""`), so the label set is authored here and the upstream object is
+# excluded from the 10-operator.yaml extraction. The
 # strictest level the namespace's workloads provably satisfy is `restricted`: the
 # cdi-operator Deployment is restricted-compliant (pod securityContext
 # runAsNonRoot: true; container allowPrivilegeEscalation: false,
 # capabilities.drop: [ALL], runAsNonRoot: true, seccompProfile: RuntimeDefault — see
 # 10-operator.yaml). The operator-created control-plane pods (cdi-apiserver,
 # cdi-controller, cdi-uploadproxy) the operator spawns at reconcile time are likewise
-# restricted-compatible at v1.62.0 (build plan § Namespace PSA posture), so the
+# restricted-compatible at v1.63.1 (build plan § Namespace PSA posture), so the
 # namespace admits them without softening to baseline/privileged. This mirrors the
 # kubevirt workload precedent (same sole-claimant authoring), differing only in the
 # PSA level (kubevirt needs privileged for its virt-handler DaemonSet; CDI does not).
