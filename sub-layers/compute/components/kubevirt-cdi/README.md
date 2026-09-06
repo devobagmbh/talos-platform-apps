@@ -133,14 +133,18 @@ making the PSA posture authoritative. The `-crds` half ships no Namespace.
   consumer in that position re-adds the toleration through their Kustomize overlay —
   `spec.infra.tolerations` in the `CDI` CR does **not** cover it, that field governs
   only the control-plane pods the operator creates. **Order matters:** the overlay MUST
-  be committed and synced BEFORE the tag is bumped. Applying the tag first leaves
-  `cdi-operator` `Pending`, which stalls every DataVolume import, disk-image upload and
-  boot-from-DataVolume until the overlay lands. Running VMs are unaffected — CDI
-  downtime blocks disk-image operations, not the VMs themselves.
+  be committed and synced BEFORE the tag is bumped. Applying the tag first leaves the
+  *replacement* `cdi-operator` pod `Pending`: the Deployment is `replicas: 1` with the
+  default `RollingUpdate` strategy, so `maxUnavailable` rounds down to 0 and the running
+  pod is kept — imports, uploads and clones keep working on the OLD version while the
+  rollout never completes. The component is stuck, not down, and it goes down only if
+  that surviving pod is lost (node drain, eviction, restart). Running VMs are unaffected
+  either way.
 - **A new `health` container port 8444 carries the v1.64.0 probes.** The operator
   gained a `readinessProbe` (`/readyz`) and `livenessProbe` (`/healthz`) on 8444,
-  alongside the unchanged `metrics` port 8443. A failing probe now restart-loops the
-  operator where v1.63.1 had no probe at all, so a consumer running a default-deny
+  alongside the unchanged `metrics` port 8443. A failing **liveness** probe now
+  restart-loops the operator where v1.63.1 had no probe at all (a failing readiness
+  probe alone would only mark it unready), so a consumer running a default-deny
   ingress posture in `cdi` SHOULD confirm the new port is reachable from the node
   before applying this tag. Whether a `NetworkPolicy` applies to kubelet probe traffic
   at all is CNI-dependent (host-sourced traffic is admitted by default under some
