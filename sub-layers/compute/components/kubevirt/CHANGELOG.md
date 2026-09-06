@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-v0.3.0...compute/kubevirt-v0.4.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **compute/kubevirt:** bump the KubeVirt pair to v1.7.4 ([#848](https://github.com/devobagmbh/talos-platform-apps/issues/848))
+
+### Features
+
+* **compute/kubevirt:** bump the KubeVirt pair to v1.7.4 ([#848](https://github.com/devobagmbh/talos-platform-apps/issues/848)) ([50baf3d](https://github.com/devobagmbh/talos-platform-apps/commit/50baf3d1a32f59ace3c474c8207aebafc64c9ff6))
+
 ## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-v0.2.2...compute/kubevirt-v0.3.0) (2026-09-06)
 
 
