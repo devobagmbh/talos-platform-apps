@@ -19,7 +19,7 @@ component (precedent: `lifecycle/providers`). It is distinct from
 ## Contents
 
 A `kind: helm` wrapper over the `kube-state-metrics` chart
-(`https://prometheus-community.github.io/helm-charts`, version `8.4.1`,
+(`https://prometheus-community.github.io/helm-charts`, version `8.4.2`,
 appVersion `2.20.0`) plus `manifests/00-namespace.yaml`:
 
 - `Deployment` (`kube-state-metrics`) + `Service` + `ServiceAccount`, with the
@@ -40,7 +40,7 @@ the chart's appVersion
 
 ## Security posture (pinned explicitly)
 
-Chart `8.4.1` already ships a restricted-compliant securityContext, but the
+Chart `8.4.2` already ships a restricted-compliant securityContext, but the
 catalog pins it **explicitly** (explicit-not-inherited) so a future chart bump
 cannot silently weaken it. Note the chart's value key names are chart-specific and
 differ from `metrics-server`:
@@ -255,7 +255,7 @@ git tag).
 
 ## Migration
 
-Chart `7.5.1` → `8.4.1` (appVersion `2.19.1` → `2.20.0`) plus the CRS plumbing. The
+Chart `7.5.1` → `8.4.2` (appVersion `2.19.1` → `2.20.0`) plus the CRS plumbing. The
 chart bump alone is render-neutral beyond the image tag and chart/version labels —
 verified by rendering both versions against the catalog's own values (the only other
 deltas are two dropped empty `httpHeaders:` keys in the probes and one blank line in
