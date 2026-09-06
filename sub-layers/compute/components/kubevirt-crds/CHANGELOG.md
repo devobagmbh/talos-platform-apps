@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-crds-v0.2.1...compute/kubevirt-crds-v0.2.2) (2026-09-06)
+
+
+### Bug Fixes
+
+* **compute/kubevirt:** bump virt-operator to v1.5.3; re-vendor CRD provenance ([#841](https://github.com/devobagmbh/talos-platform-apps/issues/841)) ([56073ea](https://github.com/devobagmbh/talos-platform-apps/commit/56073ea50c17615214b6acf57e4698fc91ec0ce5))
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-crds-v0.2.0...compute/kubevirt-crds-v0.2.1) (2026-07-15)
 
 
