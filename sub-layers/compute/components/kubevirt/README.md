@@ -10,8 +10,8 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.6.6**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.6.6/kubevirt-operator.yaml`).
+`kubevirt-operator.yaml` at tag **v1.7.4**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.7.4/kubevirt-operator.yaml`).
 The bundled `KubeVirt` CR is **not** upstream's `kubevirt-cr.yaml` — it came from
 the `talos-platform-base` migration and only its version label tracks the release;
 see § The `KubeVirt` CR below.
@@ -31,11 +31,11 @@ consumer-specific values, no invented pod labels.
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.6.6`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.7.4`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are pinned to the v1.6.6 shasums baked into the virt-operator container env
-  (not in this manifest — the operator injects them at reconcile time).
+  images are derived from the `KUBEVIRT_VERSION` env value (`v1.7.4`) and injected at
+  reconcile time — they are not listed in this manifest.
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
   ClusterRoleBinding `kubevirt-operator`** — the operator RBAC; plus the aggregated
@@ -49,7 +49,7 @@ consumer-specific values, no invented pod labels.
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.6.6.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.7.4.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -178,6 +178,54 @@ ships no Namespace.
   ≥ 10 (in the consumer overlay, then synced) before the `-crds` tag is applied. The
   catalog default does not set the field, so only an overlay can put a cluster in this
   state.
+- **The v1.7 hop pins `virt-operator` to control-plane nodes** (PR #15157). The
+  Deployment gains a `requiredDuringSchedulingIgnoredDuringExecution` node affinity on
+  `node-role.kubernetes.io/control-plane` OR `node-role.kubernetes.io/master`, plus
+  `NoSchedule` tolerations for both. On a cluster whose control-plane nodes carry
+  neither label the Pod stays `Pending`, and because `virt-operator` is what reconciles
+  the `KubeVirt` CR, the entire virtualization control plane stops upgrading. Check
+  before applying:
+
+  ```console
+  kubectl get nodes -l node-role.kubernetes.io/control-plane
+  kubectl get nodes -l node-role.kubernetes.io/master
+  ```
+
+  The two `nodeSelectorTerms` are ORed, so either label satisfies the affinity. Only
+  when **both** commands return empty MUST the nodes be labelled before this tag is
+  applied.
+- **The v1.7 hop drops the `instancetype.kubevirt.io/v1alpha{1,2}` versions from the
+  instancetype CRDs** (PR #15400). The CRDs themselves stay; what goes is the two
+  entries in their `spec.versions`, which v1.6 had already stopped serving. Stored
+  objects are **not** cascade-deleted — the opposite: Kubernetes refuses to remove a
+  version still listed in a CRD's `status.storedVersions`, so an unmigrated cluster
+  gets a rejected CRD update and `virt-operator` cannot finish reconciling. Migrating
+  to `v1beta1` was advisable at v1.6 and is mandatory here. Rewrite any remaining
+  objects so the stored version collapses to `v1beta1`, e.g. per CRD:
+
+  ```console
+  kubectl get virtualmachineinstancetypes.instancetype.kubevirt.io -A -o yaml \
+    | kubectl replace -f -
+  kubectl get crd virtualmachineinstancetypes.instancetype.kubevirt.io \
+    -o jsonpath='{.status.storedVersions}'
+  ```
+
+  Repeat for `virtualmachineclusterinstancetypes`, `virtualmachinepreferences` and
+  `virtualmachineclusterpreferences`; each must report `["v1beta1"]` before this tag.
+- **`virt-operator` no longer honours the `*_SHASUM` env variables** (PR #15061). A
+  consumer who pinned individual control-plane component images by digest through those
+  variables MUST move the pin to the corresponding `*_IMAGE` variable, which takes a
+  tag, a digest, or both.
+- **The supported Kubernetes floor at v1.7 is 1.32** (PR #15718; upstream's
+  [k8s support matrix](https://github.com/kubevirt/sig-release/blob/main/releases/k8s-support-matrix.md)
+  records v1.7 on 1.32–1.34), and `virt-api` now
+  scales its replica count with the number of `kubevirt.io/schedulable=true` nodes
+  (PR #15690) — a consumer policy or dashboard asserting a fixed `virt-api` replica
+  count goes stale.
+- **`virt-operator` carries a new pod label**
+  `np.kubevirt.io/allow-access-cluster-services: "true"`, upstream's selector for
+  KubeVirt control-plane NetworkPolicies. Nothing breaks without it; a consumer running
+  default-deny policies can select on it instead of on `kubevirt.io: virt-operator`.
 - **cgroup v1 is in maintenance mode as of v1.6** (PR #14538) and upstream announces
   removal in a later release. Nodes still on cgroup v1 need to move to v2 before the
   chain reaches that release.
