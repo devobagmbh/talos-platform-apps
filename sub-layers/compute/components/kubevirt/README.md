@@ -128,9 +128,14 @@ ships no Namespace.
 - **Every version hop restarts running VMs.** With the catalog default
   `workloadUpdateMethods: [Evict]`, `virt-operator` shuts each VMI's pod down on
   upgrade, so a walk across N minors restarts every VM N times. A consumer running
-  production VMs SHOULD override to `[LiveMigrateIfPossible]` in their overlay before
-  starting a multi-hop walk — that needs at least two schedulable nodes and
-  migration-capable hardware. Dev/test consumers may keep the default.
+  production VMs SHOULD override to `workloadUpdateMethods: [LiveMigrate, Evict]` in
+  their overlay before starting a multi-hop walk — `LiveMigrate` and `Evict` are the
+  only two values the field accepts (`WorkloadUpdateMethod`,
+  `staging/src/kubevirt.io/api/core/v1/types.go`), and listing both migrates what can
+  migrate and evicts the rest. `LiveMigrateIfPossible` is an **`evictionStrategy`**
+  value, not a workload-update method — setting it here updates nothing. Live migration
+  needs at least two schedulable nodes and migration-capable storage. Dev/test consumers
+  may keep the default.
 - **The v1.6 hop drops two `instancetype.kubevirt.io` API versions.** `v1alpha1` and
   `v1alpha2` are no longer served or supported upstream (KubeVirt PR #14048). Those
   CRDs are operator-installed at runtime (see above), so nothing in this artifact
@@ -155,7 +160,7 @@ ships no Namespace.
   node-drain tooling or policy asserted the presence of a KubeVirt-managed PDB must
   stop relying on it. Under the catalog default `workloadUpdateMethods: [Evict]` this
   changes nothing — eviction is already the intended behaviour. A consumer who
-  overrode to `[LiveMigrateIfPossible]` loses the PDB as a backstop: a failed migration
+  overrode to `[LiveMigrate, Evict]` loses the PDB as a backstop: a failed migration
   now falls through to eviction with no mandatory delay window, where the PDB
   previously held it off.
 - **`developerConfiguration.memoryOvercommit` is now bounded below at 10** in the CRD
@@ -183,18 +188,37 @@ ships no Namespace.
 
   ```console
   kubectl get nodes -l node-role.kubernetes.io/control-plane
+  kubectl get nodes -l node-role.kubernetes.io/master
   ```
 
-  An empty result means the nodes MUST be labelled before this tag is applied.
-- **The v1.7 hop deletes the `instancetype.kubevirt.io/v1alpha{1,2}` CRDs** (PR
-  #15400). The v1.6 hop stopped serving those versions; this hop removes the CRDs, and
-  any stored objects still on them go with the CRDs. Migrating to `v1beta1` was
-  advisable at v1.6 and is mandatory here.
+  The two `nodeSelectorTerms` are ORed, so either label satisfies the affinity. Only
+  when **both** commands return empty MUST the nodes be labelled before this tag is
+  applied.
+- **The v1.7 hop drops the `instancetype.kubevirt.io/v1alpha{1,2}` versions from the
+  instancetype CRDs** (PR #15400). The CRDs themselves stay; what goes is the two
+  entries in their `spec.versions`, which v1.6 had already stopped serving. Stored
+  objects are **not** cascade-deleted — the opposite: Kubernetes refuses to remove a
+  version still listed in a CRD's `status.storedVersions`, so an unmigrated cluster
+  gets a rejected CRD update and `virt-operator` cannot finish reconciling. Migrating
+  to `v1beta1` was advisable at v1.6 and is mandatory here. Rewrite any remaining
+  objects so the stored version collapses to `v1beta1`, e.g. per CRD:
+
+  ```console
+  kubectl get virtualmachineinstancetypes.instancetype.kubevirt.io -A -o yaml \
+    | kubectl replace -f -
+  kubectl get crd virtualmachineinstancetypes.instancetype.kubevirt.io \
+    -o jsonpath='{.status.storedVersions}'
+  ```
+
+  Repeat for `virtualmachineclusterinstancetypes`, `virtualmachinepreferences` and
+  `virtualmachineclusterpreferences`; each must report `["v1beta1"]` before this tag.
 - **`virt-operator` no longer honours the `*_SHASUM` env variables** (PR #15061). A
   consumer who pinned individual control-plane component images by digest through those
   variables MUST move the pin to the corresponding `*_IMAGE` variable, which takes a
   tag, a digest, or both.
-- **The supported Kubernetes floor moves to 1.33** (PR #15718), and `virt-api` now
+- **The supported Kubernetes floor at v1.7 is 1.32** (PR #15718; upstream's
+  [k8s support matrix](https://github.com/kubevirt/sig-release/blob/main/releases/k8s-support-matrix.md)
+  records v1.7 on 1.32–1.34), and `virt-api` now
   scales its replica count with the number of `kubevirt.io/schedulable=true` nodes
   (PR #15690) — a consumer policy or dashboard asserting a fixed `virt-api` replica
   count goes stale.
@@ -224,6 +248,15 @@ release. Three obligations follow:
   hop is forward (finish the hop) or a restore from a pre-hop backup.
 - **Take a cluster backup before every hop** (etcd snapshot or Velero), not only the
   first.
+
+> **Documented deviation — the v1.5 patch hop.** Upstream's rule covers patches too:
+> within one minor, only consecutive patches are supported ("✗ Upgrade from v1.6.2 to
+> v1.6.4 is not supported"). The catalog moved v1.5.0 straight to **v1.5.3**, skipping
+> the published v1.5.1 and v1.5.2. Accepted deliberately: between v1.5.0 and v1.5.3 the
+> CRD schema is byte-identical and the `virt-operator` Deployment differs only in its
+> version pins, so the jump carries no schema or API change for the operator to
+> reconcile across. Every **minor** hop in this chain does start from the latest patch
+> of its minor, as upstream requires.
 
 ## Strict-B consumer wiring (ADR-0028)
 
