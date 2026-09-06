@@ -1,7 +1,9 @@
 # The KubeVirt operator-config singleton CR — the operator watches it and, on
 # reconcile, deploys the virtualization control plane (virt-api, virt-controller,
 # virt-handler, the webhooks). Shipped HERE in the workload as a CATALOG DEFAULT,
-# verbatim from the base migration source — NOT consumer-owned-only. A
+# taken from the talos-platform-base migration — NOT upstream's kubevirt-cr.yaml,
+# which sets none of the three spec fields below. Only the version label tracks the
+# release. It is not consumer-owned-only: a
 # consumer patches it via their own Argo overlay (Kustomize/values) where they need
 # to (e.g. enable useEmulation on hardware without vt-x/amd-v); the bundled spec is
 # the platform's posture default.
