@@ -8,8 +8,8 @@ together form the strict-B pair: CRD first (this artifact, sync-wave -1), worklo
 after (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream KubeVirt release operator manifest
-at tag **v1.5.0**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-operator.yaml`).
+at tag **v1.5.3**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-operator.yaml`).
 KubeVirt publishes no anonymously-pullable CRDs-only Helm chart (the upstream install
 method is `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered
 as a raw manifest (`kind: manifests`, `manifests/00-kubevirt-crds.yaml`) — the CRD
@@ -29,9 +29,10 @@ artifact is purely the one CRD. The `Namespace`, `Deployment` (`virt-operator`),
 `PriorityClass` from the upstream operator manifest are non-CRD objects and ship in
 the workload artifact `compute/kubevirt`, not here.
 
-The `KubeVirt` CR (the operator-config singleton, conventionally named `kubevirt` in
-the `kubevirt` namespace) is **consumer-owned** — it lives in the consumer-cluster
-repo overlay, not in this catalog component. This artifact only establishes the CRD
+The `KubeVirt` CR (the operator-config singleton, named `kubevirt` in the `kubevirt`
+namespace) ships as a **catalog default in the workload half** `compute/kubevirt`
+(`manifests/20-kubevirt-cr.yaml`); a consumer patches it through their own Argo
+overlay rather than owning the object outright. This artifact only establishes the CRD
 schema so that CR has a registered type. The runtime CRDs (`virtualmachines`,
 `virtualmachineinstances`, …) are **operator-installed at runtime** by `virt-operator`
 once the `KubeVirt` CR reconciles; they are NOT in the operator manifest and are NOT

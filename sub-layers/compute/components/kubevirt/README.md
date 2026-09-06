@@ -10,14 +10,18 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.5.0**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-operator.yaml`)
-and the `KubeVirt` CR from `kubevirt-cr.yaml` at the same release
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-cr.yaml`).
+`kubevirt-operator.yaml` at tag **v1.5.3**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-operator.yaml`).
+The bundled `KubeVirt` CR is **not** upstream's `kubevirt-cr.yaml` — it came from
+the `talos-platform-base` migration and only its version label tracks the release;
+see § The `KubeVirt` CR below.
 KubeVirt publishes no anonymously-pullable Helm chart (the upstream install method is
 `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered as raw
 manifests (`kind: manifests`) — the **non-CRD** objects extracted from the release
-manifest via `yq 'select(.kind != "CustomResourceDefinition")'`. Nothing is
+manifest via `yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'`
+(mikefarah/yq v4 — the python-yq on the devbox PATH emits JSON for this expression and
+does not reproduce the committed bytes; the `Namespace` is authored in
+`00-namespace.yaml`, see below). Nothing is
 hand-edited: no `replicas` pin, no consumer-specific values, no invented pod labels.
 
 ## What ships
@@ -27,10 +31,10 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.5.0`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.5.3`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are pinned to the v1.5.0 shasums baked into the virt-operator container env
+  images are pinned to the v1.5.3 shasums baked into the virt-operator container env
   (not in this manifest — the operator injects them at reconcile time).
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
@@ -45,7 +49,7 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.5.0.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.5.3.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -53,10 +57,15 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 
 ## The `KubeVirt` CR — a catalog default (consumer-overridable)
 
-This workload ships the `KubeVirt` CR as a **catalog default**, taken verbatim from
-the base migration source at v1.5.0. Its security/posture **spec values** are the
-upstream defaults verbatim; the `app.kubernetes.io/*` labels (incl. `managed-by:
-argocd`) are standard labels the base source carries on the minimal upstream CR. It is **not** consumer-owned-only: the platform
+This workload ships the `KubeVirt` CR as a **catalog default**, taken from the
+`talos-platform-base` migration — **not** from upstream's `kubevirt-cr.yaml`, which
+sets none of the three spec fields below and carries no `app.kubernetes.io/*` labels.
+Two of the three are deliberate hardening deviations from the upstream default rather
+than restatements of it: `permitBridgeInterfaceOnPodNetwork` defaults to `true`
+upstream (`DefaultPermitBridgeInterfaceOnPodNetwork`, `pkg/virt-config/virt-config.go`)
+and `workloadUpdateStrategy` is empty upstream, i.e. no workload update on operator
+upgrade at all. `useEmulation: false` does match the upstream default.
+It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
 (Kustomize/values in the consumer-cluster repo) where they need to diverge. The
 shipped spec preserves these security/posture values, which the catalog **does not
@@ -68,8 +77,11 @@ soften**:
   overlay.
 - `configuration.network.permitBridgeInterfaceOnPodNetwork: false` — block bridge
   binding on the pod network (hardening default).
-- `workloadUpdateStrategy.workloadUpdateMethods: [Evict]` — live-migrate/evict VMIs
-  on operator upgrade rather than leaving them on stale `virt-launcher` pods.
+- `workloadUpdateStrategy.workloadUpdateMethods: [Evict]` — on operator upgrade, shut
+  the VMI's pod down rather than leave the VM on a stale `virt-launcher`. `Evict` is
+  **not** live migration ("Evict: Which results in the VMI's pod being shutdown" —
+  [updating_and_deletion](https://kubevirt.io/user-guide/cluster_admin/updating_and_deletion/)):
+  a VM under `runStrategy: always` returns in a fresh pod, i.e. the guest restarts.
 
 It renders as exactly one `kind: KubeVirt` named `kubevirt`.
 
@@ -88,8 +100,10 @@ namespace's workloads provably need: `privileged`. Same shape as
 `storage-block/piraeus-operator` (a hardened operator pod, a privileged namespace for
 the operator-created node DaemonSets).
 
-The upstream `kubevirt-operator.yaml` ships **no** Namespace object, so the
-`Namespace` (with the PSA labels) is authored in `00-namespace.yaml`. This component
+The upstream `kubevirt-operator.yaml` ships a `kubevirt` Namespace carrying only
+`pod-security.kubernetes.io/enforce: privileged`; the extraction drops it and the
+`Namespace` is authored in `00-namespace.yaml` with the full audit/warn label triad at
+the same enforce level (ADR-0032 namespace ownership). This component
 is the **sole catalog occupant** of `kubevirt` (dedicated namespace), so it ships the
 `Namespace` object; a shipped manifest takes precedence over Argo
 `managedNamespaceMetadata`, making the PSA posture authoritative. The `-crds` half
@@ -111,6 +125,45 @@ ships no Namespace.
   **operator-installed at runtime** by `virt-operator` once the `KubeVirt` CR
   reconciles (ADR-0028 "operator-installed CRDs — out of scope"); they are neither in
   this workload nor in the `-crds` half.
+- **Every version hop restarts running VMs.** With the catalog default
+  `workloadUpdateMethods: [Evict]`, `virt-operator` shuts each VMI's pod down on
+  upgrade, so a walk across N minors restarts every VM N times. A consumer running
+  production VMs SHOULD override to `workloadUpdateMethods: [LiveMigrate, Evict]` in
+  their overlay before starting a multi-hop walk — `LiveMigrate` and `Evict` are the
+  only two values the field accepts (`WorkloadUpdateMethod`,
+  `staging/src/kubevirt.io/api/core/v1/types.go`), and listing both migrates what can
+  migrate and evicts the rest. `LiveMigrateIfPossible` is an **`evictionStrategy`**
+  value, not a workload-update method — setting it here updates nothing. Live migration
+  needs at least two schedulable nodes and migration-capable storage. Dev/test consumers
+  may keep the default.
+
+## Upgrade path — sequential, forward only
+
+Upstream supports only **N-1 -> N** upgrades, each hop starting from the latest patch
+of the current minor, and documents no downgrade path
+([updating_and_deletion](https://kubevirt.io/user-guide/cluster_admin/updating_and_deletion/)).
+The catalog therefore publishes **every** intermediate upstream minor as its own
+release. Three obligations follow:
+
+- **Apply the catalog tags in order.** Skipping a tag skips an upstream minor and puts
+  the cluster on an unsupported upgrade path. Read the CHANGELOG to see which upstream
+  version a catalog tag carries.
+- **Rolling a minor back is unsupported.** `Prune=false` on the `-crds` `Application`
+  protects against an accidental CR-cascade delete; it does **not** make a downgrade
+  safe — re-pinning the `-crds` tag can re-apply the older CRD schema while the newer
+  operator has already reconciled state against the newer one. Recovery from a failed
+  hop is forward (finish the hop) or a restore from a pre-hop backup.
+- **Take a cluster backup before every hop** (etcd snapshot or Velero), not only the
+  first.
+
+> **Documented deviation — the v1.5 patch hop.** Upstream's rule covers patches too:
+> within one minor, only consecutive patches are supported ("✗ Upgrade from v1.6.2 to
+> v1.6.4 is not supported"). The catalog moved v1.5.0 straight to **v1.5.3**, skipping
+> the published v1.5.1 and v1.5.2. Accepted deliberately: between v1.5.0 and v1.5.3 the
+> CRD schema is byte-identical and the `virt-operator` Deployment differs only in its
+> version pins, so the jump carries no schema or API change for the operator to
+> reconcile across. Every **minor** hop in this chain does start from the latest patch
+> of its minor, as upstream requires.
 
 ## Strict-B consumer wiring (ADR-0028)
 
