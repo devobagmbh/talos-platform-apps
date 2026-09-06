@@ -3,7 +3,7 @@ type: reference
 title: CI and merge gates
 description: The CI conventions, the required status checks, and the branch-protection contract that gate a merge to main.
 tags: [reference, ci, merge-gate, branch-protection]
-timestamp: 2026-08-19
+timestamp: 2026-09-06
 sources:
   - AGENTS.md
   - Taskfile.yml
@@ -42,6 +42,21 @@ All must be green, with `strict` on (the PR branch must be up to date with main)
 - `require-issue-link` - the PR links an issue or carries the `no-issue` label.
 - `gitleaks (secret-scan)` - no secret leaks in the PR's changed range.
 - `commit-lint` (pending) - Conventional PR title + single-component scope; becomes required once armed.
+
+### Stacked PRs
+
+The PR-gating workflows carry **no `branches:` filter**, so a PR based on another PR's
+branch runs the same checks as one onto `main`. Under a `branches: [main]` filter those
+jobs never fired on a stacked PR, which then read green because nothing had run - and
+branch protection does not compensate, since the ruleset governs `main` only.
+
+A check conclusion attaches to the head SHA, so GitHub keeps showing the stacked-base
+run after retargeting to `main`. That result is **not** valid for the new base: the
+base-sensitive checks (`commit-lint`'s component scope over `<base>..<head>`, `ci`'s
+`CI_SCOPE_RANGE`) can widen when the base moves. Close and reopen the PR after a base
+change - the retarget raises no `pull_request` event these workflows listen for.
+`commit-lint` short-circuits on `merge_group`, so the queue does not recompute the
+scope either.
 
 ## Non-status-check merge gates
 

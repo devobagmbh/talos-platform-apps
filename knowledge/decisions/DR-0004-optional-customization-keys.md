@@ -3,7 +3,7 @@ type: decision
 title: "DR-0004 — Optional consumer-supplied env keys in the customization contract"
 description: Add an additive top-level `optional` block to the customization contract so a component can declare env keys that carry a working baked default, keeping `required` strictly the must-supply channel; enforce the two rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-08-18
+timestamp: 2026-09-06
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-valid.yaml

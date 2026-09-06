@@ -17,8 +17,8 @@ name: security-scan
 on:
   push:
     branches: [main]
+  # pull_request carries no `branches:` filter on purpose — AGENTS.md § Branch protection & merge gates.
   pull_request:
-    branches: [main]
   # merge_group: only the required `gitleaks (secret-scan)` job runs here (it reports on
   # the queue's projected merge tree). The non-required `trivy`/`conftest` jobs are guarded
   # off merge_group — they already ran on the PR and re-rendering the whole catalog per
