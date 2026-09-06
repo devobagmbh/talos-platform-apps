@@ -3,7 +3,7 @@ type: reference
 title: Component contract
 description: The two per-component contract files - compatibility.yaml (dependency + capability surface) and customization.yaml (the freeze-line, with the required and optional consumer-input channels).
 tags: [reference, contract, freeze-line, compatibility]
-timestamp: 2026-08-19
+timestamp: 2026-09-06
 sources:
   - schemas/compatibility.schema.json
   - schemas/customization.schema.json
