@@ -10,8 +10,8 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.6.6**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.6.6/kubevirt-operator.yaml`).
+`kubevirt-operator.yaml` at tag **v1.7.4**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.7.4/kubevirt-operator.yaml`).
 The bundled `KubeVirt` CR is **not** upstream's `kubevirt-cr.yaml` — it came from
 the `talos-platform-base` migration and only its version label tracks the release;
 see § The `KubeVirt` CR below.
@@ -31,11 +31,11 @@ consumer-specific values, no invented pod labels.
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.6.6`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.7.4`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are pinned to the v1.6.6 shasums baked into the virt-operator container env
-  (not in this manifest — the operator injects them at reconcile time).
+  images are derived from the `KUBEVIRT_VERSION` env value (`v1.7.4`) and injected at
+  reconcile time — they are not listed in this manifest.
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
   ClusterRoleBinding `kubevirt-operator`** — the operator RBAC; plus the aggregated
@@ -49,7 +49,7 @@ consumer-specific values, no invented pod labels.
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.6.6.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.7.4.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -128,14 +128,9 @@ ships no Namespace.
 - **Every version hop restarts running VMs.** With the catalog default
   `workloadUpdateMethods: [Evict]`, `virt-operator` shuts each VMI's pod down on
   upgrade, so a walk across N minors restarts every VM N times. A consumer running
-  production VMs SHOULD override to `workloadUpdateMethods: [LiveMigrate, Evict]` in
-  their overlay before starting a multi-hop walk — `LiveMigrate` and `Evict` are the
-  only two values the field accepts (`WorkloadUpdateMethod`,
-  `staging/src/kubevirt.io/api/core/v1/types.go`), and listing both migrates what can
-  migrate and evicts the rest. `LiveMigrateIfPossible` is an **`evictionStrategy`**
-  value, not a workload-update method — setting it here updates nothing. Live migration
-  needs at least two schedulable nodes and migration-capable storage. Dev/test consumers
-  may keep the default.
+  production VMs SHOULD override to `[LiveMigrateIfPossible]` in their overlay before
+  starting a multi-hop walk — that needs at least two schedulable nodes and
+  migration-capable hardware. Dev/test consumers may keep the default.
 - **The v1.6 hop drops two `instancetype.kubevirt.io` API versions.** `v1alpha1` and
   `v1alpha2` are no longer served or supported upstream (KubeVirt PR #14048). Those
   CRDs are operator-installed at runtime (see above), so nothing in this artifact
@@ -160,7 +155,7 @@ ships no Namespace.
   node-drain tooling or policy asserted the presence of a KubeVirt-managed PDB must
   stop relying on it. Under the catalog default `workloadUpdateMethods: [Evict]` this
   changes nothing — eviction is already the intended behaviour. A consumer who
-  overrode to `[LiveMigrate, Evict]` loses the PDB as a backstop: a failed migration
+  overrode to `[LiveMigrateIfPossible]` loses the PDB as a backstop: a failed migration
   now falls through to eviction with no mandatory delay window, where the PDB
   previously held it off.
 - **`developerConfiguration.memoryOvercommit` is now bounded below at 10** in the CRD
@@ -178,6 +173,35 @@ ships no Namespace.
   ≥ 10 (in the consumer overlay, then synced) before the `-crds` tag is applied. The
   catalog default does not set the field, so only an overlay can put a cluster in this
   state.
+- **The v1.7 hop pins `virt-operator` to control-plane nodes** (PR #15157). The
+  Deployment gains a `requiredDuringSchedulingIgnoredDuringExecution` node affinity on
+  `node-role.kubernetes.io/control-plane` OR `node-role.kubernetes.io/master`, plus
+  `NoSchedule` tolerations for both. On a cluster whose control-plane nodes carry
+  neither label the Pod stays `Pending`, and because `virt-operator` is what reconciles
+  the `KubeVirt` CR, the entire virtualization control plane stops upgrading. Check
+  before applying:
+
+  ```console
+  kubectl get nodes -l node-role.kubernetes.io/control-plane
+  ```
+
+  An empty result means the nodes MUST be labelled before this tag is applied.
+- **The v1.7 hop deletes the `instancetype.kubevirt.io/v1alpha{1,2}` CRDs** (PR
+  #15400). The v1.6 hop stopped serving those versions; this hop removes the CRDs, and
+  any stored objects still on them go with the CRDs. Migrating to `v1beta1` was
+  advisable at v1.6 and is mandatory here.
+- **`virt-operator` no longer honours the `*_SHASUM` env variables** (PR #15061). A
+  consumer who pinned individual control-plane component images by digest through those
+  variables MUST move the pin to the corresponding `*_IMAGE` variable, which takes a
+  tag, a digest, or both.
+- **The supported Kubernetes floor moves to 1.33** (PR #15718), and `virt-api` now
+  scales its replica count with the number of `kubevirt.io/schedulable=true` nodes
+  (PR #15690) — a consumer policy or dashboard asserting a fixed `virt-api` replica
+  count goes stale.
+- **`virt-operator` carries a new pod label**
+  `np.kubevirt.io/allow-access-cluster-services: "true"`, upstream's selector for
+  KubeVirt control-plane NetworkPolicies. Nothing breaks without it; a consumer running
+  default-deny policies can select on it instead of on `kubevirt.io: virt-operator`.
 - **cgroup v1 is in maintenance mode as of v1.6** (PR #14538) and upstream announces
   removal in a later release. Nodes still on cgroup v1 need to move to v2 before the
   chain reaches that release.
@@ -200,15 +224,6 @@ release. Three obligations follow:
   hop is forward (finish the hop) or a restore from a pre-hop backup.
 - **Take a cluster backup before every hop** (etcd snapshot or Velero), not only the
   first.
-
-> **Documented deviation — the v1.5 patch hop.** Upstream's rule covers patches too:
-> within one minor, only consecutive patches are supported ("✗ Upgrade from v1.6.2 to
-> v1.6.4 is not supported"). The catalog moved v1.5.0 straight to **v1.5.3**, skipping
-> the published v1.5.1 and v1.5.2. Accepted deliberately: between v1.5.0 and v1.5.3 the
-> CRD schema is byte-identical and the `virt-operator` Deployment differs only in its
-> version pins, so the jump carries no schema or API change for the operator to
-> reconcile across. Every **minor** hop in this chain does start from the latest patch
-> of its minor, as upstream requires.
 
 ## Strict-B consumer wiring (ADR-0028)
 
