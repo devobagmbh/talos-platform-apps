@@ -14,7 +14,7 @@
 # capabilities.drop: [ALL], runAsNonRoot: true, seccompProfile: RuntimeDefault — see
 # 10-operator.yaml). The operator-created control-plane pods (cdi-apiserver,
 # cdi-controller, cdi-uploadproxy) the operator spawns at reconcile time are likewise
-# restricted-compatible at v1.65.0 (build plan § Namespace PSA posture), so the
+# restricted-compatible at v1.66.0 (build plan § Namespace PSA posture), so the
 # namespace admits them without softening to baseline/privileged. This mirrors the
 # kubevirt workload precedent (same sole-claimant authoring), differing only in the
 # PSA level (kubevirt needs privileged for its virt-handler DaemonSet; CDI does not).
