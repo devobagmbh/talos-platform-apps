@@ -9,8 +9,8 @@ strict-B pair: CRD first (this artifact, sync-wave -1), workload after
 (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream CDI release operator manifest
-at tag **v1.62.0**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.62.0/cdi-operator.yaml`,
+at tag **v1.63.1**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.63.1/cdi-operator.yaml`,
 vendored in `talos-platform-base` at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`). CDI publishes no
 anonymously-pullable CRDs-only Helm chart (the upstream install method is
