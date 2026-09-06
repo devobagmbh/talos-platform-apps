@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-crds-v0.2.2...compute/kubevirt-crds-v0.3.0) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **compute/kubevirt:** bump the KubeVirt pair to v1.6.6 ([#845](https://github.com/devobagmbh/talos-platform-apps/issues/845))
+
+### Features
+
+* **compute/kubevirt:** bump the KubeVirt pair to v1.6.6 ([#845](https://github.com/devobagmbh/talos-platform-apps/issues/845)) ([a41b9d4](https://github.com/devobagmbh/talos-platform-apps/commit/a41b9d45c1bf96f9c82272ec8328c14277b4cf97))
+
 ## [0.2.2](https://github.com/devobagmbh/talos-platform-apps/compare/compute/kubevirt-crds-v0.2.1...compute/kubevirt-crds-v0.2.2) (2026-09-06)
 
 
