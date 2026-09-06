@@ -23,7 +23,7 @@ provides:
   - name: kubevirt-crds
     version:
       sot: crd-schema
-      crd_schema: v1.5.3          # KubeVirt release the kubevirts.kubevirt.io CRD is vendored from
+      crd_schema: v1.6.6          # KubeVirt release the kubevirts.kubevirt.io CRD is vendored from
     api_surface:
       - kubevirt.io/KubeVirt@v1   # kubevirts.kubevirt.io (served: v1, v1alpha3) (formerly apis[])
     capabilities: []
