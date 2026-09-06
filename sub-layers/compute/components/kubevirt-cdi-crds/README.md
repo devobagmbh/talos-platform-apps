@@ -9,9 +9,9 @@ strict-B pair: CRD first (this artifact, sync-wave -1), workload after
 (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream CDI release operator manifest
-at tag **v1.64.0**
-(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.64.0/cdi-operator.yaml`,
-vendored in `talos-platform-base` at
+at tag **v1.65.0**
+(`https://github.com/kubevirt/containerized-data-importer/releases/download/v1.65.0/cdi-operator.yaml`,
+migrated from `talos-platform-base`, where it was vendored at
 `kubernetes/base/infrastructure/kubevirt-cdi/cdi-operator.yaml`). CDI publishes no
 anonymously-pullable CRDs-only Helm chart (the upstream install method is
 `kubectl apply -f cdi-operator.yaml`), so this component is delivered as a raw
@@ -92,6 +92,16 @@ A safe schema-remove upgrade follows three steps:
    (and its operator-installed `DataVolume` CRs) exists: Argo would cascade-delete
    those CRs and tear down in-flight disk imports. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.65.0 — additive only
+
+The v1.64.0 -> v1.65.0 schema diff adds one field on both served versions:
+`config.podResourceRequirements.claims[].request`, the Dynamic Resource Allocation
+request selector. Nothing is removed and no constraint is narrowed, so no live `CDI`
+CR can become invalid at this hop and the three-step procedure above is not needed.
+The remaining diff is regeneration noise — upstream moved to controller-gen v0.17.2
+(PR #4051), which rewraps `description` text and drops two stale `TODO` lines.
+Served versions are unchanged (`v1alpha1` + `v1beta1`, storage `v1beta1`).
 
 ## Capability
 
