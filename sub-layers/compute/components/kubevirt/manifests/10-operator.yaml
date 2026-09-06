@@ -1,23 +1,24 @@
 # kubevirt virt-operator workload — strict-B WORKLOAD half (ADR-0028), 0 CRDs.
 # Extracted verbatim from the upstream KubeVirt release kubevirt-operator.yaml at
-# tag v1.5.0
-# (https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-operator.yaml)
-# via `yq 'select(.kind != "CustomResourceDefinition")'`. The single kubevirt.io
-# CRD (kubevirts.kubevirt.io / KubeVirt) ships in the SEPARATE strict-B artifact
-# compute/kubevirt-crds (sync-wave -1); this workload carries 0 CRDs.
+# tag v1.5.3
+# (https://github.com/kubevirt/kubevirt/releases/download/v1.5.3/kubevirt-operator.yaml)
+# via mikefarah/yq v4 (devbox's python-yq emits JSON here and will not reproduce these
+# bytes): yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'
+# The single kubevirt.io CRD (kubevirts.kubevirt.io / KubeVirt) ships in the SEPARATE
+# strict-B artifact compute/kubevirt-crds (sync-wave -1); this workload carries 0 CRDs.
 #
 # Content (verbatim, NOT hand-edited): the PriorityClass kubevirt-cluster-critical;
 # the aggregated ClusterRole kubevirt.io:operator; the ServiceAccount, Role +
 # RoleBinding (namespace kubevirt) and the ClusterRole + ClusterRoleBinding
 # kubevirt-operator; and the Deployment virt-operator. Only image
-# quay.io/kubevirt/virt-operator:v1.5.0 is pinned (no :latest); the per-component
+# quay.io/kubevirt/virt-operator:v1.5.3 is pinned (no :latest); the per-component
 # virt-api/virt-controller/virt-handler/virt-launcher images the operator deploys
-# are pinned to the v1.5.0 shasums baked into the virt-operator container env (not
+# are pinned to the v1.5.3 shasums baked into the virt-operator container env (not
 # in this manifest — the operator injects them when it reconciles the KubeVirt CR).
 #
-# The upstream manifest ships NO Namespace object — the kubevirt Namespace (with
-# the PSA enforce:privileged labels) is authored in 00-namespace.yaml, this
-# component being the sole catalog occupant of the namespace.
+# The upstream Namespace object is dropped by the extraction — the kubevirt Namespace
+# is authored in 00-namespace.yaml instead (ADR-0032 namespace ownership), matching
+# upstream's enforce:privileged and adding the audit/warn labels upstream omits.
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
@@ -1394,14 +1395,14 @@ spec:
             - virt-operator
           env:
             - name: VIRT_OPERATOR_IMAGE
-              value: quay.io/kubevirt/virt-operator:v1.5.0
+              value: quay.io/kubevirt/virt-operator:v1.5.3
             - name: WATCH_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['olm.targetNamespaces']
             - name: KUBEVIRT_VERSION
-              value: v1.5.0
-          image: quay.io/kubevirt/virt-operator:v1.5.0
+              value: v1.5.3
+          image: quay.io/kubevirt/virt-operator:v1.5.3
           imagePullPolicy: IfNotPresent
           name: virt-operator
           ports:
