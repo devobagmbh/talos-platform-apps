@@ -1,11 +1,18 @@
-# Customization Contract v2 (ADR-0024). kube-state-metrics is cluster-agnostic:
-# the rendered Deployment/Service/ClusterRole/RBAC is the signed workload and the
-# consumer supplies NOTHING here. The restricted securityContext posture is
-# workload-fixed in the catalog helm values; the replica count and PNI labels are
-# consumer-overlay concerns (not freeze-line config shapes). Empty freeze-line,
-# same posture as observability/metrics-server.
+# Customization Contract v2 (ADR-0024). kube-state-metrics is cluster-agnostic: the
+# rendered Deployment/Service/ClusterRole/RBAC is the signed workload and the consumer
+# MUST supply nothing — every `required.*` list stays empty and the component is
+# deployable as shipped. The restricted securityContext posture is workload-fixed in the
+# catalog helm values; the replica count and PNI labels are consumer-overlay concerns
+# (not freeze-line config shapes).
+#
+# ONE optional shape is declared (#832): shape (b), the CustomResourceState (CRS) config
+# file. The artifact ships it with working content — a CRS spec defining zero custom
+# metrics — so the exporter runs untouched; a consumer replaces the content to emit
+# `kube_customresource_*` series derived from their own CustomResources. Shapes (a) env,
+# (c) secret and (d) selector are unused: no cluster-specific env scalars, no consumer
+# secrets, no consumer-labeled CRs.
 freeze_line:
-  # The signed pre-rendered manifest is the workload DEFAULT (Deployment/Service/ClusterRole/RBAC + Namespace),
+  # The signed pre-rendered manifest is the workload DEFAULT (Deployment/Service/ClusterRole/RBAC + Namespace + CRS ConfigMap),
   # published as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml,
   # `task package` per apps#508) — consumers attach per-cluster overlays via
   # `source.kustomize.patches`. Calibrated-friction (ADR-0024): the base itself
@@ -13,12 +20,55 @@ freeze_line:
   # dangerous classes are fenced by the consumer-side ADR-0018 Kyverno safe-defaults
   # — never a catalog allowlist here.
   workload: rendered/manifest.yaml
-provided_refs: {} # no consumer-supplied env/config/secret refs
+provided_refs:
+  # Shape (b): the CRS ConfigMap. ARTIFACT-SHIPPED with working content (an optional
+  # channel entry, not a consumer-authored object) — the name is pinned explicitly in
+  # the helm values (`customResourceState.name`) rather than derived from the release
+  # name, because it is this contract's patch target.
+  config: kube-state-metrics-customresourcestate-config
 provided_selectors: {} # no consumer-labeled CRs
 required:
-  env_keys: []
-  config_files: []
-  secret_keys: []
-  selector_crs: []
+  env_keys: []      # (a) none — no cluster-specific env scalars
+  config_files: []  # (b) none REQUIRED — the CRS file is baked with working content; see optional.config_files
+  secret_keys: []   # (c) none — the exporter reads the Kubernetes API, not consumer secrets
+  selector_crs: []  # (d) none — no consumer CR is selected by this workload
+optional:
+  config_files:
+    - path: /etc/customresourcestate/config.yaml
+      ref: kube-state-metrics-customresourcestate-config
+      key: config.yaml
+      description: >-
+        CustomResourceState (CRS) spec driving the exporter's
+        `--custom-resource-state-config-file` flag: it declares which
+        GroupVersionKinds to watch and which of their fields to project into
+        `kube_customresource_*` series, alongside the built-in `kube_*` collectors.
+        The baked default declares zero resources, so no custom series are emitted and
+        the built-in collectors are unaffected; replacing it is the ONLY way to get
+        `kube_customresource_*` series out of this artifact. Replace the content via
+        `source.kustomize.patches` on this ConfigMap — never by creating or editing the
+        object, which is part of the signed base and would be reconciled back.
+        RELOAD: no pod restart is needed. kube-state-metrics watches this file and
+        restarts its collectors IN-PROCESS on a change (`internal/wrapper.go` at tag
+        v2.20.0: `crcViper.OnConfigChange(restart); crcViper.WatchConfig()`), and that
+        watch does fire on the kubelet's projected-volume update — observed on a local
+        cluster in both directions (spec added, spec reverted) with the container's
+        restartCount staying 0, the exporter logging `Changes detected` on
+        `/etc/customresourcestate/..data_tmp`. The delay is the kubelet sync period (up
+        to ~1 minute) plus the exporter's own 3-second port-release wait. Restart the
+        Deployment only if a replaced spec has not taken effect.
+        CONSUMER OBLIGATION (RBAC): the shipped ClusterRole grants `list`/`watch` on
+        `apiextensions.k8s.io/customresourcedefinitions` and nothing on any CR
+        apiGroup. For every apiGroup/resource the replaced spec names, the consumer
+        MUST add an ADDITIVE ClusterRole + ClusterRoleBinding onto the shipped
+        `kube-state-metrics` ServiceAccount granting `list`/`watch` on it (the catalog
+        never grants `apiGroups: ["*"]`). Without that grant the exporter still runs,
+        but no series appear for that kind — its list/watch on the CR is denied.
+      # Second copy of the baked CRS spec: `helm/kube-state-metrics.yaml`
+      # (`customResourceState.config`) is what actually renders into the ConfigMap.
+      # Nothing gates the two against each other yet (the config-file arm of #802),
+      # so edit BOTH or neither.
+      default: |
+        spec:
+          resources: []
 sync_wave: "0"
 external_dependencies: []
