@@ -97,7 +97,7 @@ catalog component ships none of them:
 - **Namespace** (Argo `managedNamespaceMetadata` or a patch on the shipped
   Namespace): the `pod-security.kubernetes.io/enforce-version` pin (its cluster's
   Kubernetes minor), the `audit`/`audit-version` and `warn`/`warn-version` modes,
-  and the PNI trust-anchor labels.
+  and whatever labels its own network-policy contract anchors on.
 - **Scrape configuration** — Alloy scrapes the `/metrics` endpoint via its own
   config; no `ServiceMonitor`/`PodMonitor` CR is shipped here.
 - The Argo `Application` CR itself (with its `argocd.argoproj.io/sync-wave`

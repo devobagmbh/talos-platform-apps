@@ -1,8 +1,6 @@
-# kube-state-metrics needs only the Kubernetes control-plane API (cluster-wide
-# read access via the chart-shipped ClusterRole) — a substrate precondition the
-# consumer integrates, not a catalog component edge or capability dep (ADR-0009,
-# #71). No base version-coupling line. `requires:` carries only component-refs and
-# capability-ids, so it is empty here.
+# Empty: the exporter needs nothing from the catalog. Its one dependency is cluster-wide
+# read on the control-plane API, which is a substrate precondition, not a component edge
+# or a capability (ADR-0009).
 requires: {}
 provides:
   - name: kube-state-metrics
@@ -11,9 +9,6 @@ provides:
       app: 2.20.0   # real kube-state-metrics app (apis[] held chart 8.4.2)
       chart: 8.4.2
     api_surface: []
-    # No-capability by design (api-surface-only). kube-state-metrics is the canonical,
-    # sole provider of the kube_* object-state series over a Prometheus /metrics
-    # endpoint — there is no drop-in swap alternative implementing the same
-    # interface, so it provides no swappable capability (precedent:
-    # lifecycle/providers). This is a design state, not a deferral — NO `# TODO:`.
+    # Empty by design, not deferred: the kube_* series over a Prometheus /metrics
+    # endpoint has no drop-in alternative, so there is nothing swappable to declare.
     capabilities: []
