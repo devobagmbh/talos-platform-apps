@@ -1,0 +1,24 @@
+# NEGATIVE: `key` begins with two dots. Kubernetes' IsConfigMapKey rejects every
+# such key (the kubelet reserves the `..` prefix for a projected volume's own
+# bookkeeping), not merely the bare `..` a length-2 anchor would catch. Binds the
+# `(?!\.\.)` lookahead; the `bad-key` fixture binds the charset half.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-config
+      key: ..data
+      description: Rule set the workload evaluates.
+      default: |
+        rules: []
+sync_wave: "10"
+external_dependencies: []

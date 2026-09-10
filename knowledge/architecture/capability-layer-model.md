@@ -3,7 +3,7 @@ type: architecture
 title: Capability-layer model
 description: Capability as the stable interface a consumer composes against, tool as the swappable implementation, with swap-class quantifying swap cost.
 tags: [architecture, capability, swap-class]
-timestamp: 2026-09-06
+timestamp: 2026-09-09
 sources:
   - catalog/capability-index.yaml
   - catalog/README.md

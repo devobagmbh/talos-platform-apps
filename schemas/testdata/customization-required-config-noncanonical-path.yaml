@@ -1,0 +1,20 @@
+# NEGATIVE: required.config_files[].path carries a non-canonical `.` segment.
+# The required and optional path fields feed S5's single union, so the canonical
+# form has to hold on BOTH sides — an alias on either one defeats the check.
+# Every other invalid-field fixture exercises the optional channel; this one and
+# its three required-config siblings bind the copied required-side constraints.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/./mandatory.yaml
+      ref: fixture-mandatory-config
+      key: mandatory.yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "10"
+external_dependencies: []

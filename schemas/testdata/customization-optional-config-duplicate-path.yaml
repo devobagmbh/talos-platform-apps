@@ -1,0 +1,31 @@
+# SEMANTIC NEGATIVE (S5): two entries with DISTINCT (ref, key) identities mount
+# at the same path. Schema-valid, so this fixture must PASS check-jsonschema and
+# FAIL the semantic check: one path cannot hold two different files, and nothing
+# in the contract says which one the workload reads.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-config
+      key: rules.yaml
+      description: Rule set the workload evaluates.
+      default: |
+        rules: []
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-config
+      key: alternate-rules.yaml
+      description: A second file claiming the same mount path.
+      default: |
+        rules:
+          - allow-all
+sync_wave: "10"
+external_dependencies: []
