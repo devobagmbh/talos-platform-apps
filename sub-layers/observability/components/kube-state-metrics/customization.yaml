@@ -1,9 +1,8 @@
 # Customization Contract v2 (ADR-0024). kube-state-metrics is cluster-agnostic:
 # the rendered Deployment/Service/ClusterRole/RBAC is the signed workload and the
 # consumer supplies NOTHING here. The restricted securityContext posture is
-# workload-fixed in the catalog helm values; the replica count and PNI labels are
-# consumer-overlay concerns (not freeze-line config shapes). Empty freeze-line,
-# same posture as observability/metrics-server.
+# workload-fixed in the catalog helm values; replica count and namespace labels are
+# consumer-overlay concerns, not freeze-line config shapes.
 freeze_line:
   # The signed pre-rendered manifest is the workload DEFAULT (Deployment/Service/ClusterRole/RBAC + Namespace),
   # published as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml,

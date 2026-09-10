@@ -10,15 +10,19 @@ the single `kubevirt.io` `CustomResourceDefinition` (`kubevirts.kubevirt.io`) is
 strict-B pair: CRD first (sync-wave -1), workload after (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream KubeVirt release
-`kubevirt-operator.yaml` at tag **v1.5.0**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-operator.yaml`)
-and the `KubeVirt` CR from `kubevirt-cr.yaml` at the same release
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-cr.yaml`).
+`kubevirt-operator.yaml` at tag **v1.9.0**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.9.0/kubevirt-operator.yaml`).
+The bundled `KubeVirt` CR is **not** upstream's `kubevirt-cr.yaml` — it came from
+the `talos-platform-base` migration and only its version label tracks the release;
+see § The `KubeVirt` CR below.
 KubeVirt publishes no anonymously-pullable Helm chart (the upstream install method is
 `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered as raw
 manifests (`kind: manifests`) — the **non-CRD** objects extracted from the release
-manifest via `yq 'select(.kind != "CustomResourceDefinition")'`. Nothing is
-hand-edited: no `replicas` pin, no consumer-specific values, no invented pod labels.
+manifest via `yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'`
+(mikefarah/yq v4 — the python-yq on the devbox PATH emits JSON for this expression and
+does not reproduce the committed bytes; the `Namespace` is authored in
+`00-namespace.yaml`, see below). Nothing is hand-edited: no `replicas` pin, no
+consumer-specific values, no invented pod labels.
 
 ## What ships
 
@@ -27,11 +31,11 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 `manifests/20-kubevirt-cr.yaml` — the `KubeVirt` operator-config CR:
 
 - **Deployment `virt-operator`** (ns `kubevirt`, image
-  `quay.io/kubevirt/virt-operator:v1.5.0`) — the operator. On reconcile of the
+  `quay.io/kubevirt/virt-operator:v1.9.0`) — the operator. On reconcile of the
   `KubeVirt` CR it deploys the virtualization control plane (`virt-api`,
   `virt-controller`) and the per-node `virt-handler` DaemonSet; those component
-  images are pinned to the v1.5.0 shasums baked into the virt-operator container env
-  (not in this manifest — the operator injects them at reconcile time).
+  images are derived from the `KUBEVIRT_VERSION` env value (`v1.9.0`) and injected at
+  reconcile time — they are not listed in this manifest.
 - **PriorityClass `kubevirt-cluster-critical`** — for core KubeVirt components.
 - **ServiceAccount, Role + RoleBinding** (ns `kubevirt`) and the **ClusterRole +
   ClusterRoleBinding `kubevirt-operator`** — the operator RBAC; plus the aggregated
@@ -45,7 +49,7 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 
 > **Operator RBAC provenance.** The operator `ClusterRole`s carry broad grants —
 > including wildcard `resources`/`verbs` on the `kubevirt.io` / `cdi.kubevirt.io`
-> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.5.0.
+> API groups — taken **verbatim** from the upstream `kubevirt-operator.yaml` v1.9.0.
 > They are part of `virt-operator`'s documented threat model (it reconciles the full
 > KubeVirt control plane) and are **not** narrowed here: hand-narrowing upstream
 > operator RBAC silently breaks reconciliation on the next version bump. Accepted as
@@ -53,10 +57,15 @@ hand-edited: no `replicas` pin, no consumer-specific values, no invented pod lab
 
 ## The `KubeVirt` CR — a catalog default (consumer-overridable)
 
-This workload ships the `KubeVirt` CR as a **catalog default**, taken verbatim from
-the base migration source at v1.5.0. Its security/posture **spec values** are the
-upstream defaults verbatim; the `app.kubernetes.io/*` labels (incl. `managed-by:
-argocd`) are standard labels the base source carries on the minimal upstream CR. It is **not** consumer-owned-only: the platform
+This workload ships the `KubeVirt` CR as a **catalog default**, taken from the
+`talos-platform-base` migration — **not** from upstream's `kubevirt-cr.yaml`, which
+sets none of the three spec fields below and carries no `app.kubernetes.io/*` labels.
+Two of the three are deliberate hardening deviations from the upstream default rather
+than restatements of it: `permitBridgeInterfaceOnPodNetwork` defaults to `true`
+upstream (`DefaultPermitBridgeInterfaceOnPodNetwork`, `pkg/virt-config/virt-config.go`)
+and `workloadUpdateStrategy` is empty upstream, i.e. no workload update on operator
+upgrade at all. `useEmulation: false` does match the upstream default.
+It is **not** consumer-owned-only: the platform
 provides a posture default, and a consumer **patches it via their own Argo overlay**
 (Kustomize/values in the consumer-cluster repo) where they need to diverge. The
 shipped spec preserves these security/posture values, which the catalog **does not
@@ -68,8 +77,11 @@ soften**:
   overlay.
 - `configuration.network.permitBridgeInterfaceOnPodNetwork: false` — block bridge
   binding on the pod network (hardening default).
-- `workloadUpdateStrategy.workloadUpdateMethods: [Evict]` — live-migrate/evict VMIs
-  on operator upgrade rather than leaving them on stale `virt-launcher` pods.
+- `workloadUpdateStrategy.workloadUpdateMethods: [Evict]` — on operator upgrade, shut
+  the VMI's pod down rather than leave the VM on a stale `virt-launcher`. `Evict` is
+  **not** live migration ("Evict: Which results in the VMI's pod being shutdown" —
+  [updating_and_deletion](https://kubevirt.io/user-guide/cluster_admin/updating_and_deletion/)):
+  a VM under `runStrategy: always` returns in a fresh pod, i.e. the guest restarts.
 
 It renders as exactly one `kind: KubeVirt` named `kubevirt`.
 
@@ -88,8 +100,10 @@ namespace's workloads provably need: `privileged`. Same shape as
 `storage-block/piraeus-operator` (a hardened operator pod, a privileged namespace for
 the operator-created node DaemonSets).
 
-The upstream `kubevirt-operator.yaml` ships **no** Namespace object, so the
-`Namespace` (with the PSA labels) is authored in `00-namespace.yaml`. This component
+The upstream `kubevirt-operator.yaml` ships a `kubevirt` Namespace carrying only
+`pod-security.kubernetes.io/enforce: privileged`; the extraction drops it and the
+`Namespace` is authored in `00-namespace.yaml` with the full audit/warn label triad at
+the same enforce level (ADR-0032 namespace ownership). This component
 is the **sole catalog occupant** of `kubevirt` (dedicated namespace), so it ships the
 `Namespace` object; a shipped manifest takes precedence over Argo
 `managedNamespaceMetadata`, making the PSA posture authoritative. The `-crds` half
@@ -111,6 +125,231 @@ ships no Namespace.
   **operator-installed at runtime** by `virt-operator` once the `KubeVirt` CR
   reconciles (ADR-0028 "operator-installed CRDs — out of scope"); they are neither in
   this workload nor in the `-crds` half.
+- **Every version hop restarts running VMs.** With the catalog default
+  `workloadUpdateMethods: [Evict]`, `virt-operator` shuts each VMI's pod down on
+  upgrade, so a walk across N minors restarts every VM N times. A consumer running
+  production VMs SHOULD override to `workloadUpdateMethods: [LiveMigrate, Evict]` in
+  their overlay before starting a multi-hop walk — `LiveMigrate` and `Evict` are the
+  only two values the field accepts (`WorkloadUpdateMethod`,
+  `staging/src/kubevirt.io/api/core/v1/types.go`), and listing both migrates what can
+  migrate and evicts the rest. `LiveMigrateIfPossible` is an **`evictionStrategy`**
+  value, not a workload-update method — setting it here updates nothing. Live migration
+  needs at least two schedulable nodes and migration-capable storage. Dev/test consumers
+  may keep the default.
+- **The v1.6 hop drops two `instancetype.kubevirt.io` API versions.** `v1alpha1` and
+  `v1alpha2` are no longer served or supported upstream (KubeVirt PR #14048). Those
+  CRDs are operator-installed at runtime (see above), so nothing in this artifact
+  changes — but a consumer whose `VirtualMachine`s reference an instancetype or
+  preference through `v1alpha{1,2}` MUST migrate those objects to `v1beta1` **before**
+  applying this tag, or the VMs stop resolving their instancetype.
+- **Two v1.6 monitoring contracts changed, and both fail silently.** A consumer MUST
+  audit their observability layer **before** applying this tag; neither break produces
+  an error, an Argo health signal, or a Kubernetes event.
+  - `kubevirt_vmi_vcpu_seconds_total` switched unit from microseconds to nanoseconds
+    (PR #13898). Every dashboard panel and alert expression doing arithmetic on it is
+    off by 1000x — update the expressions.
+  - The four `VirtHandlerRESTErrorsHigh`, `VirtOperatorRESTErrorsHigh`,
+    `VirtAPIRESTErrorsHigh` and `VirtControllerRESTErrorsHigh` alerts were removed
+    (PR #13911). Any alerting rule or runbook naming them goes dead — these are
+    control-plane health canaries, so losing them undetected means missed incidents.
+    Remove or replace the rules and fix the runbooks.
+
+  This artifact ships no `PrometheusRule`, so both live entirely in the consumer's
+  observability layer.
+- **KubeVirt no longer creates PodDisruptionBudgets** (PR #13764). A consumer whose
+  node-drain tooling or policy asserted the presence of a KubeVirt-managed PDB must
+  stop relying on it. Under the catalog default `workloadUpdateMethods: [Evict]` this
+  changes nothing — eviction is already the intended behaviour. A consumer who
+  overrode to `[LiveMigrate, Evict]` loses the PDB as a backstop: a failed migration
+  now falls through to eviction with no mandatory delay window, where the PDB
+  previously held it off.
+- **`developerConfiguration.memoryOvercommit` is now bounded below at 10** in the CRD
+  schema (`-crds` half), and the `-crds` half syncs FIRST (wave -1), so the new bound
+  is active before the operator upgrades. A value of 1-9 was accepted before this hop
+  and is rejected by the API server after it, which leaves the live CR unwritable and
+  the operator unable to reconcile it. Check before syncing:
+
+  ```console
+  kubectl get kubevirt kubevirt -n kubevirt \
+    -o jsonpath='{.spec.configuration.developerConfiguration.memoryOvercommit}'
+  ```
+
+  An empty result or a value ≥ 10 needs nothing. A value of 1-9 MUST be corrected to
+  ≥ 10 (in the consumer overlay, then synced) before the `-crds` tag is applied. The
+  catalog default does not set the field, so only an overlay can put a cluster in this
+  state.
+- **The v1.7 hop pins `virt-operator` to control-plane nodes** (PR #15157). The
+  Deployment gains a `requiredDuringSchedulingIgnoredDuringExecution` node affinity on
+  `node-role.kubernetes.io/control-plane` OR `node-role.kubernetes.io/master`, plus
+  `NoSchedule` tolerations for both. On a cluster whose control-plane nodes carry
+  neither label the Pod stays `Pending`, and because `virt-operator` is what reconciles
+  the `KubeVirt` CR, the entire virtualization control plane stops upgrading. Check
+  before applying:
+
+  ```console
+  kubectl get nodes -l node-role.kubernetes.io/control-plane
+  kubectl get nodes -l node-role.kubernetes.io/master
+  ```
+
+  The two `nodeSelectorTerms` are ORed, so either label satisfies the affinity. Only
+  when **both** commands return empty MUST the nodes be labelled before this tag is
+  applied.
+- **The v1.7 hop drops the `instancetype.kubevirt.io/v1alpha{1,2}` versions from the
+  instancetype CRDs** (PR #15400). The CRDs themselves stay; what goes is the two
+  entries in their `spec.versions`, which v1.6 had already stopped serving. Stored
+  objects are **not** cascade-deleted — the opposite: Kubernetes refuses to remove a
+  version still listed in a CRD's `status.storedVersions`, so an unmigrated cluster
+  gets a rejected CRD update and `virt-operator` cannot finish reconciling. Migrating
+  to `v1beta1` was advisable at v1.6 and is mandatory here. Rewrite any remaining
+  objects so the stored version collapses to `v1beta1`, e.g. per CRD:
+
+  ```console
+  kubectl get virtualmachineinstancetypes.instancetype.kubevirt.io -A -o yaml \
+    | kubectl replace -f -
+  kubectl get crd virtualmachineinstancetypes.instancetype.kubevirt.io \
+    -o jsonpath='{.status.storedVersions}'
+  ```
+
+  Repeat for `virtualmachineclusterinstancetypes`, `virtualmachinepreferences` and
+  `virtualmachineclusterpreferences`; each must report `["v1beta1"]` before this tag.
+- **`virt-operator` no longer honours the `*_SHASUM` env variables** (PR #15061). A
+  consumer who pinned individual control-plane component images by digest through those
+  variables MUST move the pin to the corresponding `*_IMAGE` variable, which takes a
+  tag, a digest, or both.
+- **The supported Kubernetes floor at v1.7 is 1.32** (PR #15718; upstream's
+  [k8s support matrix](https://github.com/kubevirt/sig-release/blob/main/releases/k8s-support-matrix.md)
+  records v1.7 on 1.32–1.34), and `virt-api` now
+  scales its replica count with the number of `kubevirt.io/schedulable=true` nodes
+  (PR #15690) — a consumer policy or dashboard asserting a fixed `virt-api` replica
+  count goes stale.
+- **`virt-operator` carries a new pod label**
+  `np.kubevirt.io/allow-access-cluster-services: "true"`, upstream's selector for
+  KubeVirt control-plane NetworkPolicies. Nothing breaks without it; a consumer running
+  default-deny policies can select on it instead of on `kubevirt.io: virt-operator`.
+- **The v1.8 hop removes the macvtap and SLIRP core network bindings** (PRs #16453,
+  #16456). Their feature gates were already `Discontinued` at v1.7 and the admission
+  webhook rejects a VMI whose interface still requests either binding. A consumer with
+  such VMs MUST move them to a network-binding plugin (or another binding) before
+  applying this tag — the VMs do not start afterwards.
+- **`EnableVirtioFsConfigVolumes` reached GA and `ExperimentalVirtiofsSupport` went
+  inert** (PR #15913). The config-volumes feature is now unconditional, and the old
+  `ExperimentalVirtiofsSupport` gate no longer does anything (it carries no spec
+  predicate, so listing it is harmless but misleading). Drop both from the
+  `featureGates` list in the consumer overlay; the PVC case is
+  `EnableVirtioFsStorageVolumes` (`VirtIOFSStorageVolumeGate`,
+  `pkg/virt-config/featuregate/active.go`), which is still Alpha and therefore opt-in.
+- **`kubevirt_vmi_migration_data_total_bytes` is deprecated** in favour of
+  `kubevirt_vmi_migration_data_bytes_total` (PR #15975), matching the Prometheus naming
+  convention. The old name still exists at this tag, so nothing breaks yet — the same
+  silent-drift class as the v1.6 metric changes above.
+- **The `kubevirt_vmi_vcpu_count` recording rule is RENAMED to
+  `vmi:kubevirt_vmi_vcpu:count`** (PR #15968). Unlike the deprecations above this is a
+  rename at this tag — the old name stops existing, so any dashboard, alert or
+  downstream recording rule reading it goes silent with no error. Update the
+  expressions in the same change as this tag.
+- **A paused VMI can no longer be stopped directly** (PR #15405) — the request is
+  rejected and the VMI must be unpaused first. Lifecycle automation that stops VMIs
+  without checking the paused condition breaks here.
+- **`QuiesceFailed` is replaced by the `QuiesceTimeout` indication, and the Velero
+  pre-backup hook gains a 60 s timeout** (PR #16653). Backup tooling matching on
+  `QuiesceFailed` stops matching, and a Windows VSS quiesce that used to hang now
+  times out instead.
+- **VMI status reports at most 10 guest-only interfaces** (PR #16391). Interfaces in
+  the VMI *spec* are unaffected; inventory or controllers treating VMI status as the
+  complete interface list are wrong above ten.
+- **Two feature gates are deprecated and one gains a replacement field.**
+  `DisableMDEVConfiguration` is superseded by
+  `configuration.mediatedDevicesConfiguration.enabled` in the `KubeVirt` CR (PR
+  #16220) — move the setting there. `MultiArchitecture` is deprecated and **no longer
+  gates the admission check** that rejected VMs whose architecture differs from the
+  control plane (PR #16023): that rejection is gone whether or not the gate is set.
+- **The operator RBAC gains two new API groups**, `template.kubevirt.io`
+  (virtualmachinetemplates / -requests) and `backup.kubevirt.io`
+  (virtualmachinebackups / -trackers), for the new virt-template and VM-backup
+  components, plus their cert Secrets and a `nonResourceURLs: /metrics` grant. Purely
+  additive, and not narrowed here. `virt-operator` also applies client rate limits by
+  default now (200 QPS / 400 burst, tunable via `--client-qps` / `--client-burst` or
+  `VIRT_OPERATOR_CLIENT_{QPS,BURST}`, PR #16491).
+- **cgroup v1 is deprecated as of v1.9, with removal planned for the next release**
+  (PR #17809; maintenance mode since v1.6, PR #14538). Nodes still on cgroup v1 keep
+  working at this tag and stop working at the next minor — move them to v2 now, not
+  when the next bump lands.
+
+- **The v1.9 hop turns every Beta feature gate on.** Upstream changed what "Beta"
+  means (PR #17405): through v1.8 a Beta gate was opt-in like an Alpha one; from v1.9 it
+  is **enabled by default**, and the opt-out is the new
+  `spec.configuration.developerConfiguration.disabledFeatureGates` list. Sixteen gates
+  switch on at this tag without any change to the consumer overlay, including
+  `Template`, `Snapshot`, `NodeRestriction`, `PasstBinding`, `ImageVolume`,
+  `KubevirtSeccompProfile`, `WorkloadEncryptionSEV`, `RebootPolicy`,
+  `DeclarativeHotplugVolumes` and **two** of the three DRA gates — `GPUsWithDRA` and
+  `HostDevicesWithDRA` are Beta, `NetworkDevicesWithDRA` stays Alpha and therefore off
+  (`pkg/virt-config/featuregate/active.go`). A consumer who wants any of them off MUST
+  list it in `disabledFeatureGates` **in the same change** as this tag, using the gate's
+  string value (`Snapshot`, not the Go constant name `SnapshotGate`).
+- **v1.9 raises the supported Kubernetes floor to 1.34** (upstream
+  [k8s support matrix](https://github.com/kubevirt/sig-release/blob/main/releases/k8s-support-matrix.md):
+  v1.9 runs on 1.34–1.36). A cluster below 1.34 MUST be upgraded before this tag.
+- **`ImageVolume` on by default needs Kubernetes support that 1.34 does not give by
+  default.** The gate makes KubeVirt back containerDisks with the Kubernetes image
+  volume source instead of a sidecar container. Kubernetes ships `ImageVolume` as Beta
+  but **disabled** in 1.34, on by default in 1.35, and GA/locked in 1.36. So on a
+  Kubernetes **1.34** cluster — which v1.9 otherwise supports — a consumer MUST either
+  enable the `ImageVolume` feature gate on the API server and the kubelets (and confirm
+  the container runtime supports image volumes), or add `ImageVolume` to
+  `disabledFeatureGates`, **before** applying this tag. Otherwise containerDisk-backed
+  VMs stop starting. Clusters on 1.35 or 1.36 need nothing.
+- **`ExternalNetResourceInjection` is Beta and therefore on** — it stops the VMI
+  controller from querying `NetworkAttachmentDefinition` objects and stops
+  `virt-operator` deploying the related RBAC. A consumer relying on KubeVirt to inject
+  SR-IOV / bridge-marker / macvtap NAD resources MUST deploy upstream's
+  `network-resources-injector` before this tag, or disable the gate.
+- **`Template` being on by default deploys new workloads** (PR #18065). The
+  virt-template components come up automatically unless the gate is disabled, which
+  also explains the `template.kubevirt.io` and `plugin.kubevirt.io` grants added to the
+  operator RBAC. A consumer with a namespace resource quota or a restrictive
+  NetworkPolicy in `kubevirt` should expect additional pods.
+- **Eight features reached GA and can no longer be switched off**: `ExpandDisks`,
+  `LiveUpdateNADRef`, `MigrationPriorityQueue`, `SecureExecution`, `VMExport`,
+  `VideoConfig`, `PanicDevices` and `PersistentReservation`. Their gate names are inert
+  in `featureGates`, so a stale entry is harmless but should be cleaned up.
+  `HotplugVolumes` is deprecated in favour of `DeclarativeHotplugVolumes` (now Beta and
+  therefore on).
+- **More recording rules and metrics are deprecated** (PR #17065), among them the
+  `kubevirt_vm_created_total` recording rule and the `kubevirt_vm_created_by_pod_total`
+  metric — deprecated, still present at this tag, so nothing breaks yet. What v1.9 does
+  **remove** is the ephemeral-hotplug-volume metric and its
+  `VirtualMachineInstanceHasEphemeralHotplugVolume` alert (PR #18101): a rule or
+  dashboard naming either goes dead at this tag. Same silent-drift class as the v1.6 and
+  v1.8 metric changes above — the consumer's observability layer owns the fix.
+
+## Upgrade path — sequential, forward only
+
+Upstream supports only **N-1 -> N** upgrades, each hop starting from the latest patch
+of the current minor, and documents no downgrade path
+([updating_and_deletion](https://kubevirt.io/user-guide/cluster_admin/updating_and_deletion/)).
+The catalog therefore publishes **every** intermediate upstream minor as its own
+release. Three obligations follow:
+
+- **Apply the catalog tags in order.** Skipping a tag skips an upstream minor and puts
+  the cluster on an unsupported upgrade path. Read the CHANGELOG to see which upstream
+  version a catalog tag carries.
+- **Rolling a minor back is unsupported.** `Prune=false` on the `-crds` `Application`
+  protects against an accidental CR-cascade delete; it does **not** make a downgrade
+  safe — re-pinning the `-crds` tag can re-apply the older CRD schema while the newer
+  operator has already reconciled state against the newer one. Recovery from a failed
+  hop is forward (finish the hop) or a restore from a pre-hop backup.
+- **Take a cluster backup before every hop** (etcd snapshot or Velero), not only the
+  first.
+
+> **Documented deviation — the v1.5 patch hop.** Upstream's rule covers patches too:
+> within one minor, only consecutive patches are supported ("✗ Upgrade from v1.6.2 to
+> v1.6.4 is not supported"). The catalog moved v1.5.0 straight to **v1.5.3**, skipping
+> the published v1.5.1 and v1.5.2. Accepted deliberately: between v1.5.0 and v1.5.3 the
+> CRD schema is byte-identical and the `virt-operator` Deployment differs only in its
+> version pins, so the jump carries no schema or API change for the operator to
+> reconcile across. Every **minor** hop in this chain does start from the latest patch
+> of its minor, as upstream requires.
 
 ## Strict-B consumer wiring (ADR-0028)
 
