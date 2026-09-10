@@ -367,6 +367,7 @@ capabilities:
     instanced: true
     implementations:
       - {name: vault-operator, status: active, swap_class: data-migration}  # + vault-config-operator
+      - {name: vault-server, status: active, swap_class: data-migration}    # official Vault chart, human-custody manual-unseal (#827)
       - {name: openbao, status: considered, swap_class: drop-in}
       - {name: infisical, status: considered, swap_class: rewrite-required}
   - id: secret-config-declarative

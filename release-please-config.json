@@ -182,6 +182,10 @@
       "component": "secrets/vault-operator",
       "initial-version": "0.1.0"
     },
+    "sub-layers/secrets/components/vault-server": {
+      "component": "secrets/vault-server",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/security/components/tetragon": {
       "component": "security/tetragon",
       "initial-version": "0.1.0"
