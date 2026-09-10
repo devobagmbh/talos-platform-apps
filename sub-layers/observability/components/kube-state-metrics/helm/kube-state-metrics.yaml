@@ -4,13 +4,13 @@
 # topology, and PNI labels are consumer-overlay concerns — see customization.yaml
 # and the README §Consumer obligations).
 #
-# Chart 7.5.1 already ships a restricted-compliant pod-level securityContext and
+# Chart 8.4.2 already ships a restricted-compliant pod-level securityContext and
 # container-level containerSecurityContext. We pin both EXPLICITLY here
 # (explicit-not-inherited pattern) so a future chart bump cannot silently weaken
 # the posture that satisfies `pod-security.kubernetes.io/enforce: restricted` on
 # the namespace.
 #
-# NOTE on chart-specific key names (chart 7.5.1, verified via `helm show values`):
+# NOTE on chart-specific key names (chart 8.4.2, verified via `helm show values`):
 #   - the POD-level key is `securityContext:` (NOT `podSecurityContext:`) and it
 #     carries an `enabled:` gate that must be true for the block to render.
 #   - the CONTAINER-level key is `containerSecurityContext:`.
@@ -19,10 +19,10 @@
 metadata:
   chart: kube-state-metrics
   repo: https://prometheus-community.github.io/helm-charts
-  version: 7.5.1 # bare SemVer — NO leading 'v' (--version v7.5.1 fails to resolve)
-  # appVersion 2.19.1 → image tag registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1
+  version: 8.4.2 # bare SemVer — NO leading 'v' (--version v8.4.2 fails to resolve)
+  # appVersion 2.20.0 → image tag registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
   # (chart appVersion pin, NEVER :latest; never overridden here). VERIFY at push
-  # (`helm show chart kube-state-metrics --repo <repo> --version 7.5.1`).
+  # (`helm show chart kube-state-metrics --repo <repo> --version 8.4.2`).
   namespace: kube-state-metrics
 
 values:

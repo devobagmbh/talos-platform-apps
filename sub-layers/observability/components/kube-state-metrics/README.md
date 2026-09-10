@@ -19,8 +19,8 @@ component (precedent: `lifecycle/providers`). It is distinct from
 ## Contents
 
 A `kind: helm` wrapper over the `kube-state-metrics` chart
-(`https://prometheus-community.github.io/helm-charts`, version `7.5.1`,
-appVersion `2.19.1`) plus `manifests/00-namespace.yaml`:
+(`https://prometheus-community.github.io/helm-charts`, version `8.4.2`,
+appVersion `2.20.0`) plus `manifests/00-namespace.yaml`:
 
 - `Deployment` (`kube-state-metrics`) + `Service` + `ServiceAccount`, with the
   chart's cluster-wide read `ClusterRole` + `ClusterRoleBinding`.
@@ -29,12 +29,12 @@ appVersion `2.19.1`) plus `manifests/00-namespace.yaml`:
 The render is **single-container** — the optional `kube-rbac-proxy` sidecar is
 kept at its chart default (`kubeRBACProxy.enabled: false`). The image is pinned to
 the chart's appVersion
-(`registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.19.1`) — never
+(`registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0`) — never
 `:latest`.
 
 ## Security posture (pinned explicitly)
 
-Chart `7.5.1` already ships a restricted-compliant securityContext, but the
+Chart `8.4.2` already ships a restricted-compliant securityContext, but the
 catalog pins it **explicitly** (explicit-not-inherited) so a future chart bump
 cannot silently weaken it. Note the chart's value key names are chart-specific and
 differ from `metrics-server`:
