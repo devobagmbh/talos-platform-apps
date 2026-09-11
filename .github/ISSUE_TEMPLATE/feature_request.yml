@@ -1,6 +1,6 @@
 name: Feature Request
-description: Propose a new sub-layer feature, new Helm chart, pipeline improvement, or new convention
-labels: ["type:feature"]
+description: Propose a new sub-layer feature, a new Helm chart, a pipeline improvement, or a new convention
+labels: ["kind: feature", "area: gitops"]
 body:
   - type: dropdown
     id: sub-layer
@@ -20,7 +20,7 @@ body:
         - security
         - storage-block
         - storage-objects
-        - cross-cutting (Pipeline / Build / Tooling)
+        - cross-cutting (pipeline / build / tooling)
         - new (new sub-layer)
     validations:
       required: true
@@ -50,7 +50,7 @@ body:
   - type: textarea
     id: adr-impact
     attributes:
-      label: ADR-Impact
-      description: "If an ADR in talos-platform-docs is affected (e.g. 0009 Platform-Layer-Model, 0011 Secrets, 0015 Monitoring), please link it."
+      label: ADR impact
+      description: "If an ADR in talos-platform-docs is affected (e.g. 0009 Platform Layer Model, 0011 Secrets, 0015 Monitoring), please link it."
     validations:
       required: false
