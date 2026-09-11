@@ -13,7 +13,7 @@
 # not render a label selector against them in its own manifest, it watches them via
 # its reconcile loop (the cnpg / prometheus-operator precedent → selector_crs: [],
 # provided_selectors: {}). An image-version override (e.g. a different
-# linstor-server than the baked v1.33.3) would require a new vendored manifest or a
+# linstor-server than the baked v1.34.2) would require a new vendored manifest or a
 # consumer-side Kustomize patch of the image-config ConfigMap — not a freeze-line
 # shape.
 #
