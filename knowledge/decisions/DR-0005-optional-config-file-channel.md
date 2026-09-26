@@ -3,7 +3,7 @@ type: decision
 title: "DR-0005 — Optional consumer-replaceable config files in the customization contract"
 description: Extend the additive `optional` block of the customization contract with a `config_files` shape, so a component can declare a config file it ships with working content and the consumer replaces by kustomize patch; enforce the five rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-08-28
+timestamp: 2026-09-25
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-config-valid.yaml
@@ -153,7 +153,7 @@ stopped one name appearing twice.
 
 ## Named residuals
 
-- **No render binding.** Nothing compares a declared entry against the render. A declared `path`/`ref`/`key` that no rendered volume actually mounts passes green, so a one-character mismatch between the contract and `helm/*.yaml` produces a knob that silently does nothing. Same residual DR-0004 named for env placeholders, same most-likely defect class for any adopting component; tracked in [#802](https://github.com/devobagmbh/talos-platform-apps/issues/802). Keeping `default` verbatim-only (above) is what leaves that check buildable.
+- **No render binding.** Nothing compares a declared entry against the render. A declared `path`/`ref`/`key` that no rendered volume actually mounts passes green, so a one-character mismatch between the contract and `helm/*.yaml` produces a knob that silently does nothing. The residual DR-0004 named for env placeholders, whose existence half `task validate:env-keys` now gates (DR-0004 §No-shadowing) — this file-shape binding is still unbuilt; tracked in [#802](https://github.com/devobagmbh/talos-platform-apps/issues/802). Keeping `default` verbatim-only (above) is what leaves that check buildable.
 - **Shipped-content-usability is author-asserted, and this channel is cheaper to declare into.** No gate can tell whether the baked content is genuinely usable; an author could park a placeholder that makes the workload crash-loop under `optional` and the contract would validate. That is the same classification residual DR-0004 recorded for env defaults, but the incentive is sharper here: `required` makes existing consumers non-conformant against a required status check, so `optional` is the path of least resistance for a file that is genuinely mandatory. Review is the only control, and naming the residual is not itself a control.
 - **Reload semantics are prose.** Whether a replacement takes effect without a pod restart lives in `description` and is not machine-checkable.
 - **One `(ref, key)` at two paths is not representable** (see §`path`).

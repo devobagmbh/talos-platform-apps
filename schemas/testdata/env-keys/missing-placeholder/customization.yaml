@@ -1,0 +1,15 @@
+# Fixture for task test:env-keys — not a component. Only the fields the gate reads.
+provided_refs:
+  env: app-runtime-config
+  secret: app-runtime-secret
+required:
+  env_keys:
+    - OBJECT_STORE_ENDPOINT
+  secret_keys:
+    - ADMIN_PASSWORD
+    - config.yaml
+optional:
+  env_keys:
+    - name: REPLICATION_FACTOR
+      description: Replication factor of the ring.
+      default: "1"

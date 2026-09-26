@@ -3,7 +3,7 @@ type: reference
 title: CI and merge gates
 description: The CI conventions, the required status checks, and the branch-protection contract that gate a merge to main.
 tags: [reference, ci, merge-gate, branch-protection]
-timestamp: 2026-09-09
+timestamp: 2026-09-25
 sources:
   - AGENTS.md
   - Taskfile.yml
@@ -33,7 +33,7 @@ CLI is installed in CI from a pinned release asset. See
 All must be green, with `strict` on (the PR branch must be up to date with main):
 
 - `ci` - `task ci` (render + kubeconform + conftest + `validate:crd-split` +
-  `validate:release-config`, plus the bundle and hermetic `test:*` gates;
+  `validate:env-keys` + `validate:release-config`, plus the bundle and hermetic `test:*` gates;
   `Taskfile.yml` is the authoritative list).
   It does **not** run `validate:contract`: the customization contract rolls out per component
   (ADR-0024), so coupling the render/lint pipeline to it would let one broken contract block
