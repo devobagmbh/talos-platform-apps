@@ -10,8 +10,8 @@ two together form the strict-B pair: CRDs first (sync-wave -1), workload after
 (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream piraeus-operator release
-`manifest.yaml` at tag **v2.10.7**
-(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.10.7/manifest.yaml`).
+`manifest.yaml` at tag **v2.11.0**
+(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml`).
 piraeus-operator publishes no anonymously-pullable Helm chart (the upstream install
 method is `kubectl apply --server-side -f manifest.yaml`), so this component is
 delivered as raw manifests (`kind: manifests`) — the **non-CRD** objects extracted
@@ -25,7 +25,7 @@ invented pod labels.
 `manifests/10-operator.yaml` — everything else:
 
 - **Deployment `piraeus-operator-controller-manager`** (ns `piraeus-datastore`,
-  image `quay.io/piraeusdatastore/piraeus-operator:v2.10.7`) — the operator
+  image `quay.io/piraeusdatastore/piraeus-operator:v2.11.0`) — the operator
   controller. Metrics are disabled (`--metrics-bind-address=0`); there is no
   metrics Service.
 - **Deployment `piraeus-operator-gencert`** (ns `piraeus-datastore`, same image) —
@@ -36,8 +36,8 @@ invented pod labels.
   `piraeus-operator-validating-webhook-configuration`** — validates StorageClass
   and the Linstor CRs; `failurePolicy: Fail`.
 - **ConfigMap `piraeus-operator-image-config`** (ns `piraeus-datastore`) — bakes
-  the default component image versions (linstor-server **v1.33.3**, linstor-csi
-  v1.11.2, drbd-reactor, drbd-module-loader, …) from upstream v2.10.7.
+  the default component image versions (linstor-server **v1.34.2**, linstor-csi
+  v1.12.0, drbd-reactor, drbd-module-loader, …) from upstream v2.11.0.
 - **ServiceAccounts, Roles/ClusterRoles, RoleBindings/ClusterRoleBindings** for the
   controller-manager and gencert.
 
@@ -90,14 +90,35 @@ Application that creates `StorageClass` objects (a sibling CSI such as
 sync-wave** (≥ 1) than this operator (wave 0), so those applies do not land inside
 the operator's webhook boot window.
 
+This boot window is a **fresh-install** concern. Both Deployments run
+`replicas: 1` under the default rolling-update strategy, so on a version bump the
+new gencert pod becomes Ready before the old one terminates, the
+`webhook-server-cert` Secret and the patched `caBundle` are already in place, and
+the webhook Service never loses its endpoint — an upgrade does not re-open the
+window, and the sync-wave precaution above is not required for it.
+
 ## Image versions
 
-The `piraeus-operator-image-config` ConfigMap bakes the upstream v2.10.7 defaults
-(linstor-server **v1.33.3** and the other component images). A consumer that needs
+The `piraeus-operator-image-config` ConfigMap bakes the upstream v2.11.0 defaults
+(linstor-server **v1.34.2** and the other component images). A consumer that needs
 a different linstor-server (or other component) version applies a **consumer-layer
 Kustomize patch** to that ConfigMap in the consumer-cluster repo — the catalog
 ships the upstream default and bakes no image override here. A different baked
 default would require a new vendored manifest (a separate reviewed change).
+
+### Upgrade impact of a version bump
+
+Bumping this component's tag rolls the baked operand versions, so the operator
+reconciles **every operator-managed satellite DaemonSet** with the new images.
+During that rolling update LINSTOR provisioning and CSI attach/detach are
+transiently unavailable; DRBD volumes already attached to a pod keep serving I/O
+(upstream `docs/upgrade/README.md`). Consumers SHOULD schedule a bump into a
+maintenance window when uninterrupted provisioning is required.
+
+The `drbd-module-loader` image carries the DRBD **kernel** module. On a node with
+active DRBD resources the running module cannot be unloaded, so a loader bump does
+not take effect there until the node is drained and rebooted — the new module
+version is live only after a rolling node-maintenance cycle.
 
 ## RBAC scope (security note)
 
@@ -110,12 +131,28 @@ creates the satellite DaemonSets and their RBAC. It cannot be narrowed without
 breaking the operator; it is documented here for the security reviewer and kept
 verbatim from upstream.
 
-**Accepted risk (by design):** a compromise of the operator pod could write
-arbitrary `ClusterRole`/`ClusterRoleBinding` objects (CWE-269, privilege
-escalation). This grant is upstream-intrinsic and consciously accepted. Consumers
-SHOULD confine the operator's Argo Application to the `piraeus-datastore` namespace
-and MAY run a cluster admission policy (e.g. a Kyverno `restrict-clusteradmin`
-rule) so the operator cannot bind itself cluster-admin.
+Upstream v2.11.0 widened the ClusterRole by two rules, both kept verbatim:
+cluster-wide `create`/`get` on **`pods/exec`** (the operator runs commands inside
+the satellite pods it manages) and `patch` on
+`apiextensions.k8s.io/customresourcedefinitions/status`.
+
+**Accepted risk (by design):** a compromise of the operator pod opens two
+distinct escalation vectors (CWE-269, privilege escalation). Both grants are
+upstream-intrinsic and consciously accepted; each needs its own mitigation.
+
+- **RBAC-write vector** — the operator could write arbitrary
+  `ClusterRole`/`ClusterRoleBinding` objects. Consumers SHOULD confine the
+  operator's Argo Application to the `piraeus-datastore` namespace and MAY run a
+  cluster admission policy (e.g. a Kyverno `restrict-clusteradmin` rule) so the
+  operator cannot bind itself cluster-admin.
+- **Exec vector (new in v2.11.0)** — `pods/exec` carries no namespace or
+  `resourceNames` restriction, so the operator could exec into **any** pod in the
+  cluster and thereby read every Secret and ServiceAccount token mounted in a
+  running pod. Neither mitigation above touches this vector. Consumers SHOULD
+  alert on audit-log `pods/exec` events attributed to the
+  `piraeus-operator-controller-manager` ServiceAccount, and MAY add a consumer-side
+  Kyverno policy denying exec by that ServiceAccount into pods outside
+  `piraeus-datastore`.
 
 ## Consumer-required CRs (post-deploy, consumer-owned)
 
@@ -129,6 +166,17 @@ loop, it does not render a label selector against them.
 > **Hardware prerequisite (consumer/base):** replicated DRBD storage needs the DRBD
 > kernel module on the nodes (a Talos system-extension / machine-config concern in
 > the substrate layer), independent of this catalog artifact.
+
+**Privileged CR surface (new in v2.11.0):** the storage-pool
+`physicalVolumeCreateArguments` / `volumeGroupCreateArguments` /
+`logicalVolumeCreateArguments` / `zpoolCreateArguments` fields on
+`LinstorSatellite` and `LinstorSatelliteConfiguration` are unconstrained string
+arrays passed to `pvcreate` / `vgcreate` / `lvcreate` / `zpool create` inside the
+privileged satellite pods. Both CR kinds are Cluster-scoped, so write access to
+them is already highly privileged; consumers who grant it beyond cluster admins
+SHOULD restrict or audit these fields with a consumer-side Kyverno policy. Setting
+`zpoolCreateArguments` to an **empty** array also overrides the operator's default
+`-o failmode=continue`.
 
 ## Strict-B consumer wiring (ADR-0028)
 
