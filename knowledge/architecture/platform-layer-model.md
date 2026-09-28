@@ -3,7 +3,7 @@ type: architecture
 title: Platform-layer model
 description: The base / apps / consumer division of labor that structures the Devoba Talos platform.
 tags: [architecture, layers, oci]
-timestamp: 2026-09-09
+timestamp: 2026-09-25
 sources:
   - AGENTS.md
 ---

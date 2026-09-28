@@ -22,7 +22,7 @@
     "provided_refs": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Names under which the rendered workload expects config the consumer controls, by shape. Two ownership modes share these names: for a `required` shape the consumer AUTHORS the object; for an `optional` shape the artifact SHIPS the object with working content and the consumer replaces that content by kustomize patch. Empty {} for cluster-agnostic components.",
+      "description": "Names under which the rendered workload expects config the consumer controls, by shape. Two ownership modes share these names: for a `required` shape the consumer AUTHORS the object; for an optional CONFIG-FILE shape the artifact SHIPS the object with working content and the consumer replaces that content by kustomize patch. The env shape differs: an `optional.env_keys` default lives in the rendered config's placeholder, never in `provided_refs.env`, which the consumer authors — the artifact MUST NOT render a ConfigMap named like `provided_refs.env` or a Secret named like `provided_refs.secret` at all — its copy would collide with the consumer's object and could feed a baked value under any key (`task validate:env-keys` fails such a render, DR-0004 §No-shadowing). Empty {} for cluster-agnostic components.",
       "properties": {
         "env": {
           "type": "string",
@@ -145,7 +145,7 @@
         "env_keys": {
           "type": "array",
           "default": [],
-          "description": "Shape (a): scalar keys the consumer MAY set in the env ConfigMap (provided_refs.env) to override a baked default. Each entry documents one placeholder that actually exists in the rendered config. Note the residual: no gate compares a declared key against the render, so a declared key with no matching placeholder is a knob that silently does nothing.",
+          "description": "Shape (a): scalar keys the consumer MAY set to override a default the rendered config carries in its placeholder. Two delivery paths, both supported: the env ConfigMap (provided_refs.env), or a patch adding the key to the reading container's `env` via `source.kustomize.patches`. Prefer a strategic-merge patch with no `target:` selector whose body names the workload by kind, name and — when the rendered workload carries one — namespace, and the container by name: measured with kustomize 5.8.1 (DR-0004, not yet through Argo CD's bundled kustomize), a renamed workload then fails the build loudly, whereas a `target:` selector that matches nothing is a silent no-op. Where the artifact already wires the variable through a `valueFrom` entry, the patch sets `valueFrom: null` next to `value:` — a strategic-merge patch keeps unmentioned fields, and an EnvVar with both is invalid. A container `env` entry beats envFrom with no error, so the patch wins over the ConfigMap — remove the ConfigMap entry when switching paths. Only a patched `value:` literal changes the pod template and so reaches every pod through a rollout; the ConfigMap path and `valueFrom` are read at container start, so an unplanned restart can bring one pod up on a newer value, and an `OnDelete` workload never rolls. The artifact MUST NOT set a declared key itself — not as a container env entry, not as a data key of a ConfigMap or Secret it renders, not through a CLI flag for the same config field — because that value would silently override the consumer; `task validate:env-keys` catches the direct forms of the first two (an env entry not sourced from the consumer's own refs, a second entry of a consumer-sourced name, a key — prefix applied — of an artifact ConfigMap/Secret a container reads via envFrom, an artifact copy of the consumer's own provided_refs ConfigMap/Secret) and checks that each key's exact `${NAME}` / `${NAME:` placeholder exists; the forms it does not model, the CLI-flag case and the default's value stay unchecked (DR-0004 §Named residuals). A credential never belongs here: a patch carries it as a plaintext literal in the consumer's Application — use required.secret_keys. Rationale: knowledge/decisions/DR-0004-optional-customization-keys.md.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -154,7 +154,7 @@
               "name": {
                 "type": "string",
                 "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                "description": "Env variable name exactly as it appears in the rendered config placeholder (e.g. INGESTER_REPLICATION_FACTOR for ${INGESTER_REPLICATION_FACTOR:1}). Unique within optional.env_keys and never also present in required.env_keys."
+                "description": "Env variable name exactly as it appears in the rendered config placeholder (e.g. INGESTER_REPLICATION_FACTOR for Mimir's ${INGESTER_REPLICATION_FACTOR:1}). The placeholder's default syntax belongs to the workload binary's own expander and differs per product (Loki ${VAR:-1}, Mimir ${VAR:1} — each silently misreads the other's form), so measure it against the shipped binary; the measured table is in DR-0004. Unique within optional.env_keys and never also present in required.env_keys."
               },
               "description": {
                 "type": "string",

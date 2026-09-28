@@ -366,7 +366,7 @@ tasks:
       # partially-rendered catalog. Asserting crd-split alone left the other five unpinned,
       # so a future fail-closed "nothing rendered" arm in any of them would strand PRs while
       # this test stayed green.
-      RENDER_GATES="lint:rendered lint:kustomize-base validate:crd-split lint:version scan:conftest scan:psa-conformance"
+      RENDER_GATES="lint:rendered lint:kustomize-base validate:crd-split validate:env-keys lint:version scan:conftest scan:psa-conformance"
       run_logged() { # $1 label, $2 dir, rest: task + args; on failure print the captured log
         _label="$1"; _dir="$2"; shift 2
         if ! (cd "$_dir" && "$@" >"$tmp/${_label}.log" 2>&1); then
@@ -1303,6 +1303,209 @@ tasks:
         exit 0
       fi
       echo "crd-split: OK - every -crds artifact renders CRDs + carries the marker; every workload half is CRD-free"
+
+  validate:env-keys:
+    desc: 'Guard: the artifact never sets a declared env/secret key itself (no env entry, no artifact ConfigMap/Secret data key, no duplicate of a consumer-sourced env entry); every optional key has its placeholder. Assumes `task render` ran.'
+    summary: |
+      Render-side half of the env-key contract (DR-0004 §No-shadowing). For every component
+      whose customization.yaml declares `required.env_keys`, `required.secret_keys` or
+      `optional.env_keys`, reads rendered/manifest.yaml and fails when:
+        - a declared name is the `name` of an `env` list entry anywhere in the render
+          (containers, initContainers, an operator CR's `env` list) whose value is not read
+          via valueFrom from the consumer's own provided_refs ConfigMap/Secret — an `env`
+          value silently beats the consumer's envFrom;
+        - the render contains a ConfigMap named like provided_refs.env or a Secret named like
+          provided_refs.secret — those objects are consumer-authored, so an artifact copy
+          collides with the consumer's and would feed baked values under any key;
+        - an `env` list carries a name twice where one entry reads the consumer's ref — the
+          last duplicate wins, so a baked literal can override the consumer (this also covers
+          a remapped name such as harbor's EXT_ENDPOINT <- EXTERNAL_URL);
+        - a declared name, with the envFrom `prefix` applied, is a data/stringData/binaryData
+          key of a top-level ConfigMap or Secret the artifact renders AND a container reads
+          via envFrom (a mounted file's key cannot shadow an env variable);
+        - an `optional.env_keys` name has neither a `${<name>}` nor a `${<name>:` placeholder
+          in the render.
+      Unscoped, a catalog in which no component declares keys fails as vacuous.
+      Not checked (DR-0004 §Named residuals): CLI flags; List-wrapped or
+      operator-created ConfigMaps/Secrets; env set outside an `env` list (shell export in
+      `command`, map- or string-shaped CR fields, webhook injection); whether the reading
+      binary expands placeholders at all; whether the placeholder default equals `default`.
+      Scoped like the other render gates: under CI_SCOPE_RANGE only in-scope components are
+      judged; an in-scope component that declares keys but was not rendered fails. Every
+      yq status is captured, so an unevaluable file fails rather than reading as clean.
+      ENV_KEYS_FIXTURE=<dir> judges <dir>/customization.yaml against <dir>/manifest.yaml
+      only (the test:env-keys seam; rendered/ is gitignored, so fixtures cannot use it).
+    cmd: |
+      set -u
+      root="$(git rev-parse --show-toplevel)"
+      fail=0
+      checked=0
+      declaring=0
+      # 0 clean, 1 violation, 2 unevaluable
+      check_one() {
+        c="$1"; m="$2"; l="$3"
+        rc=0
+        names=$(yq -r '[(.required.env_keys // [])[], (.required.secret_keys // [])[], ((.optional.env_keys // [])[].name)] | unique | join(" ")' "$c" 2>/dev/null) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${l}: could not read the env keys from ${c} (yq exit ${rc})"
+          return 2
+        fi
+        [ -n "$names" ] || return 0
+        declaring=$((declaring + 1))
+        if [ ! -f "$m" ]; then
+          echo "UNCHECKED ${l}: declares env/secret keys but ${m} does not exist - run 'task render' first"
+          return 2
+        fi
+        opt=$(yq -r '[(.optional.env_keys // [])[].name] | unique | join(" ")' "$c" 2>/dev/null) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${l}: could not read optional.env_keys from ${c} (yq exit ${rc})"
+          return 2
+        fi
+        refs=$(yq -r '"\(.provided_refs.env // "")|\(.provided_refs.secret // "")"' "$c" 2>/dev/null) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${l}: could not read provided_refs from ${c} (yq exit ${rc})"
+          return 2
+        fi
+        # provided_refs.env/.secret are consumer-authored, so the artifact rendering either one is
+        # a leak by itself; that is also what lets an env entry whose valueFrom reads such a ref
+        # count as the consumer's value. A second entry of that name in the list is a leak,
+        # because the last one wins. Data keys count only in objects a container reads via
+        # envFrom (prefix applied): a mounted file's key cannot shadow an env variable.
+        leaks=$(yq -r -s --arg n "$names" --arg penv "${refs%%|*}" --arg psec "${refs#*|}" '($n | split(" ")) as $keys
+                | [ .[] | select(. != null) | select(.kind == "ConfigMap" or .kind == "Secret") ] as $objs
+                | [ $objs[] | select((.kind == "ConfigMap" and $penv != "" and .metadata.name == $penv)
+                                     or (.kind == "Secret" and $psec != "" and .metadata.name == $psec))
+                    | "owned-ref:" + .kind + "/" + .metadata.name ] as $owned
+                | def consumer: ($penv != "" and .valueFrom.configMapKeyRef.name? == $penv)
+                                or ($psec != "" and .valueFrom.secretKeyRef.name? == $psec);
+                  [ .[] | select(. != null) | .. | objects | select((.env | type) == "array") | .env ] as $lists
+                | [ $lists[][] | objects | select(consumer | not) | .name? ] as $env
+                | [ $lists[] | [ .[] | objects | select(consumer) | .name ] as $c
+                    | [ .[] | objects | .name? ] | group_by(.) | map(select(length > 1) | .[0])
+                    | map(select(. as $d | $c | index($d))) | .[] ] as $dup
+                | [ .[] | select(. != null) | .. | objects | select((.envFrom | type) == "array") | .envFrom[] | objects
+                    | (.prefix // "") as $p
+                    | (if .configMapRef then ["ConfigMap", .configMapRef.name]
+                       elif .secretRef then ["Secret", .secretRef.name] else empty end) as [$k, $nm]
+                    | $objs[] | select(.kind == $k and .metadata.name == $nm)
+                    | ((.data // {}) + (.stringData // {}) + (.binaryData // {})) | keys[] | $p + . ] as $data
+                | [ ($keys - ($keys - $env))[] | "env:" + . ] + [ ($keys - ($keys - $data))[] | "data-key:" + . ]
+                  + [ $dup | unique | .[] | "duplicate-env:" + . ] + $owned
+                | join(" ")' "$m" 2>/dev/null) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "UNCHECKED ${l}: could not evaluate ${m} (yq exit ${rc})"
+          return 2
+        fi
+        src=0
+        if [ -n "$leaks" ]; then
+          echo "✗ ${l}: REJECTED - this render would override what the consumer sets: ${leaks}"
+          echo "    That value would silently override what the consumer supplies. Leave the key to the consumer; an optional key's default lives only in the config placeholder."
+          src=1
+        fi
+        for k in $opt; do
+          if ! grep -qF "\${${k}}" "$m" && ! grep -qF "\${${k}:" "$m"; then
+            echo "✗ ${l}: optional env key ${k} has no \${${k}} / \${${k}:...} placeholder in the render - setting it would do nothing"
+            src=1
+          fi
+        done
+        return $src
+      }
+      judge() {
+        if check_one "$1" "$2" "$3"; then
+          checked=$((checked + 1))
+        else
+          r=$?
+          fail=1
+          if [ "$r" -eq 2 ]; then
+            echo "✗ ${3}: UNCHECKED counts as a failure"
+          fi
+        fi
+      }
+      if [ -n "${ENV_KEYS_FIXTURE:-}" ]; then
+        judge "$ENV_KEYS_FIXTURE/customization.yaml" "$ENV_KEYS_FIXTURE/manifest.yaml" "$ENV_KEYS_FIXTURE"
+        [ "$fail" -eq 0 ] || exit 1
+        echo "env-keys: OK - ${ENV_KEYS_FIXTURE}"
+        exit 0
+      fi
+      scope_all=yes
+      scope_file="$(mktemp)"
+      trap 'rm -f "$scope_file"' EXIT
+      if [ -n "${CI_SCOPE_RANGE:-}" ]; then
+        if ! task --silent -d "$root" scope:components >"$scope_file"; then
+          echo "env-keys: the scope resolver failed - refusing to interpret that as an empty scope" >&2
+          exit 1
+        fi
+        grep -qx 'ALL' "$scope_file" || scope_all=no
+      fi
+      for c in "$root"/sub-layers/*/components/*/customization.yaml; do
+        [ -f "$c" ] || continue
+        d="$(dirname "$c")"
+        id="$(basename "$(dirname "$(dirname "$d")")")/$(basename "$d")"
+        if [ "$scope_all" = no ] && ! grep -qxF "$id" "$scope_file"; then
+          continue
+        fi
+        judge "$c" "$d/rendered/manifest.yaml" "$id"
+      done
+      [ "$fail" -eq 0 ] || { echo "env-keys: FAILED (see above)" >&2; exit 1; }
+      if [ "$scope_all" = yes ] && [ "$declaring" -eq 0 ]; then
+        echo "env-keys: no component declares env/secret keys across the full catalog - refusing to pass vacuously" >&2
+        exit 1
+      fi
+      echo "env-keys: OK - ${checked} in-scope component(s) checked, ${declaring} of them declare env/secret keys"
+
+  test:env-keys:
+    desc: 'Red-green test for validate:env-keys (1 positive + 16 negatives; in task ci + ci:artifact)'
+    summary: |
+      Hermetic, network-free. Drives validate:env-keys over schemas/testdata/env-keys/<case>/
+      via the ENV_KEYS_FIXTURE seam. The positive carries consumer-sourced valueFrom entries
+      (configMapKeyRef, secretKeyRef, a remapped name), an artifact ConfigMap and Secret read
+      via envFrom, and a file-shaped secret key equal to a mounted ConfigMap's key; all MUST be
+      accepted. Every
+      negative is the positive plus ONE change, so reverting the one check it targets
+      accepts it:
+        env-leak               a container env literal named like a declared optional key
+        init-env-leak          the same in an initContainer
+        cr-env-leak            the same in an operator CR's env list
+        required-env-leak      an env literal named like a required env key
+        secret-key-env-leak    an env literal named like a required secret key
+        duplicate-consumer-env a baked literal after a consumer-sourced entry of that name
+        artifact-owned-consumer-ref     the artifact renders provided_refs.env (read via valueFrom)
+        artifact-owned-consumer-secret  the artifact renders provided_refs.secret (unread)
+        configmap-leak         a declared key in an envFrom'd artifact ConfigMap
+        envfrom-prefix-leak    the same, composed by an envFrom `prefix`
+        secret-leak            the same as a Secret stringData key
+        secret-data-leak       the same as a Secret data key
+        missing-placeholder    an optional key whose placeholder is absent
+        placeholder-prefix     an optional key that is only a prefix of a placeholder
+      plus `malformed` and `malformed-customization`, unparseable inputs that MUST fail
+      (UNCHECKED is a failure).
+    cmd: |
+      set -u
+      td="schemas/testdata/env-keys"
+      fail=0
+      pass_case() {
+        if ENV_KEYS_FIXTURE="$td/$1" task validate:env-keys >/dev/null 2>&1; then
+          echo "✓ $1 accepted"
+        else
+          echo "✗ FAIL: $1 must be ACCEPTED but the gate rejected it"; fail=1
+        fi
+      }
+      reject_case() {
+        if ENV_KEYS_FIXTURE="$td/$1" task validate:env-keys >/dev/null 2>&1; then
+          echo "✗ FAIL: $1 must be REJECTED but the gate accepted it"; fail=1
+        else
+          echo "✓ $1 rejected"
+        fi
+      }
+      pass_case   positive
+      for n in env-leak init-env-leak cr-env-leak required-env-leak secret-key-env-leak \
+               duplicate-consumer-env artifact-owned-consumer-ref artifact-owned-consumer-secret configmap-leak \
+               envfrom-prefix-leak secret-leak secret-data-leak \
+               missing-placeholder placeholder-prefix malformed malformed-customization; do
+        reject_case "$n"
+      done
+      if [ "$fail" -eq 0 ]; then echo "test:env-keys OK - 1 positive accepted, 16 negatives rejected"; fi
+      exit "$fail"
 
   lint:version:
     desc: 'A7 parity (apps#226): render-source⇒version guard + declared version.<sot> vs rendered reality (parity needs `task render`)'
@@ -5784,6 +5987,8 @@ tasks:
       - task: test:validate-trivyignore
       # Also in ci:artifact so a direct/backfill tag push red-greens the kustomize-build gate.
       - task: test:kustomize-base
+      # Also in ci:artifact so a direct/backfill tag push red-greens the env-key gate (DR-0004).
+      - task: test:env-keys
       # Red-greens render:one's failure propagation (#704) BEFORE `render` runs below, so a
       # regression that lets a failed chart render leave a truncated manifest behind is
       # caught by this hermetic fixture rather than by whatever gate later reads that file.
@@ -5799,6 +6004,7 @@ tasks:
       - task: lint:rendered
       - task: lint:kustomize-base
       - task: validate:crd-split
+      - task: validate:env-keys
       - task: lint:version
       - task: scan:conftest-verify
       - task: scan:conftest
