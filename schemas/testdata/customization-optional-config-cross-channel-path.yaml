@@ -1,0 +1,30 @@
+# SEMANTIC NEGATIVE (S5): a consumer-AUTHORED file (required) and an
+# artifact-BAKED file (optional) declare the same mount path, with distinct
+# (ref, key) identities. Schema-valid, and S3 does not see it — S3 compares
+# identities, and these differ. This is the worst case of the path contradiction,
+# not an excluded one: the two files have different OWNERS, so "which one does the
+# workload read" decides whether the consumer's own file is loaded at all. The
+# fixture must PASS check-jsonschema and FAIL the semantic check.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-mandatory-config
+      key: rules.yaml
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-config
+      key: rules.yaml
+      description: Rule set the workload evaluates.
+      default: |
+        rules: []
+sync_wave: "10"
+external_dependencies: []

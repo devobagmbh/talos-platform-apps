@@ -1,0 +1,18 @@
+# NEGATIVE: required.config_files[].key violates the ConfigMap data-key charset.
+# Same identity argument as the sibling bad-ref fixture: the `|` would collide the
+# "<ref>|<key>" pair S3/S4 group on.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/mandatory.yaml
+      ref: fixture-mandatory-config
+      key: mandatory|yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "10"
+external_dependencies: []

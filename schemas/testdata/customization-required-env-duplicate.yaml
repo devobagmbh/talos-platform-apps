@@ -1,0 +1,20 @@
+# NEGATIVE: one name twice in required.env_keys. The semantic gate's S2 groups
+# optional.env_keys[].name and cannot see this list — it holds plain strings — so
+# `uniqueItems` is what carries within-channel uniqueness on the required side.
+# required.secret_keys carries the same keyword for the same reason; it is left
+# unbound here by symmetry rather than over-determining this fixture.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: ["FIXTURE_KEY", "FIXTURE_KEY"]
+  config_files:
+    - path: /etc/fixture/mandatory.yaml
+      ref: fixture-mandatory-config
+      key: mandatory.yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "10"
+external_dependencies: []

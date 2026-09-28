@@ -1,0 +1,18 @@
+# NEGATIVE: required.config_files[].ref exceeds the 253-character bound
+# Kubernetes enforces for object names. The charset is valid, so only maxLength
+# fires. The matching bound on `key` is left unbound by symmetry with this one.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files:
+    - path: /etc/fixture/mandatory.yaml
+      ref: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      key: mandatory.yaml
+  secret_keys: []
+  selector_crs: []
+sync_wave: "10"
+external_dependencies: []

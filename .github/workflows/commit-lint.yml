@@ -52,7 +52,7 @@ jobs:
         if: github.event_name == 'merge_group'
         run: 'echo "merge_group: PR title/scope is immutable post-approval — enforced at PR time."'
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
         if: github.event_name == 'pull_request'
         with:
           # fetch-depth: 0 so the three-dot (merge-base) scope diff can reach both the PR

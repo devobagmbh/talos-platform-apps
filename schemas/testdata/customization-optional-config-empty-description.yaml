@@ -1,0 +1,24 @@
+# NEGATIVE: `description` is the empty string. The field carries minLength: 1
+# because an undocumented knob is not a contract, and until this fixture existed
+# that keyword was unbound in both optional shapes — removing it turned no fixture
+# green, which is exactly the property the task claims for every negative.
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  config: fixture-config
+provided_selectors: {}
+required:
+  env_keys: []
+  config_files: []
+  secret_keys: []
+  selector_crs: []
+optional:
+  config_files:
+    - path: /etc/fixture/rules.yaml
+      ref: fixture-config
+      key: rules.yaml
+      description: ""
+      default: |
+        rules: []
+sync_wave: "10"
+external_dependencies: []
