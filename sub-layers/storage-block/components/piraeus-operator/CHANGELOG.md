@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/storage-block/piraeus-operator-v0.2.1...storage-block/piraeus-operator-v0.3.0) (2026-09-28)
+
+
+### Features
+
+* **storage-block/piraeus-operator:** bump workload to upstream v2.11.0 ([#844](https://github.com/devobagmbh/talos-platform-apps/issues/844)) ([b00762e](https://github.com/devobagmbh/talos-platform-apps/commit/b00762ec18ed60a04892014b4a1288298160127e))
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/storage-block/piraeus-operator-v0.2.0...storage-block/piraeus-operator-v0.2.1) (2026-07-15)
 
 
