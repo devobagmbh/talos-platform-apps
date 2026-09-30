@@ -137,6 +137,10 @@
     "sub-layers/observability/components/prometheus-operator-crds": {
       "component": "observability/prometheus-operator-crds"
     },
+    "sub-layers/observability/components/smartctl-exporter": {
+      "component": "observability/smartctl-exporter",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/tempo": {
       "component": "observability/tempo",
       "initial-version": "0.1.0"

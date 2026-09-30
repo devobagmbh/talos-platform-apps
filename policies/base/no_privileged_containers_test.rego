@@ -83,6 +83,48 @@ test_allowed_mps_control_daemon_ctr_suppressed if {
 	}
 }
 
+# smartctl-exporter — namespace-less render (the chart emits no
+# metadata.namespace) matches the "" namespace key
+test_allowed_smartctl_exporter_namespaceless_suppressed if {
+	count(deny) == 0 with input as {
+		"kind": "DaemonSet",
+		"metadata": {"name": "smartctl-exporter-0"},
+		"spec": {"template": {"spec": {"containers": [{
+			"name": "main",
+			"image": "quay.io/prometheuscommunity/smartctl-exporter:v0.14.0",
+			"securityContext": {"privileged": true},
+		}]}}},
+	}
+}
+
+# The "" key matches only a namespace-less workload, not one in an explicit namespace
+test_near_miss_smartctl_exporter_explicit_namespace_still_denies if {
+	result := deny with input as {
+		"kind": "DaemonSet",
+		"metadata": {"name": "smartctl-exporter-0", "namespace": "other-ns"},
+		"spec": {"template": {"spec": {"containers": [{
+			"name": "main",
+			"image": "quay.io/prometheuscommunity/smartctl-exporter:v0.14.0",
+			"securityContext": {"privileged": true},
+		}]}}},
+	}
+	count(result) > 0
+}
+
+# A namespace-less workload not on the allow-list still denies
+test_near_miss_namespaceless_different_container_still_denies if {
+	result := deny with input as {
+		"kind": "DaemonSet",
+		"metadata": {"name": "smartctl-exporter-0"},
+		"spec": {"template": {"spec": {"containers": [{
+			"name": "new-sidecar",
+			"image": "app:v1.0.0",
+			"securityContext": {"privileged": true},
+		}]}}},
+	}
+	count(result) > 0
+}
+
 # ---------------------------------------------------------------------------
 # Near-miss-still-denies — one case per key field
 # The allow-list is (namespace, kind, workload-name, container-name); each test

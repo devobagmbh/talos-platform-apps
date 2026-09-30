@@ -73,10 +73,17 @@ _privileged_allowed := {
 	# node label. Rationale: issue #55 / PR #517.
 	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-mounts"],
 	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-ctr"],
+	# smartctl-exporter — smartctl's disk pass-through ioctls need root, and only a
+	# privileged container may open host block devices (the runtime's device
+	# cgroup allowlist denies them otherwise). The chart hard-codes privileged: true
+	# with no value to change it. Its templates emit no metadata.namespace, so the
+	# key is "" (namespace set by the consumer at apply). Rationale: issue #885.
+	["", "DaemonSet", "smartctl-exporter-0", "main"],
 }
 
 _is_allowed(t, c) if {
-	[t.metadata.namespace, t.kind, t.metadata.name, c.name] in _privileged_allowed
+	ns := object.get(t.metadata, "namespace", "")
+	[ns, t.kind, t.metadata.name, c.name] in _privileged_allowed
 }
 
 # Per-target container extractor — avoids cross-target mixing when _targets has >1 member.

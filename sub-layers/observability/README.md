@@ -26,6 +26,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 | [`node-exporter`](components/node-exporter/) | 0 | Helm `prometheus-community/prometheus-node-exporter` (host/node metrics — `node_*` series, per-node DaemonSet with host access, scraped by Alloy) | `oci://.../observability/node-exporter:vX.Y.Z` |
 | [`blackbox-exporter`](components/blackbox-exporter/) | 0 | Helm `prometheus-community/prometheus-blackbox-exporter` (synthetic HTTP/TCP/DNS probing — Alloy scrape target + bidirectional cross-cluster watchdog) | `oci://.../observability/blackbox-exporter:vX.Y.Z` |
 | [`nvidia-dcgm-exporter`](components/nvidia-dcgm-exporter/) | 0 | Helm `nvidia.github.io/dcgm-exporter` 4.8.2 (per-GPU-node DaemonSet, `DCGM_FI_*` GPU metrics; privileged ns — SYS_ADMIN + hostPath; GPU-node nodeSelector + scrape wiring are consumer obligations) | `oci://.../observability/nvidia-dcgm-exporter:vX.Y.Z` |
+| [`smartctl-exporter`](components/smartctl-exporter/) | 0 | Helm `prometheus-community/prometheus-smartctl-exporter` 0.17.1 (per-node DaemonSet, `smartctl_*` disk SMART health series; privileged ns — privileged container + `/dev` hostPath; amd64-only image, scrape wiring and alert rules are consumer obligations) | `oci://.../observability/smartctl-exporter:vX.Y.Z` |
 
 > **`kube-prometheus-stack` is a stack, not a component** — there is **no**
 > `components/kube-prometheus-stack/` directory and **no**
@@ -37,7 +38,7 @@ OCI distribution per component (ADR-0009). Consumer clusters pick the subset (a 
 > `validate:crd-split`). The stack itself is the *composition* of the components
 > above, documented in the dedicated section below.
 
-Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter. Wave 10: three storage endpoints (each requiring the `s3-object` capability; the platform's Garage impl provides it). Wave 20: collectors + UI (need the endpoints from wave 10) — the node-local `alloy` DaemonSet (logs/metrics/traces), the clustered `alloy-metrics` StatefulSet (Prometheus-format metrics discovery), the `alloy-singleton` Deployment (cluster Event collection), and Grafana.
+Wave -1: `prometheus-operator-crds` and `grafana-operator-crds` (strict-B CRDs artifacts, ADR-0028 — the `monitoring.coreos.com` and `grafana.integreatly.org` CRDs land before any controller or consumer CR). Wave 0: operator workload + Hubble + metrics-server + kube-state-metrics + node-exporter + smartctl-exporter. Wave 10: three storage endpoints (each requiring the `s3-object` capability; the platform's Garage impl provides it). Wave 20: collectors + UI (need the endpoints from wave 10) — the node-local `alloy` DaemonSet (logs/metrics/traces), the clustered `alloy-metrics` StatefulSet (Prometheus-format metrics discovery), the `alloy-singleton` Deployment (cluster Event collection), and Grafana.
 
 `hubble` is orthogonal to the LGTM-A stack (network-flow visibility from the Cilium substrate, not logs/metrics/traces) and depends only on the Cilium-agent Hubble server — see [`components/hubble/`](components/hubble/) for the substrate precondition.
 
