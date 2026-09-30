@@ -45,6 +45,13 @@ values:
     limits:
       memory: 128Mi
 
+  # -- (object) the chart's ServiceAccount has no automount switch, so
+  # manifests/10-serviceaccount.yaml ships it with the token unmounted; the
+  # exporter never calls the API server.
+  serviceAccount:
+    create: false
+    name: smartctl-exporter
+
   # -- (bool) NOT shipped: the chart binds the ServiceAccount to a
   # PodSecurityPolicy ClusterRole (`unrestricted-psp`). PSP was removed in
   # Kubernetes 1.25 and the ClusterRole does not exist.

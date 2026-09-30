@@ -29,7 +29,8 @@ A `kind: helm` wrapper over the `prometheus-smartctl-exporter` chart
 - `DaemonSet` (`smartctl-exporter-0`). The chart appends the `-<idx>` suffix.
 - `Service` (`smartctl-exporter`, ClusterIP, port `80` → the container's `http` port
   `9633`).
-- `ServiceAccount` (`smartctl-exporter`).
+- `ServiceAccount` (`smartctl-exporter`, from `manifests/10-serviceaccount.yaml` with
+  `automountServiceAccountToken: false`; the chart's own has no automount switch).
 - A dedicated `smartctl-exporter` `Namespace` (the chart ships none).
 
 No rendered object sets `metadata.namespace`. The workload lands in the
@@ -122,7 +123,6 @@ The consumer adds, in its Argo overlay:
     be read
 - **Optional hardening and tuning:**
   - `readOnlyRootFilesystem: true`; the exporter writes nothing.
-  - `automountServiceAccountToken: false`; it needs no API access.
   - A longer `--smartctl.interval`.
   - Tolerations beyond the shipped `NoSchedule`/`Exists`; a `NoExecute`-tainted node
     evicts the pod.
