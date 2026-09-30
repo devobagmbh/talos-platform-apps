@@ -32,7 +32,7 @@ A `kind: helm` wrapper over the `prometheus-smartctl-exporter` chart
 - `ServiceAccount` (`smartctl-exporter`).
 - A dedicated `smartctl-exporter` `Namespace` (the chart ships none).
 
-The chart's templates set no `metadata.namespace`. The workload lands in the
+No rendered object sets `metadata.namespace`. The workload lands in the
 Application's destination namespace, which MUST be `smartctl-exporter`, the namespace
 this artifact ships and labels.
 
@@ -45,8 +45,9 @@ The render contains **no** CRD, `ServiceMonitor`, `PrometheusRule` or RBAC bindi
   PodSecurityPolicy ClusterRole that does not exist, because PSP was removed in
   Kubernetes 1.25.
 - **ServiceMonitor and PrometheusRule are not shipped.** The chart's bundled rules
-  watch only the overall verdict and NVMe fields. None reads an ATA raw counter, so a
-  SATA disk that reports PASSED with pending sectors would stay silent.
+  cover the overall verdict, NVMe fields, interface speed and temperature. None reads
+  an ATA raw counter, so a SATA disk that reports PASSED with pending sectors would
+  stay silent.
 
 ## Host access and security posture (essential, intentional)
 
@@ -61,7 +62,8 @@ The pod also mounts the host's `/dev` at `/hostdev` (`hostPath`). It is not
 `hostNetwork`.
 
 The `no_privileged_containers` policy allow-lists exactly this container
-(`DaemonSet/smartctl-exporter-0`, container `main`; #885).
+(`DaemonSet/smartctl-exporter-0`, container `main`, under the empty-namespace key
+because the render carries no namespace; #885).
 
 ## Architecture
 

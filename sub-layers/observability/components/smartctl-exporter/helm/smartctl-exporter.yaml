@@ -56,8 +56,9 @@ values:
   serviceMonitor:
     enabled: false
 
-  # -- (bool) NOT shipped: the chart's rules alert only on the drive's overall
-  # verdict and NVMe fields, never on an ATA raw counter, so a SATA disk that
-  # reports PASSED with pending sectors stays silent. Alerting is the consumer's.
+  # -- (bool) NOT shipped: the chart's rules cover the overall verdict, NVMe
+  # fields, interface speed and temperature, never an ATA raw counter, so a SATA
+  # disk that reports PASSED with pending sectors stays silent. Alerting is the
+  # consumer's.
   prometheusRules:
     enabled: false
