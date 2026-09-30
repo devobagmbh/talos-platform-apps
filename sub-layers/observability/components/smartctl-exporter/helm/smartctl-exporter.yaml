@@ -1,0 +1,63 @@
+# smartctl-exporter — disk SMART health exporter (smartctl_* series).
+#
+# The chart hard-codes the container securityContext to `privileged: true` +
+# `runAsUser: 0` in its DaemonSet template; no value changes it. Both are
+# required: smartctl's pass-through ioctls need root or CAP_SYS_RAWIO, and a
+# non-privileged container cannot open host block devices whatever its
+# capabilities (the runtime's device cgroup allowlist). Hence the PSA level
+# `privileged` (manifests/00-namespace.yaml) and the
+# `no_privileged_containers` allow-list entry (#885).
+
+metadata:
+  chart: prometheus-smartctl-exporter
+  repo: https://prometheus-community.github.io/helm-charts
+  version: 0.17.1 # bare SemVer — NO leading 'v'. VERIFY at push (`helm show chart prometheus-smartctl-exporter --repo <repo> --version 0.17.1`).
+  namespace: smartctl-exporter
+
+values:
+  # -- (string) names the rendered objects `smartctl-exporter`; the chart appends
+  # `-<idx>` to the DaemonSet name, so it renders as `smartctl-exporter-0`, which
+  # the `no_privileged_containers` allow-list keys on.
+  fullnameOverride: smartctl-exporter
+
+  # -- (string) digest-pinned image. The chart renders `<repository>:<tag>` and has
+  # no digest field, so the digest rides in the tag (metrics-server precedent).
+  # CHART-BUMP CHECKLIST: update the tag prefix to the new appVersion AND
+  # re-resolve the digest (`oras manifest fetch --descriptor <image>:<tag>`),
+  # or the runtime keeps pulling the old pinned digest without error.
+  image:
+    tag: v0.14.0@sha256:cfe22c36d7d2fac48ebf619707305acb65eb0fb670656eb80f356e606d782bc1
+
+  # -- (object) upstream publishes v0.14.0 for linux/amd64 only (a manifest list
+  # with one entry); on any other architecture the pod fails with an exec-format
+  # error. Widen only after the pinned image gains the architecture.
+  nodeSelector:
+    kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+
+  # -- (object) no CPU limit: a scrape blocks while smartctl runs, so CFS
+  # throttling would lengthen scrapes into timeouts. The memory limit satisfies
+  # `required_resource_limits`.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+  # -- (bool) NOT shipped: the chart binds the ServiceAccount to a
+  # PodSecurityPolicy ClusterRole (`unrestricted-psp`). PSP was removed in
+  # Kubernetes 1.25 and the ClusterRole does not exist.
+  rbac:
+    create: false
+
+  # -- (bool) NOT shipped: scrape wiring is a consumer-overlay concern (ADR-0024),
+  # and it would add a render-time dependency on the ServiceMonitor CRD.
+  serviceMonitor:
+    enabled: false
+
+  # -- (bool) NOT shipped: the chart's rules alert only on the drive's overall
+  # verdict and NVMe fields, never on an ATA raw counter, so a SATA disk that
+  # reports PASSED with pending sectors stays silent. Alerting is the consumer's.
+  prometheusRules:
+    enabled: false

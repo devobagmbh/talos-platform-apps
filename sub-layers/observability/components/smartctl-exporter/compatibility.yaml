@@ -1,0 +1,14 @@
+# Needs only host access to /dev (a substrate precondition, not a catalog
+# component or capability dependency — ADR-0009, #71).
+requires: {}
+provides:
+  - name: smartctl-exporter
+    version:
+      sot: app
+      app: v0.14.0 # chart appVersion; the image tag in helm/ must match
+      chart: 0.17.1
+    api_surface: []
+    # No-capability by design: the exporter is a scrape source for the
+    # smartctl_* series with no drop-in alternative behind a shared interface
+    # (node-exporter precedent). Not a deferral.
+    capabilities: []
