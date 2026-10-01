@@ -290,8 +290,12 @@ puts `helm.sh/chart` on the **pod template** labels (it stays on the Deployment,
 Service, ServiceAccount, ClusterRole and ClusterRoleBinding). A consumer selecting
 pods on that label — a NetworkPolicy podSelector, a `ServiceMonitor`/`PodMonitor`
 selector, a `kubectl -l` query — must select on
-`app.kubernetes.io/name: kube-state-metrics` instead. The `Deployment`'s own
-`spec.selector.matchLabels` is untouched, so the Deployment stays patchable in place.
+`app.kubernetes.io/name: kube-state-metrics` instead. **This is the silent one:** a
+selector matching nothing raises no error anywhere, so an isolating NetworkPolicy
+simply stops applying to these pods and a `ServiceMonitor` stops producing targets.
+Check every selector that names `helm.sh/chart` before upgrading. The `Deployment`'s
+own `spec.selector.matchLabels` is untouched, so the Deployment stays patchable in
+place.
 No value key this component sets is renamed or removed; the chart's only values delta
 is the `kubeRBACProxy` default image tag, and that sidecar is disabled here.
 
@@ -306,12 +310,18 @@ Two further consumer-visible changes come from the CRS plumbing:
     was absent, since the append form `/-` needs an existing array. RFC 6902 §4.1
     makes `add` on an existing member a **replace**, so that patch now drops the
     baked `customresourcestate-config` volume while the container keeps its
-    `volumeMounts` entry and the `--custom-resource-state-config-file` arg: the pod
-    does not start. Switch to per-element append
+    `volumeMounts` entry and the `--custom-resource-state-config-file` arg. This
+    fails loudly rather than silently: a `volumeMount` naming no volume is rejected
+    by API-server validation, so the `Deployment` update is refused with
+    `spec.template.spec.containers[0].volumeMounts[0].name: Not found:
+    "customresourcestate-config"` and Argo reports a sync error — the running
+    workload is left as it was. Switch to per-element append
     (`op: add, path: /spec/template/spec/volumes/-`) or a named strategic-merge
     patch. The same applies to the parallel `volumeMounts` path.
   - A consumer patching by **index** (`/spec/template/spec/volumes/0`) — index `0`
-    is now the catalog's volume, not the consumer's.
+    is now the catalog's volume, not the consumer's. Depending on what the patch
+    writes, this one can pass validation and take effect wrongly rather than being
+    refused.
 - The `ClusterRole` gains `list`/`watch` on
   `apiextensions.k8s.io/customresourcedefinitions`.
 
