@@ -3,7 +3,7 @@ type: decision
 title: "DR-0005 — Optional consumer-replaceable config files in the customization contract"
 description: Extend the additive `optional` block of the customization contract with a `config_files` shape, so a component can declare a config file it ships with working content and the consumer replaces by kustomize patch; enforce the five rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-08-28
+timestamp: 2026-09-25
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-config-valid.yaml
@@ -104,7 +104,7 @@ JSON Schema can express none of these, and each is a silent failure. All are ass
 - **S6** — an `optional.config_files[].ref` is never `provided_refs.secret` (see §ConfigMap only above).
 - **S7** — an `optional.config_files[].ref` IS `provided_refs.config`. The positive counterpart to S6, and the rule that actually closes the omission path (see §ConfigMap only above).
 
-`semantic_check()` now distinguishes **exit 1 (a rule fired)** from **exit 2 (a rule could not be evaluated)**. Previously both returned 1, so a `yq` that was absent, the wrong flavour, or broken by a later edit would have made the fixture guard report every fixture as "correctly rejected" while binding nothing — the guard's entire job, silently inverted. This repo has a documented history of the two `yq` flavours colliding on `PATH`, and the identity filters use jq string interpolation that mikefarah `yq` does not parse, so the failure mode was reachable rather than theoretical. Verified by breaking a filter deliberately: the run now emits 8 `SEMANTIC FIXTURE UNEVALUATED` lines and zero false "correctly rejected" lines.
+`semantic_check()` now distinguishes **exit 1 (a rule fired)** from **exit 2 (a rule could not be evaluated)**. Previously both returned 1, so a `yq` that was absent, the wrong flavour, or broken by a later edit would have made the fixture guard report every fixture as "correctly rejected" while binding nothing — the guard's entire job, silently inverted. This repo has a documented history of the two `yq` flavours colliding on `PATH`, and the per-channel uniqueness filter passes `--arg`, a jq-dialect flag mikefarah `yq` rejects outright (`Error: unknown flag: --arg`), so the failure mode was reachable rather than theoretical. It is the flag dialect that separates the two flavours, not the `\(…)` interpolation: mikefarah's `--string-interpolation` defaults to true and evaluates the identity filters cleanly. Verified by breaking a filter deliberately: the run now emits 8 `SEMANTIC FIXTURE UNEVALUATED` lines and zero false "correctly rejected" lines.
 
 All three call sites — the real-component loop, the semantic-fixture guard and the positive-fixture guard — branch on all three states, and all three call `semantic_check` as `|| rc=$?`, never bare.
 
@@ -153,7 +153,7 @@ stopped one name appearing twice.
 
 ## Named residuals
 
-- **No render binding.** Nothing compares a declared entry against the render. A declared `path`/`ref`/`key` that no rendered volume actually mounts passes green, so a one-character mismatch between the contract and `helm/*.yaml` produces a knob that silently does nothing. Same residual DR-0004 named for env placeholders, same most-likely defect class for any adopting component; tracked in [#802](https://github.com/devobagmbh/talos-platform-apps/issues/802). Keeping `default` verbatim-only (above) is what leaves that check buildable.
+- **No render binding.** Nothing compares a declared entry against the render. A declared `path`/`ref`/`key` that no rendered volume actually mounts passes green, so a one-character mismatch between the contract and `helm/*.yaml` produces a knob that silently does nothing. The residual DR-0004 named for env placeholders, whose existence half `task validate:env-keys` now gates (DR-0004 §No-shadowing) — this file-shape binding is still unbuilt; tracked in [#802](https://github.com/devobagmbh/talos-platform-apps/issues/802). Keeping `default` verbatim-only (above) is what leaves that check buildable.
 - **Shipped-content-usability is author-asserted, and this channel is cheaper to declare into.** No gate can tell whether the baked content is genuinely usable; an author could park a placeholder that makes the workload crash-loop under `optional` and the contract would validate. That is the same classification residual DR-0004 recorded for env defaults, but the incentive is sharper here: `required` makes existing consumers non-conformant against a required status check, so `optional` is the path of least resistance for a file that is genuinely mandatory. Review is the only control, and naming the residual is not itself a control.
 - **Reload semantics are prose.** Whether a replacement takes effect without a pod restart lives in `description` and is not machine-checkable.
 - **One `(ref, key)` at two paths is not representable** (see §`path`).

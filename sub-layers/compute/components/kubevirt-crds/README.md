@@ -8,13 +8,15 @@ together form the strict-B pair: CRD first (this artifact, sync-wave -1), worklo
 after (sync-wave 0).
 
 The CRD is sourced **verbatim** from the upstream KubeVirt release operator manifest
-at tag **v1.5.0**
-(`https://github.com/kubevirt/kubevirt/releases/download/v1.5.0/kubevirt-operator.yaml`).
+at tag **v1.9.0**
+(`https://github.com/kubevirt/kubevirt/releases/download/v1.9.0/kubevirt-operator.yaml`).
 KubeVirt publishes no anonymously-pullable CRDs-only Helm chart (the upstream install
 method is `kubectl apply -f kubevirt-operator.yaml`), so this component is delivered
 as a raw manifest (`kind: manifests`, `manifests/00-kubevirt-crds.yaml`) — the CRD
 object extracted from the release manifest via
-`yq 'select(.kind == "CustomResourceDefinition")'`.
+`yq 'select(.kind == "CustomResourceDefinition")'` (mikefarah/yq v4 — the python-yq on
+the devbox PATH emits JSON for this expression and does not reproduce the committed
+bytes).
 
 ## What ships
 
@@ -29,9 +31,10 @@ artifact is purely the one CRD. The `Namespace`, `Deployment` (`virt-operator`),
 `PriorityClass` from the upstream operator manifest are non-CRD objects and ship in
 the workload artifact `compute/kubevirt`, not here.
 
-The `KubeVirt` CR (the operator-config singleton, conventionally named `kubevirt` in
-the `kubevirt` namespace) is **consumer-owned** — it lives in the consumer-cluster
-repo overlay, not in this catalog component. This artifact only establishes the CRD
+The `KubeVirt` CR (the operator-config singleton, named `kubevirt` in the `kubevirt`
+namespace) ships as a **catalog default in the workload half** `compute/kubevirt`
+(`manifests/20-kubevirt-cr.yaml`); a consumer patches it through their own Argo
+overlay rather than owning the object outright. This artifact only establishes the CRD
 schema so that CR has a registered type. The runtime CRDs (`virtualmachines`,
 `virtualmachineinstances`, …) are **operator-installed at runtime** by `virt-operator`
 once the `KubeVirt` CR reconciles; they are NOT in the operator manifest and are NOT
@@ -88,6 +91,62 @@ A safe schema-remove upgrade follows three steps:
    CR (and its operator-installed VM CRs) exists: Argo would cascade-delete those CRs
    and tear down the running virtualization workloads. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+### v1.9.0 — additive only
+
+The v1.8.4 -> v1.9.0 schema diff is additive on both served versions:
+`configuration.confidentialCompute.tdx.attestation` (`enforced`, `qgsSocketPath`),
+`configuration.persistentReservationConfiguration` (the feature reached GA at v1.9),
+and `configuration.migrations.maxDowntimeMs` (a NEW field, bounded 1..2000000 — the
+bound constrains nothing that existed before). Nothing is removed and no existing
+constraint is narrowed, so no live `KubeVirt` CR can become invalid at this hop.
+Served/storage versions are unchanged.
+
+The consumer-visible change at this hop is in the **workload** half, not here:
+`developerConfiguration.disabledFeatureGates` (added at v1.8.4) becomes load-bearing,
+because v1.9 enables every Beta gate by default. See
+[`compute/kubevirt`](../kubevirt/README.md) § Consumer obligations.
+
+### v1.8.4 — additive only
+
+The v1.7.4 -> v1.8.4 schema diff is additive on both served versions:
+`configuration.hypervisors[]` (enum `kvm` / `hyperv-direct`, `maxItems: 1`),
+`configuration.roleAggregationStrategy` (enum `AggregateToDefault` / `Manual`),
+`configuration.developerConfiguration.disabledFeatureGates[]`,
+`configuration.mediatedDevicesConfiguration.enabled` (the replacement for the
+deprecated `DisableMDEVConfiguration` gate), `configuration.migrations
+.utilityVolumesTimeout` and `configuration.virtTemplateDeployment`. The existing
+`featureGates` and the two new list fields carry `x-kubernetes-list-type: atomic`, so
+no set-uniqueness constraint is imposed on values already stored. Nothing is removed
+and no constraint is narrowed; served/storage versions are unchanged.
+
+### v1.7.4 — additive only
+
+The v1.6.6 -> v1.7.4 schema diff adds `configuration.changedBlockTrackingLabelSelectors`
+(the namespace/VM label selectors for incremental-backup overlays) and the
+`architectureConfiguration.s390x` block, on both served versions. Nothing is removed and
+no constraint is narrowed, so no live `KubeVirt` CR can become invalid at this hop, and
+the served/storage versions are unchanged (`v1` + `v1alpha3`, storage `v1`).
+
+### v1.6.6 — one narrowing, the rest additive
+
+The v1.5.3 -> v1.6.6 schema diff is additive (`developerConfiguration.clusterProfiler`,
+`spec.synchronizationPort` and `status.synchronizationAddresses` for the new
+synchronization controller, `virtSynchronizationController` in the log-verbosity map),
+with **one narrowing**: `developerConfiguration.memoryOvercommit` gained `minimum: 10`.
+A live `KubeVirt` CR carrying a value of 1-9 was valid before this hop and is **rejected**
+by the API server after it, which leaves the CR unwritable and the operator unable to
+reconcile it. This half syncs at wave -1, so the bound is active before the workload
+upgrades — check the live CR first:
+
+```console
+kubectl get kubevirt kubevirt -n kubevirt \
+  -o jsonpath='{.spec.configuration.developerConfiguration.memoryOvercommit}'
+```
+
+An empty result or a value ≥ 10 needs nothing; a value of 1-9 MUST be corrected to ≥ 10
+before this tag is applied. No served version was added or removed (`v1` + `v1alpha3`,
+storage `v1`), so no stored-object conversion is involved.
 
 ## Capability
 

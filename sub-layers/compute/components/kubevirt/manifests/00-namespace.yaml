@@ -5,9 +5,9 @@
 # CONVENTIONS.md § Namespace & PSA). The strict-B CRD half (compute/kubevirt-crds)
 # ships NO Namespace; this workload is the sole claimant.
 #
-# enforce: privileged — the upstream v1.5.0 kubevirt-operator.yaml ships NO
-# Namespace object (and no PSA labels), so this label set is authored here, not
-# copied. privileged is required because the operator dynamically creates the
+# enforce: privileged — the upstream Namespace carries only `enforce: privileged`, so the
+# audit/warn labels are added here and the upstream object is excluded from the
+# 10-operator.yaml extraction. privileged is required because the operator creates the
 # virt-handler DaemonSet at runtime with `privileged: true` + `hostNetwork: true`
 # (virt-handler manages VM workloads on each node; those pods are operator-created
 # from this KubeVirt CR and are NOT in this manifest). The operator's OWN pod

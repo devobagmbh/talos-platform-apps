@@ -1,102 +1,39 @@
-# kube-state-metrics — Kubernetes object-state metrics exporter (kube_* series).
-# Layer-2 default values for talos-platform-apps. This component is
-# cluster-agnostic: it carries NO consumer-specific config (replica count, HA
-# topology, and PNI labels are consumer-overlay concerns — see customization.yaml
-# and the README §Consumer obligations).
-#
-# Chart 8.4.2 already ships a restricted-compliant pod-level securityContext and
-# container-level containerSecurityContext. We pin both EXPLICITLY here
-# (explicit-not-inherited pattern) so a future chart bump cannot silently weaken
-# the posture that satisfies `pod-security.kubernetes.io/enforce: restricted` on
-# the namespace.
-#
-# NOTE on chart-specific key names (chart 8.4.2, verified via `helm show values`):
-#   - the POD-level key is `securityContext:` (NOT `podSecurityContext:`) and it
-#     carries an `enabled:` gate that must be true for the block to render.
-#   - the CONTAINER-level key is `containerSecurityContext:`.
-# These differ from the metrics-server chart's key names — do not copy blindly.
-
 metadata:
   chart: kube-state-metrics
   repo: https://prometheus-community.github.io/helm-charts
-  version: 8.4.2 # bare SemVer — NO leading 'v' (--version v8.4.2 fails to resolve)
-  # appVersion 2.20.0 → image tag registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0
-  # (chart appVersion pin, NEVER :latest; never overridden here). VERIFY at push
-  # (`helm show chart kube-state-metrics --repo <repo> --version 8.4.2`).
+  version: 8.6.0 # bare SemVer — NO leading 'v' (--version v8.6.0 fails to resolve)
+  # The chart's appVersion 2.20.0 is what selects the image
+  # registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0 — there is no image
+  # key in this file. Never override the tag here and never :latest.
   namespace: kube-state-metrics
 
 values:
-  # kube-rbac-proxy sidecar — kept DISABLED (chart default). This yields a
-  # single-container workload (one `kube-state-metrics` container). Enabling it is
-  # a consumer-overlay concern (out of scope here); its image is pinned upstream
-  # (quay.io/brancz/kube-rbac-proxy:vX.Y.Z) so no :latest Hard-Constraint risk
-  # arises if a consumer ever enables it.
+  # Pinned at the chart default so a chart bump flipping it cannot add a sidecar
+  # container to the signed render.
   kubeRBACProxy:
     enabled: false
 
-  # Pod-level securityContext pins (explicit-not-inherited). The chart key is
-  # `securityContext` (with an `enabled` gate), not `podSecurityContext`. The
-  # chart's defaults are already restricted-compliant; pinned here so a future
-  # chart bump cannot silently weaken the pod-level posture that satisfies
-  # `enforce: restricted` at the pod scope.
-  securityContext:
-    enabled: true
-    runAsNonRoot: true
-    runAsUser: 65534
-    runAsGroup: 65534
-    fsGroup: 65534
-    seccompProfile:
-      type: RuntimeDefault
-
-  # Container-level securityContext pins (explicit-not-inherited). The chart sets
-  # readOnlyRootFilesystem / allowPrivilegeEscalation / capabilities.drop by
-  # default; `runAsNonRoot` + `runAsUser` are NOT set at container scope by the
-  # chart, so they are added EXPLICITLY here so every rendered container satisfies
-  # the restricted check at container scope (not merely inherited from the pod).
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    runAsNonRoot: true
-    runAsUser: 65534
-    capabilities:
-      drop:
-        - ALL
-
-  # CustomResourceState (CRS) plumbing — ENABLED with an EMPTY baked config (#832).
-  # This is what makes `kube_customresource_*` series reachable from a consumer
-  # overlay at all: the component is published as a pre-rendered Kustomize base
-  # (ADR-0024), and a kustomize patch can change objects that exist but cannot
-  # conjure a ConfigMap, a volume, a volumeMount and a CLI flag that were never
-  # rendered. Enabling it here puts all four into the signed artifact; the consumer
-  # replaces only the ConfigMap's `config.yaml` content.
+  # Enabled with an empty spec so the ConfigMap, volume, volumeMount and
+  # `--custom-resource-state-config-file` flag all reach the signed Kustomize base: a
+  # consumer patch can change objects that exist but cannot conjure ones that were
+  # never rendered. `spec.resources: []` emits no `kube_customresource_*` series and
+  # leaves the built-in collectors untouched.
   #
-  # The exporter runs unchanged when nothing is replaced: `spec.resources: []` is a
-  # valid CRS spec that defines zero custom metrics, so no `kube_customresource_*`
-  # series are emitted and the built-in `kube_*` collectors are untouched.
+  # No rule set is baked for the platform's own CRDs: it would need RBAC for CRD
+  # groups a cluster may not have, plus a pin against upstream CR-schema drift.
   #
-  # NO rule set is baked for the catalog's own CRDs: a shipped rule would need RBAC
-  # for CRD groups a given cluster may not have, and pinning against upstream
-  # CR-schema drift. The empty skeleton keeps the component cluster-agnostic.
+  # `name` is pinned rather than derived from the release name because it is the
+  # patch target `customization.yaml` declares. `create` and `key` repeat chart
+  # defaults for the same reason — `key` is half the contract entry's (ref, key)
+  # identity — so `task lint:values-keys` reporting them as NO-EFFECT is expected.
   #
-  # `name` is pinned EXPLICITLY rather than derived from the release name: it is the
-  # consumer-facing contract value declared in `customization.yaml`
-  # (`provided_refs.config` + `optional.config_files[].ref`), so a chart-template
-  # change must not rename the patch target silently. `create` and `key` repeat the
-  # chart's declared defaults on purpose (explicit-not-inherited, as with the
-  # securityContext blocks): both are contract values — `key` IS
-  # `optional.config_files[].key` and half of the entry's (ref, key) identity — so
-  # `task lint:values-keys` reporting them as NO-EFFECT is expected, not dead weight.
+  # `rbac.extraRules` stays at its `[]` default: read access to a consumer's CR
+  # apiGroups is consumer-owned and per-apiGroup, never `apiGroups: ["*"]`.
   #
-  # RBAC: `rbac.customResourceState.createClusterRoleRules` (chart default true)
-  # adds ONLY `list`/`watch` on `apiextensions.k8s.io/customresourcedefinitions`.
-  # `rbac.extraRules` is deliberately left at its `[]` default — read access to a
-  # consumer's CR apiGroups is consumer-owned and per-apiGroup (never `apiGroups:
-  # ["*"]`, which would be cluster-wide read on every present and future CRD).
-  #
-  # `config` below is the SECOND copy of the baked CRS spec: the same content is
-  # declared as `optional.config_files[].default` in `customization.yaml`, which the
-  # consumer reads to know what it is replacing. Nothing gates the two against each
-  # other yet (the config-file arm of #802), so edit BOTH or neither.
+  # `config` is duplicated as `optional.config_files[].default` in
+  # `customization.yaml`, which the consumer reads to know what it replaces. Nothing
+  # gates the two against each other yet (the config-file arm of #802), so edit BOTH
+  # or neither.
   customResourceState:
     enabled: true
     create: true
@@ -106,6 +43,29 @@ values:
       spec:
         resources: []
 
-  # NOTE: no `replicas:` key. Replica count / HA topology is a consumer-overlay
-  # concern (cluster-specific per AGENTS.md §Hard Constraints); the catalog leaves
-  # it at the chart default (1). The consumer overrides it in its Argo overlay.
+  # Pod-scope pins for `pod-security.kubernetes.io/enforce: restricted`. The chart key
+  # is `securityContext` with an `enabled` gate, NOT `podSecurityContext`. Its defaults
+  # already satisfy restricted; pinned so a chart bump cannot weaken them silently.
+  securityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container-scope pins for the same enforce level. `runAsNonRoot` and `runAsUser` are
+  # NOT chart defaults at container scope — without them the container satisfies
+  # restricted only by inheriting from the pod.
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 65534
+    capabilities:
+      drop:
+        - ALL
+
+  # No `replicas:` key on purpose: replica count is cluster-specific, so the catalog
+  # leaves it at the chart default of 1 for the consumer to override.

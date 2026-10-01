@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/kube-state-metrics-v0.2.1...observability/kube-state-metrics-v0.3.0) (2026-09-10)
+
+
+### Features
+
+* **observability/kube-state-metrics:** bump chart to 8.4.2 (app 2.20.0) ([#872](https://github.com/devobagmbh/talos-platform-apps/issues/872)) ([764c6c9](https://github.com/devobagmbh/talos-platform-apps/commit/764c6c975f08fd0ce59df1f1480239adb4804e7d))
+
 ## [0.2.1](https://github.com/devobagmbh/talos-platform-apps/compare/observability/kube-state-metrics-v0.2.0...observability/kube-state-metrics-v0.2.1) (2026-07-15)
 
 

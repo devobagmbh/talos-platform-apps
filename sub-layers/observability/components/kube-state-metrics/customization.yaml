@@ -1,16 +1,8 @@
-# Customization Contract v2 (ADR-0024). kube-state-metrics is cluster-agnostic: the
-# rendered Deployment/Service/ClusterRole/RBAC is the signed workload and the consumer
-# MUST supply nothing — every `required.*` list stays empty and the component is
-# deployable as shipped. The restricted securityContext posture is workload-fixed in the
-# catalog helm values; the replica count and PNI labels are consumer-overlay concerns
-# (not freeze-line config shapes).
-#
-# ONE optional shape is declared (#832): shape (b), the CustomResourceState (CRS) config
-# file. The artifact ships it with working content — a CRS spec defining zero custom
-# metrics — so the exporter runs untouched; a consumer replaces the content to emit
-# `kube_customresource_*` series derived from their own CustomResources. Shapes (a) env,
-# (c) secret and (d) selector are unused: no cluster-specific env scalars, no consumer
-# secrets, no consumer-labeled CRs.
+# Customization Contract v2 (ADR-0024). kube-state-metrics is cluster-agnostic:
+# the rendered Deployment/Service/ClusterRole/RBAC is the signed workload and every
+# `required.*` list stays empty. The restricted securityContext posture is
+# workload-fixed in the catalog helm values; replica count and namespace labels are
+# consumer-overlay concerns, not freeze-line config shapes.
 freeze_line:
   # The signed pre-rendered manifest is the workload DEFAULT (Deployment/Service/ClusterRole/RBAC + Namespace + CRS ConfigMap),
   # published as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml,
@@ -21,17 +13,17 @@ freeze_line:
   # — never a catalog allowlist here.
   workload: rendered/manifest.yaml
 provided_refs:
-  # Shape (b): the CRS ConfigMap. ARTIFACT-SHIPPED with working content (an optional
-  # channel entry, not a consumer-authored object) — the name is pinned explicitly in
-  # the helm values (`customResourceState.name`) rather than derived from the release
-  # name, because it is this contract's patch target.
+  # Artifact-shipped, not consumer-authored. The name is pinned in the helm values
+  # (`customResourceState.name`) because it is this contract's patch target.
   config: kube-state-metrics-customresourcestate-config
 provided_selectors: {} # no consumer-labeled CRs
 required:
-  env_keys: []      # (a) none — no cluster-specific env scalars
-  config_files: []  # (b) none REQUIRED — the CRS file is baked with working content; see optional.config_files
-  secret_keys: []   # (c) none — the exporter reads the Kubernetes API, not consumer secrets
-  selector_crs: []  # (d) none — no consumer CR is selected by this workload
+  env_keys: []
+  # The CRS file is baked with working content, so supplying it is optional —
+  # see optional.config_files.
+  config_files: []
+  secret_keys: []
+  selector_crs: []
 optional:
   config_files:
     - path: /etc/customresourcestate/config.yaml
@@ -63,10 +55,9 @@ optional:
         `kube-state-metrics` ServiceAccount granting `list`/`watch` on it (the catalog
         never grants `apiGroups: ["*"]`). Without that grant the exporter still runs,
         but no series appear for that kind — its list/watch on the CR is denied.
-      # Second copy of the baked CRS spec: `helm/kube-state-metrics.yaml`
-      # (`customResourceState.config`) is what actually renders into the ConfigMap.
-      # Nothing gates the two against each other yet (the config-file arm of #802),
-      # so edit BOTH or neither.
+      # Duplicated in `helm/kube-state-metrics.yaml` (`customResourceState.config`),
+      # which is what renders into the ConfigMap. Nothing gates the two against each
+      # other yet (the config-file arm of #802), so edit BOTH or neither.
       default: |
         spec:
           resources: []

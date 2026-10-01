@@ -17,8 +17,8 @@ name: commit-lint
 # `PR_TITLE="<title>" LINT_PR_RANGE="<base>..<head>" task lint:pr`.
 
 on:
+  # pull_request carries no `branches:` filter on purpose — AGENTS.md § Branch protection & merge gates.
   pull_request:
-    branches: [main]
     # edited → re-validate when the PR title changes; synchronize → when commits change scope.
     types: [opened, synchronize, reopened, edited]
   # merge_group: this job becomes a required check via #463, so it MUST report on the
@@ -52,7 +52,7 @@ jobs:
         if: github.event_name == 'merge_group'
         run: 'echo "merge_group: PR title/scope is immutable post-approval — enforced at PR time."'
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
         if: github.event_name == 'pull_request'
         with:
           # fetch-depth: 0 so the three-dot (merge-base) scope diff can reach both the PR

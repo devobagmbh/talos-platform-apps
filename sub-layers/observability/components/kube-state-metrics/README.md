@@ -19,7 +19,7 @@ component (precedent: `lifecycle/providers`). It is distinct from
 ## Contents
 
 A `kind: helm` wrapper over the `kube-state-metrics` chart
-(`https://prometheus-community.github.io/helm-charts`, version `8.4.2`,
+(`https://prometheus-community.github.io/helm-charts`, version `8.6.0`,
 appVersion `2.20.0`) plus `manifests/00-namespace.yaml`:
 
 - `Deployment` (`kube-state-metrics`) + `Service` + `ServiceAccount`, with the
@@ -40,7 +40,7 @@ the chart's appVersion
 
 ## Security posture (pinned explicitly)
 
-Chart `8.4.2` already ships a restricted-compliant securityContext, but the
+Chart `8.6.0` already ships a restricted-compliant securityContext, but the
 catalog pins it **explicitly** (explicit-not-inherited) so a future chart bump
 cannot silently weaken it. Note the chart's value key names are chart-specific and
 differ from `metrics-server`:
@@ -227,7 +227,7 @@ catalog component ships none of them:
 - **Namespace** (Argo `managedNamespaceMetadata` or a patch on the shipped
   Namespace): the `pod-security.kubernetes.io/enforce-version` pin (its cluster's
   Kubernetes minor), the `audit`/`audit-version` and `warn`/`warn-version` modes,
-  and the PNI trust-anchor labels.
+  and whatever labels its own network-policy contract anchors on.
 - **Scrape configuration** — Alloy scrapes the `/metrics` endpoint via its own
   config; no `ServiceMonitor`/`PodMonitor` CR is shipped here.
 - **CustomResourceState spec + its CR read RBAC** — both consumer-owned; see
@@ -255,13 +255,19 @@ git tag).
 
 ## Migration
 
-Chart `7.5.1` → `8.4.2` (appVersion `2.19.1` → `2.20.0`) plus the CRS plumbing. The
-chart bump alone is render-neutral beyond the image tag and chart/version labels —
-verified by rendering both versions against the catalog's own values (the only other
-deltas are two dropped empty `httpHeaders:` keys in the probes and one blank line in
-the `Service`); no value key this component sets is renamed or removed.
+Chart `8.4.2` → `8.6.0` (appVersion unchanged at `2.20.0`, so the workload image is
+unchanged) plus the CRS plumbing. Rendering both chart versions against the catalog's
+own values shows one consumer-visible delta from the bump itself: the chart no longer
+puts `helm.sh/chart` on the **pod template** labels (it stays on the Deployment,
+Service, ServiceAccount, ClusterRole and ClusterRoleBinding). A consumer selecting
+pods on that label — a NetworkPolicy podSelector, a `ServiceMonitor`/`PodMonitor`
+selector, a `kubectl -l` query — must select on
+`app.kubernetes.io/name: kube-state-metrics` instead. The `Deployment`'s own
+`spec.selector.matchLabels` is untouched, so the Deployment stays patchable in place.
+No value key this component sets is renamed or removed; the chart's only values delta
+is the `kubeRBACProxy` default image tag, and that sidecar is disabled here.
 
-Two consumer-visible changes come from the CRS plumbing:
+Two further consumer-visible changes come from the CRS plumbing:
 
 - The pod template now carries a **`volumes:` array where it previously had none**
   (`customresourcestate-config`, projecting the shipped ConfigMap), and the

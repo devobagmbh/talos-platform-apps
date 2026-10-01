@@ -1,19 +1,22 @@
 # piraeus-operator workload — strict-B WORKLOAD half (ADR-0028), 0 CRDs.
 # Extracted verbatim from the upstream piraeus-operator release manifest.yaml at
-# tag v2.10.7
-# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.10.7/manifest.yaml)
+# tag v2.11.0
+# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml)
 # via `yq 'select(.kind != "CustomResourceDefinition")'`, minus the Namespace
-# (which ships in 00-namespace.yaml). The four piraeus.io CRDs ship in the
+# (which ships in 00-namespace.yaml). Upstream asset sha256 at vendoring time:
+# eaaaff15392e30cfb43ae0353dda7f089f955bfa40b2f8d7e5cee5f3af946231
+# — a GitHub release asset is mutable at its tag URL, so this pin is what a later
+# re-vendor verifies the source against (`curl -fsSL <url> | shasum -a 256`). The four piraeus.io CRDs ship in the
 # SEPARATE strict-B artifact storage-block/piraeus-operator-crds (sync-wave -1).
 #
 # Content (verbatim, NOT hand-edited): ServiceAccounts, Roles/ClusterRoles +
 # RoleBindings/ClusterRoleBindings for the controller-manager and gencert; the
-# ConfigMap piraeus-operator-image-config (bakes linstor-server v1.33.3 et al.);
+# ConfigMap piraeus-operator-image-config (bakes linstor-server v1.34.2 et al.);
 # the Service piraeus-operator-webhook-service; the Deployments
 # piraeus-operator-controller-manager and piraeus-operator-gencert; and the
 # ValidatingWebhookConfiguration piraeus-operator-validating-webhook-configuration
 # (failurePolicy: Fail — webhook TLS is self-managed by the gencert Deployment, no
-# cert-manager dependency). Only image quay.io/piraeusdatastore/piraeus-operator:v2.10.7
+# cert-manager dependency). Only image quay.io/piraeusdatastore/piraeus-operator:v2.11.0
 # is pinned (no :latest). replicas are the upstream default (1); any deviation is a
 # consumer-overlay concern, not pinned here.
 ---
@@ -152,6 +155,13 @@ rules:
     verbs:
       - create
   - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+      - get
+  - apiGroups:
       - apiextensions.k8s.io
     resources:
       - customresourcedefinitions
@@ -163,6 +173,12 @@ rules:
       - patch
       - update
       - watch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions/status
+    verbs:
+      - patch
   - apiGroups:
       - apps
     resources:
@@ -494,22 +510,22 @@ data:
     #   quay.io/piraeusdatastore/piraeus-server:v1.24.2
     components:
       linstor-controller:
-        tag: v1.33.3
+        tag: v1.34.2
         image: piraeus-server
       linstor-satellite:
-        tag: v1.33.3
+        tag: v1.34.2
         image: piraeus-server
       linstor-csi:
-        tag: v1.11.2
+        tag: v1.12.0
         image: piraeus-csi
       nfs-server:
-        tag: v1.11.2
+        tag: v1.12.0
         image: piraeus-csi-nfs-server
       drbd-reactor:
-        tag: v1.11.0
+        tag: v1.12.0
         image: drbd-reactor
       ha-controller:
-        tag: v1.3.2
+        tag: v1.3.3
         image: piraeus-ha-controller
       drbd-shutdown-guard:
         tag: v1.1.2
@@ -518,10 +534,10 @@ data:
         tag: v1.2.1
         image: ktls-utils
       linstor-affinity-controller:
-        tag: v1.4.1
+        tag: v1.5.0
         image: linstor-affinity-controller
       drbd-module-loader:
-        tag: v9.3.2
+        tag: v9.3.3
         # The special "match" attribute is used to select an image based on the node's reported OS.
         # The operator will first check the k8s node's ".status.nodeInfo.osImage" field, and compare it against the list
         # here. If one matches, that specific image name will be used instead of the fallback image.
@@ -574,25 +590,25 @@ data:
     base: registry.k8s.io/sig-storage
     components:
       csi-attacher:
-        tag: v4.11.0
+        tag: v4.12.0
         image: csi-attacher
       csi-livenessprobe:
-        tag: v2.18.0
+        tag: v2.19.0
         image: livenessprobe
       csi-provisioner:
-        tag: v6.2.0
+        tag: v6.3.0
         image: csi-provisioner
       csi-snapshotter:
-        tag: v8.5.0
+        tag: v8.6.0
         image: csi-snapshotter
       csi-resizer:
-        tag: v2.1.0
+        tag: v2.2.1
         image: csi-resizer
       csi-external-health-monitor-controller:
-        tag: v0.17.0
+        tag: v0.18.0
         image: csi-external-health-monitor-controller
       csi-node-driver-registrar:
-        tag: v2.16.0
+        tag: v2.17.0
         image: csi-node-driver-registrar
 kind: ConfigMap
 metadata:
@@ -663,7 +679,7 @@ spec:
               value: 1m
             - name: CLUSTER_API_KUBECONFIG
               value: ""
-          image: quay.io/piraeusdatastore/piraeus-operator:v2.10.7
+          image: quay.io/piraeusdatastore/piraeus-operator:v2.11.0
           livenessProbe:
             httpGet:
               path: /healthz
@@ -756,7 +772,7 @@ spec:
               value: webhook-server-cert
             - name: ZAP_DEVEL
               value: "false"
-          image: quay.io/piraeusdatastore/piraeus-operator:v2.10.7
+          image: quay.io/piraeusdatastore/piraeus-operator:v2.11.0
           livenessProbe:
             httpGet:
               path: /healthz

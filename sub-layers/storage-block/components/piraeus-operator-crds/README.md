@@ -9,8 +9,8 @@ form the strict-B pair: CRDs first (this artifact, sync-wave -1), workload after
 (sync-wave 0).
 
 The CRDs are sourced **verbatim** from the upstream piraeus-operator release
-`manifest.yaml` at tag **v2.10.7**
-(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.10.7/manifest.yaml`).
+`manifest.yaml` at tag **v2.11.0**
+(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml`).
 piraeus-operator publishes no anonymously-pullable CRDs-only Helm chart (the
 upstream install method is `kubectl apply --server-side -f manifest.yaml`), so this
 component is delivered as a raw manifest (`kind: manifests`,
@@ -87,6 +87,14 @@ A safe schema-remove upgrade follows three steps:
    `LinstorCluster` / `LinstorSatellite` CRs exist: Argo would cascade-delete those
    CRs and tear down the Linstor storage cluster. Prune a removed CRD only after
    confirming no live CRs of that type remain.
+
+**Rollback safety.** A schema *addition* is safe going forward but not backward. If
+a CR has been authored using a field the older schema does not know, rolling this
+artifact back removes that field's definition and the live CR then fails validation
+on its next update — including reconcile writes from the operator. Patch the
+affected CRs to drop the newer-only fields **before** rolling the `-crds` artifact
+back. For the v2.11.0 schemas those fields are `LinstorCluster.spec.maxConcurrentEvacuations`,
+`resourceNameSuffixSeparator`, and the storage-pool `*CreateArguments` arrays.
 
 ## Capability
 
