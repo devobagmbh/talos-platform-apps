@@ -1,0 +1,10 @@
+requires: {}
+provides:
+  - name: smartctl-exporter
+    version:
+      sot: app
+      app: v0.14.0 # chart appVersion; the image tag in helm/ must match
+      chart: 0.17.1
+    api_surface: []
+    # No-capability by design, not a deferral.
+    capabilities: []

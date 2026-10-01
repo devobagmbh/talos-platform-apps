@@ -21,3 +21,4 @@ components:
   - node-exporter           # sync-wave 0  — host/node metrics (node_* series); independent per-node DaemonSet with host access (privileged ns), scraped by Alloy
   - blackbox-exporter       # sync-wave 0  — synthetic HTTP/TCP/DNS probing; Alloy scrape target + bidirectional cross-cluster watchdog (ADR-0015); probe targets are consumer Probe CRs
   - nvidia-dcgm-exporter    # sync-wave 0  — per-GPU-node DaemonSet, DCGM_FI_* GPU metrics (privileged ns: SYS_ADMIN + hostPath); telemetry facet of the nvidia-stack gpu-runtime impl; GPU-node nodeSelector is a consumer obligation
+  - smartctl-exporter       # sync-wave 0  — per-node DaemonSet, smartctl_* disk SMART health (privileged ns: privileged container + /dev hostPath); amd64-only image
