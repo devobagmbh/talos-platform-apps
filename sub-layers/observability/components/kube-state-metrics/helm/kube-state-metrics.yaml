@@ -13,30 +13,13 @@ values:
   kubeRBACProxy:
     enabled: false
 
-  # -- CustomResourceState plumbing: the ConfigMap, volume, volumeMount and
-  # `--custom-resource-state-config-file` flag that let a consumer emit
-  # `kube_customresource_*` series from their own CustomResources.
-  #
-  # Enabled with an empty spec so all four reach the signed Kustomize base: a
-  # consumer patch can change objects that exist but cannot conjure ones that were
-  # never rendered. `spec.resources: []` emits no `kube_customresource_*` series and
-  # leaves the built-in collectors untouched.
-  #
-  # No rule set is baked for the platform's own CRDs: it would need RBAC for CRD
-  # groups a cluster may not have, plus a pin against upstream CR-schema drift.
-  #
-  # `name` is pinned rather than derived from the release name because it is the
-  # patch target `customization.yaml` declares. `create` and `key` repeat chart
-  # defaults for the same reason — `key` is half the contract entry's (ref, key)
-  # identity — so `task lint:values-keys` reporting them as NO-EFFECT is expected.
-  #
-  # `rbac.extraRules` stays at its `[]` default: read access to a consumer's CR
-  # apiGroups is consumer-owned and per-apiGroup, never `apiGroups: ["*"]`.
-  #
-  # `config` is duplicated as `optional.config_files[].default` in
-  # `customization.yaml`, which the consumer reads to know what it replaces. Nothing
-  # gates the two against each other yet (the config-file arm of #802), so edit BOTH
-  # or neither.
+  # -- CustomResourceState plumbing for consumer-supplied `kube_customresource_*`
+  # series (#832). `name`, `create` and `key` are the contract's patch target and
+  # (ref, key) identity, so they are pinned even where they repeat a chart default —
+  # `task lint:values-keys` reports them NO-EFFECT by design. `config` is duplicated
+  # as `optional.config_files[].default` in customization.yaml with no gate between
+  # them (#802): edit BOTH or neither. No `rbac.extraRules` here on purpose: CR read
+  # access is the consumer's, per apiGroup, never `apiGroups: ["*"]`.
   customResourceState:
     enabled: true
     create: true

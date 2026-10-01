@@ -13,14 +13,12 @@ freeze_line:
   # — never a catalog allowlist here.
   workload: rendered/manifest.yaml
 provided_refs:
-  # Artifact-shipped, not consumer-authored. The name is pinned in the helm values
-  # (`customResourceState.name`) because it is this contract's patch target.
+  # Artifact-shipped. Pinned in the helm values (`customResourceState.name`) because
+  # it is this contract's patch target.
   config: kube-state-metrics-customresourcestate-config
 provided_selectors: {} # no consumer-labeled CRs
 required:
   env_keys: []
-  # The CRS file is baked with working content, so supplying it is optional —
-  # see optional.config_files.
   config_files: []
   secret_keys: []
   selector_crs: []
@@ -30,43 +28,29 @@ optional:
       ref: kube-state-metrics-customresourcestate-config
       key: config.yaml
       description: >-
-        CustomResourceState (CRS) spec driving the exporter's
-        `--custom-resource-state-config-file` flag: it declares which
-        GroupVersionKinds to watch and which of their fields to project into
-        `kube_customresource_*` series, alongside the built-in `kube_*` collectors.
-        The baked default declares zero resources, so no custom series are emitted and
-        the built-in collectors are unaffected; replacing it is the ONLY way to get
-        `kube_customresource_*` series out of this artifact. Replace the content via
-        `source.kustomize.patches` on this ConfigMap — never by creating or editing the
-        object, which is part of the signed base and would be reconciled back.
-        RELOAD: no pod restart is needed. kube-state-metrics watches this file and
-        restarts its collectors IN-PROCESS on a change (`internal/wrapper.go` at tag
-        v2.20.0: `crcViper.OnConfigChange(restart); crcViper.WatchConfig()`), and that
-        watch does fire on the kubelet's projected-volume update — observed on a local
-        cluster in both directions (spec added, spec reverted) with the container's
-        restartCount staying 0, the exporter logging `Changes detected` on
-        `/etc/customresourcestate/..data_tmp`. The delay is the kubelet sync period (up
-        to ~1 minute) plus the exporter's own 3-second port-release wait. Restart the
-        Deployment only if a replaced spec has not taken effect.
-        VALIDATE BEFORE PATCHING: the reload is not fault-tolerant. A spec the exporter
-        cannot load makes `resolveCustomResourceConfig` / `customresourcestate.FromConfig`
-        return an error (`pkg/app/server.go` at v2.20.0), which `KSMRunOrDie` answers with
-        `klog.FlushAndExit` (`internal/wrapper.go` at v2.20.0) — the process exits, the
-        container restarts into the same ConfigMap and exits again (CrashLoopBackOff),
-        taking the built-in `kube_*` series down with it, not only the custom ones.
-        `--continue-without-custom-resource-config-file` covers a missing or unreadable
-        file, NOT one that loads and fails validation. The remediation is to revert this
-        ConfigMap patch; restarting the Deployment re-reads the same spec.
-        CONSUMER OBLIGATION (RBAC): the shipped ClusterRole grants `list`/`watch` on
-        `apiextensions.k8s.io/customresourcedefinitions` and nothing on any CR
-        apiGroup. For every apiGroup/resource the replaced spec names, the consumer
-        MUST add an ADDITIVE ClusterRole + ClusterRoleBinding onto the shipped
-        `kube-state-metrics` ServiceAccount granting `list`/`watch` on it (the catalog
-        never grants `apiGroups: ["*"]`). Without that grant the exporter still runs,
-        but no series appear for that kind — its list/watch on the CR is denied.
+        CustomResourceState spec for the exporter's
+        `--custom-resource-state-config-file` flag: which GroupVersionKinds to watch and
+        which fields to project into `kube_customresource_*` series. The baked default
+        declares zero resources; replacing it is the only way to get those series out of
+        this artifact. Replace the content via `source.kustomize.patches` on this
+        ConfigMap, never by creating or editing the object — it is part of the signed
+        base and Argo reconciles a direct edit back.
+        RELOAD: in-process, no pod restart, within the kubelet sync period (up to
+        ~1 minute).
+        A SPEC THE EXPORTER CANNOT LOAD TAKES IT DOWN: the process exits and restarts
+        into the same ConfigMap, so it CrashLoopBackOffs and the built-in `kube_*`
+        series stop too. `--continue-without-custom-resource-config-file` does not cover
+        this — it covers a missing file, not one that fails validation. Remediation is
+        to revert this patch; restarting the Deployment re-reads the same spec.
+        CONSUMER OBLIGATION (RBAC): for every apiGroup/resource the replaced spec names,
+        add an ADDITIVE ClusterRole + ClusterRoleBinding onto the shipped
+        `kube-state-metrics` ServiceAccount granting `list`/`watch`. Without it the
+        exporter runs but emits no series for that kind. Core kinds the built-in
+        collectors already read — `secrets` among them — need no grant, so a spec
+        projecting Secret data into labels works immediately: see the component README
+        before pointing a spec at a sensitive object.
       # Duplicated in `helm/kube-state-metrics.yaml` (`customResourceState.config`),
-      # which is what renders into the ConfigMap. Nothing gates the two against each
-      # other yet (the config-file arm of #802), so edit BOTH or neither.
+      # which is what renders. No gate between them (#802): edit BOTH or neither.
       default: |
         spec:
           resources: []
