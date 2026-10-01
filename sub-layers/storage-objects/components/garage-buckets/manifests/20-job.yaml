@@ -1,0 +1,104 @@
+# Provisioning Job. Runs once per Argo sync (sync-wave 10, after garage is up):
+# it makes the consumer's buckets + access keys exist in Garage via the admin
+# API, then exits. Idempotent — a re-sync re-runs it as a no-op.
+#
+# PSA: the garage namespace enforces `baseline`, but this pod is authored to
+# satisfy `restricted` (runAsNonRoot + non-zero runAsUser + seccomp
+# RuntimeDefault; container drops ALL caps, no privilege escalation,
+# readOnlyRootFilesystem with a writable /tmp emptyDir) so it is admissible under
+# any level baseline-or-stricter the consumer chooses.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: garage-buckets
+  namespace: garage
+  annotations:
+    # Argo runs this after the S3 endpoint (garage, wave 0) is established.
+    argocd.argoproj.io/sync-wave: "10"
+    # The provisioning inputs (buckets.yaml, keys) change between syncs; let Argo
+    # recreate the immutable Job on each sync rather than erroring on a spec diff.
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+  labels:
+    app.kubernetes.io/name: garage-buckets
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-buckets
+spec:
+  backoffLimit: 6
+  # 1h, not the previous 600s: provision.sh now retries a transient admin-API
+  # failure internally (see the ConfigMap's api() comment), so a terminal
+  # Failed here is a real signal, not a fast-exhausted retry budget -- give the
+  # operator a real window to see it before the Job is garbage-collected
+  # (README § Bootstrap caveats).
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: garage-buckets
+        platform.devoba.de/component: garage-buckets
+    spec:
+      serviceAccountName: garage-buckets
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provision
+          # curlimages/curl: minimal (Alpine-based, ~10 MiB), maintained by the
+          # curl project, runs non-root, ships an HTTP client. No jq — the script
+          # extracts the single flat `.id` field with POSIX grep/sed. Pinned to a
+          # concrete release tag (never :latest). See README § Image.
+          image: curlimages/curl:8.21.0
+          command: ["/bin/sh", "/opt/provision/provision.sh"]
+          env:
+            - name: ADMIN_URL
+              value: http://garage.garage.svc.cluster.local:3903
+            - name: GARAGE_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: garage-buckets-secret
+                  key: adminToken
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: provision-script
+              mountPath: /opt/provision
+              readOnly: true
+            - name: buckets-config
+              mountPath: /etc/garage-buckets
+              readOnly: true
+            - name: garage-keys
+              mountPath: /etc/garage-keys
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Catalog-owned provisioning script.
+        - name: provision-script
+          configMap:
+            name: garage-buckets-provision
+            defaultMode: 0555
+        # Consumer-owned: the bucket->alias mapping.
+        - name: buckets-config
+          configMap:
+            name: garage-buckets-config
+        # Consumer-owned: per-alias key material (<alias>.access-key-id / .secret-key).
+        - name: garage-keys
+          secret:
+            secretName: garage-buckets-secret
+        # Writable scratch for readOnlyRootFilesystem.
+        - name: tmp
+          emptyDir: {}
