@@ -12,7 +12,7 @@ sources:
 # observability sub-layer
 
 The Loki/Grafana/Tempo/Mimir/Alloy (LGTM-A) stack plus the Prometheus and Grafana
-operators, node/state/blackbox/DCGM exporters, metrics-server, and Hubble. OCI
+operators, node/state/blackbox/DCGM/SMART exporters, metrics-server, and Hubble. OCI
 prefix: `ghcr.io/devobagmbh/talos-platform-apps/observability/`.
 
 ## Components
@@ -29,6 +29,7 @@ prefix: `ghcr.io/devobagmbh/talos-platform-apps/observability/`.
 | node-exporter | 0 | - | - | - |
 | blackbox-exporter | 0 | - | - | - |
 | nvidia-dcgm-exporter | 0 | - | `gpu-runtime` (rewrite-required) | - |
+| smartctl-exporter | 0 | - | - | - |
 | loki | 10 | - | `logs-storage` (data-migration), `logs-query` (drop-in) | `s3-object` (cap) |
 | loki-distributed | 10 | - | `logs-storage` (data-migration), `logs-query` (drop-in) | `s3-object` (cap) |
 | mimir | 10 | - | `metrics-storage` (data-migration), `metrics-query` (drop-in) | `s3-object` (cap) |

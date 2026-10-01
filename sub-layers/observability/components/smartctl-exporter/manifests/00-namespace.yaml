@@ -1,0 +1,10 @@
+# enforce: privileged, not relaxable: the pod has a privileged container and a
+# /dev hostPath volume, both Baseline-forbidden.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: smartctl-exporter
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: smartctl-exporter

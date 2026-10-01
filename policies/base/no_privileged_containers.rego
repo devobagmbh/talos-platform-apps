@@ -73,10 +73,15 @@ _privileged_allowed := {
 	# node label. Rationale: issue #55 / PR #517.
 	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-mounts"],
 	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-ctr"],
+	# smartctl-exporter — opens host block devices, which only a privileged
+	# container may; the chart hard-codes it. Key "" because the render carries no
+	# namespace. Rationale: issue #885.
+	["", "DaemonSet", "smartctl-exporter-0", "main"],
 }
 
 _is_allowed(t, c) if {
-	[t.metadata.namespace, t.kind, t.metadata.name, c.name] in _privileged_allowed
+	ns := object.get(t.metadata, "namespace", "")
+	[ns, t.kind, t.metadata.name, c.name] in _privileged_allowed
 }
 
 # Per-target container extractor — avoids cross-target mixing when _targets has >1 member.

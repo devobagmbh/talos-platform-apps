@@ -1,0 +1,49 @@
+metadata:
+  chart: prometheus-smartctl-exporter
+  repo: https://prometheus-community.github.io/helm-charts
+  version: 0.17.1 # bare SemVer — NO leading 'v'. VERIFY at push (`helm show chart prometheus-smartctl-exporter --repo <repo> --version 0.17.1`).
+  namespace: smartctl-exporter
+
+values:
+  # -- (string) renders the DaemonSet as `smartctl-exporter-0`, the name the
+  # `no_privileged_containers` allow-list keys on.
+  fullnameOverride: smartctl-exporter
+
+  # -- (string) tag@digest, because the chart has no digest field. A chart bump
+  # updates both parts, or the old digest keeps running without error.
+  image:
+    tag: v0.14.0@sha256:cfe22c36d7d2fac48ebf619707305acb65eb0fb670656eb80f356e606d782bc1
+
+  # -- (object) the v0.14.0 image is published for linux/amd64 only.
+  nodeSelector:
+    kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+
+  # -- (object) no CPU limit: a scrape blocks on smartctl, and throttling turns
+  # it into a timeout.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+  # -- (object) manifests/10-serviceaccount.yaml provides it with token
+  # automount off, which the chart cannot set.
+  serviceAccount:
+    create: false
+    name: smartctl-exporter
+
+  # -- (bool) the chart's RoleBinding targets a PodSecurityPolicy ClusterRole,
+  # which no longer exists.
+  rbac:
+    create: false
+
+  # -- (bool) scrape wiring is the consumer's (ADR-0024).
+  serviceMonitor:
+    enabled: false
+
+  # -- (bool) the chart's rules never read an ATA raw counter; alerting is the
+  # consumer's.
+  prometheusRules:
+    enabled: false
