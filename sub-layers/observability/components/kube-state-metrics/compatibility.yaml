@@ -6,8 +6,8 @@ provides:
   - name: kube-state-metrics
     version:
       sot: app
-      app: 2.20.0   # real kube-state-metrics app (apis[] held chart 8.4.2)
-      chart: 8.4.2
+      app: 2.20.0   # real kube-state-metrics app (apis[] held chart 8.6.0)
+      chart: 8.6.0
     api_surface: []
     # Empty by design, not deferred: the kube_* series over a Prometheus /metrics
     # endpoint has no drop-in alternative, so there is nothing swappable to declare.

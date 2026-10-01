@@ -19,11 +19,17 @@ component (precedent: `lifecycle/providers`). It is distinct from
 ## Contents
 
 A `kind: helm` wrapper over the `kube-state-metrics` chart
-(`https://prometheus-community.github.io/helm-charts`, version `8.4.2`,
+(`https://prometheus-community.github.io/helm-charts`, version `8.6.0`,
 appVersion `2.20.0`) plus `manifests/00-namespace.yaml`:
 
 - `Deployment` (`kube-state-metrics`) + `Service` + `ServiceAccount`, with the
   chart's cluster-wide read `ClusterRole` + `ClusterRoleBinding`.
+- A `ConfigMap` (`kube-state-metrics-customresourcestate-config`) carrying an
+  **empty but valid** CustomResourceState spec, mounted read-only at
+  `/etc/customresourcestate` and passed to the exporter via
+  `--custom-resource-state-config-file` — see
+  [CustomResourceState metrics](#customresourcestate-metrics-kube_customresource_)
+  below.
 - A dedicated `kube-state-metrics` `Namespace` (the chart ships none).
 
 The render is **single-container** — the optional `kube-rbac-proxy` sidecar is
@@ -34,7 +40,7 @@ the chart's appVersion
 
 ## Security posture (pinned explicitly)
 
-Chart `8.4.2` already ships a restricted-compliant securityContext, but the
+Chart `8.6.0` already ships a restricted-compliant securityContext, but the
 catalog pins it **explicitly** (explicit-not-inherited) so a future chart bump
 cannot silently weaken it. Note the chart's value key names are chart-specific and
 differ from `metrics-server`:
@@ -89,6 +95,158 @@ grant. Two aspects are consumer-owned mitigations:
   (BoundServiceAccountTokenVolume), not a long-lived Secret token, so a compromised
   pod holds only a time-bounded credential scoped to the read-only grant above.
 
+Enabling the CustomResourceState plumbing adds exactly one rule to that
+`ClusterRole`: `list`/`watch` on
+`apiextensions.k8s.io/customresourcedefinitions` (chart-driven, via
+`rbac.customResourceState.createClusterRoleRules`). It grants **no** read access to
+any CustomResource itself — the catalog never sets `rbac.extraRules` and never
+grants `apiGroups: ["*"]`, which would be cluster-wide read on every present and
+future CRD. CR read permission is consumer-owned and per-apiGroup (next section).
+
+## CustomResourceState metrics (`kube_customresource_*`)
+
+The artifact ships the **CustomResourceState (CRS) plumbing** enabled with an empty
+baked spec: the `kube-state-metrics-customresourcestate-config` `ConfigMap`, the
+read-only volume + mount at `/etc/customresourcestate`, the
+`--custom-resource-state-config-file=/etc/customresourcestate/config.yaml` arg, and
+the CRD read grant. The baked `config.yaml` is
+
+```yaml
+spec:
+  resources: []
+```
+
+which is a valid spec defining zero custom metrics, so the exporter runs unchanged
+and emits only the built-in `kube_*` series when a consumer replaces nothing.
+
+The plumbing MUST ship enabled because the component is published as a pre-rendered
+Kustomize base (ADR-0024): a consumer patch can change objects and fields that
+exist, but cannot conjure a ConfigMap, a volume, a mount and a CLI flag that were
+never rendered. The catalog bakes **no** rules for the platform's own CRDs — a
+shipped rule set would need RBAC for CRD groups a given cluster may not have, and
+pinning against upstream CR-schema drift.
+
+The file is declared in `customization.yaml` as the component's single
+`optional.config_files` entry (`provided_refs.config`, DR-0005), so it is a
+versioned contract surface: renaming it, removing it, or changing its baked
+`default` is a **breaking** change requiring a major bump and a migration note.
+
+Emitting `kube_customresource_*` series takes **two** consumer-side steps, both in
+the consumer's Argo overlay.
+
+### 1. Replace the spec (kustomize patch)
+
+Patch the shipped `ConfigMap` — never create or edit the object directly: it is part
+of the signed base, so Argo reconciles a direct edit away.
+
+```yaml
+# consumer Application source (consumer repo)
+source:
+  repoURL: oci://<registry>/observability/kube-state-metrics
+  targetRevision: <tag>
+  path: "."
+  kustomize:
+    patches:
+      - target:
+          kind: ConfigMap
+          name: kube-state-metrics-customresourcestate-config
+        patch: |
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: kube-state-metrics-customresourcestate-config
+          data:
+            config.yaml: |
+              spec:
+                resources:
+                  - groupVersionKind:
+                      group: <apiGroup>
+                      version: <version>
+                      kind: <Kind>
+                    metrics:
+                      - name: <metric_suffix>
+                        help: "<help text>"
+                        each:
+                          type: Gauge
+                          gauge:
+                            path: [status, <field>]
+```
+
+The spec format is upstream's — see
+[Custom Resource State Metrics](https://github.com/kubernetes/kube-state-metrics/blob/main/docs/metrics/extend/customresourcestate-metrics.md).
+Series are named `kube_customresource_<metric_suffix>` by default.
+
+**Reload:** no pod restart is needed. The exporter watches the file and restarts its
+collectors in-process on a change (`internal/wrapper.go` at `v2.20.0`), and that
+watch fires on the kubelet's projected-volume update — verified on a local cluster in
+both directions (spec added, spec reverted) with the container's restart count
+staying `0`. Expect a delay of the kubelet sync period (up to ~1 minute) plus the
+exporter's own 3-second port-release wait; restart the `Deployment` only if a
+replaced spec has not taken effect.
+
+**A spec the exporter cannot load takes the whole exporter down — validate before
+patching.** The reload is not fault-tolerant. `resolveCustomResourceConfig` and
+`customresourcestate.FromConfig` return an error for an unloadable spec
+(`pkg/app/server.go` at `v2.20.0`), the error propagates out of the run function, and
+the wrapper's `KSMRunOrDie` answers it with `klog.FlushAndExit(…, 1)`
+(`internal/wrapper.go` at `v2.20.0`) — the process exits. The container then restarts,
+reads the same ConfigMap, and exits again: `CrashLoopBackOff`, with the built-in
+`kube_*` series (Deployment replica counts, Pod phases, Node conditions) gone too, not
+only the custom ones. `--continue-without-custom-resource-config-file` does **not**
+cover this — it applies to a missing or unreadable file, not to one that loads and
+fails validation.
+
+Consequences for an operator: **the remediation is to revert the ConfigMap patch, not
+to restart the `Deployment`** — a restart re-reads the same bad spec. The exporter's
+own log line (`Failed to run kube-state-metrics`) names the cause; the pod's restart
+count rising after a config patch is the signal to look there.
+
+### 2. Grant CR read access (additive ClusterRole + binding)
+
+Upstream requires `list`/`watch` on the CRD **and** on each resource the spec names.
+
+**Some kinds need no grant at all — including `Secret`.** The shipped `ClusterRole`
+already carries cluster-wide `list`/`watch` on the core kinds the built-in collectors
+read, `secrets` and `configmaps` among them (§Cluster-wide read RBAC). A CRS spec
+naming one of those kinds therefore takes effect with no additional `ClusterRole`, and
+a spec such as `apiGroups: [""]`, `kind: Secret`, `path: [data, <key>]` would project
+Secret values into `kube_customresource_*` **metric labels**, readable by anyone able
+to scrape the endpoint. The built-in `kube_secret_*` collectors expose only metadata
+and cannot do this; the CRS channel can. Do not point a CRS spec at `Secret` data, and
+treat any spec reading from a sensitive object as a deliberate disclosure decision.
+
+For a consumer's own CRDs the grant is missing, so the consumer adds an **additive**
+`ClusterRole` + `ClusterRoleBinding` onto the shipped `kube-state-metrics`
+`ServiceAccount`, one rule per apiGroup the spec names:
+
+```yaml
+# consumer-owned, additive — NOT shipped by this component
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-state-metrics-customresource-read
+rules:
+  - apiGroups: ["<apiGroup>"]
+    resources: ["<plural>"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-state-metrics-customresource-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-state-metrics-customresource-read
+subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: kube-state-metrics
+```
+
+Without the grant the exporter still runs, but no series appear for that kind — its
+`list`/`watch` on the CR is denied.
+
 ## Consumer obligations (out of scope here)
 
 Per ADR-0032, the **consumer** adds the following in its Argo overlay — this
@@ -100,6 +258,8 @@ catalog component ships none of them:
   and whatever labels its own network-policy contract anchors on.
 - **Scrape configuration** — Alloy scrapes the `/metrics` endpoint via its own
   config; no `ServiceMonitor`/`PodMonitor` CR is shipped here.
+- **CustomResourceState spec + its CR read RBAC** — both consumer-owned; see
+  [CustomResourceState metrics](#customresourcestate-metrics-kube_customresource_).
 - The Argo `Application` CR itself (with its `argocd.argoproj.io/sync-wave`
   annotation) — Argo definitions live in the consumer cluster repos, not here.
 
@@ -120,6 +280,53 @@ OCI registry tag at publish is the bare SemVer `0.1.0` (`task push` strips the
 leading `v`); the corresponding git tag is
 `observability/kube-state-metrics-v0.1.0` (kept distinct — registry tag vs. SemVer
 git tag).
+
+## Migration
+
+Chart `8.4.2` → `8.6.0` (appVersion unchanged at `2.20.0`, so the workload image is
+unchanged) plus the CRS plumbing. Rendering both chart versions against the catalog's
+own values shows one consumer-visible delta from the bump itself: the chart no longer
+puts `helm.sh/chart` on the **pod template** labels (it stays on the Deployment,
+Service, ServiceAccount, ClusterRole and ClusterRoleBinding). A consumer selecting
+pods on that label — a NetworkPolicy podSelector, a `ServiceMonitor`/`PodMonitor`
+selector, a `kubectl -l` query — must select on
+`app.kubernetes.io/name: kube-state-metrics` instead. **This is the silent one:** a
+selector matching nothing raises no error anywhere, so an isolating NetworkPolicy
+simply stops applying to these pods and a `ServiceMonitor` stops producing targets.
+Check every selector that names `helm.sh/chart` before upgrading. The `Deployment`'s
+own `spec.selector.matchLabels` is untouched, so the Deployment stays patchable in
+place.
+No value key this component sets is renamed or removed; the chart's only values delta
+is the `kubeRBACProxy` default image tag, and that sidecar is disabled here.
+
+Two further consumer-visible changes come from the CRS plumbing:
+
+- The pod template now carries a **`volumes:` array where it previously had none**
+  (`customresourcestate-config`, projecting the shipped ConfigMap), and the
+  container a matching read-only `volumeMounts` entry. Two consumer overlay shapes
+  break:
+  - A consumer that injected its own volumes with `op: add` on the **whole array**
+    (`path: /spec/template/spec/volumes`) — the only form available while the array
+    was absent, since the append form `/-` needs an existing array. RFC 6902 §4.1
+    makes `add` on an existing member a **replace**, so that patch now drops the
+    baked `customresourcestate-config` volume while the container keeps its
+    `volumeMounts` entry and the `--custom-resource-state-config-file` arg. This
+    fails loudly rather than silently: a `volumeMount` naming no volume is rejected
+    by API-server validation, so the `Deployment` update is refused with
+    `spec.template.spec.containers[0].volumeMounts[0].name: Not found:
+    "customresourcestate-config"` and Argo reports a sync error — the running
+    workload is left as it was. Switch to per-element append
+    (`op: add, path: /spec/template/spec/volumes/-`) or a named strategic-merge
+    patch. The same applies to the parallel `volumeMounts` path.
+  - A consumer patching by **index** (`/spec/template/spec/volumes/0`) — index `0`
+    is now the catalog's volume, not the consumer's. Depending on what the patch
+    writes, this one can pass validation and take effect wrongly rather than being
+    refused.
+- The `ClusterRole` gains `list`/`watch` on
+  `apiextensions.k8s.io/customresourcedefinitions`.
+
+No data migration: the exporter is stateless, and the baked empty spec emits no new
+series.
 
 ## Related ADRs
 

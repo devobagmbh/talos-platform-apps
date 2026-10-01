@@ -1,10 +1,10 @@
 # Customization Contract v2 (ADR-0024). kube-state-metrics is cluster-agnostic:
-# the rendered Deployment/Service/ClusterRole/RBAC is the signed workload and the
-# consumer supplies NOTHING here. The restricted securityContext posture is
+# the rendered Deployment/Service/ClusterRole/RBAC is the signed workload and every
+# `required.*` list stays empty. The restricted securityContext posture is
 # workload-fixed in the catalog helm values; replica count and namespace labels are
 # consumer-overlay concerns, not freeze-line config shapes.
 freeze_line:
-  # The signed pre-rendered manifest is the workload DEFAULT (Deployment/Service/ClusterRole/RBAC + Namespace),
+  # The signed pre-rendered manifest is the workload DEFAULT (Deployment/Service/ClusterRole/RBAC + Namespace + CRS ConfigMap),
   # published as a native-OCI Kustomize base (kustomization.yaml + manifest.yaml,
   # `task package` per apps#508) — consumers attach per-cluster overlays via
   # `source.kustomize.patches`. Calibrated-friction (ADR-0024): the base itself
@@ -12,12 +12,47 @@ freeze_line:
   # dangerous classes are fenced by the consumer-side ADR-0018 Kyverno safe-defaults
   # — never a catalog allowlist here.
   workload: rendered/manifest.yaml
-provided_refs: {} # no consumer-supplied env/config/secret refs
+provided_refs:
+  # Artifact-shipped. Pinned in the helm values (`customResourceState.name`) because
+  # it is this contract's patch target.
+  config: kube-state-metrics-customresourcestate-config
 provided_selectors: {} # no consumer-labeled CRs
 required:
   env_keys: []
   config_files: []
   secret_keys: []
   selector_crs: []
+optional:
+  config_files:
+    - path: /etc/customresourcestate/config.yaml
+      ref: kube-state-metrics-customresourcestate-config
+      key: config.yaml
+      description: >-
+        CustomResourceState spec for the exporter's
+        `--custom-resource-state-config-file` flag: which GroupVersionKinds to watch and
+        which fields to project into `kube_customresource_*` series. The baked default
+        declares zero resources; replacing it is the only way to get those series out of
+        this artifact. Replace the content via `source.kustomize.patches` on this
+        ConfigMap, never by creating or editing the object — it is part of the signed
+        base and Argo reconciles a direct edit back.
+        RELOAD: in-process, no pod restart, within the kubelet sync period (up to
+        ~1 minute).
+        A SPEC THE EXPORTER CANNOT LOAD TAKES IT DOWN: the process exits and restarts
+        into the same ConfigMap, so it CrashLoopBackOffs and the built-in `kube_*`
+        series stop too. `--continue-without-custom-resource-config-file` does not cover
+        this — it covers a missing file, not one that fails validation. Remediation is
+        to revert this patch; restarting the Deployment re-reads the same spec.
+        CONSUMER OBLIGATION (RBAC): for every apiGroup/resource the replaced spec names,
+        add an ADDITIVE ClusterRole + ClusterRoleBinding onto the shipped
+        `kube-state-metrics` ServiceAccount granting `list`/`watch`. Without it the
+        exporter runs but emits no series for that kind. Core kinds the built-in
+        collectors already read — `secrets` among them — need no grant, so a spec
+        projecting Secret data into labels works immediately: see the component README
+        before pointing a spec at a sensitive object.
+      # Duplicated in `helm/kube-state-metrics.yaml` (`customResourceState.config`),
+      # which is what renders. No gate between them (#802): edit BOTH or neither.
+      default: |
+        spec:
+          resources: []
 sync_wave: "0"
 external_dependencies: []
