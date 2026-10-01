@@ -13,8 +13,11 @@ values:
   kubeRBACProxy:
     enabled: false
 
-  # Enabled with an empty spec so the ConfigMap, volume, volumeMount and
-  # `--custom-resource-state-config-file` flag all reach the signed Kustomize base: a
+  # -- CustomResourceState plumbing: the ConfigMap, volume, volumeMount and
+  # `--custom-resource-state-config-file` flag that let a consumer emit
+  # `kube_customresource_*` series from their own CustomResources.
+  #
+  # Enabled with an empty spec so all four reach the signed Kustomize base: a
   # consumer patch can change objects that exist but cannot conjure ones that were
   # never rendered. `spec.resources: []` emits no `kube_customresource_*` series and
   # leaves the built-in collectors untouched.

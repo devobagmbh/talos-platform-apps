@@ -184,10 +184,38 @@ staying `0`. Expect a delay of the kubelet sync period (up to ~1 minute) plus th
 exporter's own 3-second port-release wait; restart the `Deployment` only if a
 replaced spec has not taken effect.
 
+**A spec the exporter cannot load takes the whole exporter down — validate before
+patching.** The reload is not fault-tolerant. `resolveCustomResourceConfig` and
+`customresourcestate.FromConfig` return an error for an unloadable spec
+(`pkg/app/server.go` at `v2.20.0`), the error propagates out of the run function, and
+the wrapper's `KSMRunOrDie` answers it with `klog.FlushAndExit(…, 1)`
+(`internal/wrapper.go` at `v2.20.0`) — the process exits. The container then restarts,
+reads the same ConfigMap, and exits again: `CrashLoopBackOff`, with the built-in
+`kube_*` series (Deployment replica counts, Pod phases, Node conditions) gone too, not
+only the custom ones. `--continue-without-custom-resource-config-file` does **not**
+cover this — it applies to a missing or unreadable file, not to one that loads and
+fails validation.
+
+Consequences for an operator: **the remediation is to revert the ConfigMap patch, not
+to restart the `Deployment`** — a restart re-reads the same bad spec. The exporter's
+own log line (`Failed to run kube-state-metrics`) names the cause; the pod's restart
+count rising after a config patch is the signal to look there.
+
 ### 2. Grant CR read access (additive ClusterRole + binding)
 
 Upstream requires `list`/`watch` on the CRD **and** on each resource the spec names.
-The artifact carries the former only, so the consumer adds an **additive**
+
+**Some kinds need no grant at all — including `Secret`.** The shipped `ClusterRole`
+already carries cluster-wide `list`/`watch` on the core kinds the built-in collectors
+read, `secrets` and `configmaps` among them (§Cluster-wide read RBAC). A CRS spec
+naming one of those kinds therefore takes effect with no additional `ClusterRole`, and
+a spec such as `apiGroups: [""]`, `kind: Secret`, `path: [data, <key>]` would project
+Secret values into `kube_customresource_*` **metric labels**, readable by anyone able
+to scrape the endpoint. The built-in `kube_secret_*` collectors expose only metadata
+and cannot do this; the CRS channel can. Do not point a CRS spec at `Secret` data, and
+treat any spec reading from a sensitive object as a deliberate disclosure decision.
+
+For a consumer's own CRDs the grant is missing, so the consumer adds an **additive**
 `ClusterRole` + `ClusterRoleBinding` onto the shipped `kube-state-metrics`
 `ServiceAccount`, one rule per apiGroup the spec names:
 

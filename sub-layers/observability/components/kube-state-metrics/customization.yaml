@@ -48,6 +48,15 @@ optional:
         `/etc/customresourcestate/..data_tmp`. The delay is the kubelet sync period (up
         to ~1 minute) plus the exporter's own 3-second port-release wait. Restart the
         Deployment only if a replaced spec has not taken effect.
+        VALIDATE BEFORE PATCHING: the reload is not fault-tolerant. A spec the exporter
+        cannot load makes `resolveCustomResourceConfig` / `customresourcestate.FromConfig`
+        return an error (`pkg/app/server.go` at v2.20.0), which `KSMRunOrDie` answers with
+        `klog.FlushAndExit` (`internal/wrapper.go` at v2.20.0) — the process exits, the
+        container restarts into the same ConfigMap and exits again (CrashLoopBackOff),
+        taking the built-in `kube_*` series down with it, not only the custom ones.
+        `--continue-without-custom-resource-config-file` covers a missing or unreadable
+        file, NOT one that loads and fails validation. The remediation is to revert this
+        ConfigMap patch; restarting the Deployment re-reads the same spec.
         CONSUMER OBLIGATION (RBAC): the shipped ClusterRole grants `list`/`watch` on
         `apiextensions.k8s.io/customresourcedefinitions` and nothing on any CR
         apiGroup. For every apiGroup/resource the replaced spec names, the consumer
