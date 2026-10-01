@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/kube-state-metrics-v0.3.0...observability/kube-state-metrics-v0.4.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **observability/kube-state-metrics:** two consumer overlay shapes stop working.
+
+### Features
+
+* **observability/kube-state-metrics:** consumer-replaceable CustomResourceState config ([#835](https://github.com/devobagmbh/talos-platform-apps/issues/835)) ([f2b60fb](https://github.com/devobagmbh/talos-platform-apps/commit/f2b60fb5e8fe4c4b3f8720be49e53f89dba3f507))
+
 ## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/observability/kube-state-metrics-v0.2.1...observability/kube-state-metrics-v0.3.0) (2026-09-10)
 
 
