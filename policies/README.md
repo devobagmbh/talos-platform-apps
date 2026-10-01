@@ -100,12 +100,12 @@ Phase-1 build-out per [ADR-0018 § Phase-1 Scope](https://github.com/devobagmbh/
 
 ### Grandfather / allow-list debt register
 
-The three newly enforcing policies carry transitional grandfather sets or a permanent allow-list derived from the current rendered catalog (`task render` probe, issue #236). They are marked FROZEN — a diff growing a set is a blocking reviewer finding; rename-in-place to track an upstream chart rename is allowed.
+The three newly enforcing policies carry transitional grandfather sets or a permanent allow-list derived from the current rendered catalog (`task render` probe, issue #236). The grandfather sets are FROZEN — a diff growing one is a blocking reviewer finding; rename-in-place to track an upstream chart rename is allowed. The permanent allow-list grows only with a per-entry reviewer/ADR sign-off.
 
 | Policy | Type | Size | Retirement tracker |
 |---|---|---|---|
 | `required_resource_limits` | grandfather `(namespace, kind, name)` | 25 workloads | [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349) |
-| `no_privileged_containers` | permanent allow-list `(namespace, kind, workload, container)` | 14 containers | per-entry reviewer/ADR sign-off |
+| `no_privileged_containers` | permanent allow-list `(namespace, kind, workload, container)` | see `_privileged_allowed` | per-entry reviewer/ADR sign-off |
 | `no_inline_secrets` | grandfather `(namespace, name)` | 6 secrets | [#350](https://github.com/devobagmbh/talos-platform-apps/issues/350) |
 
 The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** full build-out. The current on-disk state is shown by the `## Structure` tree above.
@@ -117,7 +117,7 @@ The subsections below (`base/`, `apps/`, `platform/`) structure the **planned** 
 - [x] `no_latest_image_tag` (MUST) — Helm defaults must not render `:latest` image tags; recurses (depth-1) into `Object.spec.forProvider.manifest` (issue #236)
 - [ ] `reserved_labels` (MUST) — reserved keys (`platform.io/provide.*`, `capability-provider.*`) only on producer resources, namespace-anchored
 - [x] `required_resource_limits` (MUST) — every container needs `resources.{requests.{cpu,memory},limits.memory}`; **enforcing for new components — 25 existing workloads grandfathered pending [#349](https://github.com/devobagmbh/talos-platform-apps/issues/349)**
-- [x] `no_privileged_containers` (MUST) — `securityContext.privileged: true` forbidden except a permanent container-level allow-list (14 containers); infrastructure-level necessity documented per entry
+- [x] `no_privileged_containers` (MUST) — `securityContext.privileged: true` forbidden except a permanent container-level allow-list; infrastructure-level necessity documented per entry
 - [ ] `run_as_non_root` (SHOULD) — `securityContext.runAsNonRoot: true` + `runAsUser != 0` except for the Cilium/CSI allow-list
 - [ ] `endpointslices_only` (SHOULD) — no `kind: Endpoints` (deprecated since K8s 1.33)
 - [ ] `storage_class_explicit` (SHOULD) — every PVC sets `storageClassName` explicitly

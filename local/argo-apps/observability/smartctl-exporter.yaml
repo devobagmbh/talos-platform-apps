@@ -1,8 +1,6 @@
 # Argo Application for observability/smartctl-exporter (local test environment).
-# Disk SMART health exporter (smartctl_* series). Ships its own dedicated
-# `smartctl-exporter` namespace (pod-security.kubernetes.io/enforce: privileged);
-# no CRDs (strict-B N/A). The chart sets no metadata.namespace, so the workload
-# lands in the destination namespace below, which must match the shipped one.
+# The render carries no metadata.namespace, so the destination namespace must
+# be the shipped `smartctl-exporter`.
 # Template placeholders (envsubst via task local:apply / local:dev):
 #   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
 #   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps

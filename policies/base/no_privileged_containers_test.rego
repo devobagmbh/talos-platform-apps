@@ -83,8 +83,7 @@ test_allowed_mps_control_daemon_ctr_suppressed if {
 	}
 }
 
-# smartctl-exporter — namespace-less render (the chart emits no
-# metadata.namespace) matches the "" namespace key
+# smartctl-exporter — a namespace-less render matches the "" key
 test_allowed_smartctl_exporter_namespaceless_suppressed if {
 	count(deny) == 0 with input as {
 		"kind": "DaemonSet",

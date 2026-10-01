@@ -1,13 +1,3 @@
-# smartctl-exporter — disk SMART health exporter (smartctl_* series).
-#
-# The chart hard-codes the container securityContext to `privileged: true` +
-# `runAsUser: 0` in its DaemonSet template; no value changes it. Both are
-# required: smartctl's pass-through ioctls need root or CAP_SYS_RAWIO, and a
-# non-privileged container cannot open host block devices whatever its
-# capabilities (the runtime's device cgroup allowlist). Hence the PSA level
-# `privileged` (manifests/00-namespace.yaml) and the
-# `no_privileged_containers` allow-list entry (#885).
-
 metadata:
   chart: prometheus-smartctl-exporter
   repo: https://prometheus-community.github.io/helm-charts
@@ -15,29 +5,22 @@ metadata:
   namespace: smartctl-exporter
 
 values:
-  # -- (string) names the rendered objects `smartctl-exporter`; the chart appends
-  # `-<idx>` to the DaemonSet name, so it renders as `smartctl-exporter-0`, which
-  # the `no_privileged_containers` allow-list keys on.
+  # -- (string) renders the DaemonSet as `smartctl-exporter-0`, the name the
+  # `no_privileged_containers` allow-list keys on.
   fullnameOverride: smartctl-exporter
 
-  # -- (string) digest-pinned image. The chart renders `<repository>:<tag>` and has
-  # no digest field, so the digest rides in the tag (metrics-server precedent).
-  # CHART-BUMP CHECKLIST: update the tag prefix to the new appVersion AND
-  # re-resolve the digest (`oras manifest fetch --descriptor <image>:<tag>`),
-  # or the runtime keeps pulling the old pinned digest without error.
+  # -- (string) tag@digest, because the chart has no digest field. A chart bump
+  # updates both parts, or the old digest keeps running without error.
   image:
     tag: v0.14.0@sha256:cfe22c36d7d2fac48ebf619707305acb65eb0fb670656eb80f356e606d782bc1
 
-  # -- (object) upstream publishes v0.14.0 for linux/amd64 only (a manifest list
-  # with one entry); on any other architecture the pod fails with an exec-format
-  # error. Widen only after the pinned image gains the architecture.
+  # -- (object) the v0.14.0 image is published for linux/amd64 only.
   nodeSelector:
     kubernetes.io/os: linux
     kubernetes.io/arch: amd64
 
-  # -- (object) no CPU limit: a scrape blocks while smartctl runs, so CFS
-  # throttling would lengthen scrapes into timeouts. The memory limit satisfies
-  # `required_resource_limits`.
+  # -- (object) no CPU limit: a scrape blocks on smartctl, and throttling turns
+  # it into a timeout.
   resources:
     requests:
       cpu: 10m
@@ -45,27 +28,22 @@ values:
     limits:
       memory: 128Mi
 
-  # -- (object) the chart's ServiceAccount has no automount switch, so
-  # manifests/10-serviceaccount.yaml ships it with the token unmounted; the
-  # exporter never calls the API server.
+  # -- (object) manifests/10-serviceaccount.yaml provides it with token
+  # automount off, which the chart cannot set.
   serviceAccount:
     create: false
     name: smartctl-exporter
 
-  # -- (bool) NOT shipped: the chart binds the ServiceAccount to a
-  # PodSecurityPolicy ClusterRole (`unrestricted-psp`). PSP was removed in
-  # Kubernetes 1.25 and the ClusterRole does not exist.
+  # -- (bool) the chart's RoleBinding targets a PodSecurityPolicy ClusterRole,
+  # which no longer exists.
   rbac:
     create: false
 
-  # -- (bool) NOT shipped: scrape wiring is a consumer-overlay concern (ADR-0024),
-  # and it would add a render-time dependency on the ServiceMonitor CRD.
+  # -- (bool) scrape wiring is the consumer's (ADR-0024).
   serviceMonitor:
     enabled: false
 
-  # -- (bool) NOT shipped: the chart's rules cover the overall verdict, NVMe
-  # fields, interface speed and temperature, never an ATA raw counter, so a SATA
-  # disk that reports PASSED with pending sectors stays silent. Alerting is the
+  # -- (bool) the chart's rules never read an ATA raw counter; alerting is the
   # consumer's.
   prometheusRules:
     enabled: false

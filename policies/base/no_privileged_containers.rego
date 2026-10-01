@@ -73,11 +73,9 @@ _privileged_allowed := {
 	# node label. Rationale: issue #55 / PR #517.
 	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-mounts"],
 	["nvidia-device-plugin", "DaemonSet", "nvidia-device-plugin-mps-control-daemon", "mps-control-daemon-ctr"],
-	# smartctl-exporter — smartctl's disk pass-through ioctls need root, and only a
-	# privileged container may open host block devices (the runtime's device
-	# cgroup allowlist denies them otherwise). The chart hard-codes privileged: true
-	# with no value to change it. Its templates emit no metadata.namespace, so the
-	# key is "" (namespace set by the consumer at apply). Rationale: issue #885.
+	# smartctl-exporter — opens host block devices, which only a privileged
+	# container may; the chart hard-codes it. Key "" because the render carries no
+	# namespace. Rationale: issue #885.
 	["", "DaemonSet", "smartctl-exporter-0", "main"],
 }
 

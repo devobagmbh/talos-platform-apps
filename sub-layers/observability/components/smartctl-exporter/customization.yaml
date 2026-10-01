@@ -1,6 +1,3 @@
-# Customization Contract v2 (ADR-0024). Cluster-agnostic: the consumer supplies
-# nothing. Scrape wiring, alert rules, the collection interval and placement are
-# consumer-overlay patches, not freeze-line config shapes.
 freeze_line:
   workload: rendered/manifest.yaml
 provided_refs: {}

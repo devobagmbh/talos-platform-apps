@@ -1,13 +1,5 @@
-# Dedicated namespace (sole-claimant rule, ADR-0032); the chart ships none.
-#
-# enforce: privileged — derived from the rendered DaemonSet, not relaxable to
-# baseline or restricted. The pod carries two Baseline-forbidden fields, a
-# privileged container and a hostPath volume of /dev, so only `privileged`
-# admits it. (It also runs as root, which only Restricted forbids.) See
-# helm/smartctl-exporter.yaml for why the container must be privileged.
-#
-# The consumer adds the enforce-version pin, audit/warn modes and PNI labels in
-# its overlay (ADR-0032).
+# enforce: privileged, not relaxable: the pod has a privileged container and a
+# /dev hostPath volume, both Baseline-forbidden.
 apiVersion: v1
 kind: Namespace
 metadata:
