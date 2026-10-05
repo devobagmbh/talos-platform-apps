@@ -90,14 +90,12 @@ capabilities:
   - id: snmp-device-metrics
     name: SNMP-device metrics (multi-target scrape endpoint)
     domain: observability
-    # Interface: Prometheus multi-target exporter — GET /snmp?target=&module=&auth=,
-    # exposition-format response. consumer-change: no listed alternative serves /snmp
-    # (Alloy's exporter runs in-process, otelcol has its own receiver config), so a swap
-    # moves the consumer's Probe/ScrapeConfig wiring.
+    # consumer-change: no listed alternative serves GET /snmp, so a swap moves the
+    # consumer's Probe/ScrapeConfig wiring.
     implementations:
-      - {name: snmp-exporter, status: active, swap_class: consumer-change}  # observability/snmp-exporter (#894)
-      - {name: alloy, status: considered, swap_class: consumer-change}  # prometheus.exporter.snmp; reuses snmp.yml
-      - {name: otelcol, status: considered, swap_class: rewrite-required}  # snmpreceiver; own config format
+      - {name: snmp-exporter, status: active, swap_class: consumer-change}
+      - {name: alloy, status: considered, swap_class: consumer-change}
+      - {name: otelcol, status: considered, swap_class: rewrite-required}
 
   # — Observability: Logs —————————————————————————————————————
   - id: logs-collect
