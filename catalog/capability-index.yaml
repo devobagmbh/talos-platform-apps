@@ -14,8 +14,8 @@
 # (hardware features) stays in the base substrate.
 #
 # This registry holds the platform's complete Layer-A tool-capability set
-# (30 of 36 base-index entries). NOT included and deliberately
-# remaining in base: gitops-engine (argocd) + csr-approval (cert-approver)
+# (30 of 36 base-index entries, plus capabilities defined here first). NOT included
+# and deliberately remaining in base: gitops-engine (argocd) + csr-approval (cert-approver)
 # = substrate; internet-egress, controlplane-egress, gateway-backend,
 # external-gateway-routes = Layer-B network primitive (not a tool-swap catalog).
 # Implementations are partly apps components, partly consumer-/hardware-
@@ -87,6 +87,17 @@ capabilities:
     implementations:
       - {name: mimir, status: active, swap_class: drop-in}
       - {name: thanos-query, status: considered, swap_class: drop-in}
+  - id: snmp-device-metrics
+    name: SNMP-device metrics (multi-target scrape endpoint)
+    domain: observability
+    # Interface: Prometheus multi-target exporter — GET /snmp?target=&module=&auth=,
+    # exposition-format response. consumer-change: no listed alternative serves /snmp
+    # (Alloy's exporter runs in-process, otelcol has its own receiver config), so a swap
+    # moves the consumer's Probe/ScrapeConfig wiring.
+    implementations:
+      - {name: snmp-exporter, status: active, swap_class: consumer-change}  # observability/snmp-exporter (#894)
+      - {name: alloy, status: considered, swap_class: consumer-change}  # prometheus.exporter.snmp; reuses snmp.yml
+      - {name: otelcol, status: considered, swap_class: rewrite-required}  # snmpreceiver; own config format
 
   # — Observability: Logs —————————————————————————————————————
   - id: logs-collect
