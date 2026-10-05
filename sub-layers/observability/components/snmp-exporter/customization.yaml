@@ -1,0 +1,22 @@
+freeze_line:
+  workload: rendered/manifest.yaml
+provided_refs:
+  secret: snmp-exporter-auth
+provided_selectors: {}
+exposed_selectors:
+  service:
+    kind: Service
+    labels:
+      platform.devoba.de/component: snmp-exporter
+  deployment:
+    kind: Deployment
+    labels:
+      platform.devoba.de/component: snmp-exporter
+required:
+  env_keys: []
+  config_files: []
+  secret_keys:
+    - auths.yml  # mounted at /etc/snmp-auth/auths.yml
+  selector_crs: []
+sync_wave: "0"
+external_dependencies: []

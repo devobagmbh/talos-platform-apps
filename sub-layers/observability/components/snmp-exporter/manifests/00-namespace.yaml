@@ -1,0 +1,11 @@
+# enforce: restricted — the rendered pod sets runAsNonRoot and seccompProfile
+# RuntimeDefault, and its container drops ALL capabilities with
+# allowPrivilegeEscalation false.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: snmp-exporter
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: snmp-exporter

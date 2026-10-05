@@ -1,0 +1,11 @@
+requires: {}
+provides:
+  - name: snmp-exporter
+    version:
+      sot: app
+      app: v0.30.1  # chart appVersion; the rendered app.kubernetes.io/version label must match
+      chart: 9.18.1
+    api_surface: []
+    capabilities:
+      - id: snmp-device-metrics
+        swap_class: consumer-change
