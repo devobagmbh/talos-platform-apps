@@ -10,9 +10,10 @@ metrics. It serves devices that expose their health only through SNMP, such as a
 - It carries no credentials: SNMP credentials come from a consumer-supplied Secret
   (see [Credentials contract](#credentials-contract)).
 
-Published as an independently versioned OCI artifact (ADR-0009). Related ADRs:
-ADR-0039 (NAS monitoring, status **proposed**), ADR-0024 (workload/config
-freeze-line), ADR-0030 (catalog adoption criterion).
+Published as an independently versioned OCI artifact (ADR-0009). Related ADRs,
+held in `talos-platform-docs`: ADR-0039 (NAS monitoring) and ADR-0030 (catalog
+adoption criterion), both status **proposed**; ADR-0024 (workload/config
+freeze-line).
 
 The component provides the `snmp-device-metrics` capability
 (`compatibility.yaml`, `swap_class: consumer-change`): no alternative serves
@@ -22,9 +23,12 @@ The component provides the `snmp-device-metrics` capability
 
 A `kind: helm` wrapper over the `prometheus-snmp-exporter` chart
 (`https://prometheus-community.github.io/helm-charts`, version `9.18.1`, appVersion
-`v0.30.1`, image `quay.io/prometheus/snmp-exporter:v0.30.1`), plus
+`v0.30.1`, image
+`quay.io/prometheus/snmp-exporter:v0.30.1@sha256:e5fd5e8b43ace6c088fe9bf0b37b7fff0e04380bee352be7ec41b853a4dd5859`),
+plus
 `manifests/00-namespace.yaml` and `manifests/10-serviceaccount.yaml`. The rendered
-workload (`grep '^kind:' rendered/manifest.yaml`) is:
+workload (`grep '^kind:' rendered/manifest.yaml`, see
+[Commands](#commands)) is:
 
 - `ConfigMap` `snmp-exporter`: the module definitions, key `snmp.yaml`.
 - `Service` `snmp-exporter` (ClusterIP, port `9116`).
@@ -121,15 +125,15 @@ restricts both directions:
 ## Operations and failure modes
 
 - **Secret `snmp-exporter-auth` absent:** the pod stays in `ContainerCreating`. The
-  chart's volume is not optional (`templates/deployment.yaml:147-152`, no
-  `optional` field).
+  Secret volume in the render has no `optional` field.
 - **Secret present, key `auths.yml` missing or empty:** the exporter finds zero
   `auths` and exits with status 1, so the pod goes `CrashLoopBackOff`.
 - **Credential rotation, and a release that only changes modules:** the exporter
-  re-reads its files only on `SIGHUP` or `POST /-/reload`. The pod template carries
-  no checksum annotation (`templates/deployment.yaml:23-24` renders `annotations: {}`),
-  so neither change rolls the pod. After the kubelet has refreshed the mounted
-  files, send `POST /-/reload` to the Service or restart the pod.
+  re-reads its files only on `SIGHUP` or `POST /-/reload`. The pod template in the
+  render carries `annotations: {}`, so no checksum annotation changes and neither
+  change rolls the pod. The consumer MUST, after the kubelet has refreshed the
+  mounted files, send `POST /-/reload` to the Service or restart the pod. Without
+  it the pod keeps the old configuration and stays Healthy, with no error.
 - **Reloader sidecar:** `configmapReload` is off. It would watch the ConfigMap only,
   never the credentials Secret.
 
@@ -168,7 +172,7 @@ Git tag: `observability/snmp-exporter-vX.Y.Z`.
 
 The exporter emits **raw upstream metric names**. The catalog applies no
 relabeling. Any mapping to a different naming scheme (for example `synology_*`) is
-consumer-layer relabeling, decided in talos-platform-docs#183 (open).
+consumer-layer relabeling, decided in talos-platform-docs#183.
 
 ## Out of scope
 
@@ -176,6 +180,15 @@ Alert rules, dashboards, `Probe`/`ScrapeConfig` resources, relabeling, and the
 `NetworkPolicy` (the consumer's obligation above) are not part of this component.
 
 ## Maintainer notes
+
+### Commands
+
+The commands in this README run from the component directory,
+`sub-layers/observability/components/snmp-exporter/`, and read `rendered/`, which
+is gitignored: generate it first with
+`task render:one -- observability/snmp-exporter` (from the repository root).
+
+### Modules extraction and image digest
 
 The module slice in `helm/snmp-exporter.yaml` was extracted from the upstream
 `snmp.yml` at tag `v0.30.1` (sha256
@@ -189,4 +202,22 @@ awk 'BEGIN{keep["synology"]=1;keep["if_mib"]=1;keep["ucd_system_stats"]=1;keep["
 
 Do not use a YAML re-serializer: it turns the integer `enum_values` keys into
 strings. A chart bump means re-extracting from the upstream tag that matches the new
-appVersion, then updating the tag and sha256 in the `config` comment.
+appVersion, then updating the tag and sha256 in the `config` comment, **and**
+refreshing the image tag and digest in `image.tag`. The digest is the multi-arch
+index of the tag, read from the registry (`docker-content-digest` header; replace
+`v0.30.1` with the new tag):
+
+```shell
+curl -sI -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+  https://quay.io/v2/prometheus/snmp-exporter/manifests/v0.30.1
+```
+
+The chart has no digest field, so a stale digest keeps running the old image
+without error.
+
+### Re-check after a chart bump
+
+- The Secret volume in the render has no `optional` field.
+- The pod template in the render has no checksum annotation.
+- The rendered `app.kubernetes.io/version` label still equals `version.app` in
+  `compatibility.yaml`.

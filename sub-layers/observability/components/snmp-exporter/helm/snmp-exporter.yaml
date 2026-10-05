@@ -19,6 +19,11 @@ values:
     type: ClusterIP
     port: 9116
 
+  # -- (string) tag@digest, because the chart has no digest field. A chart bump
+  # updates both parts, or the old digest keeps running without error.
+  image:
+    tag: v0.30.1@sha256:e5fd5e8b43ace6c088fe9bf0b37b7fff0e04380bee352be7ec41b853a4dd5859
+
   # -- (list) the consumer-supplied credentials Secret. The chart's volume is
   # not optional, so the pod waits in ContainerCreating until the Secret exists.
   # Mode 288 is 0440, read through fsGroup.
