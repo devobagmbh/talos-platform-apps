@@ -1,11 +1,5 @@
-# Argo Application for observability/snmp-exporter (local test environment).
-# The render carries metadata.namespace on every namespaced object, so the
-# destination namespace must be the shipped `snmp-exporter`. The workload needs
-# the consumer Secret `snmp-exporter-auth` (key `auths.yml`); without it the pod
-# stays in ContainerCreating.
-# Template placeholders (envsubst via task local:apply / local:dev):
-#   ${TAG}       — chart version (e.g. 0.0.0-dev or 0.0.0-dev.<epoch>)
-#   ${REGISTRY}  — kind-registry.registry.svc.cluster.local:5000/talos-platform-apps
+# Needs the consumer Secret `snmp-exporter-auth` (key `auths.yml`); without it
+# the pod stays in ContainerCreating.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

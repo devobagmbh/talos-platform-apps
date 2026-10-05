@@ -5,28 +5,22 @@ metadata:
   namespace: snmp-exporter
 
 values:
-  # -- (string) pins the consumer-facing Service name `snmp-exporter`.
   fullnameOverride: snmp-exporter
 
-  # -- (object) reaches the Service, the Deployment and its pod template;
-  # `exposed_selectors` in customization.yaml binds it.
+  # -- (object) bound by `exposed_selectors` in customization.yaml.
   customLabels:
     platform.devoba.de/component: snmp-exporter
 
-  # -- (object) consumer-facing scrape endpoint, pinned against a chart default
-  # change.
   service:
     type: ClusterIP
     port: 9116
 
-  # -- (string) tag@digest, because the chart has no digest field. A chart bump
-  # updates both parts, or the old digest keeps running without error.
+  # -- (string) tag@digest: the chart has no digest field, so a chart bump
+  # updates both parts.
   image:
     tag: v0.30.1@sha256:e5fd5e8b43ace6c088fe9bf0b37b7fff0e04380bee352be7ec41b853a4dd5859
 
-  # -- (list) the consumer-supplied credentials Secret. The chart's volume is
-  # not optional, so the pod waits in ContainerCreating until the Secret exists.
-  # Mode 288 is 0440, read through fsGroup.
+  # -- (list) mode 288 is 0440, read through fsGroup.
   extraSecretMounts:
     - name: snmp-auth
       mountPath: /etc/snmp-auth
@@ -34,16 +28,10 @@ values:
       readOnly: true
       defaultMode: 288
 
-  # -- (list) second `--config.file`: the exporter merges every file it is
-  # given, and this one carries the consumer's `auths`. The chart adds the first
-  # for `config` below.
+  # -- (list) the chart adds `--config.file=/config/snmp.yaml` for `config`.
   extraArgs:
     - --config.file=/etc/snmp-auth/auths.yml
 
-  # -- (object) PSA `restricted` needs `seccompProfile` and a non-root user at
-  # pod or container level; the chart default container block sets neither
-  # `seccompProfile`, `allowPrivilegeEscalation` nor `capabilities`, so both
-  # blocks are pinned in full.
   securityContext:
     runAsNonRoot: true
     runAsUser: 65534
@@ -64,8 +52,7 @@ values:
       drop:
         - ALL
 
-  # -- (object) no CPU limit: a scrape waits on the device, and throttling
-  # turns that into a timeout.
+  # -- (object) no CPU limit: throttling turns a slow device into a timeout.
   resources:
     requests:
       cpu: 10m
@@ -73,25 +60,23 @@ values:
     limits:
       memory: 128Mi
 
-  # -- (bool) the chart's Role grants `get` on endpoints, which the exporter
-  # does not use.
   rbac:
     create: false
 
-  # -- (object) manifests/10-serviceaccount.yaml provides it with token
-  # automount off, which the chart cannot set.
+  # -- (object) created by manifests/10-serviceaccount.yaml, which sets token
+  # automount off.
   serviceAccount:
     create: false
     name: snmp-exporter
 
-  # -- (object) off: the reloader would watch the ConfigMap only, never the
-  # credentials Secret, and add a second image.
+  # -- (object) off: a reloader would watch the ConfigMap, not the credentials
+  # Secret.
   configmapReload:
     enabled: false
 
-  # -- (string) the `modules` of upstream snmp.yml v0.30.1, sha256
-  # 4e03eb0b87f44c1489c2bbc651550931c1ae9df8f4553e08640ca1a22b9c22d4; never
-  # `auths` or any credential: those arrive through extraSecretMounts.
+  # -- (string) `modules` of upstream snmp.yml v0.30.1, sha256
+  # 4e03eb0b87f44c1489c2bbc651550931c1ae9df8f4553e08640ca1a22b9c22d4; no `auths`
+  # here, credentials arrive through extraSecretMounts.
   config: |-
     modules:
       hrStorage:
