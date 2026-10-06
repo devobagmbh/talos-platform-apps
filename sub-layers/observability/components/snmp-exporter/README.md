@@ -7,6 +7,8 @@ metrics. It serves devices that expose their health only through SNMP, such as a
 
 - It stores nothing and alerts on nothing.
 - It exposes raw upstream metric names.
+- It ships nine vendor-neutral modules and one extension point for consumer-mounted
+  module packs (see [Extension point](#extension-point-module-packs)).
 - It carries no credentials: SNMP credentials come from a consumer-supplied Secret
   (see [Credentials contract](#credentials-contract)).
 
@@ -30,7 +32,7 @@ plus
 workload (`grep '^kind:' rendered/manifest.yaml`, see
 [Commands](#commands)) is:
 
-- `ConfigMap` `snmp-exporter`: the module definitions, key `snmp.yaml`.
+- `ConfigMap` `snmp-exporter`: the nine core module definitions, key `snmp.yaml`.
 - `Service` `snmp-exporter` (ClusterIP, port `9116`).
 - `Deployment` `snmp-exporter` (one replica).
 - `ServiceAccount` `snmp-exporter` (`automountServiceAccountToken: false`; the chart's
@@ -42,24 +44,41 @@ The render contains **no** `Secret`, `Role`/`RoleBinding`, CRD, `ServiceMonitor`
 
 ### Modules
 
-`helm/snmp-exporter.yaml` owns the module list. Its `config` value carries the
-`modules:` of the upstream `snmp.yml` for the pinned version and nothing else: no
-`auths`, no community, no user name, no password. List the shipped modules with:
+`helm/snmp-exporter.yaml` owns the core module list: exactly nine vendor-neutral
+modules, all from the upstream `snmp.yml` for the pinned version.
+
+| Module | Scope |
+|---|---|
+| `hrDevice` | Host Resources MIB device status, errors and processor load |
+| `hrStorage` | Host Resources MIB storage and memory |
+| `hrSystem` | Host Resources MIB system uptime, users and processes |
+| `if_mib` | interface counters (IF-MIB) |
+| `ip_mib` | IPv4 interface table (IP-MIB) |
+| `system` | SNMPv2-MIB system group (description, uptime, name, location) |
+| `ucd_la_table` | UCD-SNMP load averages |
+| `ucd_memory` | UCD-SNMP memory |
+| `ucd_system_stats` | UCD-SNMP CPU and system statistics |
+
+The core ships no vendor module (no `synology`), no `ups_mib`, and no
+`hrSWRun*` / `hrSWInstalled*` module. Its `config` value carries the `modules:` of
+the upstream `snmp.yml` and nothing else: no `auths`, no community, no user name, no
+password. List the shipped modules with:
 
 ```shell
 yq -r '.values.config' helm/snmp-exporter.yaml | yq '.modules | keys'
 ```
 
 The module definitions are byte-for-byte upstream lines, not a re-serialization (see
-[Maintainer notes](#maintainer-notes)).
+[Maintainer notes](#maintainer-notes)). A vendor module arrives as a module pack
+through the [extension point](#extension-point-module-packs).
 
 ## Credentials contract
 
 The consumer supplies a `Secret` named **`snmp-exporter-auth`** in the
 `snmp-exporter` namespace with one key, **`auths.yml`**. The workload mounts it
 read-only at `/etc/snmp-auth/auths.yml` and starts the exporter with a second
-`--config.file` pointing at it; the exporter merges both files into one
-configuration. The Secret never enters the signed artifact
+`--config.file` pointing at it; the exporter merges all config files, including the
+[module-pack glob](#extension-point-module-packs), into one configuration. The Secret never enters the signed artifact
 (`customization.yaml`: `provided_refs.secret`, `required.secret_keys`).
 
 The value of `auths.yml` is an `auths:` map. Every entry MUST set all of these
@@ -69,13 +88,19 @@ explicitly:
 |---|---|
 | `version` | `3` |
 | `security_level` | `authPriv` |
-| `auth_protocol` | `SHA256` or `SHA512` |
-| `priv_protocol` | `AES` (AES-128) or stronger: `AES192`, `AES192C`, `AES256`, `AES256C` |
+| `auth_protocol` | RECOMMENDED: `SHA256` or `SHA512` (also accepted: `SHA224`, `SHA384`). Plain `SHA` (SHA-1) MAY be used only when the device offers nothing stronger. |
+| `priv_protocol` | RECOMMENDED: `AES` (AES-128) or stronger: `AES192`, `AES192C`, `AES256`, `AES256C` |
+
+`version: 3`, `security_level: authPriv`, an explicit `auth_protocol` and
+`priv_protocol`, and the passwords MUST be set on every entry.
 
 An omitted field does not fail: the exporter starts each entry from its own defaults
 (SNMPv2c, community `public`, `noAuthNoPriv`, MD5, DES), so an incomplete entry still
 loads and the pod still reports Healthy while the device is queried with weak or
-no security. The protocol values are the exporter's spellings, without hyphens.
+no security. The protocol values are the exporter's spellings, without hyphens:
+`MD5`, `SHA`, `SHA224`, `SHA256`, `SHA384`, `SHA512` for authentication and `DES`,
+`AES`, `AES192`, `AES192C`, `AES256`, `AES256C` for privacy; `MD5` and `DES` are
+not acceptable for this component.
 
 Use a dedicated **read-only** SNMP user. Synthetic example (all values are
 placeholders):
@@ -95,6 +120,68 @@ auths:
 A scraper selects an entry with `auth=nas_ro` and a module with `module=<module>`.
 `/config` redacts the secret fields.
 
+## Extension point (module packs)
+
+The core starts the exporter with a third `--config.file`, the glob
+`/etc/snmp-modules/*/*.yaml`. A **module pack** is a set of `modules:` definitions
+that a consumer mounts into that glob; the core mounts nothing for packs. Rules:
+
+- One directory per pack: each pack MUST be mounted at exactly
+  `/etc/snmp-modules/<pack>`. A pack MUST NOT be mounted at the root
+  `/etc/snmp-modules`: a ConfigMap mounted there exposes the `..data` directory
+  and duplicates every key, so the exporter crash-loops on duplicate modules.
+- A pack mount MUST NOT use `subPath`: a `subPath` mount never receives updates.
+- Every ConfigMap or Secret key in a pack MUST end in `.yaml`. A `.yml` key does
+  not match the glob and is skipped silently.
+- Module names MUST be unique across the core and all packs. A duplicate key is
+  fatal at start.
+- A pack volume SHOULD be OPTIONAL (`configMap.optional: true`). An absent or
+  empty glob only logs a warning, and the exporter starts with the core modules.
+
+Because the consumer patches the Deployment in the signed base, the patch is a
+strategic-merge patch with **no `target:` selector**; it names the workload by
+kind, name and namespace in its body, because a `target:` selector that matches
+nothing is a silent no-op. The container is addressed by name, not by index. A
+synthetic example (all values are placeholders):
+
+```yaml
+# consumer Application source (consumer repo)
+source:
+  kustomize:
+    patches:
+      - patch: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: snmp-exporter
+            namespace: snmp-exporter
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: snmp-exporter
+                    volumeMounts:
+                      - name: <pack>
+                        mountPath: /etc/snmp-modules/<pack>
+                        readOnly: true
+                volumes:
+                  - name: <pack>
+                    configMap:
+                      name: <pack ConfigMap>
+                      optional: true
+```
+
+A second pack adds another volume and volumeMount pair; the patches compose,
+because `volumes` merge on `name` and `volumeMounts` merge on `name`.
+
+**Reload obligation.** Changed pack content takes effect only after the kubelet
+has refreshed the mounted files and the consumer sends `POST /-/reload` (or
+restarts the pod). A failed reload keeps the old configuration, but the next
+restart crash-loops on the same content. The ingress `NetworkPolicy` MUST admit
+the sender of the reload (see [Network obligations](#network-obligations-consumer)).
+Verify the loaded modules with `GET /config`, which returns the YAML as
+`text/plain` with secrets redacted.
+
 ## Consumer-facing surface
 
 Renaming or removing any of these is a **breaking change** and needs a major bump
@@ -105,7 +192,9 @@ with a migration note:
   Deployment (the pod template carries it too). It is declared under
   `exposed_selectors` in `customization.yaml`.
 - The Secret name `snmp-exporter-auth`, its key `auths.yml` and its mount path.
-- The module names in `helm/snmp-exporter.yaml`.
+- The nine core module names in `helm/snmp-exporter.yaml`.
+- The module-pack glob `/etc/snmp-modules/*/*.yaml` and the one-directory-per-pack
+  rule (mountPath `/etc/snmp-modules/<pack>`).
 
 ## Network obligations (consumer)
 
@@ -120,7 +209,8 @@ restricts both directions:
 - **Ingress:** the scraper only, on port `9116`. Ingress limits who can trigger a
   scrape, not where it goes, so it does not replace the egress rule.
 
-`/-/reload` is served on the same port, so the ingress rule covers it as well.
+`/-/reload` is served on the same port, so the ingress rule MUST also admit the
+sender of any reload request.
 
 ## Operations and failure modes
 
@@ -170,9 +260,18 @@ Git tag: `observability/snmp-exporter-vX.Y.Z`.
 
 ## Metric names
 
-The exporter emits **raw upstream metric names**. The catalog applies no
-relabeling. Any mapping to a different naming scheme (for example `synology_*`) is
-consumer-layer relabeling, decided in talos-platform-docs#183.
+The core exposes the **raw upstream metric names** of its nine modules and applies
+no renaming. Renaming happens in a module pack (at generator time) or in consumer
+relabeling, never in the core.
+
+## Migration from v0.1.0
+
+v0.2.0 is a **breaking** release. The `synology` module is removed from the core.
+A consumer that scrapes `module=synology` on v0.1.0 MUST move to a Synology module
+pack, mounted through the [extension point](#extension-point-module-packs). That
+pack is a separate artifact tracked in #904 and is not yet published; until it
+ships, such a consumer needs its own pack or stays on v0.1.0. The `if_mib`,
+`ucd_system_stats`, `ucd_memory` and `hrStorage` modules are unchanged.
 
 ## Out of scope
 
@@ -197,8 +296,14 @@ The module slice in `helm/snmp-exporter.yaml` was extracted from the upstream
 with:
 
 ```shell
-awk 'BEGIN{keep["synology"]=1;keep["if_mib"]=1;keep["ucd_system_stats"]=1;keep["ucd_memory"]=1;keep["hrStorage"]=1} /^modules:/{inm=1; print; next} inm && /^[^ ]/{inm=0} inm && /^  [A-Za-z0-9_]+:/{k=$1; sub(":","",k); on=(k in keep)} inm&&on{print}' snmp.yml
+awk 'BEGIN{keep["hrDevice"]=1;keep["hrStorage"]=1;keep["hrSystem"]=1;keep["if_mib"]=1;keep["ip_mib"]=1;keep["system"]=1;keep["ucd_la_table"]=1;keep["ucd_memory"]=1;keep["ucd_system_stats"]=1} /^modules:/{inm=1; print; next} inm && /^[^ ]/{inm=0} inm && /^  [^ ]+:/{k=$1; sub(":$","",k); on=(k in keep)} inm&&on{print}' snmp.yml
 ```
+
+The module-level key pattern is `[^ ]+` rather than `[A-Za-z0-9_]+` on purpose:
+upstream has a module named `tplink-ddm`, directly after `system`, and a
+word-character pattern would absorb its lines into `system`. Then each extracted
+block, minus the 4-space indent of the values block scalar, MUST equal the same
+slice of upstream.
 
 Do not use a YAML re-serializer: it turns the integer `enum_values` keys into
 strings. A chart bump means re-extracting from the upstream tag that matches the new

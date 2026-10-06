@@ -3,7 +3,7 @@ type: reference
 title: observability sub-layer
 description: The LGTM-A telemetry stack, Prometheus/Grafana operators, exporters, and Hubble.
 tags: [reference, sub-layer, observability]
-timestamp: 2026-10-05
+timestamp: 2026-10-06
 sources:
   - sub-layers/observability/README.md
   - sub-layers/observability/compatibility.yaml
