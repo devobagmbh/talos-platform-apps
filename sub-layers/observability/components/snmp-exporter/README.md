@@ -78,29 +78,30 @@ The consumer supplies a `Secret` named **`snmp-exporter-auth`** in the
 `snmp-exporter` namespace with one key, **`auths.yml`**. The workload mounts it
 read-only at `/etc/snmp-auth/auths.yml` and starts the exporter with a second
 `--config.file` pointing at it; the exporter merges all config files, including the
-[module-pack glob](#extension-point-module-packs), into one configuration. The Secret never enters the signed artifact
-(`customization.yaml`: `provided_refs.secret`, `required.secret_keys`).
+[module-pack glob](#extension-point-module-packs), into one configuration. The
+Secret never enters the signed artifact (`customization.yaml`:
+`provided_refs.secret`, `required.secret_keys`).
 
 The value of `auths.yml` is an `auths:` map. Every entry MUST set all of these
 explicitly:
 
-| Field | Required value |
-|---|---|
-| `version` | `3` |
-| `security_level` | `authPriv` |
-| `auth_protocol` | RECOMMENDED: `SHA256` or `SHA512` (also accepted: `SHA224`, `SHA384`). Plain `SHA` (SHA-1) MAY be used only when the device offers nothing stronger. |
-| `priv_protocol` | RECOMMENDED: `AES` (AES-128) or stronger: `AES192`, `AES192C`, `AES256`, `AES256C` |
+| Field | MUST | RECOMMENDED |
+|---|---|---|
+| `version` | `3` | |
+| `security_level` | `authPriv` | |
+| `auth_protocol` | not `MD5` | `SHA256` or `SHA512` |
+| `priv_protocol` | not `DES`; `AES` (AES-128) or stronger: `AES192`, `AES192C`, `AES256`, `AES256C` | |
 
 `version: 3`, `security_level: authPriv`, an explicit `auth_protocol` and
-`priv_protocol`, and the passwords MUST be set on every entry.
+`priv_protocol`, and the passwords MUST be set on every entry. Plain `SHA` (SHA-1)
+MAY be used only when the device offers nothing stronger, and the consumer MUST
+record that as a named risk assumption (ADR-0039).
 
 An omitted field does not fail: the exporter starts each entry from its own defaults
 (SNMPv2c, community `public`, `noAuthNoPriv`, MD5, DES), so an incomplete entry still
 loads and the pod still reports Healthy while the device is queried with weak or
-no security. The protocol values are the exporter's spellings, without hyphens:
-`MD5`, `SHA`, `SHA224`, `SHA256`, `SHA384`, `SHA512` for authentication and `DES`,
-`AES`, `AES192`, `AES192C`, `AES256`, `AES256C` for privacy; `MD5` and `DES` are
-not acceptable for this component.
+no security. The protocol values are the exporter's spellings, without hyphens
+(`SHA256`, `SHA512`, `AES256`, ...).
 
 Use a dedicated **read-only** SNMP user. Synthetic example (all values are
 placeholders):
@@ -131,10 +132,23 @@ that a consumer mounts into that glob; the core mounts nothing for packs. Rules:
   `/etc/snmp-modules`: a ConfigMap mounted there exposes the `..data` directory
   and duplicates every key, so the exporter crash-loops on duplicate modules.
 - A pack mount MUST NOT use `subPath`: a `subPath` mount never receives updates.
-- Every ConfigMap or Secret key in a pack MUST end in `.yaml`. A `.yml` key does
-  not match the glob and is skipped silently.
+- A pack is a ConfigMap only, and every ConfigMap key in a pack MUST end in
+  `.yaml`. A `.yml` key does not match the glob and is skipped silently.
+- A pack file MUST contain only the top-level key `modules:`. It MUST NOT contain
+  `auths:` or `version:`. The exporter merges `auths` from every matched file, so
+  a pack `auths.public_v2` would become the default for a scrape without `auth=`
+  (SNMPv2c, community `public`, where an unknown auth is otherwise rejected with
+  HTTP 400), a pack reusing a consumer auth name would crash-loop the exporter, and
+  credentials in a pack ConfigMap would bypass the `snmp-exporter-auth` Secret
+  contract. Scrapers SHOULD pass `auth=` explicitly.
 - Module names MUST be unique across the core and all packs. A duplicate key is
   fatal at start.
+- A pack volume name MUST NOT be `config` or `snmp-auth` (the core's own
+  volumes), and a pack `mountPath` MUST be unique: it MUST NOT equal `/config`,
+  `/etc/snmp-auth` or another pack's path.
+- A consumer that overrides the container `args` MUST keep all three
+  `--config.file` entries; otherwise mounted packs are ignored with only a
+  warn-level log.
 - A pack volume SHOULD be OPTIONAL (`configMap.optional: true`). An absent or
   empty glob only logs a warning, and the exporter starts with the core modules.
 
@@ -171,8 +185,10 @@ source:
                       optional: true
 ```
 
-A second pack adds another volume and volumeMount pair; the patches compose,
-because `volumes` merge on `name` and `volumeMounts` merge on `name`.
+A second pack adds another volume and volumeMount pair; the patches compose.
+`volumes` merge on `name` and `volumeMounts` merge on `mountPath`, which is why
+each pack needs its own volume name and its own mountPath: a patch mount with a
+new name at an existing mountPath replaces the existing mount.
 
 **Reload obligation.** Changed pack content takes effect only after the kubelet
 has refreshed the mounted files and the consumer sends `POST /-/reload` (or
@@ -184,10 +200,14 @@ Verify the loaded modules with `GET /config`, which returns the YAML as
 
 ## Consumer-facing surface
 
-Renaming or removing any of these is a **breaking change** and needs a major bump
-with a migration note:
+Renaming or removing any of these is a **breaking change** (`!` plus a
+`BREAKING CHANGE:` footer; while the component is 0.x this bumps the minor) and
+needs a migration note:
 
 - The Service `snmp-exporter` and its port `9116` (port name `http`).
+- The Deployment name `snmp-exporter`, the namespace `snmp-exporter` and the
+  container name `snmp-exporter`: the pack patch addresses them by name.
+- The core volume names `config` and `snmp-auth`, reserved against pack volumes.
 - The label `platform.devoba.de/component: snmp-exporter` on the Service and the
   Deployment (the pod template carries it too). It is declared under
   `exposed_selectors` in `customization.yaml`.
@@ -272,6 +292,16 @@ pack, mounted through the [extension point](#extension-point-module-packs). That
 pack is a separate artifact tracked in #904 and is not yet published; until it
 ships, such a consumer needs its own pack or stays on v0.1.0. The `if_mib`,
 `ucd_system_stats`, `ucd_memory` and `hrStorage` modules are unchanged.
+
+- **What the break looks like:** scrapes with `module=synology` fail (scrape
+  error, target down) while the pod stays Healthy.
+- **Ordering:** v0.1.0 has no module-pack glob, so a pack patch has no effect
+  there; the pack patch can ship in the same sync as the version bump.
+- **A self-authored pack that keeps the v0.1.0 behaviour** MUST name its module
+  `synology` and use the upstream v0.30.1 `synology` block verbatim; the series
+  names then stay the same.
+- **Metric names exposed by a pack are that pack's contract** and may differ from
+  the v0.1.0 raw names.
 
 ## Out of scope
 
