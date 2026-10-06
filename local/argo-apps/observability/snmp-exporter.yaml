@@ -1,0 +1,30 @@
+# Needs the consumer Secret `snmp-exporter-auth` (key `auths.yml`); without it
+# the pod stays in ContainerCreating.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-snmp-exporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    platform.devoba.de/local-test: "true"
+    platform.devoba.de/sub-layer: observability
+    platform.devoba.de/component: snmp-exporter
+spec:
+  project: default
+  source:
+    repoURL: oci://${REGISTRY}/observability/snmp-exporter
+    targetRevision: ${TAG}
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: snmp-exporter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ServerSideDiff=true
