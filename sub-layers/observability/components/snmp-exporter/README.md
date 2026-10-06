@@ -89,7 +89,7 @@ explicitly:
 |---|---|---|
 | `version` | `3` | |
 | `security_level` | `authPriv` | |
-| `auth_protocol` | not `MD5` | `SHA256` or `SHA512` |
+| `auth_protocol` | `SHA256`, `SHA512`, or plain `SHA` under the named-risk-assumption rule below | `SHA256` or `SHA512` |
 | `priv_protocol` | not `DES`; `AES` (AES-128) or stronger: `AES192`, `AES192C`, `AES256`, `AES256C` | |
 
 `version: 3`, `security_level: authPriv`, an explicit `auth_protocol` and
@@ -140,15 +140,16 @@ that a consumer mounts into that glob; the core mounts nothing for packs. Rules:
   (SNMPv2c, community `public`, where an unknown auth is otherwise rejected with
   HTTP 400), a pack reusing a consumer auth name would crash-loop the exporter, and
   credentials in a pack ConfigMap would bypass the `snmp-exporter-auth` Secret
-  contract. Scrapers SHOULD pass `auth=` explicitly.
+  contract. Scrapers MUST pass `auth=` explicitly.
 - Module names MUST be unique across the core and all packs. A duplicate key is
   fatal at start.
 - A pack volume name MUST NOT be `config` or `snmp-auth` (the core's own
   volumes), and a pack `mountPath` MUST be unique: it MUST NOT equal `/config`,
   `/etc/snmp-auth` or another pack's path.
 - A consumer that overrides the container `args` MUST keep all three
-  `--config.file` entries; otherwise mounted packs are ignored with only a
-  warn-level log.
+  `--config.file` entries. Dropping the glob entry makes mounted packs ignored
+  silently (no log); dropping the auths entry makes the exporter exit with
+  status 1; dropping `/config/snmp.yaml` loses the core modules.
 - A pack volume SHOULD be OPTIONAL (`configMap.optional: true`). An absent or
   empty glob only logs a warning, and the exporter starts with the core modules.
 
@@ -296,7 +297,11 @@ ships, such a consumer needs its own pack or stays on v0.1.0. The `if_mib`,
 - **What the break looks like:** scrapes with `module=synology` fail (scrape
   error, target down) while the pod stays Healthy.
 - **Ordering:** v0.1.0 has no module-pack glob, so a pack patch has no effect
-  there; the pack patch can ship in the same sync as the version bump.
+  there; the pack patch can ship in the same sync as the version bump. The pack
+  ConfigMap MUST exist before the v0.2.0 pod starts (same Application or an
+  earlier sync-wave); otherwise the optional volume starts empty, the exporter
+  starts with only the core modules, and `POST /-/reload` is needed after the
+  ConfigMap appears.
 - **A self-authored pack that keeps the v0.1.0 behaviour** MUST name its module
   `synology` and use the upstream v0.30.1 `synology` block verbatim; the series
   names then stay the same.
@@ -356,3 +361,6 @@ without error.
 - The pod template in the render has no checksum annotation.
 - The rendered `app.kubernetes.io/version` label still equals `version.app` in
   `compatibility.yaml`.
+- The Deployment and container are still named `snmp-exporter` and the core
+  volumes are still `config` (mounted at `/config`) and `snmp-auth`, because every
+  pack patch addresses them by name.
