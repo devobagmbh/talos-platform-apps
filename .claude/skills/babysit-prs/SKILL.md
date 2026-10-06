@@ -63,7 +63,8 @@ Six load-bearing invariants:
    **central-review tier as
    declared in its own `.github/CODEOWNERS`** — `AGENTS.md`, `CLAUDE.md`,
    `Taskfile.yml` (which holds this very classifier — the self-modification guard),
-   `devbox.json`/`devbox.lock`, `.sops.yaml*` (secret-decryption access), `.github/**`,
+   `devbox.json`/`devbox.lock`, `.sops.yaml*` (secret-decryption access), `DOCUMENTATION.md`
+   (its comment-rule block is injected into a subagent's context), `.github/**`,
    `.claude/**`, the `policies/`+`schemas/` admission-control gates, **plus the root
    platform-control configs `.gitleaks.toml` (the required secret gate), `.trivyignore.yaml`
    (CVE suppression) and `lefthook.yml` (the pre-commit gate)** — so the loop can never

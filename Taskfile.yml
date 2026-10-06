@@ -2216,44 +2216,54 @@ tasks:
     cmd: |
       set -eu
       hook=".claude/hooks/inject-comment-rule.sh"
-      doc="${COMMENT_RULE_DOC:-DOCUMENTATION.md}"
-      settings="${COMMENT_RULE_SETTINGS:-.claude/settings.json}"
+      doc="${COMMENT_RULE_TEST_DOC:-DOCUMENTATION.md}"
+      settings="${COMMENT_RULE_TEST_SETTINGS:-.claude/settings.json}"
       work="$(mktemp -d)" || { echo "test:comment-rule-hook: mktemp failed" >&2; exit 2; }
       trap 'rm -rf "$work"' EXIT
       fail=0
       check() { if [ "$2" != "$3" ]; then echo "FAIL: $1 (expected '$3', got '$2')"; fail=1; fi; }
-      quiet() { got="$(COMMENT_RULE_DOC="$2" bash "$hook")" || { echo "FAIL: $1 exited non-zero"; fail=1; }; check "$1 injects nothing" "$got" ""; }
+      quiet() { got="$(bash "$hook" "$2")" || { echo "FAIL: $1 exited non-zero"; fail=1; }; check "$1 injects nothing" "$got" ""; }
 
       check "begin marker count" "$(grep -c '^<!-- comment-rule:begin -->$' "$doc" || true)" 1
       check "end marker count" "$(grep -c '^<!-- comment-rule:end -->$' "$doc" || true)" 1
       check "begin precedes end" "$(awk '/^<!-- comment-rule:begin -->$/{b=NR} /^<!-- comment-rule:end -->$/{e=NR} END{print (b>0 && e>b) ? "yes" : "no"}' "$doc")" yes
+      expected="$(awk '/^<!-- comment-rule:begin -->$/{f=1;next} /^<!-- comment-rule:end -->$/{f=0} f' "$doc")"
+      check "block holds no HTML comment (a reviewer must see every injected line)" "$(printf '%s\n' "$expected" | grep -c '<!--' || true)" 0
 
-      out="$(COMMENT_RULE_DOC="$doc" bash "$hook")"
+      out="$(bash "$hook" "$doc")"
       check "event name" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" SubagentStart
       ctx="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
-      expected="$(awk '/^<!-- comment-rule:begin -->$/{f=1;next} /^<!-- comment-rule:end -->$/{f=0} f' "$doc")"
       check "injected block equals the DOCUMENTATION.md block" "$(printf '%s\n' "$ctx" | sed '1d')" "$expected"
 
       grep -v 'comment-rule' "$doc" > "$work/missing.md"
       quiet "missing markers" "$work/missing.md"
       sed -e 's/comment-rule:begin/comment-rule:TMP/' -e 's/comment-rule:end/comment-rule:begin/' -e 's/comment-rule:TMP/comment-rule:end/' "$doc" > "$work/reversed.md"
       quiet "reversed markers" "$work/reversed.md"
-      cat "$doc" > "$work/duplicated.md"
-      printf '%s\n' '<!-- comment-rule:begin -->' >> "$work/duplicated.md"
-      quiet "duplicated marker" "$work/duplicated.md"
-      awk 'BEGIN{print "<!-- comment-rule:begin -->"; for(i=0;i<130;i++) print "x"; print "<!-- comment-rule:end -->"}' > "$work/oversized.md"
-      quiet "oversized block" "$work/oversized.md"
+      cat "$doc" > "$work/dup-begin.md"
+      printf '%s\n' '<!-- comment-rule:begin -->' >> "$work/dup-begin.md"
+      quiet "duplicated begin marker" "$work/dup-begin.md"
+      cat "$doc" > "$work/dup-end.md"
+      printf '%s\n' '<!-- comment-rule:end -->' >> "$work/dup-end.md"
+      quiet "duplicated end marker" "$work/dup-end.md"
+      awk 'BEGIN{print "<!-- comment-rule:begin -->"; for(i=0;i<130;i++) print "x"; print "<!-- comment-rule:end -->"}' > "$work/too-many-lines.md"
+      quiet "block over 120 lines" "$work/too-many-lines.md"
+      awk 'BEGIN{print "<!-- comment-rule:begin -->"; for(i=0;i<60;i++) print "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; print "<!-- comment-rule:end -->"}' > "$work/too-many-bytes.md"
+      quiet "block over 9000 bytes" "$work/too-many-bytes.md"
       quiet "missing file" "$work/does-not-exist.md"
 
-      bound="$(jq -r '.hooks.SubagentStart[]? | select(.matcher == "senior-implementer") | .hooks[]? | select(.type == "command") | .command' "$settings")"
+      bound="$(jq -r '.hooks.SubagentStart[]? | select(.matcher == "^senior-implementer$") | .hooks[]? | select(.type == "command") | .command' "$settings")"
       case "$bound" in
         *".claude/hooks/inject-comment-rule.sh"*) ;;
-        *) echo "FAIL: $settings has no SubagentStart binding with matcher 'senior-implementer' to $hook (got '${bound:-<none>}')"; fail=1 ;;
+        *) echo "FAIL: $settings has no SubagentStart binding with matcher '^senior-implementer$' to $hook (got '${bound:-<none>}')"; fail=1 ;;
       esac
+      if [ -n "$bound" ]; then
+        run="$(CLAUDE_PROJECT_DIR="$(pwd)" sh -c "$bound")" || { echo "FAIL: the bound command exited non-zero"; fail=1; }
+        check "the bound command emits the SubagentStart event" "$(printf '%s' "$run" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null || true)" SubagentStart
+      fi
       [ -x "$hook" ] || { echo "FAIL: $hook is not executable"; fail=1; }
       [ -f ".claude/agents/senior-implementer.md" ] || { echo "FAIL: matcher target agent senior-implementer.md does not exist"; fail=1; }
 
-      if [ "$fail" -eq 0 ]; then echo "test:comment-rule-hook OK — hook extracts the marked block, fails open on 5 degraded inputs, binding present"; fi
+      if [ "$fail" -eq 0 ]; then echo "test:comment-rule-hook OK — hook extracts the marked block, stays silent on 7 degraded inputs, the bound command runs"; fi
       exit "$fail"
 
   pr:fix:facts:

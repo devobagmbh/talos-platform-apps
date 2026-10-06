@@ -26,7 +26,7 @@
   "hooks": {
     "SubagentStart": [
       {
-        "matcher": "senior-implementer",
+        "matcher": "^senior-implementer$",
         "hooks": [
           {
             "type": "command",
