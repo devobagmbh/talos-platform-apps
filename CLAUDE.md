@@ -9,6 +9,7 @@ This repo follows the **mcp-server style**: its own `.claude/` directory with su
 ### Hooks
 
 - `.claude/hooks/require-review.sh` — PreToolUse gate for `Bash` commits. **Currently inactive** (not bound in `settings.json`). With two maintainers (Thomas + Robert, both in CODEOWNERS) and M2 reached, fail-closed review enforcement is warranted; the hook binds in the **final** reactivation stage, after the `.claude/reviews/` emission substrate it depends on is wired — binding it before that substrate exists would block every commit. Until then the script is the contract the review agents emit against.
+- `.claude/hooks/inject-comment-rule.sh` — **active** `SubagentStart` hook bound in `settings.json` with a matcher on `senior-implementer` (the only subagent that writes component YAML). It injects the YAML comment-admission rule into that subagent's context, extracted from the block between the `comment-rule` markers in `DOCUMENTATION.md` (the single source). Fail-open: a degraded source injects nothing; `task test:comment-rule-hook` (in `task ci`) is the loud half and also asserts the binding. Covers the Agent-tool dispatch; the Workflow-runtime path (`catalog-fleet`) and worktree resolution are unverified. The agent body keeps a one-line pointer as fallback.
 - `.claude/hooks/pre-commit` — native Git pre-commit path that validates **review artifacts** (`review.md` `verdict` + implementer≠reviewer role separation). Inactive (not installed); bound in the same final reactivation stage as `require-review.sh`, after the emission substrate lands.
 - **`lefthook.yml`** — the **active** Git-hook orchestrator (a command-runner over devbox-provided binaries + `task` targets; no managed toolchain, so `devbox.json` stays the single tool-version SoT). pre-commit jobs: single-component scope, signing-config, `task lint`, gitleaks, whitespace/conflicts, no-rendered, no-makefile, no-large-files; commit-msg job: Conventional Commit. Check logic lives in the Taskfile (`lint:commit-msg`, `lint:commit-scope`, `lint:signing-config`). The `signing-config` job fails fast when commit signing is not configured locally (`main` enforces `required_signatures`; an unsigned commit makes the PR BLOCKED) — see `README.md` § Commit signing. Replaces the former `.pre-commit-config.yaml`. Install per clone: `lefthook install`. Note: git-emitting jobs use `git --no-pager` (lefthook runs jobs in a PTY → a bare `git diff` would launch the pager and hang). See ADR-0032.
 
@@ -65,14 +66,15 @@ on a global user config:
   do not load these rules); `task check:primitives` is the deterministic gate.
 
 **Important:** subagents do NOT load these rules (isolated context) — runtime-binding
-discipline lives inline in each agent body, the rules only remind the editor.
+discipline lives inline in each agent body (or reaches the subagent through a
+`SubagentStart` hook, see Hooks), the rules only remind the editor.
 
 ### Settings
 
 `.claude/settings.json` contains:
 
 - **Permissions allowlist** — reduces permission prompts (Bash, Read, Edit, Write, Glob, Grep, Agent + selected `mcp__github__*` tools).
-- **No hook bindings active** — see the "Hooks" section above.
+- **One hook binding** — `SubagentStart` (matcher `senior-implementer`) → `inject-comment-rule.sh`; the review hooks stay unbound (see "Hooks").
 
 ### Host-permission interaction & shell
 

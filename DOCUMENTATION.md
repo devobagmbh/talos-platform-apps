@@ -226,6 +226,7 @@ Scope and honest limits:
   merely starts with a CLI flag (`# --enable-foo`). Do not read those as helm-docs
   annotations.
 
+<!-- comment-rule:begin -->
 **Admission test.** Write the file without comments first, then admit a comment only
 where a reader editing that file would otherwise do the wrong thing. An admitted comment
 MUST state one of:
@@ -287,6 +288,7 @@ line the change edits — a changed value and the comment guarding it are one un
 reviewer MUST block a change that leaves such a comment false. A pure move or re-indent
 touches no comment. All other existing comments are backlog (§Migration status); a
 reviewer MUST NOT block a change for them.
+<!-- comment-rule:end -->
 
 ## Enforcement
 
