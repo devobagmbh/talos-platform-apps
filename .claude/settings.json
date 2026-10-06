@@ -22,5 +22,18 @@
       "mcp__github__add_issue_comment",
       "mcp__github__update_pull_request"
     ]
+  },
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "^senior-implementer$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR}/.claude/hooks/inject-comment-rule.sh\""
+          }
+        ]
+      }
+    ]
   }
 }

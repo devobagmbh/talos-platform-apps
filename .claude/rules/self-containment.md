@@ -43,7 +43,9 @@ agent/skill body, or in a repo-local `.claude/rules/` file like this one.
   subagent must follow at runtime (injection hardening, judge≠builder boundaries,
   evidence discipline, write-scope) is written **inline into that agent's body**,
   never left only here. Duplication between an agent body and these rules is
-  intentional: the rule reminds the editor, the inline copy binds the runtime.
+  intentional: the rule reminds the editor, the inline copy binds the runtime. A
+  `SubagentStart` hook may inject runtime discipline instead of an inline copy (the YAML
+  comment rule does); the agent body then keeps a one-line pointer as the fallback.
 
 ## The deterministic gate
 

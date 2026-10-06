@@ -3,7 +3,7 @@ type: decision
 title: "DR-0005 — Optional consumer-replaceable config files in the customization contract"
 description: Extend the additive `optional` block of the customization contract with a `config_files` shape, so a component can declare a config file it ships with working content and the consumer replaces by kustomize patch; enforce the five rules JSON Schema cannot express in task validate:contract.
 tags: [decision, contract, customization, schema, adr-0024, consumer-overlay]
-timestamp: 2026-09-25
+timestamp: 2026-10-06
 sources:
   - schemas/customization.schema.json
   - schemas/testdata/customization-optional-config-valid.yaml

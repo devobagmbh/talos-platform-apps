@@ -2006,6 +2006,8 @@ tasks:
                       platform-control configs .gitleaks.toml (the REQUIRED secret gate),
                       .trivyignore.yaml (CVE suppression — AGENTS.md requires a CODEOWNERS
                       delta inspection) and lefthook.yml (the pre-commit gate orchestrator),
+                      plus DOCUMENTATION.md (its comment-rule block is injected into a
+                      subagent's context at start, so an edit changes the agent's instructions),
                       plus .github/ / .claude/ and the policies/ + schemas/ admission-control
                       gates, plus the two central catalog contract files
                       catalog/topology-groups.yaml (#733: an author-declared same-product
@@ -2071,6 +2073,7 @@ tasks:
                     or test("^devbox\\.(json|lock)$") or test("^\\.sops\\.yaml")
                     or test("^\\.gitleaks\\.toml$") or test("^\\.trivyignore\\.yaml$")
                     or test("^lefthook\\.yml$")
+                    or test("^DOCUMENTATION\\.md$")
                     or test("^\\.github/") or test("^\\.claude/")
                     or test("^policies/") or test("^schemas/")
                     or test("^catalog/topology-groups\\.yaml$")
@@ -2142,6 +2145,7 @@ tasks:
         {"number":127,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["lefthook.yml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":4,"changedFileCount":1},
         {"number":128,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["catalog/topology-groups.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
         {"number":129,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["catalog/capability-index.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
+        {"number":130,"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["DOCUMENTATION.md"],"addedActionPins":[],"alreadyReviewedAtHead":false,"changedLineCount":3,"changedFileCount":1},
         {"isDraft":false,"reviewDecision":"REVIEW_REQUIRED","isCrossRepository":false,"authorLogin":"robertschneiderdevoba","mergeStateStatus":"BEHIND","files":["sub-layers/a/b.yaml"],"addedActionPins":[],"alreadyReviewedAtHead":false}
       ]
       JSON
@@ -2201,9 +2205,67 @@ tasks:
       assert_class 127 governance       # lefthook.yml (root platform-control config — pre-commit gate orchestrator)
       assert_class 128 governance       # catalog/topology-groups.yaml (topology-variant contract — same-product claim must be human-reviewed, #733)
       assert_class 129 governance       # catalog/capability-index.yaml (capability contract — capability-identity + swap_class claim must be human-reviewed, #752)
+      assert_class 130 governance       # DOCUMENTATION.md (its comment-rule block is injected into a subagent's context)
       count="$(printf '%s\n' "$out" | grep -cE '[^[:space:]]' || true)"
-      if [ "${count:-0}" -ne 30 ]; then echo "FAIL: expected exactly 30 in-scope lines, got ${count:-0}"; fail=1; fi
-      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (30 in-scope / 2 dropped)"; fi
+      if [ "${count:-0}" -ne 31 ]; then echo "FAIL: expected exactly 31 in-scope lines, got ${count:-0}"; fail=1; fi
+      if [ "$fail" -eq 0 ]; then echo "test:pr-triage OK — classifier matches the babysit-prs withhold contract (31 in-scope / 2 dropped)"; fi
+      exit "$fail"
+
+  test:comment-rule-hook:
+    desc: 'Hermetic red-green test for the SubagentStart comment-rule hook and its settings.json binding (in task ci)'
+    cmd: |
+      set -eu
+      hook=".claude/hooks/inject-comment-rule.sh"
+      doc="${COMMENT_RULE_TEST_DOC:-DOCUMENTATION.md}"
+      settings="${COMMENT_RULE_TEST_SETTINGS:-.claude/settings.json}"
+      work="$(mktemp -d)" || { echo "test:comment-rule-hook: mktemp failed" >&2; exit 2; }
+      trap 'rm -rf "$work"' EXIT
+      fail=0
+      check() { if [ "$2" != "$3" ]; then echo "FAIL: $1 (expected '$3', got '$2')"; fail=1; fi; }
+      quiet() { got="$(bash "$hook" "$2")" || { echo "FAIL: $1 exited non-zero"; fail=1; }; check "$1 injects nothing" "$got" ""; }
+
+      check "begin marker count" "$(grep -c '^<!-- comment-rule:begin -->$' "$doc" || true)" 1
+      check "end marker count" "$(grep -c '^<!-- comment-rule:end -->$' "$doc" || true)" 1
+      check "begin precedes end" "$(awk '/^<!-- comment-rule:begin -->$/{b=NR} /^<!-- comment-rule:end -->$/{e=NR} END{print (b>0 && e>b) ? "yes" : "no"}' "$doc")" yes
+      expected="$(awk '/^<!-- comment-rule:begin -->$/{f=1;next} /^<!-- comment-rule:end -->$/{f=0} f' "$doc" | tr -d '\r' | tr '\t' ' ')"
+      check "block holds no HTML comment (a reviewer must see every injected line)" "$(printf '%s\n' "$expected" | grep -c '<!--' || true)" 0
+
+      out="$(bash "$hook" "$doc")"
+      check "event name" "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" SubagentStart
+      ctx="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
+      check "injected block equals the DOCUMENTATION.md block" "$(printf '%s\n' "$ctx" | sed '1d')" "$expected"
+
+      grep -v 'comment-rule' "$doc" > "$work/missing.md"
+      quiet "missing markers" "$work/missing.md"
+      sed -e 's/comment-rule:begin/comment-rule:TMP/' -e 's/comment-rule:end/comment-rule:begin/' -e 's/comment-rule:TMP/comment-rule:end/' "$doc" > "$work/reversed.md"
+      quiet "reversed markers" "$work/reversed.md"
+      cat "$doc" > "$work/dup-begin.md"
+      printf '%s\n' '<!-- comment-rule:begin -->' >> "$work/dup-begin.md"
+      quiet "duplicated begin marker" "$work/dup-begin.md"
+      cat "$doc" > "$work/dup-end.md"
+      printf '%s\n' '<!-- comment-rule:end -->' >> "$work/dup-end.md"
+      quiet "duplicated end marker" "$work/dup-end.md"
+      awk 'BEGIN{print "<!-- comment-rule:begin -->"; for(i=0;i<130;i++) print "x"; print "<!-- comment-rule:end -->"}' > "$work/too-many-lines.md"
+      quiet "block over 120 lines" "$work/too-many-lines.md"
+      awk 'BEGIN{print "<!-- comment-rule:begin -->"; for(i=0;i<60;i++) print "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"; print "<!-- comment-rule:end -->"}' > "$work/too-many-bytes.md"
+      quiet "block over 9000 bytes" "$work/too-many-bytes.md"
+      quiet "missing file" "$work/does-not-exist.md"
+
+      bound="$(jq -r '.hooks.SubagentStart[]? | select(.matcher == "^senior-implementer$") | .hooks[]? | select(.type == "command") | .command' "$settings")"
+      case "$bound" in
+        *".claude/hooks/inject-comment-rule.sh"*) ;;
+        *) echo "FAIL: $settings has no SubagentStart binding with matcher '^senior-implementer$' to $hook (got '${bound:-<none>}')"; fail=1 ;;
+      esac
+      if [ -n "$bound" ] && [ "$(printf '%s\n' "$bound" | wc -l | tr -d ' ')" -eq 1 ]; then
+        run="$(CLAUDE_PROJECT_DIR="$(pwd)" sh -c "$bound")" || { echo "FAIL: the bound command exited non-zero"; fail=1; }
+        check "the bound command emits the SubagentStart event" "$(printf '%s' "$run" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null || true)" SubagentStart
+      else
+        echo "FAIL: expected exactly one bound command under the matcher, got '${bound:-<none>}'"; fail=1
+      fi
+      [ -x "$hook" ] || { echo "FAIL: $hook is not executable"; fail=1; }
+      [ -f ".claude/agents/senior-implementer.md" ] || { echo "FAIL: matcher target agent senior-implementer.md does not exist"; fail=1; }
+
+      if [ "$fail" -eq 0 ]; then echo "test:comment-rule-hook OK — hook extracts the marked block, stays silent on degraded inputs, the single bound command runs"; fi
       exit "$fail"
 
   pr:fix:facts:
@@ -5929,6 +5991,7 @@ tasks:
       # Same placement rationale as test:pr-triage — the decision lives in a tested
       # target, so a regression is a red assertion instead of a push to the wrong branch.
       - task: test:pr-fix-admit
+      - task: test:comment-rule-hook
       # Hermetic red-green guard for the image-CVE extractor (G3b AC6-extraction,
       # fast, no network). Wired here so a regression in the scan:extract-images
       # regex/tag-filter — which would let a bare name fail-close a publish, or let

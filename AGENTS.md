@@ -44,7 +44,7 @@ talos-platform-apps/
 ├── .claude/                        — tool config for Claude Code
 │   ├── settings.json               — permissions + hook binding
 │   ├── agents/                     — subagent definitions
-│   └── hooks/                      — PreToolUse/PostToolUse scripts
+│   └── hooks/                      — PreToolUse/PostToolUse/SubagentStart scripts
 └── .github/
     ├── CODEOWNERS
     ├── dependabot.yml
