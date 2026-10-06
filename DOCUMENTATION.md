@@ -46,7 +46,7 @@ is deliberately scoped to two of them:
   what a component ships, its OCI path, its sync-wave, the obligations a consumer must
   satisfy. Reference stays terse and complete; it does not drift into explanation-essays
   — extended rationale is the bounded-explanation mode below, admitted only where a doc
-  class declares it (the manifest-comment class does, for footgun/PSA rationale).
+  class declares it (the manifest-comment class does, for constraint rationale).
 - **Explanation** is the bounded second mode — the "why" a future operator genuinely
   needs: a trade-off, a footgun rationale, a constraint's cause. Explanation is allowed
   but kept short and tied to a decision; long-form rationale lives in an ADR, linked by
@@ -185,28 +185,28 @@ duplicated here. The cross-cutting rules that apply on top:
 
 ### Manifest & config-file inline comments — Diátaxis: reference + bounded explanation
 
-Predominantly reference (what a value is), with the bounded explanation a future editor
-needs — a footgun's cause, a PSA value's rationale. That bounded explanation is exactly
-the MUST-PRESERVE content below; what stays out is unbounded narrative (the MUST NOT).
+Comments in these files are the exception, not the norm: the YAML is the source and
+states what a value is. A comment is admitted only when it passes the admission test
+below; everything else is deleted or lives in the component README, the commit body or
+an ADR.
 
 (`helm/*.yaml`, `manifests/*.yaml`, `customization.yaml`, `compatibility.yaml`.) The
 render inputs — `helm/*.yaml` and `manifests/*.yaml` — are render-/signed-byte-affecting,
 so editing their comments follows the SR3 conservative path. `customization.yaml` and
 `compatibility.yaml` are schema-validated config, not part of the signed render output,
-so their comments are not signed-byte-affecting — but the comment-disposition policy
-below applies to all four file classes. Render-impact (SR3) governs only whether an
-*edit* takes the conservative render-verify path, never whether a comment is preserved —
-a secret-shape obligation in `customization.yaml` is MUST-PRESERVE regardless.
+so their comments are not signed-byte-affecting — but the admission test below applies to
+all four file classes. Render-impact (SR3) governs only whether an *edit* takes the
+conservative render-verify path, never whether a comment is admitted.
 
-**Value-description comments in `helm/*.yaml` follow the helm-docs convention — and
-ONLY in `helm/*.yaml`.** A comment whose job is to describe *what a values key is*
-SHOULD use the [helm-docs](https://github.com/norwoodj/helm-docs) `# --` annotation
+**Admitted value-description comments in `helm/*.yaml` follow the helm-docs convention —
+and ONLY in `helm/*.yaml`.** A comment that passes the admission test and whose job is
+to describe a values key SHOULD use the [helm-docs](https://github.com/norwoodj/helm-docs) `# --` annotation
 (two dashes, a space, then the description) directly above the key, with `@default` and
 an inline `(type)` where they help (the block below is illustrative — no such annotation
 exists in the corpus yet):
 
 ```yaml
-# -- (int) controller replica count
+# -- (int) must stay 1: file storage is single-writer
 replicaCount: 1
 ```
 
@@ -214,7 +214,7 @@ Scope and honest limits:
 
 - **`helm/*.yaml` only.** Raw `manifests/*.yaml` are Kubernetes resources, not chart
   values — they have no values keys to annotate, so `# --` MUST NOT be used there; their
-  comments follow the disposition policy below as plain prose.
+  comments follow the admission test below as plain prose.
 - **Description format, not generation.** These files are upstream-chart *references*
   with a *partial* override set, not authored charts — helm-docs generates nothing here
   and would only ever see the overridden subset. The convention is adopted for a
@@ -226,35 +226,67 @@ Scope and honest limits:
   merely starts with a CLI flag (`# --enable-foo`). Do not read those as helm-docs
   annotations.
 
-**The four dispositions** govern every comment in all four file classes. The decisive
-question is **"would a future editor cause a silent failure without seeing this AT the
-value?"** — not comment length. The `# --` description form does NOT replace the
-MUST-PRESERVE class: a value description and a footgun guard are distinct *dispositions*,
-not necessarily distinct *comments* — they MAY share one comment block (the `# --`
-portion describes the key, the footgun portion is MUST-PRESERVE), and MUST-PRESERVE
-content is never dropped even when fused with a description.
+**Admission test.** Write the file without comments first, then admit a comment only
+where a reader editing that file would otherwise do the wrong thing. An admitted comment
+MUST state one of:
 
-- **MUST (inline):** a non-obvious value or constraint, explained at the point it
-  applies (in `helm/*.yaml`, value descriptions use the `# --` form above).
-- **MUST-PRESERVE (inline, never relocated):** the comment classes whose removal causes
-  a silent failure for a later editor —
-  - *operator signals*: pending-verification markers (`>>> VERIFY …`), placeholder
-    notices (`PLACEHOLDER` / `REPLACE-ME`), and intentional-absence records
-    ("X is NOT shipped because Y");
-  - *footgun guards*: "cannot change to X because Y" constraints (e.g. "not relaxable
-    to baseline/restricted");
-  - *security / PSA rationale* justifying a `pod-security.kubernetes.io/enforce` value;
-  - *consumer secret-shape obligations* (which secret keys / Vault paths the consumer
-    must supply).
+- a **constraint and the consequence of breaking it** — "cannot change to X because Y",
+  the PSA level a workload forces, a render-time-only setting a consumer patch cannot
+  reach; a one-line "this value is a placeholder the consumer replaces" is such a
+  field-level constraint, not an obligation narrative;
+- a **coupling invisible from this file** (e.g. a label that must match a selector
+  defined in another manifest);
+- a **rejected alternative** where the obvious edit is the wrong one, including an
+  intentional absence ("X stays unset because Y"), written as prose, never as
+  commented-out config;
+- a **form a tool mandates** — a yamllint directive, a schema modeline.
 
-  These stay inline even when multi-line or prose-shaped; when a comment could be read
-  as either MUST-PRESERVE or MUST NOT, default to MUST-PRESERVE. (A *specific* per-file
-  inventory of such comments belongs in the cleanup task's working notes, not in this
-  durable standard — line numbers rot.)
-- **MAY:** a single ADR/issue reference token.
-- **MUST NOT (move to the component README or the ADR):** architecture essays,
-  roadmap / deferred-work narrative, capability-edge prose, multi-paragraph history.
-- **Out of scope** *(non-normative — lives elsewhere)*: restating what the YAML key already says — omit it.
+An admitted comment MUST be stated in the fewest words that carry the fact, in the
+present tense; content that needs more than about three lines belongs in the component
+README, the commit body or an ADR. It MAY carry a single ADR ID as a pointer. A
+constraint that holds identically in sibling files MAY be stated, in one line, in each.
+
+The decisive question for a doubtful comment is **"would an editor of this file break
+something — silently, or only later in a consumer's cluster — without it?"** If so it is
+admitted, even when the README or an ADR also carries the rationale: it then shrinks to
+the one-line guard plus a pointer. Removing an admitted constraint is the same defect as
+adding narration. A comment that matches both an admitted category and a residue rule
+below is admitted only as that one-line guard; the rest is residue.
+
+A guard is redundant only when a gate **fails on the broken edit itself**: a deletion
+that relies on one MUST name the gate and the failing edit in the commit body, and only
+a gate that blocks a merge (a required check or `task ci`) counts — an advisory gate, or
+one that covers the same area without failing on the edit, does not. `scan:psa-conformance`,
+for instance, fails a level that is too strict for the workload, not one that is too lax.
+
+Open work is tracked in an issue and marked at the value by a single line,
+`# TODO(#123): <what is open>`, with no narrative; the line MUST be deleted when the
+issue closes. A pending-verification marker (`>>> VERIFY …`) MUST NOT be dropped
+silently: delete it only once the verification is done, or replace it with such a
+`TODO`.
+
+Residue MUST NOT exist — delete it, or move the content to the component README, the
+commit body or an ADR:
+
+- **restating** what the key, value or name already says (this includes a `# --`
+  description that adds nothing: the helm-docs form never admits a comment by itself);
+- **history and process** — who changed it or when, review or PR narration, "verified on
+  <date>";
+- rationale **duplicated from the README or an ADR** beyond the one-line guard and
+  pointer;
+- the same **multi-line block repeated** across sibling files;
+- **consumer obligations and operating procedure**: delete one only when the component
+  README already states it, otherwise move it there in the same change (the secret keys
+  a consumer supplies are declared in `customization.yaml` `required.secret_keys`, not
+  narrated);
+- **commented-out config**, **section banners**, and a **TODO** without an issue number;
+- architecture essays, roadmap / deferred-work narrative, capability-edge prose.
+
+The test governs every comment a change adds or edits, and every comment attached to a
+line the change edits — a changed value and the comment guarding it are one unit, and a
+reviewer MUST block a change that leaves such a comment false. A pure move or re-indent
+touches no comment. All other existing comments are backlog (§Migration status); a
+reviewer MUST NOT block a change for them.
 
 ## Enforcement
 
@@ -288,7 +320,7 @@ library or an authored chart) makes a convention inapplicable:
 - **Diátaxis** — adopted as the doc-type lens. Reference and (bounded) explanation are
   in scope; *tutorial* and *how-to guide* are deliberately out of scope — the consumer
   cluster repos own the live-cluster, step-by-step path.
-- **helm-docs `# --` convention** — adopted as the value-description comment form in
+- **helm-docs `# --` convention** — adopted as the form of an admitted value comment in
   `helm/*.yaml` only (raw `manifests/*.yaml` excluded). **Divergence:** the repo ships
   chart *references* with a *partial* override set, not authored charts, so helm-docs
   generates nothing here and would only see the overridden subset — the convention is

@@ -31,9 +31,10 @@ component, which may carry drift.
 
 ## Repo conventions (non-negotiable)
 
-These patterns are codified in `AGENTS.md` + `schemas/customization.schema.json`
-(the authoritative sources); existing code only illustrates them and may carry
-drift — never treat a sibling component as the pattern authority:
+These patterns are codified in `AGENTS.md`, `schemas/customization.schema.json` and
+(for comments) `DOCUMENTATION.md` — the authoritative sources; existing code only
+illustrates them and may carry drift — never treat a sibling component as the pattern
+authority:
 
 - **Component-scoped layout**: the OCI distribution unit is the *component*; the
   sub-layer is an organizational bracket (a directory grouping). A component
@@ -42,6 +43,9 @@ drift — never treat a sibling component as the pattern authority:
   (`requires` / `provides`), `customization.yaml` (the freeze-line contract,
   validated against `schemas/customization.schema.json`), and `helm/` *or*
   `manifests/`. `rendered/` is gitignored.
+- **Comments are admitted, not default**: write the YAML without comments first, then
+  add one only if it passes the admission test in `DOCUMENTATION.md` §Manifest &
+  config-file inline comments, which is the authority for what stays and what goes.
 - **Per-component versioning**: SemVer per component, tag format
   `<sub-layer>/<component>-vMAJ.MIN.PATCH`. Each component has an independent
   lifecycle.
@@ -111,7 +115,7 @@ class. Therefore:
   forbidden is lifting their content into the component.
 - **Set what differs.** A key whose value merely repeats the chart default is
   dead weight — unless it is a deliberate pin against upstream drift, and then
-  that reason belongs in a `# --` comment beside it.
+  that reason belongs in a comment beside it, admitted per `DOCUMENTATION.md`.
 - **Recall is a draft, never a source.** A values key, chart version, or CRD
   `apiVersion` you remember rather than read is unverified. When the registry is
   unreachable, say so in the hand-off and name the keys you could not ground: an
