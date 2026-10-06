@@ -43,9 +43,10 @@ authority:
   (`requires` / `provides`), `customization.yaml` (the freeze-line contract,
   validated against `schemas/customization.schema.json`), and `helm/` *or*
   `manifests/`. `rendered/` is gitignored.
-- **Comments are admitted, not default**: add one only if it passes the admission test
-  in `DOCUMENTATION.md` §Manifest & config-file inline comments (an excerpt is injected
-  at start when the hook fires; the section also covers the `# --` form and SR3).
+- **Comments are admitted, not default**: write the YAML without comments first, then
+  add one only if it passes the admission test in `DOCUMENTATION.md` §Manifest &
+  config-file inline comments (an excerpt is injected at start when the hook fires; the
+  section also covers the `# --` form and SR3).
 - **Per-component versioning**: SemVer per component, tag format
   `<sub-layer>/<component>-vMAJ.MIN.PATCH`. Each component has an independent
   lifecycle.

@@ -2227,7 +2227,7 @@ tasks:
       check "begin marker count" "$(grep -c '^<!-- comment-rule:begin -->$' "$doc" || true)" 1
       check "end marker count" "$(grep -c '^<!-- comment-rule:end -->$' "$doc" || true)" 1
       check "begin precedes end" "$(awk '/^<!-- comment-rule:begin -->$/{b=NR} /^<!-- comment-rule:end -->$/{e=NR} END{print (b>0 && e>b) ? "yes" : "no"}' "$doc")" yes
-      expected="$(awk '/^<!-- comment-rule:begin -->$/{f=1;next} /^<!-- comment-rule:end -->$/{f=0} f' "$doc")"
+      expected="$(awk '/^<!-- comment-rule:begin -->$/{f=1;next} /^<!-- comment-rule:end -->$/{f=0} f' "$doc" | tr -d '\r' | tr '\t' ' ')"
       check "block holds no HTML comment (a reviewer must see every injected line)" "$(printf '%s\n' "$expected" | grep -c '<!--' || true)" 0
 
       out="$(bash "$hook" "$doc")"
@@ -2256,14 +2256,16 @@ tasks:
         *".claude/hooks/inject-comment-rule.sh"*) ;;
         *) echo "FAIL: $settings has no SubagentStart binding with matcher '^senior-implementer$' to $hook (got '${bound:-<none>}')"; fail=1 ;;
       esac
-      if [ -n "$bound" ]; then
+      if [ -n "$bound" ] && [ "$(printf '%s\n' "$bound" | wc -l | tr -d ' ')" -eq 1 ]; then
         run="$(CLAUDE_PROJECT_DIR="$(pwd)" sh -c "$bound")" || { echo "FAIL: the bound command exited non-zero"; fail=1; }
         check "the bound command emits the SubagentStart event" "$(printf '%s' "$run" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null || true)" SubagentStart
+      else
+        echo "FAIL: expected exactly one bound command under the matcher, got '${bound:-<none>}'"; fail=1
       fi
       [ -x "$hook" ] || { echo "FAIL: $hook is not executable"; fail=1; }
       [ -f ".claude/agents/senior-implementer.md" ] || { echo "FAIL: matcher target agent senior-implementer.md does not exist"; fail=1; }
 
-      if [ "$fail" -eq 0 ]; then echo "test:comment-rule-hook OK — hook extracts the marked block, stays silent on 7 degraded inputs, the bound command runs"; fi
+      if [ "$fail" -eq 0 ]; then echo "test:comment-rule-hook OK — hook extracts the marked block, stays silent on degraded inputs, the single bound command runs"; fi
       exit "$fail"
 
   pr:fix:facts:

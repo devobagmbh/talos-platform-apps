@@ -23,7 +23,7 @@ block="$(awk '
 ' "$doc")" || exit 0
 [ -n "$block" ] || exit 0
 [ "$(printf '%s\n' "$block" | wc -l | tr -d ' ')" -le 120 ] || exit 0
-[ "$(printf '%s\n' "$block" | wc -c | tr -d ' ')" -le 9000 ] || exit 0
+[ "$(printf '%s' "$block" | wc -c | tr -d ' ')" -le 9000 ] || exit 0
 
 body="$(printf '%s\n' "$block" | tr -d '\r' | tr '\t' ' ' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
   | awk 'BEGIN { ORS = "" } { print (NR > 1 ? "\\n" : "") $0 }')" || exit 0
