@@ -67,5 +67,6 @@
   "sub-layers/storage-objects/components/garage-operator-crds": "0.1.0",
   "sub-layers/storage-objects/components/garage-operator": "0.2.0",
   "sub-layers/observability/components/smartctl-exporter": "0.1.0",
-  "sub-layers/observability/components/snmp-exporter": "0.1.0"
+  "sub-layers/observability/components/snmp-exporter": "0.1.0",
+  "sub-layers/secrets/components/vault-server": "0.1.0"
 }
