@@ -1,21 +1,21 @@
 # Default owner for everything that is not specific.
-*                                     @robertschneiderdevoba @Nosmoht
+*                                     @robertschneiderdevoba @Nosmoht @Skrugmann
 
 # Sub-Layer owners (initially M1; splits up after M2 onboarding)
-/sub-layers/automation/               @robertschneiderdevoba @Nosmoht
-/sub-layers/databases/                @robertschneiderdevoba @Nosmoht
-/sub-layers/lifecycle/                @robertschneiderdevoba @Nosmoht
-/sub-layers/observability/            @robertschneiderdevoba @Nosmoht
-/sub-layers/registry/                 @robertschneiderdevoba @Nosmoht
-/sub-layers/secrets/                  @robertschneiderdevoba @Nosmoht
-/sub-layers/storage-objects/          @robertschneiderdevoba @Nosmoht
+/sub-layers/automation/               @robertschneiderdevoba @Nosmoht @Skrugmann
+/sub-layers/databases/                @robertschneiderdevoba @Nosmoht @Skrugmann
+/sub-layers/lifecycle/                @robertschneiderdevoba @Nosmoht @Skrugmann
+/sub-layers/observability/            @robertschneiderdevoba @Nosmoht @Skrugmann
+/sub-layers/registry/                 @robertschneiderdevoba @Nosmoht @Skrugmann
+/sub-layers/secrets/                  @robertschneiderdevoba @Nosmoht @Skrugmann
+/sub-layers/storage-objects/          @robertschneiderdevoba @Nosmoht @Skrugmann
 
 # Pipeline hygiene + platform conventions (central, always M1)
-/.github/                             @robertschneiderdevoba @Nosmoht
-/.claude/                             @robertschneiderdevoba @Nosmoht
-/AGENTS.md                            @robertschneiderdevoba @Nosmoht
-/CLAUDE.md                            @robertschneiderdevoba @Nosmoht
-/Taskfile.yml                         @robertschneiderdevoba @Nosmoht
-/devbox.json                          @robertschneiderdevoba @Nosmoht
-/devbox.lock                          @robertschneiderdevoba @Nosmoht
-/.sops.yaml*                          @robertschneiderdevoba @Nosmoht
+/.github/                             @robertschneiderdevoba @Nosmoht @Skrugmann
+/.claude/                             @robertschneiderdevoba @Nosmoht @Skrugmann
+/AGENTS.md                            @robertschneiderdevoba @Nosmoht @Skrugmann
+/CLAUDE.md                            @robertschneiderdevoba @Nosmoht @Skrugmann
+/Taskfile.yml                         @robertschneiderdevoba @Nosmoht @Skrugmann
+/devbox.json                          @robertschneiderdevoba @Nosmoht @Skrugmann
+/devbox.lock                          @robertschneiderdevoba @Nosmoht @Skrugmann
+/.sops.yaml*                          @robertschneiderdevoba @Nosmoht @Skrugmann
