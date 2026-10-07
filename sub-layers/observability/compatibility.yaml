@@ -23,3 +23,4 @@ components:
   - nvidia-dcgm-exporter    # sync-wave 0  — per-GPU-node DaemonSet, DCGM_FI_* GPU metrics (privileged ns: SYS_ADMIN + hostPath); telemetry facet of the nvidia-stack gpu-runtime impl; GPU-node nodeSelector is a consumer obligation
   - smartctl-exporter       # sync-wave 0  — per-node DaemonSet, smartctl_* disk SMART health (privileged ns: privileged container + /dev hostPath); amd64-only image
   - snmp-exporter           # sync-wave 0  — multi-target SNMP exporter; nine vendor-neutral modules plus a module-pack extension point, no credentials in the artifact (SNMPv3 auths via a consumer-supplied Secret); egress/ingress restriction is a consumer obligation
+  - snmp-modules-synology   # sync-wave 1  — Synology SNMP module pack for the snmp-exporter core; ConfigMap only, mounted into the core by a consumer patch

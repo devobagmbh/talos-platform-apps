@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-10-07
+
+- **`observability/snmp-modules-synology` added ([#904](https://github.com/devobagmbh/talos-platform-apps/issues/904))**: the first module pack for the vendor-neutral `snmp-exporter` core, a single ConfigMap carrying the generated Synology module with `synology_*` metric names. It ships no Namespace, workload or credentials and is mounted into the core by a consumer patch, so the `observability` component table now lists a configuration-only component.
+
 ## 2026-10-05
 
 - **Capability registration ([#894](https://github.com/devobagmbh/talos-platform-apps/issues/894))**: added the `snmp-device-metrics` capability to `catalog/capability-index.yaml` (Observability; impl `snmp-exporter` active, `alloy` and `otelcol` considered; `swap_class: consumer-change` for the first two, `rewrite-required` for `otelcol`) — the prerequisite index entry for the planned `observability/snmp-exporter` component, merged ahead of it so the build and the evaluator check the id against the index. The row is old-shape (no `interface_type` / `independence_test`), ahead of the ADR-0029 schema port that talos-platform-docs ADR-0039 sequences before the index part of V7; it migrates with that port. The index header's "30 of 36" completeness claim now notes capabilities defined here first. Re-verified the three concepts carrying `capability-index.yaml` in `sources:` (`architecture/capability-layer-model.md`, `glossary.md`, `decisions/DR-0003-topology-variant-contract.md`): none enumerates the capability set or states its size, so no present-tense claim is falsified; timestamps bumped.
