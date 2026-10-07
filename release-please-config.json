@@ -145,6 +145,10 @@
       "component": "observability/snmp-exporter",
       "initial-version": "0.1.0"
     },
+    "sub-layers/observability/components/snmp-modules-synology": {
+      "component": "observability/snmp-modules-synology",
+      "initial-version": "0.1.0"
+    },
     "sub-layers/observability/components/tempo": {
       "component": "observability/tempo",
       "initial-version": "0.1.0"
