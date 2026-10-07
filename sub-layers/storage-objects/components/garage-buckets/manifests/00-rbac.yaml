@@ -1,0 +1,17 @@
+# ServiceAccount the provisioning Job runs under. No RBAC (Role/ClusterRole) is
+# attached: the Job talks ONLY to the Garage admin HTTP API (in-cluster Service,
+# port 3903) — it creates no Kubernetes resources and reads no Kubernetes API,
+# so it needs no permissions beyond a pod identity. The garage namespace is NOT
+# shipped here: it is the shared namespace declared by the sibling component
+# storage-objects/garage (sole-claimant rule — see the build skill's
+# CONVENTIONS.md § Namespace & PSA).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: garage-buckets
+  namespace: garage
+  labels:
+    app.kubernetes.io/name: garage-buckets
+    platform.devoba.de/sub-layer: storage-objects
+    platform.devoba.de/component: garage-buckets
+automountServiceAccountToken: false
