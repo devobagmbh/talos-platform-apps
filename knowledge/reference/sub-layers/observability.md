@@ -3,7 +3,7 @@ type: reference
 title: observability sub-layer
 description: The LGTM-A telemetry stack, Prometheus/Grafana operators, exporters, and Hubble.
 tags: [reference, sub-layer, observability]
-timestamp: 2026-10-06
+timestamp: 2026-10-07
 sources:
   - sub-layers/observability/README.md
   - sub-layers/observability/compatibility.yaml
@@ -31,6 +31,7 @@ prefix: `ghcr.io/devobagmbh/talos-platform-apps/observability/`.
 | nvidia-dcgm-exporter | 0 | - | `gpu-runtime` (rewrite-required) | - |
 | smartctl-exporter | 0 | - | - | - |
 | snmp-exporter | 0 | - | `snmp-device-metrics` (consumer-change) | - |
+| snmp-modules-synology | 1 | - | - | observability/snmp-exporter |
 | loki | 10 | - | `logs-storage` (data-migration), `logs-query` (drop-in) | `s3-object` (cap) |
 | loki-distributed | 10 | - | `logs-storage` (data-migration), `logs-query` (drop-in) | `s3-object` (cap) |
 | mimir | 10 | - | `metrics-storage` (data-migration), `metrics-query` (drop-in) | `s3-object` (cap) |
@@ -39,8 +40,8 @@ prefix: `ghcr.io/devobagmbh/talos-platform-apps/observability/`.
 
 ## Sync-wave order
 
-CRDs (-1) → operators + exporters (0) → LGTM backends (10, require `s3-object`) →
-collection (20). `kube-prometheus-stack` is a *stack* (a composition of
+CRDs (-1) → operators + exporters (0) → SNMP module packs (1) → LGTM backends (10,
+require `s3-object`) → collection (20). `kube-prometheus-stack` is a *stack* (a composition of
 these components), documented in the sub-layer README, not a component of its own.
 
 ## Notes
