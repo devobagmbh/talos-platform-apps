@@ -3,6 +3,6 @@ requires:
 provides:
   - name: snmp-modules-synology
     version:
-      sot: none  # a configuration artifact: no workload or chart version to track
+      sot: none
     api_surface: []
     capabilities: []
