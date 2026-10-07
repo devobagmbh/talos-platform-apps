@@ -1,0 +1,490 @@
+# walk, lookups and the overrides before "Pack additions" are the upstream v0.30.1 synology section, unchanged.
+# An auths: key in this file is written into the output and breaks the pack contract (README).
+modules:
+  synology:
+    walk:
+      - SYNOLOGY-SYSTEM-MIB::synoSystem         # 1.3.6.1.4.1.6574.1
+      - SYNOLOGY-DISK-MIB::synoDisk             # 1.3.6.1.4.1.6574.2
+      - SYNOLOGY-RAID-MIB::synoRaid             # 1.3.6.1.4.1.6574.3
+      - SYNOLOGY-UPS-MIB::synoUPS               # 1.3.6.1.4.1.6574.4
+      - SYNOLOGY-SMART-MIB::synologyDiskSMART   # 1.3.6.1.4.1.6574.5
+      - SYNOLOGY-SERVICES-MIB::synologyService  # 1.3.6.1.4.1.6574.6
+      - SYNOLOGY-STORAGEIO-MIB::storageIO       # 1.3.6.1.4.1.6574.101
+      - SYNOLOGY-SPACEIO-MIB::spaceIO           # 1.3.6.1.4.1.6574.102
+      - SYNOLOGY-ISCSILUN-MIB::synologyiSCSILUN # 1.3.6.1.4.1.6574.104
+    lookups:
+      - source_indexes: [spaceIOIndex]
+        lookup: spaceIODevice
+        drop_source_indexes: true
+      - source_indexes: [storageIOIndex]
+        lookup: storageIODevice
+        drop_source_indexes: true
+      - source_indexes: [serviceInfoIndex]
+        lookup: serviceName
+        drop_source_indexes: true
+      - source_indexes: [diskIndex]
+        lookup: diskID
+        drop_source_indexes: true
+      - source_indexes: [raidIndex]
+        lookup: raidName
+        drop_source_indexes: true
+    overrides:
+      SYNOLOGY-DISK-MIB::diskModel:
+        type: DisplayString
+      SYNOLOGY-DISK-MIB::diskType:
+        type: DisplayString
+      SYNOLOGY-RAID-MIB::raidFreeSize:
+        type: gauge
+      SYNOLOGY-RAID-MIB::raidName:
+        type: DisplayString
+      SYNOLOGY-RAID-MIB::raidTotalSize:
+        type: gauge
+      SYNOLOGY-SERVICES-MIB::serviceName:
+        type: DisplayString
+      SYNOLOGY-SMART-MIB::diskSMARTAttrName:
+        type: DisplayString
+      SYNOLOGY-SMART-MIB::diskSMARTAttrStatus:
+        type: DisplayString
+      SYNOLOGY-SMART-MIB::diskSMARTInfoDevName:
+        type: DisplayString
+      SYNOLOGY-SYSTEM-MIB::modelName:
+        type: DisplayString
+      SYNOLOGY-SYSTEM-MIB::serialNumber:
+        type: DisplayString
+      SYNOLOGY-SYSTEM-MIB::version:
+        type: DisplayString
+      # Pack additions: these OctetString objects would render as hex instead of text.
+      SYNOLOGY-DISK-MIB::diskID:
+        type: DisplayString
+      SYNOLOGY-DISK-MIB::diskName:
+        type: DisplayString
+      SYNOLOGY-DISK-MIB::diskRole:
+        type: DisplayString
+      SYNOLOGY-ISCSILUN-MIB::iSCSILUNName:
+        type: DisplayString
+      SYNOLOGY-ISCSILUN-MIB::iSCSILUNType:
+        type: DisplayString
+      SYNOLOGY-ISCSILUN-MIB::iSCSILUNUUID:
+        type: DisplayString
+      # name and scale overrides match the bare object name only; a qualified key is a silent no-op.
+      systemStatus:
+        name: synology_system_status
+      temperature:
+        name: synology_temperature
+      powerStatus:
+        name: synology_power_status
+      systemFanStatus:
+        name: synology_system_fan_status
+      cpuFanStatus:
+        name: synology_cpu_fan_status
+      modelName:
+        name: synology_model_name
+      serialNumber:
+        name: synology_serial_number
+      version:
+        name: synology_version
+      upgradeAvailable:
+        name: synology_upgrade_available_status
+      controllerNumber:
+        name: synology_controller_number
+      storageIOIndex:
+        name: synology_storage_io_index
+      storageIODevice:
+        name: synology_storage_io_device
+      storageIONRead:
+        name: synology_storage_io_n_read_total
+      storageIONWritten:
+        name: synology_storage_io_n_written_total
+      storageIOReads:
+        name: synology_storage_io_reads_total
+      storageIOWrites:
+        name: synology_storage_io_writes_total
+      storageIOLA:
+        name: synology_storage_io_la
+      storageIOLA1:
+        name: synology_storage_io_la1
+      storageIOLA5:
+        name: synology_storage_io_la5
+      storageIOLA15:
+        name: synology_storage_io_la15
+      storageIONReadX:
+        name: synology_storage_io_read_bytes_total
+      storageIONWrittenX:
+        name: synology_storage_io_written_bytes_total
+      storageIODeviceSerial:
+        name: synology_storage_io_device_serial
+      spaceIOIndex:
+        name: synology_space_io_index
+      spaceIODevice:
+        name: synology_space_io_device
+      spaceIONRead:
+        name: synology_space_io_n_read_total
+      spaceIONWritten:
+        name: synology_space_io_n_written_total
+      spaceIOReads:
+        name: synology_space_io_reads_total
+      spaceIOWrites:
+        name: synology_space_io_writes_total
+      spaceIOLA:
+        name: synology_space_io_la
+      spaceIOLA1:
+        name: synology_space_io_la1
+      spaceIOLA5:
+        name: synology_space_io_la5
+      spaceIOLA15:
+        name: synology_space_io_la15
+      spaceIONReadX:
+        name: synology_space_io_n_read_x_total
+      spaceIONWrittenX:
+        name: synology_space_io_n_written_x_total
+      spaceUUID:
+        name: synology_space_uuid
+      iSCSILUNInfoIndex:
+        name: synology_iscsi_lun_info_index
+      iSCSILUNUUID:
+        name: synology_iscsi_lun_uuid
+      iSCSILUNName:
+        name: synology_iscsi_lun_name
+      iSCSILUNThroughputReadHigh:
+        name: synology_iscsi_lun_throughput_read_high
+      iSCSILUNThroughputReadLow:
+        name: synology_iscsi_lun_throughput_read_low
+      iSCSILUNThroughputWriteHigh:
+        name: synology_iscsi_lun_throughput_write_high
+      iSCSILUNThroughputWriteLow:
+        name: synology_iscsi_lun_throughput_write_low
+      iSCSILUNIopsRead:
+        name: synology_iscsi_lun_iops_read
+      iSCSILUNIopsWrite:
+        name: synology_iscsi_lun_iops_write
+      iSCSILUNDiskLatencyRead:
+        name: synology_iscsi_lun_disk_latency_read
+      iSCSILUNDiskLatencyWrite:
+        name: synology_iscsi_lun_disk_latency_write
+      iSCSILUNNetworkLatencyTx:
+        name: synology_iscsi_lun_network_latency_tx
+      iSCSILUNNetworkLatencyRx:
+        name: synology_iscsi_lun_network_latency_rx
+      iSCSILUNIoSizeRead:
+        name: synology_iscsi_lun_io_size_read
+      iSCSILUNIoSizeWrite:
+        name: synology_iscsi_lun_io_size_write
+      iSCSILUNQueueDepth:
+        name: synology_iscsi_lun_queue_depth
+      iSCSILUNType:
+        name: synology_iscsi_lun_type
+      iSCSILUNDiskLatencyAvg:
+        name: synology_iscsi_lun_disk_latency_avg
+      iSCSILUNThinProvisionVolFreeMBs:
+        name: synology_iscsi_lun_thin_provision_volume_free_bytes
+        scale: 1048576
+      diskIndex:
+        name: synology_disk_index
+      diskID:
+        name: synology_disk_id
+      diskModel:
+        name: synology_disk_model
+      diskType:
+        name: synology_disk_type
+      diskStatus:
+        name: synology_disk_status
+      diskTemperature:
+        name: synology_disk_temperature_celsius
+      diskRole:
+        name: synology_disk_role
+      diskRetry:
+        name: synology_disk_retry
+      diskBadSector:
+        name: synology_disk_bad_sector
+      diskIdentifyFail:
+        name: synology_disk_identify_fail
+      # A device-reported -1 becomes -0.01 after the scale, which is not a valid ratio.
+      diskRemainLife:
+        name: synology_disk_remaining_life_ratio
+        scale: 0.01
+      diskName:
+        name: synology_disk_name
+      diskHealthStatus:
+        name: synology_disk_health_status
+      raidIndex:
+        name: synology_raid_index
+      raidName:
+        name: synology_raid_name
+      raidStatus:
+        name: synology_raid_status
+      raidFreeSize:
+        name: synology_raid_free_bytes
+      raidTotalSize:
+        name: synology_raid_size_bytes
+      raidHotspareCnt:
+        name: synology_raid_hotspare_cnt
+      upsDeviceModel:
+        name: synology_ups_device_model
+      upsDeviceManufacturer:
+        name: synology_ups_device_manufacturer
+      upsDeviceSerial:
+        name: synology_ups_device_serial
+      upsDeviceType:
+        name: synology_ups_device_type
+      upsDeviceDescription:
+        name: synology_ups_device_description
+      upsDeviceContact:
+        name: synology_ups_device_contact
+      upsDeviceLocation:
+        name: synology_ups_device_location
+      upsDevicePart:
+        name: synology_ups_device_part
+      upsDeviceMACAddr:
+        name: synology_ups_device_mac_addr
+      upsInfoStatus:
+        name: synology_ups_info_status
+      upsInfoAlarm:
+        name: synology_ups_info_alarm
+      upsInfoTime:
+        name: synology_ups_info_time
+      upsInfoDate:
+        name: synology_ups_info_date
+      upsInfoModel:
+        name: synology_ups_info_model
+      upsInfoMfrName:
+        name: synology_ups_info_mfr_name
+      upsInfoMfrDate:
+        name: synology_ups_info_mfr_date
+      upsInfoSerial:
+        name: synology_ups_info_serial
+      upsInfoVendorID:
+        name: synology_ups_info_vendor_id
+      upsInfoProductID:
+        name: synology_ups_info_product_id
+      upsInfoFirmwareName:
+        name: synology_ups_info_firmware_name
+      upsInfoFirmwareAux:
+        name: synology_ups_info_firmware_aux
+      upsInfoTemperature:
+        name: synology_ups_info_temperature
+      upsInfoLoadValue:
+        name: synology_ups_info_load_value
+      upsInfoLoadHigh:
+        name: synology_ups_info_load_high
+      upsInfoID:
+        name: synology_ups_info_id
+      upsInfoDelayStart:
+        name: synology_ups_info_delay_start
+      upsInfoDelayReboot:
+        name: synology_ups_info_delay_reboot
+      upsInfoDelayShutdown:
+        name: synology_ups_info_delay_shutdown
+      upsInfoTimerStart:
+        name: synology_ups_info_timer_start
+      upsInfoTimerReboot:
+        name: synology_ups_info_timer_reboot
+      upsInfoTimerShutdown:
+        name: synology_ups_info_timer_shutdown
+      upsInfoTestInterval:
+        name: synology_ups_info_test_interval
+      upsInfoTestResult:
+        name: synology_ups_info_test_result
+      upsInfoDisplayLanguage:
+        name: synology_ups_info_display_language
+      upsInfoContacts:
+        name: synology_ups_info_contacts
+      upsInfoEffciency:
+        name: synology_ups_info_effciency
+      upsInfoPowerValue:
+        name: synology_ups_info_power_value
+      upsInfoPowerNominal:
+        name: synology_ups_info_power_nominal
+      upsInfoRealPowerValue:
+        name: synology_ups_info_real_power_value
+      upsInfoRealPowerNominal:
+        name: synology_ups_info_real_power_nominal
+      upsInfoBeeperStatus:
+        name: synology_ups_info_beeper_status
+      upsInfoType:
+        name: synology_ups_info_type
+      upsInfoWatchdogStatus:
+        name: synology_ups_info_watchdog_status
+      upsInfoStartAuto:
+        name: synology_ups_info_start_auto
+      upsInfoStartBattery:
+        name: synology_ups_info_start_battery
+      upsInfoStartReboot:
+        name: synology_ups_info_start_reboot
+      upsBatteryChargeValue:
+        name: synology_ups_battery_charge_value
+      upsBatteryChargeLow:
+        name: synology_ups_battery_charge_low
+      upsBatteryChargeRestart:
+        name: synology_ups_battery_charge_restart
+      upsBatteryChargeWarning:
+        name: synology_ups_battery_charge_warning
+      upsBatteryVoltageValue:
+        name: synology_ups_battery_voltage_value
+      upsBatteryVoltageNominal:
+        name: synology_ups_battery_voltage_nominal
+      upsBatteryVoltageLow:
+        name: synology_ups_battery_voltage_low
+      upsBatteryVoltageHigh:
+        name: synology_ups_battery_voltage_high
+      upsBatteryCapacity:
+        name: synology_ups_battery_capacity
+      upsBatteryCurrent:
+        name: synology_ups_battery_current
+      upsBatteryTemperature:
+        name: synology_ups_battery_temperature
+      upsBatteryRuntimeValue:
+        name: synology_ups_battery_runtime_value
+      upsBatteryRuntimeLow:
+        name: synology_ups_battery_runtime_low
+      upsBatteryRuntimeRestart:
+        name: synology_ups_battery_runtime_restart
+      upsBatteryAlarmThreshold:
+        name: synology_ups_battery_alarm_threshold
+      upsBatteryDate:
+        name: synology_ups_battery_date
+      upsBatteryMfrDate:
+        name: synology_ups_battery_mfr_date
+      upsBatteryPacks:
+        name: synology_ups_battery_packs
+      upsBatteryPacksBad:
+        name: synology_ups_battery_packs_bad
+      upsBatteryType:
+        name: synology_ups_battery_type
+      upsBatteryProtection:
+        name: synology_ups_battery_protection
+      upsBatteryEnergySave:
+        name: synology_ups_battery_energy_save
+      upsInputVoltageValue:
+        name: synology_ups_input_voltage_value
+      upsInputVoltageMax:
+        name: synology_ups_input_voltage_max
+      upsInputVoltageMin:
+        name: synology_ups_input_voltage_min
+      upsInputVoltageNominal:
+        name: synology_ups_input_voltage_nominal
+      upsInputVoltageExtend:
+        name: synology_ups_input_voltage_extend
+      upsInputVoltageFault:
+        name: synology_ups_input_voltage_fault
+      upsInputTransferReason:
+        name: synology_ups_input_transfer_reason
+      upsInputTransferLow:
+        name: synology_ups_input_transfer_low
+      upsInputTransferHigh:
+        name: synology_ups_input_transfer_high
+      upsInputTransferLowMin:
+        name: synology_ups_input_transfer_low_min
+      upsInputTransferLowMax:
+        name: synology_ups_input_transfer_low_max
+      upsInputTransferHighMin:
+        name: synology_ups_input_transfer_high_min
+      upsInputTransferHighMax:
+        name: synology_ups_input_transfer_high_max
+      upsInputTransferBoostLow:
+        name: synology_ups_input_transfer_boost_low
+      upsInputTransferBoostHigh:
+        name: synology_ups_input_transfer_boost_high
+      upsInputTransferTrimLow:
+        name: synology_ups_input_transfer_trim_low
+      upsInputTransferTrimHigh:
+        name: synology_ups_input_transfer_trim_high
+      upsInputSensitivity:
+        name: synology_ups_input_sensitivity
+      upsInputQuality:
+        name: synology_ups_input_quality
+      upsInputCurrentValue:
+        name: synology_ups_input_current_value
+      upsInputCurrentNominal:
+        name: synology_ups_input_current_nominal
+      upsInputFrequencyValue:
+        name: synology_ups_input_frequency_value
+      upsInputFrequencyNominal:
+        name: synology_ups_input_frequency_nominal
+      upsInputFrequencyLow:
+        name: synology_ups_input_frequency_low
+      upsInputFrequencyHigh:
+        name: synology_ups_input_frequency_high
+      upsInputFrequencyExtend:
+        name: synology_ups_input_frequency_extend
+      upsOutputVoltageValue:
+        name: synology_ups_output_voltage_value
+      upsOutputVoltageNominal:
+        name: synology_ups_output_voltage_nominal
+      upsOutputFrequencyValue:
+        name: synology_ups_output_frequency_value
+      upsOutputFrequencyNominal:
+        name: synology_ups_output_frequency_nominal
+      upsOutputCurrentValue:
+        name: synology_ups_output_current_value
+      upsOutputCurrentNominal:
+        name: synology_ups_output_current_nominal
+      upsAmbientTemperatureValue:
+        name: synology_ups_ambient_temperature_value
+      upsAmbientTemperatureAlarm:
+        name: synology_ups_ambient_temperature_alarm
+      upsAmbientTemperatureHigh:
+        name: synology_ups_ambient_temperature_high
+      upsAmbientTemperatureLow:
+        name: synology_ups_ambient_temperature_low
+      upsAmbientTemperatureMax:
+        name: synology_ups_ambient_temperature_max
+      upsAmbientTemperatureMin:
+        name: synology_ups_ambient_temperature_min
+      upsAmbientHumidityValue:
+        name: synology_ups_ambient_humidity_value
+      upsAmbientHumidityAlarm:
+        name: synology_ups_ambient_humidity_alarm
+      upsAmbientHumidityHigh:
+        name: synology_ups_ambient_humidity_high
+      upsAmbientHumidityLow:
+        name: synology_ups_ambient_humidity_low
+      upsAmbientHumidityMax:
+        name: synology_ups_ambient_humidity_max
+      upsAmbientHumidityMin:
+        name: synology_ups_ambient_humidity_min
+      upsDriverName:
+        name: synology_ups_driver_name
+      upsDriverVersion:
+        name: synology_ups_driver_version
+      upsDriverVersionData:
+        name: synology_ups_driver_version_data
+      upsDriverVersionInternal:
+        name: synology_ups_driver_version_internal
+      upsDriverPollInterval:
+        name: synology_ups_driver_poll_interval
+      upsDriverPort:
+        name: synology_ups_driver_port
+      upsDriverPollFrequency:
+        name: synology_ups_driver_poll_frequency
+      upsDriverProductID:
+        name: synology_ups_driver_product_id
+      upsDriverSnmpVersion:
+        name: synology_ups_driver_snmp_version
+      upsServerInfo:
+        name: synology_ups_server_info
+      upsServerVersion:
+        name: synology_ups_server_version
+      diskSMARTInfoIndex:
+        name: synology_disk_smart_info_index
+      diskSMARTInfoDevName:
+        name: synology_disk_smart_info_dev_name
+      diskSMARTAttrName:
+        name: synology_disk_smart_attr_name
+      diskSMARTAttrId:
+        name: synology_disk_smart_attr_id
+      diskSMARTAttrCurrent:
+        name: synology_disk_smart_attr_current
+      diskSMARTAttrWorst:
+        name: synology_disk_smart_attr_worst
+      diskSMARTAttrThreshold:
+        name: synology_disk_smart_attr_threshold
+      diskSMARTAttrRaw:
+        name: synology_disk_smart_attr_raw
+      diskSMARTAttrStatus:
+        name: synology_disk_smart_attr_status
+      serviceInfoIndex:
+        name: synology_service_info_index
+      serviceName:
+        name: synology_service_name
+      serviceUsers:
+        name: synology_service_users

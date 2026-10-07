@@ -1,0 +1,1489 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snmp-modules-synology
+  namespace: snmp-exporter
+  labels:
+    app.kubernetes.io/name: snmp-modules-synology
+data:
+  synology.yaml: |
+    # WARNING: This file was auto-generated using snmp_exporter generator, manual changes will be lost.
+    modules:
+      synology:
+        walk:
+        - 1.3.6.1.4.1.6574.1
+        - 1.3.6.1.4.1.6574.101
+        - 1.3.6.1.4.1.6574.102
+        - 1.3.6.1.4.1.6574.104
+        - 1.3.6.1.4.1.6574.2
+        - 1.3.6.1.4.1.6574.3
+        - 1.3.6.1.4.1.6574.4
+        - 1.3.6.1.4.1.6574.5
+        - 1.3.6.1.4.1.6574.6
+        metrics:
+        - name: synology_system_status
+          oid: 1.3.6.1.4.1.6574.1.1
+          type: gauge
+          help: Synology system status Each meanings of status represented describe below
+            - 1.3.6.1.4.1.6574.1.1
+        - name: synology_temperature
+          oid: 1.3.6.1.4.1.6574.1.2
+          type: gauge
+          help: Synology system temperature The temperature of Disk Station uses Celsius
+            degree. - 1.3.6.1.4.1.6574.1.2
+        - name: synology_power_status
+          oid: 1.3.6.1.4.1.6574.1.3
+          type: gauge
+          help: Synology power status Each meanings of status represented describe below
+            - 1.3.6.1.4.1.6574.1.3
+        - name: synology_system_fan_status
+          oid: 1.3.6.1.4.1.6574.1.4.1
+          type: gauge
+          help: Synology system fan status Each meanings of status represented describe
+            below - 1.3.6.1.4.1.6574.1.4.1
+        - name: synology_cpu_fan_status
+          oid: 1.3.6.1.4.1.6574.1.4.2
+          type: gauge
+          help: Synology cpu fan status Each meanings of status represented describe below
+            - 1.3.6.1.4.1.6574.1.4.2
+        - name: synology_model_name
+          oid: 1.3.6.1.4.1.6574.1.5.1
+          type: DisplayString
+          help: The Model name of this NAS - 1.3.6.1.4.1.6574.1.5.1
+        - name: synology_serial_number
+          oid: 1.3.6.1.4.1.6574.1.5.2
+          type: DisplayString
+          help: The serial number of this NAS - 1.3.6.1.4.1.6574.1.5.2
+        - name: synology_version
+          oid: 1.3.6.1.4.1.6574.1.5.3
+          type: DisplayString
+          help: The version of this DSM - 1.3.6.1.4.1.6574.1.5.3
+        - name: synology_upgrade_available_status
+          oid: 1.3.6.1.4.1.6574.1.5.4
+          type: gauge
+          help: This oid is for checking whether there is a latest DSM can be upgraded
+            - 1.3.6.1.4.1.6574.1.5.4
+        - name: synology_controller_number
+          oid: 1.3.6.1.4.1.6574.1.6
+          type: gauge
+          help: Synology system controller number Controller A(0) Controller B(1) - 1.3.6.1.4.1.6574.1.6
+        - name: synology_storage_io_index
+          oid: 1.3.6.1.4.1.6574.101.1.1.1
+          type: gauge
+          help: Reference index for each observed device. - 1.3.6.1.4.1.6574.101.1.1.1
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_device
+          oid: 1.3.6.1.4.1.6574.101.1.1.2
+          type: DisplayString
+          help: The name of the device we are counting/checking. - 1.3.6.1.4.1.6574.101.1.1.2
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_n_read_total
+          oid: 1.3.6.1.4.1.6574.101.1.1.3
+          type: counter
+          help: The number of bytes read from this device since boot. - 1.3.6.1.4.1.6574.101.1.1.3
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_n_written_total
+          oid: 1.3.6.1.4.1.6574.101.1.1.4
+          type: counter
+          help: The number of bytes written to this device since boot. - 1.3.6.1.4.1.6574.101.1.1.4
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_reads_total
+          oid: 1.3.6.1.4.1.6574.101.1.1.5
+          type: counter
+          help: The number of read accesses from this device since boot. - 1.3.6.1.4.1.6574.101.1.1.5
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_writes_total
+          oid: 1.3.6.1.4.1.6574.101.1.1.6
+          type: counter
+          help: The number of write accesses to this device since boot. - 1.3.6.1.4.1.6574.101.1.1.6
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_la
+          oid: 1.3.6.1.4.1.6574.101.1.1.8
+          type: gauge
+          help: The load of disk (%) - 1.3.6.1.4.1.6574.101.1.1.8
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_la1
+          oid: 1.3.6.1.4.1.6574.101.1.1.9
+          type: gauge
+          help: The 1 minute average load of disk (%) - 1.3.6.1.4.1.6574.101.1.1.9
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_la5
+          oid: 1.3.6.1.4.1.6574.101.1.1.10
+          type: gauge
+          help: The 5 minute average load of disk (%) - 1.3.6.1.4.1.6574.101.1.1.10
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_la15
+          oid: 1.3.6.1.4.1.6574.101.1.1.11
+          type: gauge
+          help: The 15 minute average load of disk (%) - 1.3.6.1.4.1.6574.101.1.1.11
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_read_bytes_total
+          oid: 1.3.6.1.4.1.6574.101.1.1.12
+          type: counter
+          help: The number of bytes read from this device since boot. - 1.3.6.1.4.1.6574.101.1.1.12
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_written_bytes_total
+          oid: 1.3.6.1.4.1.6574.101.1.1.13
+          type: counter
+          help: The number of bytes written to this device since boot. - 1.3.6.1.4.1.6574.101.1.1.13
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_storage_io_device_serial
+          oid: 1.3.6.1.4.1.6574.101.1.1.14
+          type: DisplayString
+          help: The name of the device we are counting/checking. - 1.3.6.1.4.1.6574.101.1.1.14
+          indexes:
+          - labelname: storageIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - storageIOIndex
+            labelname: storageIODevice
+            oid: 1.3.6.1.4.1.6574.101.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: storageIOIndex
+        - name: synology_space_io_index
+          oid: 1.3.6.1.4.1.6574.102.1.1.1
+          type: gauge
+          help: Reference index for each observed device. - 1.3.6.1.4.1.6574.102.1.1.1
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_device
+          oid: 1.3.6.1.4.1.6574.102.1.1.2
+          type: DisplayString
+          help: The name of the device we are counting/checking. - 1.3.6.1.4.1.6574.102.1.1.2
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_n_read_total
+          oid: 1.3.6.1.4.1.6574.102.1.1.3
+          type: counter
+          help: The number of bytes read from this device since boot. - 1.3.6.1.4.1.6574.102.1.1.3
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_n_written_total
+          oid: 1.3.6.1.4.1.6574.102.1.1.4
+          type: counter
+          help: The number of bytes written to this device since boot. - 1.3.6.1.4.1.6574.102.1.1.4
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_reads_total
+          oid: 1.3.6.1.4.1.6574.102.1.1.5
+          type: counter
+          help: The number of read accesses from this device since boot. - 1.3.6.1.4.1.6574.102.1.1.5
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_writes_total
+          oid: 1.3.6.1.4.1.6574.102.1.1.6
+          type: counter
+          help: The number of write accesses to this device since boot. - 1.3.6.1.4.1.6574.102.1.1.6
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_la
+          oid: 1.3.6.1.4.1.6574.102.1.1.8
+          type: gauge
+          help: The load of disk (%) - 1.3.6.1.4.1.6574.102.1.1.8
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_la1
+          oid: 1.3.6.1.4.1.6574.102.1.1.9
+          type: gauge
+          help: The 1 minute average load of disk (%) - 1.3.6.1.4.1.6574.102.1.1.9
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_la5
+          oid: 1.3.6.1.4.1.6574.102.1.1.10
+          type: gauge
+          help: The 5 minute average load of disk (%) - 1.3.6.1.4.1.6574.102.1.1.10
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_la15
+          oid: 1.3.6.1.4.1.6574.102.1.1.11
+          type: gauge
+          help: The 15 minute average load of disk (%) - 1.3.6.1.4.1.6574.102.1.1.11
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_n_read_x_total
+          oid: 1.3.6.1.4.1.6574.102.1.1.12
+          type: counter
+          help: The number of bytes read from this device since boot. - 1.3.6.1.4.1.6574.102.1.1.12
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_io_n_written_x_total
+          oid: 1.3.6.1.4.1.6574.102.1.1.13
+          type: counter
+          help: The number of bytes written to this device since boot. - 1.3.6.1.4.1.6574.102.1.1.13
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_space_uuid
+          oid: 1.3.6.1.4.1.6574.102.1.1.14
+          type: DisplayString
+          help: The uuid of space. - 1.3.6.1.4.1.6574.102.1.1.14
+          indexes:
+          - labelname: spaceIOIndex
+            type: gauge
+          lookups:
+          - labels:
+            - spaceIOIndex
+            labelname: spaceIODevice
+            oid: 1.3.6.1.4.1.6574.102.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: spaceIOIndex
+        - name: synology_iscsi_lun_info_index
+          oid: 1.3.6.1.4.1.6574.104.1.1.1
+          type: gauge
+          help: LUN info index - 1.3.6.1.4.1.6574.104.1.1.1
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_uuid
+          oid: 1.3.6.1.4.1.6574.104.1.1.2
+          type: DisplayString
+          help: LUN uuid - 1.3.6.1.4.1.6574.104.1.1.2
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_name
+          oid: 1.3.6.1.4.1.6574.104.1.1.3
+          type: DisplayString
+          help: LUN name - 1.3.6.1.4.1.6574.104.1.1.3
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_throughput_read_high
+          oid: 1.3.6.1.4.1.6574.104.1.1.4
+          type: gauge
+          help: LUN read throughput over 32 bits part - 1.3.6.1.4.1.6574.104.1.1.4
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_throughput_read_low
+          oid: 1.3.6.1.4.1.6574.104.1.1.5
+          type: gauge
+          help: LUN read throughput in unsigned 32 bit - 1.3.6.1.4.1.6574.104.1.1.5
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_throughput_write_high
+          oid: 1.3.6.1.4.1.6574.104.1.1.6
+          type: gauge
+          help: LUN write throughput over 32 bits part - 1.3.6.1.4.1.6574.104.1.1.6
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_throughput_write_low
+          oid: 1.3.6.1.4.1.6574.104.1.1.7
+          type: gauge
+          help: LUN write throughput in unsigned 32 bit - 1.3.6.1.4.1.6574.104.1.1.7
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_iops_read
+          oid: 1.3.6.1.4.1.6574.104.1.1.8
+          type: gauge
+          help: LUN read iops - 1.3.6.1.4.1.6574.104.1.1.8
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_iops_write
+          oid: 1.3.6.1.4.1.6574.104.1.1.9
+          type: gauge
+          help: LUN write iops - 1.3.6.1.4.1.6574.104.1.1.9
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_disk_latency_read
+          oid: 1.3.6.1.4.1.6574.104.1.1.10
+          type: gauge
+          help: LUN disk latency when reading - 1.3.6.1.4.1.6574.104.1.1.10
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_disk_latency_write
+          oid: 1.3.6.1.4.1.6574.104.1.1.11
+          type: gauge
+          help: LUN disk latency when writing - 1.3.6.1.4.1.6574.104.1.1.11
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_network_latency_tx
+          oid: 1.3.6.1.4.1.6574.104.1.1.12
+          type: gauge
+          help: LUN transfer data network latency - 1.3.6.1.4.1.6574.104.1.1.12
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_network_latency_rx
+          oid: 1.3.6.1.4.1.6574.104.1.1.13
+          type: gauge
+          help: LUN receive data network latency - 1.3.6.1.4.1.6574.104.1.1.13
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_io_size_read
+          oid: 1.3.6.1.4.1.6574.104.1.1.14
+          type: gauge
+          help: LUN average io size when reading - 1.3.6.1.4.1.6574.104.1.1.14
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_io_size_write
+          oid: 1.3.6.1.4.1.6574.104.1.1.15
+          type: gauge
+          help: LUN average io size when writing - 1.3.6.1.4.1.6574.104.1.1.15
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_queue_depth
+          oid: 1.3.6.1.4.1.6574.104.1.1.16
+          type: gauge
+          help: Num of iSCSI commands in LUN queue - 1.3.6.1.4.1.6574.104.1.1.16
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_type
+          oid: 1.3.6.1.4.1.6574.104.1.1.17
+          type: DisplayString
+          help: LUN type - 1.3.6.1.4.1.6574.104.1.1.17
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_disk_latency_avg
+          oid: 1.3.6.1.4.1.6574.104.1.1.18
+          type: gauge
+          help: Average latency of LUN disk - 1.3.6.1.4.1.6574.104.1.1.18
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+        - name: synology_iscsi_lun_thin_provision_volume_free_bytes
+          oid: 1.3.6.1.4.1.6574.104.1.1.19
+          type: gauge
+          help: Free space(MB) of thin provisioning lun's volume - 1.3.6.1.4.1.6574.104.1.1.19
+          indexes:
+          - labelname: iSCSILUNInfoIndex
+            type: gauge
+          scale: 1.048576e+06
+        - name: synology_disk_index
+          oid: 1.3.6.1.4.1.6574.2.1.1.1
+          type: gauge
+          help: The index of disk table - 1.3.6.1.4.1.6574.2.1.1.1
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_id
+          oid: 1.3.6.1.4.1.6574.2.1.1.2
+          type: DisplayString
+          help: Synology disk ID The ID of disk is assigned by disk Station. - 1.3.6.1.4.1.6574.2.1.1.2
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_model
+          oid: 1.3.6.1.4.1.6574.2.1.1.3
+          type: DisplayString
+          help: Synology disk model name The disk model name will be showed here. - 1.3.6.1.4.1.6574.2.1.1.3
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_type
+          oid: 1.3.6.1.4.1.6574.2.1.1.4
+          type: DisplayString
+          help: Synology disk type The type of disk will be showed here, including SATA,
+            SSD and so on. - 1.3.6.1.4.1.6574.2.1.1.4
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_status
+          oid: 1.3.6.1.4.1.6574.2.1.1.5
+          type: gauge
+          help: Synology disk status Each meanings of status represented describe below
+            - 1.3.6.1.4.1.6574.2.1.1.5
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_temperature_celsius
+          oid: 1.3.6.1.4.1.6574.2.1.1.6
+          type: gauge
+          help: Synology disk temperature The temperature of each disk uses Celsius degree.
+            - 1.3.6.1.4.1.6574.2.1.1.6
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_role
+          oid: 1.3.6.1.4.1.6574.2.1.1.7
+          type: DisplayString
+          help: Synology disk role The role of the disk in system - 1.3.6.1.4.1.6574.2.1.1.7
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_retry
+          oid: 1.3.6.1.4.1.6574.2.1.1.8
+          type: gauge
+          help: Synology disk retry count The count of each disk connection retries. -
+            1.3.6.1.4.1.6574.2.1.1.8
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_bad_sector
+          oid: 1.3.6.1.4.1.6574.2.1.1.9
+          type: gauge
+          help: Synology disk bad sector count The count of each disk I/O bad sector.
+            - 1.3.6.1.4.1.6574.2.1.1.9
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_identify_fail
+          oid: 1.3.6.1.4.1.6574.2.1.1.10
+          type: gauge
+          help: Synology disk identify fail count The count of each disk identify fails.
+            - 1.3.6.1.4.1.6574.2.1.1.10
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_remaining_life_ratio
+          oid: 1.3.6.1.4.1.6574.2.1.1.11
+          type: gauge
+          help: Synology disk remainLife The estimate remain life of each disk. - 1.3.6.1.4.1.6574.2.1.1.11
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+          scale: 0.01
+        - name: synology_disk_name
+          oid: 1.3.6.1.4.1.6574.2.1.1.12
+          type: DisplayString
+          help: Synology disk name The name of disk which align to storage manager. -
+            1.3.6.1.4.1.6574.2.1.1.12
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_disk_health_status
+          oid: 1.3.6.1.4.1.6574.2.1.1.13
+          type: gauge
+          help: Synology disk health status Each meanings of status represented describe
+            below - 1.3.6.1.4.1.6574.2.1.1.13
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: diskIndex
+        - name: synology_raid_index
+          oid: 1.3.6.1.4.1.6574.3.1.1.1
+          type: gauge
+          help: The index of raid table - 1.3.6.1.4.1.6574.3.1.1.1
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: raidIndex
+        - name: synology_raid_name
+          oid: 1.3.6.1.4.1.6574.3.1.1.2
+          type: DisplayString
+          help: Synology raid name The name of each raid will be showed here. - 1.3.6.1.4.1.6574.3.1.1.2
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: raidIndex
+        - name: synology_raid_status
+          oid: 1.3.6.1.4.1.6574.3.1.1.3
+          type: gauge
+          help: Synology Raid status Each meanings of status represented describe below
+            - 1.3.6.1.4.1.6574.3.1.1.3
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: raidIndex
+        - name: synology_raid_free_bytes
+          oid: 1.3.6.1.4.1.6574.3.1.1.4
+          type: gauge
+          help: Synology raid freesize Free space in bytes. - 1.3.6.1.4.1.6574.3.1.1.4
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: raidIndex
+        - name: synology_raid_size_bytes
+          oid: 1.3.6.1.4.1.6574.3.1.1.5
+          type: gauge
+          help: Synology raid totalsize Total space in bytes. - 1.3.6.1.4.1.6574.3.1.1.5
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: raidIndex
+        - name: synology_raid_hotspare_cnt
+          oid: 1.3.6.1.4.1.6574.3.1.1.6
+          type: gauge
+          help: Synology raid hotspare Total hotspare disks count - 1.3.6.1.4.1.6574.3.1.1.6
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: raidIndex
+        - name: synology_ups_device_model
+          oid: 1.3.6.1.4.1.6574.4.1.1
+          type: DisplayString
+          help: Device model - 1.3.6.1.4.1.6574.4.1.1
+        - name: synology_ups_device_manufacturer
+          oid: 1.3.6.1.4.1.6574.4.1.2
+          type: DisplayString
+          help: Device manufacturer - 1.3.6.1.4.1.6574.4.1.2
+        - name: synology_ups_device_serial
+          oid: 1.3.6.1.4.1.6574.4.1.3
+          type: DisplayString
+          help: Device serial number. - 1.3.6.1.4.1.6574.4.1.3
+        - name: synology_ups_device_type
+          oid: 1.3.6.1.4.1.6574.4.1.4
+          type: DisplayString
+          help: Device type (ups, pdu, scd, psu) - 1.3.6.1.4.1.6574.4.1.4
+        - name: synology_ups_device_description
+          oid: 1.3.6.1.4.1.6574.4.1.5
+          type: DisplayString
+          help: Device description. - 1.3.6.1.4.1.6574.4.1.5
+        - name: synology_ups_device_contact
+          oid: 1.3.6.1.4.1.6574.4.1.6
+          type: DisplayString
+          help: Device administrator name. - 1.3.6.1.4.1.6574.4.1.6
+        - name: synology_ups_device_location
+          oid: 1.3.6.1.4.1.6574.4.1.7
+          type: DisplayString
+          help: Device physical location. - 1.3.6.1.4.1.6574.4.1.7
+        - name: synology_ups_device_part
+          oid: 1.3.6.1.4.1.6574.4.1.8
+          type: DisplayString
+          help: Device part number. - 1.3.6.1.4.1.6574.4.1.8
+        - name: synology_ups_device_mac_addr
+          oid: 1.3.6.1.4.1.6574.4.1.9
+          type: DisplayString
+          help: Physical network address of the device. - 1.3.6.1.4.1.6574.4.1.9
+        - name: synology_ups_info_status
+          oid: 1.3.6.1.4.1.6574.4.2.1
+          type: DisplayString
+          help: UPS status. - 1.3.6.1.4.1.6574.4.2.1
+        - name: synology_ups_info_alarm
+          oid: 1.3.6.1.4.1.6574.4.2.2
+          type: DisplayString
+          help: UPS alarms - 1.3.6.1.4.1.6574.4.2.2
+        - name: synology_ups_info_time
+          oid: 1.3.6.1.4.1.6574.4.2.3
+          type: DisplayString
+          help: Internal UPS clock time - 1.3.6.1.4.1.6574.4.2.3
+        - name: synology_ups_info_date
+          oid: 1.3.6.1.4.1.6574.4.2.4
+          type: DisplayString
+          help: Internal UPS clock date - 1.3.6.1.4.1.6574.4.2.4
+        - name: synology_ups_info_model
+          oid: 1.3.6.1.4.1.6574.4.2.5
+          type: DisplayString
+          help: UPS model - 1.3.6.1.4.1.6574.4.2.5
+        - name: synology_ups_info_mfr_name
+          oid: 1.3.6.1.4.1.6574.4.2.6.1
+          type: DisplayString
+          help: UPS manufacturer - 1.3.6.1.4.1.6574.4.2.6.1
+        - name: synology_ups_info_mfr_date
+          oid: 1.3.6.1.4.1.6574.4.2.6.2
+          type: DisplayString
+          help: UPS manufacturing date - 1.3.6.1.4.1.6574.4.2.6.2
+        - name: synology_ups_info_serial
+          oid: 1.3.6.1.4.1.6574.4.2.7
+          type: DisplayString
+          help: UPS serial number - 1.3.6.1.4.1.6574.4.2.7
+        - name: synology_ups_info_vendor_id
+          oid: 1.3.6.1.4.1.6574.4.2.8
+          type: DisplayString
+          help: Vendor ID for USB devices - 1.3.6.1.4.1.6574.4.2.8
+        - name: synology_ups_info_product_id
+          oid: 1.3.6.1.4.1.6574.4.2.9
+          type: DisplayString
+          help: Product ID for USB devices - 1.3.6.1.4.1.6574.4.2.9
+        - name: synology_ups_info_firmware_name
+          oid: 1.3.6.1.4.1.6574.4.2.10.1
+          type: DisplayString
+          help: UPS firmware - 1.3.6.1.4.1.6574.4.2.10.1
+        - name: synology_ups_info_firmware_aux
+          oid: 1.3.6.1.4.1.6574.4.2.10.2
+          type: DisplayString
+          help: Auxiliary device firmware - 1.3.6.1.4.1.6574.4.2.10.2
+        - name: synology_ups_info_temperature
+          oid: 1.3.6.1.4.1.6574.4.2.11
+          type: Float
+          help: UPS temperature (degrees C) - 1.3.6.1.4.1.6574.4.2.11
+        - name: synology_ups_info_load_value
+          oid: 1.3.6.1.4.1.6574.4.2.12.1
+          type: Float
+          help: Load on UPS (percent) - 1.3.6.1.4.1.6574.4.2.12.1
+        - name: synology_ups_info_load_high
+          oid: 1.3.6.1.4.1.6574.4.2.12.2
+          type: Float
+          help: Load when UPS switches to overload condition (OVER) (percent) - 1.3.6.1.4.1.6574.4.2.12.2
+        - name: synology_ups_info_id
+          oid: 1.3.6.1.4.1.6574.4.2.13
+          type: DisplayString
+          help: UPS system identifier - 1.3.6.1.4.1.6574.4.2.13
+        - name: synology_ups_info_delay_start
+          oid: 1.3.6.1.4.1.6574.4.2.14.1
+          type: gauge
+          help: Interval to wait before restarting the load (seconds) - 1.3.6.1.4.1.6574.4.2.14.1
+        - name: synology_ups_info_delay_reboot
+          oid: 1.3.6.1.4.1.6574.4.2.14.2
+          type: gauge
+          help: Interval to wait before rebooting the UPS (seconds) - 1.3.6.1.4.1.6574.4.2.14.2
+        - name: synology_ups_info_delay_shutdown
+          oid: 1.3.6.1.4.1.6574.4.2.14.3
+          type: gauge
+          help: Interval to wait after shutdown with delay command (seconds) - 1.3.6.1.4.1.6574.4.2.14.3
+        - name: synology_ups_info_timer_start
+          oid: 1.3.6.1.4.1.6574.4.2.15.1
+          type: gauge
+          help: Time before the load will be started (seconds) - 1.3.6.1.4.1.6574.4.2.15.1
+        - name: synology_ups_info_timer_reboot
+          oid: 1.3.6.1.4.1.6574.4.2.15.2
+          type: gauge
+          help: Time before the load will be rebooted (seconds) - 1.3.6.1.4.1.6574.4.2.15.2
+        - name: synology_ups_info_timer_shutdown
+          oid: 1.3.6.1.4.1.6574.4.2.15.3
+          type: gauge
+          help: Time before the load will be shutdown (seconds) - 1.3.6.1.4.1.6574.4.2.15.3
+        - name: synology_ups_info_test_interval
+          oid: 1.3.6.1.4.1.6574.4.2.16.1
+          type: gauge
+          help: Interval between self tests - 1.3.6.1.4.1.6574.4.2.16.1
+        - name: synology_ups_info_test_result
+          oid: 1.3.6.1.4.1.6574.4.2.16.2
+          type: DisplayString
+          help: Results of last self test - 1.3.6.1.4.1.6574.4.2.16.2
+        - name: synology_ups_info_display_language
+          oid: 1.3.6.1.4.1.6574.4.2.17
+          type: DisplayString
+          help: Language to use on front panel - 1.3.6.1.4.1.6574.4.2.17
+        - name: synology_ups_info_contacts
+          oid: 1.3.6.1.4.1.6574.4.2.18
+          type: DisplayString
+          help: UPS external contact sensors - 1.3.6.1.4.1.6574.4.2.18
+        - name: synology_ups_info_effciency
+          oid: 1.3.6.1.4.1.6574.4.2.19
+          type: gauge
+          help: Efficiency of the UPS (ratio of the output current on the input current)
+            (percent) - 1.3.6.1.4.1.6574.4.2.19
+        - name: synology_ups_info_power_value
+          oid: 1.3.6.1.4.1.6574.4.2.20.1
+          type: Float
+          help: Current value of apparent power (Volt-Amps) - 1.3.6.1.4.1.6574.4.2.20.1
+        - name: synology_ups_info_power_nominal
+          oid: 1.3.6.1.4.1.6574.4.2.20.2
+          type: Float
+          help: Nominal value of apparent power (Volt-Amps) - 1.3.6.1.4.1.6574.4.2.20.2
+        - name: synology_ups_info_real_power_value
+          oid: 1.3.6.1.4.1.6574.4.2.21.1
+          type: Float
+          help: Current value of real power (Watts) - 1.3.6.1.4.1.6574.4.2.21.1
+        - name: synology_ups_info_real_power_nominal
+          oid: 1.3.6.1.4.1.6574.4.2.21.2
+          type: Float
+          help: Nominal value of real power (Watts) - 1.3.6.1.4.1.6574.4.2.21.2
+        - name: synology_ups_info_beeper_status
+          oid: 1.3.6.1.4.1.6574.4.2.22
+          type: DisplayString
+          help: UPS beeper status (enabled, disabled or muted) - 1.3.6.1.4.1.6574.4.2.22
+        - name: synology_ups_info_type
+          oid: 1.3.6.1.4.1.6574.4.2.23
+          type: DisplayString
+          help: UPS type - 1.3.6.1.4.1.6574.4.2.23
+        - name: synology_ups_info_watchdog_status
+          oid: 1.3.6.1.4.1.6574.4.2.24
+          type: DisplayString
+          help: UPS watchdog status (enabled or disabled) - 1.3.6.1.4.1.6574.4.2.24
+        - name: synology_ups_info_start_auto
+          oid: 1.3.6.1.4.1.6574.4.2.25.1
+          type: DisplayString
+          help: UPS starts when mains is (re)applied - 1.3.6.1.4.1.6574.4.2.25.1
+        - name: synology_ups_info_start_battery
+          oid: 1.3.6.1.4.1.6574.4.2.25.2
+          type: DisplayString
+          help: Allow to start UPS from battery - 1.3.6.1.4.1.6574.4.2.25.2
+        - name: synology_ups_info_start_reboot
+          oid: 1.3.6.1.4.1.6574.4.2.25.3
+          type: DisplayString
+          help: UPS coldstarts from battery (enabled or disabled) - 1.3.6.1.4.1.6574.4.2.25.3
+        - name: synology_ups_battery_charge_value
+          oid: 1.3.6.1.4.1.6574.4.3.1.1
+          type: Float
+          help: Battery charge - 1.3.6.1.4.1.6574.4.3.1.1
+        - name: synology_ups_battery_charge_low
+          oid: 1.3.6.1.4.1.6574.4.3.1.2
+          type: Float
+          help: Remaining battery level when UPS switches to LB (percent) - 1.3.6.1.4.1.6574.4.3.1.2
+        - name: synology_ups_battery_charge_restart
+          oid: 1.3.6.1.4.1.6574.4.3.1.3
+          type: Float
+          help: Minimum battery level for UPS restart after power-off - 1.3.6.1.4.1.6574.4.3.1.3
+        - name: synology_ups_battery_charge_warning
+          oid: 1.3.6.1.4.1.6574.4.3.1.4
+          type: Float
+          help: Battery level when UPS switches to Warning state (percent) - 1.3.6.1.4.1.6574.4.3.1.4
+        - name: synology_ups_battery_voltage_value
+          oid: 1.3.6.1.4.1.6574.4.3.2.1
+          type: Float
+          help: The magnitude of the present battery voltage. - 1.3.6.1.4.1.6574.4.3.2.1
+        - name: synology_ups_battery_voltage_nominal
+          oid: 1.3.6.1.4.1.6574.4.3.2.2
+          type: Float
+          help: Nominal battery voltage. - 1.3.6.1.4.1.6574.4.3.2.2
+        - name: synology_ups_battery_voltage_low
+          oid: 1.3.6.1.4.1.6574.4.3.2.3
+          type: Float
+          help: Minimum battery voltage, that triggers FSD status . - 1.3.6.1.4.1.6574.4.3.2.3
+        - name: synology_ups_battery_voltage_high
+          oid: 1.3.6.1.4.1.6574.4.3.2.4
+          type: Float
+          help: Maximum battery voltage (Ie battery.charge = 100). - 1.3.6.1.4.1.6574.4.3.2.4
+        - name: synology_ups_battery_capacity
+          oid: 1.3.6.1.4.1.6574.4.3.3
+          type: Float
+          help: Battery capacity (Ah) - 1.3.6.1.4.1.6574.4.3.3
+        - name: synology_ups_battery_current
+          oid: 1.3.6.1.4.1.6574.4.3.4
+          type: Float
+          help: The present battery current. - 1.3.6.1.4.1.6574.4.3.4
+        - name: synology_ups_battery_temperature
+          oid: 1.3.6.1.4.1.6574.4.3.5
+          type: Float
+          help: The ambient temperature at or near the UPS Battery casing. - 1.3.6.1.4.1.6574.4.3.5
+        - name: synology_ups_battery_runtime_value
+          oid: 1.3.6.1.4.1.6574.4.3.6.1
+          type: gauge
+          help: Battery runtime (seconds) - 1.3.6.1.4.1.6574.4.3.6.1
+        - name: synology_ups_battery_runtime_low
+          oid: 1.3.6.1.4.1.6574.4.3.6.2
+          type: gauge
+          help: Remaining battery runtime when UPS switches to LB (seconds) - 1.3.6.1.4.1.6574.4.3.6.2
+        - name: synology_ups_battery_runtime_restart
+          oid: 1.3.6.1.4.1.6574.4.3.6.3
+          type: gauge
+          help: Minimum battery runtime for UPS restart after power-off (seconds) - 1.3.6.1.4.1.6574.4.3.6.3
+        - name: synology_ups_battery_alarm_threshold
+          oid: 1.3.6.1.4.1.6574.4.3.7
+          type: DisplayString
+          help: Battery alarm threshold - 1.3.6.1.4.1.6574.4.3.7
+        - name: synology_ups_battery_date
+          oid: 1.3.6.1.4.1.6574.4.3.8
+          type: DisplayString
+          help: Battery change date - 1.3.6.1.4.1.6574.4.3.8
+        - name: synology_ups_battery_mfr_date
+          oid: 1.3.6.1.4.1.6574.4.3.9
+          type: DisplayString
+          help: Battery manufacturing date - 1.3.6.1.4.1.6574.4.3.9
+        - name: synology_ups_battery_packs
+          oid: 1.3.6.1.4.1.6574.4.3.10
+          type: gauge
+          help: Number of battery packs - 1.3.6.1.4.1.6574.4.3.10
+        - name: synology_ups_battery_packs_bad
+          oid: 1.3.6.1.4.1.6574.4.3.11
+          type: gauge
+          help: Number of bad battery packs - 1.3.6.1.4.1.6574.4.3.11
+        - name: synology_ups_battery_type
+          oid: 1.3.6.1.4.1.6574.4.3.12
+          type: DisplayString
+          help: Battery chemistry - 1.3.6.1.4.1.6574.4.3.12
+        - name: synology_ups_battery_protection
+          oid: 1.3.6.1.4.1.6574.4.3.13
+          type: DisplayString
+          help: Prevent deep discharge of battery - 1.3.6.1.4.1.6574.4.3.13
+        - name: synology_ups_battery_energy_save
+          oid: 1.3.6.1.4.1.6574.4.3.14
+          type: DisplayString
+          help: Switch off when running on battery and no/low load - 1.3.6.1.4.1.6574.4.3.14
+        - name: synology_ups_input_voltage_value
+          oid: 1.3.6.1.4.1.6574.4.4.1.1
+          type: Float
+          help: Input voltage - 1.3.6.1.4.1.6574.4.4.1.1
+        - name: synology_ups_input_voltage_max
+          oid: 1.3.6.1.4.1.6574.4.4.1.2
+          type: Float
+          help: Maximum incoming voltage seen - 1.3.6.1.4.1.6574.4.4.1.2
+        - name: synology_ups_input_voltage_min
+          oid: 1.3.6.1.4.1.6574.4.4.1.3
+          type: Float
+          help: Minimum incoming voltage seen - 1.3.6.1.4.1.6574.4.4.1.3
+        - name: synology_ups_input_voltage_nominal
+          oid: 1.3.6.1.4.1.6574.4.4.1.4
+          type: Float
+          help: Nominal input voltage - 1.3.6.1.4.1.6574.4.4.1.4
+        - name: synology_ups_input_voltage_extend
+          oid: 1.3.6.1.4.1.6574.4.4.1.5
+          type: DisplayString
+          help: Extended input voltage range - 1.3.6.1.4.1.6574.4.4.1.5
+        - name: synology_ups_input_voltage_fault
+          oid: 1.3.6.1.4.1.6574.4.4.1.6
+          type: Float
+          help: Input voltage Fault - 1.3.6.1.4.1.6574.4.4.1.6
+        - name: synology_ups_input_transfer_reason
+          oid: 1.3.6.1.4.1.6574.4.4.2.1
+          type: DisplayString
+          help: Reason for last transfer to battery - 1.3.6.1.4.1.6574.4.4.2.1
+        - name: synology_ups_input_transfer_low
+          oid: 1.3.6.1.4.1.6574.4.4.2.2
+          type: Float
+          help: Low voltage transfer point - 1.3.6.1.4.1.6574.4.4.2.2
+        - name: synology_ups_input_transfer_high
+          oid: 1.3.6.1.4.1.6574.4.4.2.3
+          type: Float
+          help: High voltage transfer point - 1.3.6.1.4.1.6574.4.4.2.3
+        - name: synology_ups_input_transfer_low_min
+          oid: 1.3.6.1.4.1.6574.4.4.2.4
+          type: Float
+          help: smallest settable low voltage transfer point - 1.3.6.1.4.1.6574.4.4.2.4
+        - name: synology_ups_input_transfer_low_max
+          oid: 1.3.6.1.4.1.6574.4.4.2.5
+          type: Float
+          help: greatest settable low voltage transfer point - 1.3.6.1.4.1.6574.4.4.2.5
+        - name: synology_ups_input_transfer_high_min
+          oid: 1.3.6.1.4.1.6574.4.4.2.6
+          type: Float
+          help: smallest settable high voltage transfer point - 1.3.6.1.4.1.6574.4.4.2.6
+        - name: synology_ups_input_transfer_high_max
+          oid: 1.3.6.1.4.1.6574.4.4.2.7
+          type: Float
+          help: greatest settable high voltage transfer point - 1.3.6.1.4.1.6574.4.4.2.7
+        - name: synology_ups_input_transfer_boost_low
+          oid: 1.3.6.1.4.1.6574.4.4.2.8
+          type: Float
+          help: Low voltage boosting transfer point - 1.3.6.1.4.1.6574.4.4.2.8
+        - name: synology_ups_input_transfer_boost_high
+          oid: 1.3.6.1.4.1.6574.4.4.2.9
+          type: Float
+          help: High voltage boosting transfer point - 1.3.6.1.4.1.6574.4.4.2.9
+        - name: synology_ups_input_transfer_trim_low
+          oid: 1.3.6.1.4.1.6574.4.4.2.10
+          type: Float
+          help: Low voltage trimming transfer point - 1.3.6.1.4.1.6574.4.4.2.10
+        - name: synology_ups_input_transfer_trim_high
+          oid: 1.3.6.1.4.1.6574.4.4.2.11
+          type: Float
+          help: High voltage trimming transfer point - 1.3.6.1.4.1.6574.4.4.2.11
+        - name: synology_ups_input_sensitivity
+          oid: 1.3.6.1.4.1.6574.4.4.3
+          type: DisplayString
+          help: Input power sensitivity - 1.3.6.1.4.1.6574.4.4.3
+        - name: synology_ups_input_quality
+          oid: 1.3.6.1.4.1.6574.4.4.4
+          type: DisplayString
+          help: Input power quality - 1.3.6.1.4.1.6574.4.4.4
+        - name: synology_ups_input_current_value
+          oid: 1.3.6.1.4.1.6574.4.4.5.1
+          type: Float
+          help: Input current (A) - 1.3.6.1.4.1.6574.4.4.5.1
+        - name: synology_ups_input_current_nominal
+          oid: 1.3.6.1.4.1.6574.4.4.5.2
+          type: Float
+          help: Nominal input current (A) - 1.3.6.1.4.1.6574.4.4.5.2
+        - name: synology_ups_input_frequency_value
+          oid: 1.3.6.1.4.1.6574.4.4.6.1
+          type: Float
+          help: Input line frequency (Hz) - 1.3.6.1.4.1.6574.4.4.6.1
+        - name: synology_ups_input_frequency_nominal
+          oid: 1.3.6.1.4.1.6574.4.4.6.2
+          type: Float
+          help: Nominal input line frequency (Hz) - 1.3.6.1.4.1.6574.4.4.6.2
+        - name: synology_ups_input_frequency_low
+          oid: 1.3.6.1.4.1.6574.4.4.6.3
+          type: Float
+          help: Input line frequency low (Hz) - 1.3.6.1.4.1.6574.4.4.6.3
+        - name: synology_ups_input_frequency_high
+          oid: 1.3.6.1.4.1.6574.4.4.6.4
+          type: Float
+          help: Input line frequency high (Hz) - 1.3.6.1.4.1.6574.4.4.6.4
+        - name: synology_ups_input_frequency_extend
+          oid: 1.3.6.1.4.1.6574.4.4.6.5
+          type: DisplayString
+          help: Extended input frequency range - 1.3.6.1.4.1.6574.4.4.6.5
+        - name: synology_ups_output_voltage_value
+          oid: 1.3.6.1.4.1.6574.4.5.1.1
+          type: Float
+          help: Output voltage (V) - 1.3.6.1.4.1.6574.4.5.1.1
+        - name: synology_ups_output_voltage_nominal
+          oid: 1.3.6.1.4.1.6574.4.5.1.2
+          type: Float
+          help: Nominal output voltage (V) - 1.3.6.1.4.1.6574.4.5.1.2
+        - name: synology_ups_output_frequency_value
+          oid: 1.3.6.1.4.1.6574.4.5.2.1
+          type: Float
+          help: Output frequency (Hz) - 1.3.6.1.4.1.6574.4.5.2.1
+        - name: synology_ups_output_frequency_nominal
+          oid: 1.3.6.1.4.1.6574.4.5.2.2
+          type: Float
+          help: Nominal output frequency (Hz) - 1.3.6.1.4.1.6574.4.5.2.2
+        - name: synology_ups_output_current_value
+          oid: 1.3.6.1.4.1.6574.4.5.3.1
+          type: Float
+          help: Output current (A) - 1.3.6.1.4.1.6574.4.5.3.1
+        - name: synology_ups_output_current_nominal
+          oid: 1.3.6.1.4.1.6574.4.5.3.2
+          type: Float
+          help: Nominal output current (A) - 1.3.6.1.4.1.6574.4.5.3.2
+        - name: synology_ups_ambient_temperature_value
+          oid: 1.3.6.1.4.1.6574.4.6.1.1
+          type: Float
+          help: Ambient temperature (degrees C) - 1.3.6.1.4.1.6574.4.6.1.1
+        - name: synology_ups_ambient_temperature_alarm
+          oid: 1.3.6.1.4.1.6574.4.6.1.2
+          type: DisplayString
+          help: Temperature alarm (enabled/disabled) - 1.3.6.1.4.1.6574.4.6.1.2
+        - name: synology_ups_ambient_temperature_high
+          oid: 1.3.6.1.4.1.6574.4.6.1.3
+          type: Float
+          help: Temperature threshold high (degrees C) - 1.3.6.1.4.1.6574.4.6.1.3
+        - name: synology_ups_ambient_temperature_low
+          oid: 1.3.6.1.4.1.6574.4.6.1.4
+          type: Float
+          help: Temperature threshold low (degrees C) - 1.3.6.1.4.1.6574.4.6.1.4
+        - name: synology_ups_ambient_temperature_max
+          oid: 1.3.6.1.4.1.6574.4.6.1.5
+          type: Float
+          help: Maximum temperature seen (degrees C) - 1.3.6.1.4.1.6574.4.6.1.5
+        - name: synology_ups_ambient_temperature_min
+          oid: 1.3.6.1.4.1.6574.4.6.1.6
+          type: Float
+          help: Minimum temperature seen (degrees C) - 1.3.6.1.4.1.6574.4.6.1.6
+        - name: synology_ups_ambient_humidity_value
+          oid: 1.3.6.1.4.1.6574.4.6.2.1
+          type: Float
+          help: Ambient relative humidity (percent) - 1.3.6.1.4.1.6574.4.6.2.1
+        - name: synology_ups_ambient_humidity_alarm
+          oid: 1.3.6.1.4.1.6574.4.6.2.2
+          type: DisplayString
+          help: Relative humidity alarm (enabled/disabled) - 1.3.6.1.4.1.6574.4.6.2.2
+        - name: synology_ups_ambient_humidity_high
+          oid: 1.3.6.1.4.1.6574.4.6.2.3
+          type: Float
+          help: Relative humidity threshold high (percent) - 1.3.6.1.4.1.6574.4.6.2.3
+        - name: synology_ups_ambient_humidity_low
+          oid: 1.3.6.1.4.1.6574.4.6.2.4
+          type: Float
+          help: Relative humidity threshold low (percent) - 1.3.6.1.4.1.6574.4.6.2.4
+        - name: synology_ups_ambient_humidity_max
+          oid: 1.3.6.1.4.1.6574.4.6.2.5
+          type: Float
+          help: Maximum relative humidity seen (percent) - 1.3.6.1.4.1.6574.4.6.2.5
+        - name: synology_ups_ambient_humidity_min
+          oid: 1.3.6.1.4.1.6574.4.6.2.6
+          type: Float
+          help: Minimum relative humidity seen (percent) - 1.3.6.1.4.1.6574.4.6.2.6
+        - name: synology_ups_driver_name
+          oid: 1.3.6.1.4.1.6574.4.7.1
+          type: DisplayString
+          help: Driver name - 1.3.6.1.4.1.6574.4.7.1
+        - name: synology_ups_driver_version
+          oid: 1.3.6.1.4.1.6574.4.7.2
+          type: DisplayString
+          help: Driver version (NUT release) - 1.3.6.1.4.1.6574.4.7.2
+        - name: synology_ups_driver_version_data
+          oid: 1.3.6.1.4.1.6574.4.7.3
+          type: DisplayString
+          help: Driver version data - 1.3.6.1.4.1.6574.4.7.3
+        - name: synology_ups_driver_version_internal
+          oid: 1.3.6.1.4.1.6574.4.7.4
+          type: DisplayString
+          help: Internal driver version (if tracked separately) - 1.3.6.1.4.1.6574.4.7.4
+        - name: synology_ups_driver_poll_interval
+          oid: 1.3.6.1.4.1.6574.4.7.5
+          type: gauge
+          help: Poll interval setup in configuration file - 1.3.6.1.4.1.6574.4.7.5
+        - name: synology_ups_driver_port
+          oid: 1.3.6.1.4.1.6574.4.7.6
+          type: DisplayString
+          help: Port setup in configuration file - 1.3.6.1.4.1.6574.4.7.6
+        - name: synology_ups_driver_poll_frequency
+          oid: 1.3.6.1.4.1.6574.4.7.7
+          type: gauge
+          help: Poll frequency - 1.3.6.1.4.1.6574.4.7.7
+        - name: synology_ups_driver_product_id
+          oid: 1.3.6.1.4.1.6574.4.7.8
+          type: DisplayString
+          help: Product ID - 1.3.6.1.4.1.6574.4.7.8
+        - name: synology_ups_driver_snmp_version
+          oid: 1.3.6.1.4.1.6574.4.7.9
+          type: DisplayString
+          help: Snmp version - 1.3.6.1.4.1.6574.4.7.9
+        - name: synology_ups_server_info
+          oid: 1.3.6.1.4.1.6574.4.8.1
+          type: DisplayString
+          help: Server information - 1.3.6.1.4.1.6574.4.8.1
+        - name: synology_ups_server_version
+          oid: 1.3.6.1.4.1.6574.4.8.2
+          type: DisplayString
+          help: Server version - 1.3.6.1.4.1.6574.4.8.2
+        - name: synology_disk_smart_info_index
+          oid: 1.3.6.1.4.1.6574.5.1.1.1
+          type: gauge
+          help: SMART info index - 1.3.6.1.4.1.6574.5.1.1.1
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_info_dev_name
+          oid: 1.3.6.1.4.1.6574.5.1.1.2
+          type: DisplayString
+          help: SMART info device name - 1.3.6.1.4.1.6574.5.1.1.2
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_name
+          oid: 1.3.6.1.4.1.6574.5.1.1.3
+          type: DisplayString
+          help: SMART attribute name - 1.3.6.1.4.1.6574.5.1.1.3
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_id
+          oid: 1.3.6.1.4.1.6574.5.1.1.4
+          type: gauge
+          help: SMART attribute ID - 1.3.6.1.4.1.6574.5.1.1.4
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_current
+          oid: 1.3.6.1.4.1.6574.5.1.1.5
+          type: gauge
+          help: SMART attribute current value - 1.3.6.1.4.1.6574.5.1.1.5
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_worst
+          oid: 1.3.6.1.4.1.6574.5.1.1.6
+          type: gauge
+          help: SMART attribute worst value - 1.3.6.1.4.1.6574.5.1.1.6
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_threshold
+          oid: 1.3.6.1.4.1.6574.5.1.1.7
+          type: gauge
+          help: SMART attribute threshold value - 1.3.6.1.4.1.6574.5.1.1.7
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_raw
+          oid: 1.3.6.1.4.1.6574.5.1.1.8
+          type: gauge
+          help: SMART attribute raw value - 1.3.6.1.4.1.6574.5.1.1.8
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_disk_smart_attr_status
+          oid: 1.3.6.1.4.1.6574.5.1.1.9
+          type: DisplayString
+          help: SMART attribute status - 1.3.6.1.4.1.6574.5.1.1.9
+          indexes:
+          - labelname: diskSMARTInfoIndex
+            type: gauge
+        - name: synology_service_info_index
+          oid: 1.3.6.1.4.1.6574.6.1.1.1
+          type: gauge
+          help: Service info index - 1.3.6.1.4.1.6574.6.1.1.1
+          indexes:
+          - labelname: serviceInfoIndex
+            type: gauge
+          lookups:
+          - labels:
+            - serviceInfoIndex
+            labelname: serviceName
+            oid: 1.3.6.1.4.1.6574.6.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: serviceInfoIndex
+        - name: synology_service_name
+          oid: 1.3.6.1.4.1.6574.6.1.1.2
+          type: DisplayString
+          help: Service name - 1.3.6.1.4.1.6574.6.1.1.2
+          indexes:
+          - labelname: serviceInfoIndex
+            type: gauge
+          lookups:
+          - labels:
+            - serviceInfoIndex
+            labelname: serviceName
+            oid: 1.3.6.1.4.1.6574.6.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: serviceInfoIndex
+        - name: synology_service_users
+          oid: 1.3.6.1.4.1.6574.6.1.1.3
+          type: gauge
+          help: Number of users using this service - 1.3.6.1.4.1.6574.6.1.1.3
+          indexes:
+          - labelname: serviceInfoIndex
+            type: gauge
+          lookups:
+          - labels:
+            - serviceInfoIndex
+            labelname: serviceName
+            oid: 1.3.6.1.4.1.6574.6.1.1.2
+            type: DisplayString
+          - labels: []
+            labelname: serviceInfoIndex

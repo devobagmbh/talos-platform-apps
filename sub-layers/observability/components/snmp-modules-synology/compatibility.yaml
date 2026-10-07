@@ -1,0 +1,8 @@
+requires:
+  observability/snmp-exporter: ">=v0.2.0"
+provides:
+  - name: snmp-modules-synology
+    version:
+      sot: none  # a configuration artifact: no workload or chart version to track
+    api_surface: []
+    capabilities: []
