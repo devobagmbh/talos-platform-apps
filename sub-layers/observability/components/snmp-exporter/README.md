@@ -289,10 +289,9 @@ relabeling, never in the core.
 
 v0.2.0 is a **breaking** release. The `synology` module is removed from the core.
 A consumer that scrapes `module=synology` on v0.1.0 MUST move to a Synology module
-pack, mounted through the [extension point](#extension-point-module-packs). That
-pack is a separate artifact tracked in #904 and is not yet published; until it
-ships, such a consumer needs its own pack or stays on v0.1.0. The `if_mib`,
-`ucd_system_stats`, `ucd_memory` and `hrStorage` modules are unchanged.
+pack, mounted through the [extension point](#extension-point-module-packs); the
+core ships none. The `if_mib`, `ucd_system_stats`, `ucd_memory` and `hrStorage`
+modules are unchanged.
 
 - **What the break looks like:** scrapes with `module=synology` fail (scrape
   error, target down) while the pod stays Healthy.
