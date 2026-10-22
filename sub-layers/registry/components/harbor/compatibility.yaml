@@ -1,10 +1,8 @@
-requires:
-  # Capability deps (#84): Harbor no longer embeds DB/Redis. Postgres comes from
-  # the cnpg-postgres capability (databases/cnpg), Redis from redis-managed
-  # (databases/valkey-operator). The concrete CNPG `Cluster` + `Valkey` CRs are
-  # consumer-owned (seeder); registry blobs stay on synology-csi PVCs (ADR-0026).
-  cnpg-postgres: "*"
-  redis-managed: "*"
+requires: {}
+  # Bundled backends (reverts #84 external CNPG/Valkey): Harbor ships its own
+  # harbor-database (Postgres) + harbor-redis StatefulSets on internal PVCs — the
+  # lean fit for a single-consumer registry, no external DB/cache capability
+  # required. Registry blobs stay on the consumer default StorageClass (ADR-0026).
 provides:
   - name: harbor
     version:
