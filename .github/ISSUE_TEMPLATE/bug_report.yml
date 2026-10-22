@@ -1,11 +1,11 @@
 name: Bug Report
-description: Report a bug in talos-platform-apps (sub-layer render, pipeline, OCI publish, consumer incompatibility)
-labels: ["type:feature", "area:gitops"]
+description: Report a defect in talos-platform-apps (sub-layer render, pipeline, OCI publish, consumer incompatibility)
+labels: ["kind: bug", "area: gitops"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the bug report. Fill in the fields so we can triage the issue quickly.
+        Thanks for the bug report. Fill in the fields so we can triage it quickly.
 
   - type: dropdown
     id: sub-layer
@@ -20,14 +20,14 @@ body:
         - registry
         - secrets
         - storage-objects
-        - cross-cutting (Pipeline / Build / Tooling)
+        - cross-cutting (pipeline / build / tooling)
     validations:
       required: true
 
   - type: dropdown
     id: stage
     attributes:
-      label: Where does the bug occur?
+      label: Where does the failure occur?
       options:
         - "task render (local)"
         - "task ci (local)"
@@ -64,14 +64,14 @@ body:
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: "Concrete commands including Devbox state, if relevant."
+      description: "Concrete commands incl. devbox state, if relevant."
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Logs / Output
+      label: Logs / output
       render: shell
     validations:
       required: false
