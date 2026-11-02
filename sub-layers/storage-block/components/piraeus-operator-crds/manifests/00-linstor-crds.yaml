@@ -1,10 +1,10 @@
 # The four piraeus.io Linstor CustomResourceDefinitions — strict-B CRDs artifact
 # (ADR-0028). Extracted verbatim from the upstream piraeus-operator release
-# manifest.yaml at tag v2.11.0
-# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml)
+# manifest.yaml at tag v2.12.1
+# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml)
 # via `yq 'select(.kind == "CustomResourceDefinition")'`. Upstream asset sha256 at
 # vendoring time:
-# eaaaff15392e30cfb43ae0353dda7f089f955bfa40b2f8d7e5cee5f3af946231
+# b3b9ca9069d32ef8b696e803e3a3988e00c7ae61c65a6f1c02d3a1271051f256
 # — a GitHub release asset is mutable at its tag URL, so this pin is what a later
 # re-vendor verifies the source against (`curl -fsSL <url> | shasum -a 256`).
 ---
@@ -242,6 +242,11 @@ spec:
                       type: object
                       x-kubernetes-map-type: atomic
                       x-kubernetes-preserve-unknown-fields: true
+                    replicas:
+                      description: Number of desired pods. Defaults to 1.
+                      format: int32
+                      minimum: 0
+                      type: integer
                   type: object
                 csiController:
                   description: CSIController controls the deployment of the CSI Controller
@@ -1662,6 +1667,12 @@ spec:
                       lvmPool:
                         description: Configures a LVM Volume Group as storage pool.
                         properties:
+                          externalLocking:
+                            description: 'ExternalLocking skips LINSTOR''s internal
+                              locking for the shared VG, relying on an external
+
+                              lock manager such as lvmlockd on the hosts instead.'
+                            type: boolean
                           physicalVolumeCreateArguments:
                             description: 'PhysicalVolumeCreateArguments are arguments
                               to pass to "pvcreate".
@@ -1671,6 +1682,16 @@ spec:
                             items:
                               type: string
                             type: array
+                          sharedSpace:
+                            description: 'SharedSpace marks the VG as shared between
+                              multiple nodes, identified by the given name.
+
+                              All storage pools backed by the same physical storage
+                              must use the same shared space name.
+
+                              A shared VG must be set up manually on the hosts, it
+                              cannot be created from source devices.'
+                            type: string
                           volumeGroup:
                             description: VolumeGroup is the name of the Volume Group
                               (VG) to use.
@@ -2449,6 +2470,12 @@ spec:
                       lvmPool:
                         description: Configures a LVM Volume Group as storage pool.
                         properties:
+                          externalLocking:
+                            description: 'ExternalLocking skips LINSTOR''s internal
+                              locking for the shared VG, relying on an external
+
+                              lock manager such as lvmlockd on the hosts instead.'
+                            type: boolean
                           physicalVolumeCreateArguments:
                             description: 'PhysicalVolumeCreateArguments are arguments
                               to pass to "pvcreate".
@@ -2458,6 +2485,16 @@ spec:
                             items:
                               type: string
                             type: array
+                          sharedSpace:
+                            description: 'SharedSpace marks the VG as shared between
+                              multiple nodes, identified by the given name.
+
+                              All storage pools backed by the same physical storage
+                              must use the same shared space name.
+
+                              A shared VG must be set up manually on the hosts, it
+                              cannot be created from source devices.'
+                            type: string
                           volumeGroup:
                             description: VolumeGroup is the name of the Volume Group
                               (VG) to use.

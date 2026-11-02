@@ -24,7 +24,7 @@ provides:
   - name: piraeus-operator-crds
     version:
       sot: crd-schema
-      crd_schema: v2.11.0   # piraeus.io CRDs from piraeus-operator v2.11.0
+      crd_schema: v2.12.1   # piraeus.io CRDs from piraeus-operator v2.12.1
     api_surface:
       - piraeus.io/LinstorCluster@v1
       - piraeus.io/LinstorSatellite@v1

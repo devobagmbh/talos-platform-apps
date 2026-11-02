@@ -9,8 +9,8 @@ form the strict-B pair: CRDs first (this artifact, sync-wave -1), workload after
 (sync-wave 0).
 
 The CRDs are sourced **verbatim** from the upstream piraeus-operator release
-`manifest.yaml` at tag **v2.11.0**
-(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml`).
+`manifest.yaml` at tag **v2.12.1**
+(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml`).
 piraeus-operator publishes no anonymously-pullable CRDs-only Helm chart (the
 upstream install method is `kubectl apply --server-side -f manifest.yaml`), so this
 component is delivered as a raw manifest (`kind: manifests`,
@@ -93,7 +93,9 @@ a CR has been authored using a field the older schema does not know, rolling thi
 artifact back removes that field's definition and the live CR then fails validation
 on its next update — including reconcile writes from the operator. Patch the
 affected CRs to drop the newer-only fields **before** rolling the `-crds` artifact
-back. For the v2.11.0 schemas those fields are `LinstorCluster.spec.maxConcurrentEvacuations`,
+back. For the v2.12.1 schemas those fields are `LinstorCluster.spec.controller.replicas`
+and the `lvmPool.externalLocking` / `lvmPool.sharedSpace` storage-pool fields; a
+rollback to before v2.11.0 also drops `LinstorCluster.spec.maxConcurrentEvacuations`,
 `resourceNameSuffixSeparator`, and the storage-pool `*CreateArguments` arrays.
 
 ## Capability
