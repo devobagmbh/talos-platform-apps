@@ -68,7 +68,9 @@ pre-commit:
       run: |
         big=$(git diff --cached --name-only --diff-filter=A | while IFS= read -r f; do
           [ -f "$f" ] || continue
-          case "$f" in sub-layers/*/components/*-crds/manifests/*) continue ;; esac
+          # The leading `(` is required: macOS /bin/sh (bash 3.2) fails to parse
+          # a bare `pattern)` inside $(...).
+          case "$f" in (sub-layers/*/components/*-crds/manifests/*) continue ;; esac
           [ "$(wc -c < "$f")" -gt 512000 ] && echo "$f"
         done)
         [ -z "$big" ] || { echo "large files (>500KB):"; echo "$big"; exit 1; }
