@@ -1,24 +1,7 @@
-# piraeus-operator workload — strict-B WORKLOAD half (ADR-0028), 0 CRDs.
-# Extracted verbatim from the upstream piraeus-operator release manifest.yaml at
-# tag v2.12.1
-# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml)
-# via `yq 'select(.kind != "CustomResourceDefinition")'`, minus the Namespace
-# (which ships in 00-namespace.yaml). Upstream asset sha256 at vendoring time:
-# b3b9ca9069d32ef8b696e803e3a3988e00c7ae61c65a6f1c02d3a1271051f256
-# — a GitHub release asset is mutable at its tag URL, so this pin is what a later
-# re-vendor verifies the source against (`curl -fsSL <url> | shasum -a 256`). The four piraeus.io CRDs ship in the
-# SEPARATE strict-B artifact storage-block/piraeus-operator-crds (sync-wave -1).
-#
-# Content (verbatim, NOT hand-edited): ServiceAccounts, Roles/ClusterRoles +
-# RoleBindings/ClusterRoleBindings for the controller-manager and gencert; the
-# ConfigMap piraeus-operator-image-config (bakes linstor-server v1.35.3 et al.);
-# the Service piraeus-operator-webhook-service; the Deployments
-# piraeus-operator-controller-manager and piraeus-operator-gencert; and the
-# ValidatingWebhookConfiguration piraeus-operator-validating-webhook-configuration
-# (failurePolicy: Fail — webhook TLS is self-managed by the gencert Deployment, no
-# cert-manager dependency). Only image quay.io/piraeusdatastore/piraeus-operator:v2.12.1
-# is pinned (no :latest). replicas are the upstream default (1); any deviation is a
-# consumer-overlay concern, not pinned here.
+# Verbatim from https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml
+# (sha256 b3b9ca9069d32ef8b696e803e3a3988e00c7ae61c65a6f1c02d3a1271051f256)
+# via `yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'`;
+# never hand-edit, re-vendor instead.
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -1,18 +1,4 @@
-# piraeus-operator's own namespace. piraeus-operator is the sole catalog occupant
-# (dedicated namespace), so this workload artifact ships the Namespace object — a
-# shipped manifest takes precedence over Argo `managedNamespaceMetadata`, making
-# the PSA posture authoritative and self-contained (build skill CONVENTIONS.md
-# § Namespace & PSA). The strict-B CRD half (storage-block/piraeus-operator-crds)
-# ships NO Namespace; this workload is the sole claimant.
-#
-# enforce: privileged — verbatim from upstream manifest.yaml @ v2.12.1
-# (identical to the v2.11.0 and v2.10.7 Namespace). Required
-# because the operator dynamically creates privileged DRBD/Linstor satellite
-# DaemonSets at runtime (those satellite pods are operator-created from a
-# consumer's LinstorCluster CR and are NOT in this manifest). The operator's OWN
-# pods (controller-manager, gencert) are restricted-compatible (runAsNonRoot,
-# allowPrivilegeEscalation: false, readOnlyRootFilesystem: true). Kept verbatim —
-# not hand-relaxed.
+# enforce: privileged is required: the operator creates privileged satellite DaemonSets here.
 ---
 apiVersion: v1
 kind: Namespace
