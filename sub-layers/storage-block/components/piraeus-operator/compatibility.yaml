@@ -22,7 +22,7 @@ provides:
   - name: piraeus-operator
     version:
       sot: app
-      app: v2.11.0
+      app: v2.12.1
     api_surface: []
     capabilities:
       - {id: block-storage-replicated, swap_class: data-migration}

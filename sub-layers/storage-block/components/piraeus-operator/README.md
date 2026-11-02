@@ -10,8 +10,8 @@ two together form the strict-B pair: CRDs first (sync-wave -1), workload after
 (sync-wave 0).
 
 The workload is sourced **verbatim** from the upstream piraeus-operator release
-`manifest.yaml` at tag **v2.11.0**
-(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml`).
+`manifest.yaml` at tag **v2.12.1**
+(`https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml`).
 piraeus-operator publishes no anonymously-pullable Helm chart (the upstream install
 method is `kubectl apply --server-side -f manifest.yaml`), so this component is
 delivered as raw manifests (`kind: manifests`) — the **non-CRD** objects extracted
@@ -25,7 +25,7 @@ invented pod labels.
 `manifests/10-operator.yaml` — everything else:
 
 - **Deployment `piraeus-operator-controller-manager`** (ns `piraeus-datastore`,
-  image `quay.io/piraeusdatastore/piraeus-operator:v2.11.0`) — the operator
+  image `quay.io/piraeusdatastore/piraeus-operator:v2.12.1`) — the operator
   controller. Metrics are disabled (`--metrics-bind-address=0`); there is no
   metrics Service.
 - **Deployment `piraeus-operator-gencert`** (ns `piraeus-datastore`, same image) —
@@ -36,8 +36,8 @@ invented pod labels.
   `piraeus-operator-validating-webhook-configuration`** — validates StorageClass
   and the Linstor CRs; `failurePolicy: Fail`.
 - **ConfigMap `piraeus-operator-image-config`** (ns `piraeus-datastore`) — bakes
-  the default component image versions (linstor-server **v1.34.2**, linstor-csi
-  v1.12.0, drbd-reactor, drbd-module-loader, …) from upstream v2.11.0.
+  the default component image versions (linstor-server **v1.35.3**, linstor-csi
+  v1.13.2, drbd-module-loader **v9.3.4**, drbd-reactor, …) from upstream v2.12.1.
 - **ServiceAccounts, Roles/ClusterRoles, RoleBindings/ClusterRoleBindings** for the
   controller-manager and gencert.
 
@@ -99,8 +99,8 @@ window, and the sync-wave precaution above is not required for it.
 
 ## Image versions
 
-The `piraeus-operator-image-config` ConfigMap bakes the upstream v2.11.0 defaults
-(linstor-server **v1.34.2** and the other component images). A consumer that needs
+The `piraeus-operator-image-config` ConfigMap bakes the upstream v2.12.1 defaults
+(linstor-server **v1.35.3**, DRBD **v9.3.4** and the other component images). A consumer that needs
 a different linstor-server (or other component) version applies a **consumer-layer
 Kustomize patch** to that ConfigMap in the consumer-cluster repo — the catalog
 ships the upstream default and bakes no image override here. A different baked
@@ -130,6 +130,15 @@ grants create/delete/get/list/patch/update/watch on
 creates the satellite DaemonSets and their RBAC. It cannot be narrowed without
 breaking the operator; it is documented here for the security reviewer and kept
 verbatim from upstream.
+
+Upstream v2.12.1 moved the operator's `secrets` access out of the ClusterRole into
+a Role (and RoleBinding) in `piraeus-datastore`; it also added `update` on
+`snapshot.storage.k8s.io` `volumesnapshots`. Both are kept verbatim. The narrowing
+is API-level only: the ClusterRole still creates pods, Deployments and DaemonSets
+in any namespace, and such a pod can mount any Secret or run as any ServiceAccount
+there, so a compromised operator keeps effective cluster-wide Secret access.
+Consumers MAY add an admission policy confining the operator ServiceAccount's
+workload creation to `piraeus-datastore`.
 
 Upstream v2.11.0 widened the ClusterRole by two rules, both kept verbatim:
 cluster-wide `create`/`get` on **`pods/exec`** (the operator runs commands inside
