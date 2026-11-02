@@ -1,12 +1,6 @@
-# The four piraeus.io Linstor CustomResourceDefinitions — strict-B CRDs artifact
-# (ADR-0028). Extracted verbatim from the upstream piraeus-operator release
-# manifest.yaml at tag v2.12.1
-# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml)
-# via `yq 'select(.kind == "CustomResourceDefinition")'`. Upstream asset sha256 at
-# vendoring time:
-# b3b9ca9069d32ef8b696e803e3a3988e00c7ae61c65a6f1c02d3a1271051f256
-# — a GitHub release asset is mutable at its tag URL, so this pin is what a later
-# re-vendor verifies the source against (`curl -fsSL <url> | shasum -a 256`).
+# Verbatim from https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml
+# (sha256 b3b9ca9069d32ef8b696e803e3a3988e00c7ae61c65a6f1c02d3a1271051f256)
+# via `yq 'select(.kind == "CustomResourceDefinition")'`; never hand-edit, re-vendor instead.
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
