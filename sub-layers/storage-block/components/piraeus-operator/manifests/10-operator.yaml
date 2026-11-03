@@ -1,24 +1,7 @@
-# piraeus-operator workload — strict-B WORKLOAD half (ADR-0028), 0 CRDs.
-# Extracted verbatim from the upstream piraeus-operator release manifest.yaml at
-# tag v2.11.0
-# (https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.11.0/manifest.yaml)
-# via `yq 'select(.kind != "CustomResourceDefinition")'`, minus the Namespace
-# (which ships in 00-namespace.yaml). Upstream asset sha256 at vendoring time:
-# eaaaff15392e30cfb43ae0353dda7f089f955bfa40b2f8d7e5cee5f3af946231
-# — a GitHub release asset is mutable at its tag URL, so this pin is what a later
-# re-vendor verifies the source against (`curl -fsSL <url> | shasum -a 256`). The four piraeus.io CRDs ship in the
-# SEPARATE strict-B artifact storage-block/piraeus-operator-crds (sync-wave -1).
-#
-# Content (verbatim, NOT hand-edited): ServiceAccounts, Roles/ClusterRoles +
-# RoleBindings/ClusterRoleBindings for the controller-manager and gencert; the
-# ConfigMap piraeus-operator-image-config (bakes linstor-server v1.34.2 et al.);
-# the Service piraeus-operator-webhook-service; the Deployments
-# piraeus-operator-controller-manager and piraeus-operator-gencert; and the
-# ValidatingWebhookConfiguration piraeus-operator-validating-webhook-configuration
-# (failurePolicy: Fail — webhook TLS is self-managed by the gencert Deployment, no
-# cert-manager dependency). Only image quay.io/piraeusdatastore/piraeus-operator:v2.11.0
-# is pinned (no :latest). replicas are the upstream default (1); any deviation is a
-# consumer-overlay concern, not pinned here.
+# Verbatim from https://github.com/piraeusdatastore/piraeus-operator/releases/download/v2.12.1/manifest.yaml
+# (sha256 b3b9ca9069d32ef8b696e803e3a3988e00c7ae61c65a6f1c02d3a1271051f256)
+# via `yq 'select(.kind != "CustomResourceDefinition" and .kind != "Namespace")'`;
+# never hand-edit, re-vendor instead.
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -35,6 +18,27 @@ metadata:
     app.kubernetes.io/name: piraeus-datastore
   name: piraeus-operator-gencert
   namespace: piraeus-datastore
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/name: piraeus-datastore
+  name: piraeus-operator-controller-manager
+  namespace: piraeus-datastore
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -110,7 +114,6 @@ rules:
       - events
       - persistentvolumes
       - pods
-      - secrets
       - serviceaccounts
       - services
     verbs:
@@ -343,7 +346,6 @@ rules:
       - snapshot.storage.k8s.io
     resources:
       - volumesnapshotclasses
-      - volumesnapshots
     verbs:
       - get
       - list
@@ -365,6 +367,15 @@ rules:
     verbs:
       - patch
       - update
+  - apiGroups:
+      - snapshot.storage.k8s.io
+    resources:
+      - volumesnapshots
+    verbs:
+      - get
+      - list
+      - update
+      - watch
   - apiGroups:
       - storage.k8s.io
     resources:
@@ -468,6 +479,22 @@ subjects:
     namespace: piraeus-datastore
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/name: piraeus-datastore
+  name: piraeus-operator-manager-namespaced-rolebinding
+  namespace: piraeus-datastore
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: piraeus-operator-controller-manager
+subjects:
+  - kind: ServiceAccount
+    name: piraeus-operator-controller-manager
+    namespace: piraeus-datastore
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   labels:
@@ -510,34 +537,34 @@ data:
     #   quay.io/piraeusdatastore/piraeus-server:v1.24.2
     components:
       linstor-controller:
-        tag: v1.34.2
+        tag: v1.35.3
         image: piraeus-server
       linstor-satellite:
-        tag: v1.34.2
+        tag: v1.35.3
         image: piraeus-server
       linstor-csi:
-        tag: v1.12.0
+        tag: v1.13.2
         image: piraeus-csi
       nfs-server:
-        tag: v1.12.0
+        tag: v1.13.2
         image: piraeus-csi-nfs-server
       drbd-reactor:
         tag: v1.12.0
         image: drbd-reactor
       ha-controller:
-        tag: v1.3.3
+        tag: v1.3.4
         image: piraeus-ha-controller
       drbd-shutdown-guard:
         tag: v1.1.2
         image: drbd-shutdown-guard
       ktls-utils:
-        tag: v1.2.1
+        tag: v1.5.0
         image: ktls-utils
       linstor-affinity-controller:
         tag: v1.5.0
         image: linstor-affinity-controller
       drbd-module-loader:
-        tag: v9.3.3
+        tag: v9.3.4
         # The special "match" attribute is used to select an image based on the node's reported OS.
         # The operator will first check the k8s node's ".status.nodeInfo.osImage" field, and compare it against the list
         # here. If one matches, that specific image name will be used instead of the fallback image.
@@ -590,25 +617,22 @@ data:
     base: registry.k8s.io/sig-storage
     components:
       csi-attacher:
-        tag: v4.12.0
+        tag: v4.13.0
         image: csi-attacher
       csi-livenessprobe:
-        tag: v2.19.0
+        tag: v2.20.0
         image: livenessprobe
       csi-provisioner:
-        tag: v6.3.0
+        tag: v6.4.0
         image: csi-provisioner
       csi-snapshotter:
-        tag: v8.6.0
+        tag: v8.7.0
         image: csi-snapshotter
       csi-resizer:
-        tag: v2.2.1
+        tag: v2.3.0
         image: csi-resizer
-      csi-external-health-monitor-controller:
-        tag: v0.18.0
-        image: csi-external-health-monitor-controller
       csi-node-driver-registrar:
-        tag: v2.17.0
+        tag: v2.18.0
         image: csi-node-driver-registrar
 kind: ConfigMap
 metadata:
@@ -679,7 +703,7 @@ spec:
               value: 1m
             - name: CLUSTER_API_KUBECONFIG
               value: ""
-          image: quay.io/piraeusdatastore/piraeus-operator:v2.11.0
+          image: quay.io/piraeusdatastore/piraeus-operator:v2.12.1
           livenessProbe:
             httpGet:
               path: /healthz
@@ -772,7 +796,7 @@ spec:
               value: webhook-server-cert
             - name: ZAP_DEVEL
               value: "false"
-          image: quay.io/piraeusdatastore/piraeus-operator:v2.11.0
+          image: quay.io/piraeusdatastore/piraeus-operator:v2.12.1
           livenessProbe:
             httpGet:
               path: /healthz
