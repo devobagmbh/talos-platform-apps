@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/devobagmbh/talos-platform-apps/compare/storage-block/piraeus-operator-crds-v0.3.0...storage-block/piraeus-operator-crds-v0.4.0) (2026-11-03)
+
+
+### Features
+
+* **storage-block/piraeus-operator-crds:** bump CRDs to upstream v2.12.1 ([#917](https://github.com/devobagmbh/talos-platform-apps/issues/917)) ([60adf1f](https://github.com/devobagmbh/talos-platform-apps/commit/60adf1f18530968515f013ab2258c5e4fac5fec2))
+
 ## [0.3.0](https://github.com/devobagmbh/talos-platform-apps/compare/storage-block/piraeus-operator-crds-v0.2.1...storage-block/piraeus-operator-crds-v0.3.0) (2026-09-10)
 
 
