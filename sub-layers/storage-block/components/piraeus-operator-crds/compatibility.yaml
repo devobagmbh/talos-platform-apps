@@ -1,30 +1,12 @@
-# Strict-B CRDs artifact (ADR-0028) for piraeus-operator. Ships ONLY the four
-# Linstor CustomResourceDefinitions of the piraeus.io group. The CR objects are
-# Cluster-scoped, but the CRD objects themselves depend on nothing in the catalog
-# → requires is empty. The workload counterpart of this strict-B pair is
-# `storage-block/piraeus-operator` (sync-wave 0), which carries 0 CRDs.
-#
-# crd-bearing: true marks this as THE CRD-bearing half of the strict-B pair. The
-# build gate uses this marker to assert kind: CustomResourceDefinition count > 0
-# here (and == 0 in the workload artifact). The compatibility.yaml schema
-# (schemas/compatibility.schema.json) permits this crd-bearing top-level field.
 crd-bearing: true
 
 requires: {}
 
-# api-surface-only, NO capability. The piraeus.io Linstor CRDs are the API surface
-# (schema), not the swappable operational capability. The capability
-# `block-storage-replicated` is provided by the workload artifact
-# `storage-block/piraeus-operator` (the operator that reconciles these CRs into a
-# replicated DRBD/Linstor storage cluster), not by the CRD schema. Carrying
-# capabilities: [] here is the deliberate design (precedent: storage-objects/garage-crds
-# and observability/prometheus-operator-crds, both api-surface-only with no capability),
-# NOT a deferral — so no `# TODO:` here.
 provides:
   - name: piraeus-operator-crds
     version:
       sot: crd-schema
-      crd_schema: v2.11.0   # piraeus.io CRDs from piraeus-operator v2.11.0
+      crd_schema: v2.12.1
     api_surface:
       - piraeus.io/LinstorCluster@v1
       - piraeus.io/LinstorSatellite@v1
